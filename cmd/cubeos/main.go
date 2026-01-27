@@ -1,0 +1,261 @@
+// Package main is the entry point for the CubeOS API server.
+package main
+
+import (
+	"context"
+	"errors"
+	"net/http"
+	"os"
+	"os/signal"
+	"syscall"
+	"time"
+
+	"github.com/docker/docker/client"
+	"github.com/go-chi/chi/v5"
+	"github.com/go-chi/chi/v5/middleware"
+	"github.com/rs/zerolog"
+	"github.com/rs/zerolog/log"
+
+	"github.com/nuclearlighters/cubeos/internal/api"
+	"github.com/nuclearlighters/cubeos/internal/config"
+)
+
+func main() {
+	// Load configuration
+	cfg := config.Get()
+
+	// Setup logging
+	setupLogging(cfg.LogLevel)
+
+	log.Info().
+		Str("version", cfg.Version).
+		Str("listen", cfg.ListenAddr()).
+		Msg("Starting CubeOS API server")
+
+	// Initialize Docker client
+	dockerClient, err := initDockerClient(cfg)
+	if err != nil {
+		log.Warn().Err(err).Msg("Failed to connect to Docker - running in degraded mode")
+		// Don't exit - allow the server to start in degraded mode
+		// This is useful for development/testing without Docker
+	}
+
+	// Create router
+	r := chi.NewRouter()
+
+	// Middleware stack
+	r.Use(middleware.RequestID)
+	r.Use(middleware.RealIP)
+	r.Use(requestLogger)
+	r.Use(middleware.Recoverer)
+	r.Use(middleware.Timeout(30 * time.Second))
+
+	// CORS middleware - permissive for development
+	// TODO: Make this configurable for production
+	r.Use(corsMiddleware)
+
+	// Register routes
+	registerRoutes(r, cfg, dockerClient)
+
+	// Create HTTP server
+	srv := &http.Server{
+		Addr:         cfg.ListenAddr(),
+		Handler:      r,
+		ReadTimeout:  15 * time.Second,
+		WriteTimeout: 15 * time.Second,
+		IdleTimeout:  60 * time.Second,
+	}
+
+	// Start server in goroutine
+	go func() {
+		log.Info().Str("addr", cfg.ListenAddr()).Msg("HTTP server listening")
+		if err := srv.ListenAndServe(); err != nil && !errors.Is(err, http.ErrServerClosed) {
+			log.Fatal().Err(err).Msg("HTTP server error")
+		}
+	}()
+
+	// Wait for interrupt signal
+	quit := make(chan os.Signal, 1)
+	signal.Notify(quit, syscall.SIGINT, syscall.SIGTERM)
+	<-quit
+
+	log.Info().Msg("Shutting down server...")
+
+	// Give outstanding requests 10 seconds to complete
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+
+	if err := srv.Shutdown(ctx); err != nil {
+		log.Error().Err(err).Msg("Server forced to shutdown")
+	}
+
+	// Cleanup
+	if dockerClient != nil {
+		if err := dockerClient.Close(); err != nil {
+			log.Warn().Err(err).Msg("Error closing Docker client")
+		}
+	}
+
+	log.Info().Msg("Server stopped")
+}
+
+// setupLogging configures zerolog based on log level.
+func setupLogging(level string) {
+	// Pretty console output for development
+	log.Logger = log.Output(zerolog.ConsoleWriter{Out: os.Stderr})
+
+	switch level {
+	case "debug":
+		zerolog.SetGlobalLevel(zerolog.DebugLevel)
+	case "warn":
+		zerolog.SetGlobalLevel(zerolog.WarnLevel)
+	case "error":
+		zerolog.SetGlobalLevel(zerolog.ErrorLevel)
+	default:
+		zerolog.SetGlobalLevel(zerolog.InfoLevel)
+	}
+}
+
+// initDockerClient creates a Docker client connected to the configured socket.
+func initDockerClient(cfg *config.Settings) (*client.Client, error) {
+	// Use DOCKER_HOST env var if set, otherwise use configured socket
+	opts := []client.Opt{
+		client.FromEnv,
+		client.WithAPIVersionNegotiation(),
+	}
+
+	// If DOCKER_HOST not set, use our config
+	if os.Getenv("DOCKER_HOST") == "" {
+		opts = append(opts, client.WithHost("unix://"+cfg.DockerSocket))
+	}
+
+	cli, err := client.NewClientWithOpts(opts...)
+	if err != nil {
+		return nil, err
+	}
+
+	// Test the connection
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+
+	_, err = cli.Ping(ctx)
+	if err != nil {
+		cli.Close()
+		return nil, err
+	}
+
+	log.Info().Str("socket", cfg.DockerSocket).Msg("Connected to Docker")
+	return cli, nil
+}
+
+// registerRoutes sets up all API routes.
+func registerRoutes(r chi.Router, cfg *config.Settings, dockerClient *client.Client) {
+	// Health check endpoints
+	healthHandler := api.NewHealthHandler(cfg, dockerClient)
+	r.Get("/health", healthHandler.ServeHTTP)
+	r.Get("/api/health", healthHandler.ServeHTTP)
+
+	// Root endpoint - API info
+	r.Get("/", rootHandler(cfg))
+	r.Get("/api", apiInfoHandler(cfg))
+
+	// API v1 routes (future)
+	r.Route("/api/v1", func(r chi.Router) {
+		// System endpoints (Sprint 1.1)
+		r.Route("/system", func(r chi.Router) {
+			r.Get("/info", notImplementedHandler)
+			r.Get("/stats", notImplementedHandler)
+			r.Post("/reboot", notImplementedHandler)
+			r.Post("/shutdown", notImplementedHandler)
+		})
+
+		// Service endpoints (Sprint 1.2)
+		r.Route("/services", func(r chi.Router) {
+			r.Get("/", notImplementedHandler)
+			r.Get("/{name}", notImplementedHandler)
+			r.Post("/{name}/enable", notImplementedHandler)
+			r.Post("/{name}/disable", notImplementedHandler)
+			r.Get("/{name}/logs", notImplementedHandler)
+		})
+
+		// Auth endpoints (Sprint 1.1)
+		r.Route("/auth", func(r chi.Router) {
+			r.Post("/login", notImplementedHandler)
+			r.Post("/logout", notImplementedHandler)
+			r.Get("/me", notImplementedHandler)
+		})
+	})
+}
+
+// rootHandler returns a handler for the root endpoint.
+func rootHandler(cfg *config.Settings) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		// Redirect to /api for API info
+		http.Redirect(w, r, "/api", http.StatusTemporaryRedirect)
+	}
+}
+
+// apiInfoHandler returns API metadata.
+func apiInfoHandler(cfg *config.Settings) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		// Using raw JSON to avoid import cycles - in a real app, use a response struct
+		response := `{
+			"name": "CubeOS API",
+			"version": "` + cfg.Version + `",
+			"endpoints": {
+				"health": "/health, /api/health",
+				"system": "/api/v1/system/* (not implemented)",
+				"services": "/api/v1/services/* (not implemented)",
+				"auth": "/api/v1/auth/* (not implemented)"
+			}
+		}`
+		w.Write([]byte(response))
+	}
+}
+
+// notImplementedHandler returns 501 Not Implemented.
+func notImplementedHandler(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(http.StatusNotImplemented)
+	w.Write([]byte(`{"error": "not implemented", "message": "This endpoint is planned but not yet available"}`))
+}
+
+// requestLogger is middleware that logs HTTP requests using zerolog.
+func requestLogger(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		start := time.Now()
+
+		// Wrap response writer to capture status code
+		ww := middleware.NewWrapResponseWriter(w, r.ProtoMajor)
+
+		next.ServeHTTP(ww, r)
+
+		log.Debug().
+			Str("method", r.Method).
+			Str("path", r.URL.Path).
+			Int("status", ww.Status()).
+			Dur("duration", time.Since(start)).
+			Str("remote", r.RemoteAddr).
+			Msg("request")
+	})
+}
+
+// corsMiddleware adds CORS headers for cross-origin requests.
+// This is permissive for development - tighten for production.
+func corsMiddleware(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Access-Control-Allow-Origin", "*")
+		w.Header().Set("Access-Control-Allow-Methods", "GET, POST, PUT, DELETE, OPTIONS")
+		w.Header().Set("Access-Control-Allow-Headers", "Accept, Authorization, Content-Type, X-Request-ID")
+		w.Header().Set("Access-Control-Max-Age", "86400")
+
+		// Handle preflight
+		if r.Method == "OPTIONS" {
+			w.WriteHeader(http.StatusOK)
+			return
+		}
+
+		next.ServeHTTP(w, r)
+	})
+}
