@@ -22,6 +22,15 @@ type Settings struct {
 	// Docker settings
 	DockerSocket string `envconfig:"DOCKER_SOCKET" default:"/var/run/docker.sock"`
 
+	// Database settings
+	DatabasePath string `envconfig:"DATABASE_PATH" default:"/var/lib/cubeos/cubeos.db"`
+
+	// Auth settings
+	JWTSecret           string        `envconfig:"JWT_SECRET" default:""`                // Must be set in production!
+	AccessTokenExpiry   time.Duration `envconfig:"ACCESS_TOKEN_EXPIRY" default:"15m"`    // Industry standard: 15 min
+	RefreshTokenExpiry  time.Duration `envconfig:"REFRESH_TOKEN_EXPIRY" default:"168h"`  // 7 days
+	AdminPassword       string        `envconfig:"ADMIN_PASSWORD" default:""`            // Initial admin password
+
 	// State persistence
 	StateFile string `envconfig:"STATE_FILE" default:"/var/lib/cubeos/state/services.json"`
 

@@ -3,6 +3,7 @@ package main
 
 import (
 	"context"
+	"database/sql"
 	"errors"
 	"net/http"
 	"os"
@@ -17,7 +18,9 @@ import (
 	"github.com/rs/zerolog/log"
 
 	"github.com/nuclearlighters/cubeos/internal/api"
+	"github.com/nuclearlighters/cubeos/internal/auth"
 	"github.com/nuclearlighters/cubeos/internal/config"
+	"github.com/nuclearlighters/cubeos/internal/database"
 	"github.com/nuclearlighters/cubeos/internal/docker"
 )
 
@@ -32,6 +35,19 @@ func main() {
 		Str("version", cfg.Version).
 		Str("listen", cfg.ListenAddr()).
 		Msg("Starting CubeOS API server")
+
+	// Initialize database
+	db, err := initDatabase(cfg)
+	if err != nil {
+		log.Fatal().Err(err).Msg("Failed to initialize database")
+	}
+	defer database.Close(db)
+
+	// Initialize auth services
+	jwtService, userService, authMiddleware, err := initAuth(cfg, db)
+	if err != nil {
+		log.Fatal().Err(err).Msg("Failed to initialize auth")
+	}
 
 	// Initialize Docker client
 	dockerClient, err := initDockerClient(cfg)
@@ -57,7 +73,7 @@ func main() {
 	r.Use(corsMiddleware)
 
 	// Register routes
-	registerRoutes(r, cfg, dockerClient, dockerManager)
+	registerRoutes(r, cfg, dockerClient, dockerManager, jwtService, userService, authMiddleware)
 
 	// Create HTTP server
 	srv := &http.Server{
@@ -117,6 +133,65 @@ func setupLogging(level string) {
 	}
 }
 
+// initDatabase initializes the SQLite database.
+func initDatabase(cfg *config.Settings) (*sql.DB, error) {
+	db, err := database.Open(cfg.DatabasePath)
+	if err != nil {
+		return nil, err
+	}
+	return db, nil
+}
+
+// initAuth initializes authentication services.
+func initAuth(cfg *config.Settings, db *sql.DB) (*auth.JWTService, *auth.UserService, *auth.Middleware, error) {
+	// Ensure JWT secret is set
+	jwtSecret := cfg.JWTSecret
+	if jwtSecret == "" {
+		// Generate a random secret for development (warn user)
+		var err error
+		jwtSecret, err = auth.GenerateSecretKey()
+		if err != nil {
+			return nil, nil, nil, err
+		}
+		log.Warn().Msg("No JWT_SECRET configured - generated random secret (tokens will be invalid after restart)")
+	}
+
+	// Create JWT service
+	jwtService := auth.NewJWTService(jwtSecret, cfg.AccessTokenExpiry, cfg.RefreshTokenExpiry)
+
+	// Create user service and initialize schema
+	userService := auth.NewUserService(db)
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+
+	if err := userService.InitSchema(ctx); err != nil {
+		return nil, nil, nil, err
+	}
+
+	// Ensure admin user exists
+	adminPassword := cfg.AdminPassword
+	if adminPassword == "" {
+		adminPassword = "cubeos" // Default password - CHANGE IN PRODUCTION!
+		log.Warn().Msg("No ADMIN_PASSWORD configured - using default 'cubeos' (change this!)")
+	}
+
+	user, err := userService.EnsureAdminExists(ctx, adminPassword)
+	if err != nil && !errors.Is(err, auth.ErrUserExists) {
+		// User might already exist with different password, that's OK
+		if !errors.Is(err, auth.ErrUserNotFound) {
+			log.Debug().Err(err).Msg("Admin user check")
+		}
+	}
+	if user != nil {
+		log.Info().Str("username", user.Username).Msg("Admin user ready")
+	}
+
+	// Create auth middleware
+	authMiddleware := auth.NewMiddleware(jwtService, userService)
+
+	return jwtService, userService, authMiddleware, nil
+}
+
 // initDockerClient creates a Docker client connected to the configured socket.
 func initDockerClient(cfg *config.Settings) (*client.Client, error) {
 	opts := []client.Opt{
@@ -147,11 +222,20 @@ func initDockerClient(cfg *config.Settings) (*client.Client, error) {
 }
 
 // registerRoutes sets up all API routes.
-func registerRoutes(r chi.Router, cfg *config.Settings, dockerClient *client.Client, dockerManager *docker.Manager) {
+func registerRoutes(
+	r chi.Router,
+	cfg *config.Settings,
+	dockerClient *client.Client,
+	dockerManager *docker.Manager,
+	jwtService *auth.JWTService,
+	userService *auth.UserService,
+	authMiddleware *auth.Middleware,
+) {
 	// Initialize handlers
 	healthHandler := api.NewHealthHandler(cfg, dockerClient)
 	systemHandler := api.NewSystemHandler()
 	servicesHandler := api.NewServicesHandler(dockerManager)
+	authHandler := auth.NewHandler(jwtService, userService)
 
 	// Health check endpoints (no auth required)
 	r.Get("/health", healthHandler.ServeHTTP)
@@ -163,33 +247,52 @@ func registerRoutes(r chi.Router, cfg *config.Settings, dockerClient *client.Cli
 
 	// API v1 routes
 	r.Route("/api/v1", func(r chi.Router) {
-		// System endpoints
-		r.Route("/system", func(r chi.Router) {
-			r.Get("/info", systemHandler.GetInfo)
-			r.Get("/stats", systemHandler.GetStats)
-			r.Get("/hostname", systemHandler.GetHostname)
-			r.Get("/version", systemHandler.GetVersion)
-			r.Post("/reboot", systemHandler.Reboot)
-			r.Post("/shutdown", systemHandler.Shutdown)
-		})
-
-		// Service/Container endpoints
-		r.Route("/services", func(r chi.Router) {
-			r.Get("/", servicesHandler.List)
-			r.Get("/status", servicesHandler.Status)
-			r.Get("/{name}", servicesHandler.Get)
-			r.Post("/{name}/start", servicesHandler.Start)
-			r.Post("/{name}/stop", servicesHandler.Stop)
-			r.Post("/{name}/restart", servicesHandler.Restart)
-			r.Get("/{name}/logs", servicesHandler.Logs)
-			r.Get("/{name}/stats", servicesHandler.Stats)
-		})
-
-		// Auth endpoints (Sprint 1.1 - later)
+		// Auth endpoints (public - no auth required)
 		r.Route("/auth", func(r chi.Router) {
-			r.Post("/login", notImplementedHandler)
-			r.Post("/logout", notImplementedHandler)
-			r.Get("/me", notImplementedHandler)
+			r.Post("/login", authHandler.Login)
+			r.Post("/refresh", authHandler.Refresh)
+
+			// Protected auth endpoints
+			r.Group(func(r chi.Router) {
+				r.Use(authMiddleware.RequireAuth)
+				r.Get("/me", authHandler.Me)
+				r.Post("/logout", authHandler.Logout)
+				r.Post("/password", authHandler.ChangePassword)
+			})
+		})
+
+		// Protected routes - require authentication
+		r.Group(func(r chi.Router) {
+			r.Use(authMiddleware.RequireAuth)
+
+			// System endpoints
+			r.Route("/system", func(r chi.Router) {
+				r.Get("/info", systemHandler.GetInfo)
+				r.Get("/stats", systemHandler.GetStats)
+				r.Get("/hostname", systemHandler.GetHostname)
+				r.Get("/version", systemHandler.GetVersion)
+
+				// Admin-only system operations
+				r.Group(func(r chi.Router) {
+					r.Use(authMiddleware.RequireAdmin)
+					r.Post("/reboot", systemHandler.Reboot)
+					r.Post("/shutdown", systemHandler.Shutdown)
+				})
+			})
+
+			// Service/Container endpoints
+			r.Route("/services", func(r chi.Router) {
+				r.Get("/", servicesHandler.List)
+				r.Get("/status", servicesHandler.Status)
+				r.Get("/{name}", servicesHandler.Get)
+				r.Get("/{name}/logs", servicesHandler.Logs)
+				r.Get("/{name}/stats", servicesHandler.Stats)
+
+				// Write operations
+				r.Post("/{name}/start", servicesHandler.Start)
+				r.Post("/{name}/stop", servicesHandler.Stop)
+				r.Post("/{name}/restart", servicesHandler.Restart)
+			})
 		})
 	})
 }
@@ -210,30 +313,27 @@ func apiInfoHandler(cfg *config.Settings) http.HandlerFunc {
 	"version": "` + cfg.Version + `",
 	"endpoints": {
 		"health": "GET /health, GET /api/health",
-		"system_info": "GET /api/v1/system/info",
-		"system_stats": "GET /api/v1/system/stats",
-		"system_reboot": "POST /api/v1/system/reboot",
-		"system_shutdown": "POST /api/v1/system/shutdown",
-		"services_list": "GET /api/v1/services",
-		"services_status": "GET /api/v1/services/status",
-		"services_get": "GET /api/v1/services/{name}",
-		"services_start": "POST /api/v1/services/{name}/start",
-		"services_stop": "POST /api/v1/services/{name}/stop",
-		"services_restart": "POST /api/v1/services/{name}/restart",
-		"services_logs": "GET /api/v1/services/{name}/logs",
-		"services_stats": "GET /api/v1/services/{name}/stats",
-		"auth": "/api/v1/auth/* (not implemented)"
+		"auth_login": "POST /api/v1/auth/login",
+		"auth_refresh": "POST /api/v1/auth/refresh",
+		"auth_me": "GET /api/v1/auth/me [protected]",
+		"auth_logout": "POST /api/v1/auth/logout [protected]",
+		"auth_password": "POST /api/v1/auth/password [protected]",
+		"system_info": "GET /api/v1/system/info [protected]",
+		"system_stats": "GET /api/v1/system/stats [protected]",
+		"system_reboot": "POST /api/v1/system/reboot [admin]",
+		"system_shutdown": "POST /api/v1/system/shutdown [admin]",
+		"services_list": "GET /api/v1/services [protected]",
+		"services_status": "GET /api/v1/services/status [protected]",
+		"services_get": "GET /api/v1/services/{name} [protected]",
+		"services_start": "POST /api/v1/services/{name}/start [protected]",
+		"services_stop": "POST /api/v1/services/{name}/stop [protected]",
+		"services_restart": "POST /api/v1/services/{name}/restart [protected]",
+		"services_logs": "GET /api/v1/services/{name}/logs [protected]",
+		"services_stats": "GET /api/v1/services/{name}/stats [protected]"
 	}
 }`
 		w.Write([]byte(response))
 	}
-}
-
-// notImplementedHandler returns 501 Not Implemented.
-func notImplementedHandler(w http.ResponseWriter, r *http.Request) {
-	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(http.StatusNotImplemented)
-	w.Write([]byte(`{"error": "not implemented", "message": "This endpoint is planned but not yet available"}`))
 }
 
 // requestLogger is middleware that logs HTTP requests using zerolog.
