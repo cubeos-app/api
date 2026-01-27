@@ -18,6 +18,7 @@ import (
 
 	"github.com/nuclearlighters/cubeos/internal/api"
 	"github.com/nuclearlighters/cubeos/internal/config"
+	"github.com/nuclearlighters/cubeos/internal/docker"
 )
 
 func main() {
@@ -38,6 +39,12 @@ func main() {
 		log.Warn().Err(err).Msg("Failed to connect to Docker - running in degraded mode")
 	}
 
+	// Create Docker manager
+	var dockerManager *docker.Manager
+	if dockerClient != nil {
+		dockerManager = docker.NewManager(dockerClient)
+	}
+
 	// Create router
 	r := chi.NewRouter()
 
@@ -50,7 +57,7 @@ func main() {
 	r.Use(corsMiddleware)
 
 	// Register routes
-	registerRoutes(r, cfg, dockerClient)
+	registerRoutes(r, cfg, dockerClient, dockerManager)
 
 	// Create HTTP server
 	srv := &http.Server{
@@ -140,10 +147,11 @@ func initDockerClient(cfg *config.Settings) (*client.Client, error) {
 }
 
 // registerRoutes sets up all API routes.
-func registerRoutes(r chi.Router, cfg *config.Settings, dockerClient *client.Client) {
+func registerRoutes(r chi.Router, cfg *config.Settings, dockerClient *client.Client, dockerManager *docker.Manager) {
 	// Initialize handlers
 	healthHandler := api.NewHealthHandler(cfg, dockerClient)
 	systemHandler := api.NewSystemHandler()
+	servicesHandler := api.NewServicesHandler(dockerManager)
 
 	// Health check endpoints (no auth required)
 	r.Get("/health", healthHandler.ServeHTTP)
@@ -165,13 +173,16 @@ func registerRoutes(r chi.Router, cfg *config.Settings, dockerClient *client.Cli
 			r.Post("/shutdown", systemHandler.Shutdown)
 		})
 
-		// Service endpoints (Sprint 1.2)
+		// Service/Container endpoints
 		r.Route("/services", func(r chi.Router) {
-			r.Get("/", notImplementedHandler)
-			r.Get("/{name}", notImplementedHandler)
-			r.Post("/{name}/enable", notImplementedHandler)
-			r.Post("/{name}/disable", notImplementedHandler)
-			r.Get("/{name}/logs", notImplementedHandler)
+			r.Get("/", servicesHandler.List)
+			r.Get("/status", servicesHandler.Status)
+			r.Get("/{name}", servicesHandler.Get)
+			r.Post("/{name}/start", servicesHandler.Start)
+			r.Post("/{name}/stop", servicesHandler.Stop)
+			r.Post("/{name}/restart", servicesHandler.Restart)
+			r.Get("/{name}/logs", servicesHandler.Logs)
+			r.Get("/{name}/stats", servicesHandler.Stats)
 		})
 
 		// Auth endpoints (Sprint 1.1 - later)
@@ -203,7 +214,14 @@ func apiInfoHandler(cfg *config.Settings) http.HandlerFunc {
 		"system_stats": "GET /api/v1/system/stats",
 		"system_reboot": "POST /api/v1/system/reboot",
 		"system_shutdown": "POST /api/v1/system/shutdown",
-		"services": "/api/v1/services/* (not implemented)",
+		"services_list": "GET /api/v1/services",
+		"services_status": "GET /api/v1/services/status",
+		"services_get": "GET /api/v1/services/{name}",
+		"services_start": "POST /api/v1/services/{name}/start",
+		"services_stop": "POST /api/v1/services/{name}/stop",
+		"services_restart": "POST /api/v1/services/{name}/restart",
+		"services_logs": "GET /api/v1/services/{name}/logs",
+		"services_stats": "GET /api/v1/services/{name}/stats",
 		"auth": "/api/v1/auth/* (not implemented)"
 	}
 }`
