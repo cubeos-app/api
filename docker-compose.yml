@@ -1,0 +1,21 @@
+services:
+  cubeos-api:
+    build: .
+    image: cubeos/api:latest
+    container_name: cubeos-api
+    restart: unless-stopped
+    ports:
+      - "192.168.42.1:9009:9009"
+    environment:
+      - CUBEOS_API_PORT=9009
+      - TZ=Europe/Amsterdam
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+    healthcheck:
+      test: ["CMD", "wget", "-q", "--spider", "http://localhost:9009/health"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+    labels:
+      - "com.centurylinklabs.watchtower.enable=false"
+      - "com.cubeos.service=api"
