@@ -1,7 +1,4 @@
 // Package config provides application configuration from environment variables.
-//
-// All settings can be overridden via environment variables. The prefix is "CUBEOS_"
-// so "API_PORT" becomes "CUBEOS_API_PORT".
 package config
 
 import (
@@ -13,7 +10,6 @@ import (
 )
 
 // Settings holds all application configuration.
-// Values are populated from environment variables with CUBEOS_ prefix.
 type Settings struct {
 	// Application metadata
 	Version  string `envconfig:"VERSION" default:"0.1.0"`
@@ -29,7 +25,7 @@ type Settings struct {
 	// State persistence
 	StateFile string `envconfig:"STATE_FILE" default:"/var/lib/cubeos/state/services.json"`
 
-	// Service registry (for service definitions)
+	// Service registry
 	ServiceRegistryFile string `envconfig:"SERVICE_REGISTRY_FILE" default:"/var/lib/cubeos/data/service_registry.yaml"`
 
 	// Timeouts
@@ -59,19 +55,16 @@ func (s *Settings) ListenAddr() string {
 	return fmt.Sprintf("%s:%d", s.APIHost, s.APIPort)
 }
 
-// singleton pattern for config
 var (
 	cfg  *Settings
 	once sync.Once
 )
 
-// Get returns the singleton Settings instance, loading from environment on first call.
-// This is safe to call from multiple goroutines.
+// Get returns the singleton Settings instance.
 func Get() *Settings {
 	once.Do(func() {
 		cfg = &Settings{}
 		if err := envconfig.Process("CUBEOS", cfg); err != nil {
-			// If config fails to load, panic - this is a fatal startup error
 			panic(fmt.Sprintf("failed to load config: %v", err))
 		}
 	})
@@ -79,7 +72,6 @@ func Get() *Settings {
 }
 
 // Load creates a new Settings instance from environment variables.
-// Unlike Get(), this creates a fresh instance each time (useful for testing).
 func Load() (*Settings, error) {
 	s := &Settings{}
 	if err := envconfig.Process("CUBEOS", s); err != nil {

@@ -1,13 +1,4 @@
 // Package docker provides Docker SDK integration for container management.
-//
-// This package will be fully implemented in Sprint 1.2 to support:
-// - Listing containers (all, running, stopped)
-// - Starting/stopping/restarting containers
-// - Container logs streaming
-// - Container stats (CPU, memory)
-// - Container inspect
-//
-// See CUBEOS_PROJECT_PLAN.md tasks BE-008 through BE-012.
 package docker
 
 import (

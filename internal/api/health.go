@@ -14,25 +14,21 @@ import (
 )
 
 // HealthResponse is the JSON response for the /health endpoint.
-// This matches the Python HealthResponse model for API compatibility.
 type HealthResponse struct {
 	Status          string `json:"status"`
 	Version         string `json:"version"`
 	DockerConnected bool   `json:"docker_connected"`
 	// UptimeKumaConnected is included for MuleCube compatibility
-	// In CubeOS, this may be removed or replaced with a different monitoring integration
 	UptimeKumaConnected bool `json:"uptime_kuma_connected"`
 }
 
 // HealthHandler handles GET /health requests.
-// It checks the health of the service and its dependencies.
 type HealthHandler struct {
 	cfg          *config.Settings
 	dockerClient *client.Client
 }
 
 // NewHealthHandler creates a new HealthHandler.
-// The dockerClient can be nil for initial testing without Docker.
 func NewHealthHandler(cfg *config.Settings, dockerClient *client.Client) *HealthHandler {
 	return &HealthHandler{
 		cfg:          cfg,
@@ -46,7 +42,7 @@ func (h *HealthHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		Status:              "healthy",
 		Version:             h.cfg.Version,
 		DockerConnected:     false,
-		UptimeKumaConnected: false, // Not implemented in CubeOS yet
+		UptimeKumaConnected: false,
 	}
 
 	// Check Docker connectivity
@@ -62,13 +58,11 @@ func (h *HealthHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 			resp.DockerConnected = true
 		}
 	} else {
-		// No Docker client configured - mark as degraded
 		resp.Status = "degraded"
 	}
 
 	w.Header().Set("Content-Type", "application/json")
 
-	// Return 503 if degraded, 200 if healthy
 	if resp.Status == "degraded" {
 		w.WriteHeader(http.StatusServiceUnavailable)
 	}
@@ -76,12 +70,4 @@ func (h *HealthHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	if err := json.NewEncoder(w).Encode(resp); err != nil {
 		log.Error().Err(err).Msg("Failed to encode health response")
 	}
-}
-
-// RegisterHealthRoutes registers the health check routes on a chi router.
-func RegisterHealthRoutes(mux *http.ServeMux, cfg *config.Settings, dockerClient *client.Client) {
-	handler := NewHealthHandler(cfg, dockerClient)
-	mux.Handle("GET /health", handler)
-	// Also register at /api/health for consistency with other endpoints
-	mux.Handle("GET /api/health", handler)
 }

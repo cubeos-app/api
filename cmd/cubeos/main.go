@@ -36,8 +36,6 @@ func main() {
 	dockerClient, err := initDockerClient(cfg)
 	if err != nil {
 		log.Warn().Err(err).Msg("Failed to connect to Docker - running in degraded mode")
-		// Don't exit - allow the server to start in degraded mode
-		// This is useful for development/testing without Docker
 	}
 
 	// Create router
@@ -49,9 +47,6 @@ func main() {
 	r.Use(requestLogger)
 	r.Use(middleware.Recoverer)
 	r.Use(middleware.Timeout(30 * time.Second))
-
-	// CORS middleware - permissive for development
-	// TODO: Make this configurable for production
 	r.Use(corsMiddleware)
 
 	// Register routes
@@ -101,7 +96,6 @@ func main() {
 
 // setupLogging configures zerolog based on log level.
 func setupLogging(level string) {
-	// Pretty console output for development
 	log.Logger = log.Output(zerolog.ConsoleWriter{Out: os.Stderr})
 
 	switch level {
@@ -118,13 +112,11 @@ func setupLogging(level string) {
 
 // initDockerClient creates a Docker client connected to the configured socket.
 func initDockerClient(cfg *config.Settings) (*client.Client, error) {
-	// Use DOCKER_HOST env var if set, otherwise use configured socket
 	opts := []client.Opt{
 		client.FromEnv,
 		client.WithAPIVersionNegotiation(),
 	}
 
-	// If DOCKER_HOST not set, use our config
 	if os.Getenv("DOCKER_HOST") == "" {
 		opts = append(opts, client.WithHost("unix://"+cfg.DockerSocket))
 	}
@@ -134,7 +126,6 @@ func initDockerClient(cfg *config.Settings) (*client.Client, error) {
 		return nil, err
 	}
 
-	// Test the connection
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
 
@@ -150,8 +141,11 @@ func initDockerClient(cfg *config.Settings) (*client.Client, error) {
 
 // registerRoutes sets up all API routes.
 func registerRoutes(r chi.Router, cfg *config.Settings, dockerClient *client.Client) {
-	// Health check endpoints
+	// Initialize handlers
 	healthHandler := api.NewHealthHandler(cfg, dockerClient)
+	systemHandler := api.NewSystemHandler()
+
+	// Health check endpoints (no auth required)
 	r.Get("/health", healthHandler.ServeHTTP)
 	r.Get("/api/health", healthHandler.ServeHTTP)
 
@@ -159,14 +153,16 @@ func registerRoutes(r chi.Router, cfg *config.Settings, dockerClient *client.Cli
 	r.Get("/", rootHandler(cfg))
 	r.Get("/api", apiInfoHandler(cfg))
 
-	// API v1 routes (future)
+	// API v1 routes
 	r.Route("/api/v1", func(r chi.Router) {
-		// System endpoints (Sprint 1.1)
+		// System endpoints
 		r.Route("/system", func(r chi.Router) {
-			r.Get("/info", notImplementedHandler)
-			r.Get("/stats", notImplementedHandler)
-			r.Post("/reboot", notImplementedHandler)
-			r.Post("/shutdown", notImplementedHandler)
+			r.Get("/info", systemHandler.GetInfo)
+			r.Get("/stats", systemHandler.GetStats)
+			r.Get("/hostname", systemHandler.GetHostname)
+			r.Get("/version", systemHandler.GetVersion)
+			r.Post("/reboot", systemHandler.Reboot)
+			r.Post("/shutdown", systemHandler.Shutdown)
 		})
 
 		// Service endpoints (Sprint 1.2)
@@ -178,7 +174,7 @@ func registerRoutes(r chi.Router, cfg *config.Settings, dockerClient *client.Cli
 			r.Get("/{name}/logs", notImplementedHandler)
 		})
 
-		// Auth endpoints (Sprint 1.1)
+		// Auth endpoints (Sprint 1.1 - later)
 		r.Route("/auth", func(r chi.Router) {
 			r.Post("/login", notImplementedHandler)
 			r.Post("/logout", notImplementedHandler)
@@ -190,7 +186,6 @@ func registerRoutes(r chi.Router, cfg *config.Settings, dockerClient *client.Cli
 // rootHandler returns a handler for the root endpoint.
 func rootHandler(cfg *config.Settings) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
-		// Redirect to /api for API info
 		http.Redirect(w, r, "/api", http.StatusTemporaryRedirect)
 	}
 }
@@ -199,17 +194,19 @@ func rootHandler(cfg *config.Settings) http.HandlerFunc {
 func apiInfoHandler(cfg *config.Settings) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
-		// Using raw JSON to avoid import cycles - in a real app, use a response struct
 		response := `{
-			"name": "CubeOS API",
-			"version": "` + cfg.Version + `",
-			"endpoints": {
-				"health": "/health, /api/health",
-				"system": "/api/v1/system/* (not implemented)",
-				"services": "/api/v1/services/* (not implemented)",
-				"auth": "/api/v1/auth/* (not implemented)"
-			}
-		}`
+	"name": "CubeOS API",
+	"version": "` + cfg.Version + `",
+	"endpoints": {
+		"health": "GET /health, GET /api/health",
+		"system_info": "GET /api/v1/system/info",
+		"system_stats": "GET /api/v1/system/stats",
+		"system_reboot": "POST /api/v1/system/reboot",
+		"system_shutdown": "POST /api/v1/system/shutdown",
+		"services": "/api/v1/services/* (not implemented)",
+		"auth": "/api/v1/auth/* (not implemented)"
+	}
+}`
 		w.Write([]byte(response))
 	}
 }
@@ -225,10 +222,7 @@ func notImplementedHandler(w http.ResponseWriter, r *http.Request) {
 func requestLogger(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		start := time.Now()
-
-		// Wrap response writer to capture status code
 		ww := middleware.NewWrapResponseWriter(w, r.ProtoMajor)
-
 		next.ServeHTTP(ww, r)
 
 		log.Debug().
@@ -242,7 +236,6 @@ func requestLogger(next http.Handler) http.Handler {
 }
 
 // corsMiddleware adds CORS headers for cross-origin requests.
-// This is permissive for development - tighten for production.
 func corsMiddleware(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Access-Control-Allow-Origin", "*")
@@ -250,7 +243,6 @@ func corsMiddleware(next http.Handler) http.Handler {
 		w.Header().Set("Access-Control-Allow-Headers", "Accept, Authorization, Content-Type, X-Request-ID")
 		w.Header().Set("Access-Control-Max-Age", "86400")
 
-		// Handle preflight
 		if r.Method == "OPTIONS" {
 			w.WriteHeader(http.StatusOK)
 			return
