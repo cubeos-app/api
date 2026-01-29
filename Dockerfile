@@ -1,7 +1,9 @@
 # =============================================================================
-# CubeOS API - Production Image (uses pre-built binary from CI)
+# CubeOS API - Production Multi-Arch Image
 # =============================================================================
 FROM alpine:3.19
+
+ARG TARGETARCH
 
 WORKDIR /app
 
@@ -15,8 +17,8 @@ RUN apk add --no-cache \
     docker-cli \
     i2c-tools
 
-# Copy pre-built binary from CI artifacts
-COPY cubeos-api /app/cubeos-api
+# Copy the correct binary for the target architecture
+COPY cubeos-api-${TARGETARCH} /app/cubeos-api
 
 # Ensure executable
 RUN chmod +x /app/cubeos-api

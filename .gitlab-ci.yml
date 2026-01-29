@@ -14,7 +14,7 @@ variables:
   BUILDER_IMAGE: "ghcr.io/cubeos-app/api-builder:latest"
 
 # -----------------------------------------------------------------------------
-# LINT - Uses builder image with pre-cached deps
+# LINT
 # -----------------------------------------------------------------------------
 lint:
   stage: lint
@@ -30,7 +30,7 @@ lint:
     - if: $CI_COMMIT_BRANCH == "main"
 
 # -----------------------------------------------------------------------------
-# TEST - Uses builder image with pre-cached deps
+# TEST
 # -----------------------------------------------------------------------------
 test:
   stage: test
@@ -39,7 +39,8 @@ test:
   script:
     - cp -r . /app/
     - cd /app
-    - go test -v -coverprofile=coverage.out ./... || true
+    - go test -v -coverprofile=coverage.out ./...
+    - cp coverage.out ${CI_PROJECT_DIR}/ || true
   artifacts:
     paths:
       - coverage.out
@@ -49,7 +50,7 @@ test:
     - if: $CI_COMMIT_BRANCH == "main"
 
 # -----------------------------------------------------------------------------
-# BUILD - Uses builder image with pre-cached deps
+# BUILD - Compile binaries for both architectures
 # -----------------------------------------------------------------------------
 build:
   stage: build
@@ -58,17 +59,22 @@ build:
   script:
     - cp -r . /app/
     - cd /app
-    - CGO_ENABLED=1 go build -ldflags="-s -w -X main.Version=${CI_COMMIT_SHORT_SHA}" -o cubeos-api ./cmd/cubeos-api/
-    - cp cubeos-api ${CI_PROJECT_DIR}/
+    # Build for ARM64 (Pi)
+    - GOOS=linux GOARCH=arm64 CGO_ENABLED=0 go build -ldflags="-s -w -X main.Version=${CI_COMMIT_SHORT_SHA}" -o cubeos-api-arm64 ./cmd/cubeos-api/
+    # Build for AMD64 (x86 servers)
+    - GOOS=linux GOARCH=amd64 CGO_ENABLED=0 go build -ldflags="-s -w -X main.Version=${CI_COMMIT_SHORT_SHA}" -o cubeos-api-amd64 ./cmd/cubeos-api/
+    - cp cubeos-api-arm64 cubeos-api-amd64 ${CI_PROJECT_DIR}/
+    - ls -lh ${CI_PROJECT_DIR}/cubeos-api-*
   artifacts:
     paths:
-      - cubeos-api
+      - cubeos-api-arm64
+      - cubeos-api-amd64
     expire_in: 1 week
   rules:
     - if: $CI_COMMIT_BRANCH == "main"
 
 # -----------------------------------------------------------------------------
-# PACKAGE - Build Docker image and push to ghcr.io
+# PACKAGE - Build multi-arch Docker image and push to ghcr.io
 # -----------------------------------------------------------------------------
 package:
   stage: package
@@ -80,11 +86,17 @@ package:
     DOCKER_TLS_CERTDIR: "/certs"
   before_script:
     - echo "$GHCR_TOKEN" | docker login ghcr.io -u "$GHCR_USER" --password-stdin
+    - docker buildx create --name multiarch --driver docker-container --use 2>/dev/null || docker buildx use multiarch
+    - docker buildx inspect --bootstrap
   script:
-    - docker build -t ${GHCR_IMAGE}:${CI_COMMIT_SHORT_SHA} -t ${GHCR_IMAGE}:latest .
-    - docker push ${GHCR_IMAGE}:${CI_COMMIT_SHORT_SHA}
-    - docker push ${GHCR_IMAGE}:latest
-    - echo "✅ Pushed ${GHCR_IMAGE}:${CI_COMMIT_SHORT_SHA}"
+    - |
+      docker buildx build \
+        --platform linux/amd64,linux/arm64 \
+        --push \
+        -t ${GHCR_IMAGE}:${CI_COMMIT_SHORT_SHA} \
+        -t ${GHCR_IMAGE}:latest \
+        .
+    - echo "✅ Pushed multi-arch ${GHCR_IMAGE}:${CI_COMMIT_SHORT_SHA}"
   rules:
     - if: $CI_COMMIT_BRANCH == "main"
 
