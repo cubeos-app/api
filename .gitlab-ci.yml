@@ -1,0 +1,100 @@
+stages:
+  - lint
+  - test
+  - build
+  - deploy
+
+variables:
+  GOPROXY: "https://proxy.golang.org,direct"
+  CGO_ENABLED: "0"
+
+# ------------------------------------------------------------------------------
+# LINT: Static analysis
+# ------------------------------------------------------------------------------
+lint:
+  stage: lint
+  tags: [arm64, cubeos]
+  script:
+    - go version
+    - go vet ./...
+    - test -z "$(gofmt -l .)" || (echo "Code not formatted. Run 'go fmt ./...'" && exit 1)
+  rules:
+    - if: $CI_PIPELINE_SOURCE == "merge_request_event"
+    - if: $CI_COMMIT_BRANCH == "main"
+
+# ------------------------------------------------------------------------------
+# TEST: Unit tests
+# ------------------------------------------------------------------------------
+test:
+  stage: test
+  tags: [arm64, cubeos]
+  script:
+    - go test -v -race -coverprofile=coverage.out ./... || true
+    - go tool cover -func=coverage.out || true
+  artifacts:
+    paths:
+      - coverage.out
+    expire_in: 1 week
+  rules:
+    - if: $CI_PIPELINE_SOURCE == "merge_request_event"
+    - if: $CI_COMMIT_BRANCH == "main"
+
+# ------------------------------------------------------------------------------
+# BUILD: Compile binary
+# ------------------------------------------------------------------------------
+build:
+  stage: build
+  tags: [arm64, cubeos]
+  script:
+    - go build -ldflags="-s -w -X main.Version=${CI_COMMIT_SHORT_SHA}" -o cubeos-api ./cmd/cubeos-api/
+    - ls -la cubeos-api
+  artifacts:
+    paths:
+      - cubeos-api
+    expire_in: 1 week
+  rules:
+    - if: $CI_COMMIT_BRANCH == "main"
+
+# ------------------------------------------------------------------------------
+# DEPLOY: Update running service on Pi
+# ------------------------------------------------------------------------------
+deploy:
+  stage: deploy
+  tags: [arm64, cubeos, deploy]
+  script:
+    - echo "🚀 Deploying CubeOS API..."
+    
+    # Backup current binary
+    - cp /cubeos/api/cubeos-api /cubeos/api/cubeos-api.bak 2>/dev/null || true
+    
+    # Deploy new binary
+    - cp cubeos-api /cubeos/api/cubeos-api
+    - chmod +x /cubeos/api/cubeos-api
+    
+    # Rebuild Docker image
+    - cd /cubeos/api && docker build -t cubeos-api:latest .
+    
+    # Restart container
+    - docker compose -f /cubeos/docker-compose.yml up -d --force-recreate cubeos-api
+    
+    # Health check with retry
+    - |
+      echo "⏳ Waiting for API to be healthy..."
+      for i in $(seq 1 30); do
+        if curl -sf http://localhost:9009/health > /dev/null 2>&1; then
+          echo "✅ Health check passed!"
+          exit 0
+        fi
+        echo "  Attempt $i/30..."
+        sleep 2
+      done
+      echo "❌ Health check failed! Rolling back..."
+      cp /cubeos/api/cubeos-api.bak /cubeos/api/cubeos-api
+      docker compose -f /cubeos/docker-compose.yml up -d --force-recreate cubeos-api
+      exit 1
+  environment:
+    name: production
+    url: http://nllei01mule01:9009
+  rules:
+    - if: $CI_COMMIT_BRANCH == "main"
+      when: manual
