@@ -34,7 +34,7 @@ lint:
     - go version
     - go mod download
     - go vet ./...
-    - test -z "$(gofmt -l .)" || (echo "Code not formatted" && exit 1)
+    - test -z "$(gofmt -l . | grep -v '.go-cache')" || (echo "Code not formatted" && gofmt -l . | grep -v '.go-cache' && exit 1)
   rules:
     - if: $CI_PIPELINE_SOURCE == "merge_request_event"
     - if: $CI_COMMIT_BRANCH == "main"
@@ -57,7 +57,7 @@ test:
     - if: $CI_COMMIT_BRANCH == "main"
 
 # -----------------------------------------------------------------------------
-# BUILD - Compile Go binary
+# BUILD
 # -----------------------------------------------------------------------------
 build:
   stage: build
