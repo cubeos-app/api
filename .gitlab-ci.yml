@@ -8,29 +8,41 @@ variables:
   GOPROXY: "https://proxy.golang.org,direct"
   CGO_ENABLED: "0"
 
+# Cache Go modules across pipelines
+cache:
+  key: go-mod-${CI_COMMIT_REF_SLUG}
+  paths:
+    - .go-cache/
+
+before_script:
+  - export GOPATH="${CI_PROJECT_DIR}/.go-cache"
+  - export GOCACHE="${CI_PROJECT_DIR}/.go-cache/build"
+  - mkdir -p "$GOPATH" "$GOCACHE"
+
 # ------------------------------------------------------------------------------
-# LINT: Static analysis
+# LINT
 # ------------------------------------------------------------------------------
 lint:
   stage: lint
   tags: [arm64, cubeos]
   script:
     - go version
+    - go mod download
     - go vet ./...
-    - test -z "$(gofmt -l .)" || (echo "Code not formatted. Run 'go fmt ./...'" && exit 1)
+    - test -z "$(gofmt -l .)" || (echo "Code not formatted" && exit 1)
   rules:
     - if: $CI_PIPELINE_SOURCE == "merge_request_event"
     - if: $CI_COMMIT_BRANCH == "main"
 
 # ------------------------------------------------------------------------------
-# TEST: Unit tests
+# TEST
 # ------------------------------------------------------------------------------
 test:
   stage: test
   tags: [arm64, cubeos]
   script:
+    - go mod download
     - go test -v -race -coverprofile=coverage.out ./... || true
-    - go tool cover -func=coverage.out || true
   artifacts:
     paths:
       - coverage.out
@@ -40,14 +52,15 @@ test:
     - if: $CI_COMMIT_BRANCH == "main"
 
 # ------------------------------------------------------------------------------
-# BUILD: Compile binary
+# BUILD
 # ------------------------------------------------------------------------------
 build:
   stage: build
   tags: [arm64, cubeos]
   script:
+    - go mod download
     - go build -ldflags="-s -w -X main.Version=${CI_COMMIT_SHORT_SHA}" -o cubeos-api ./cmd/cubeos-api/
-    - ls -la cubeos-api
+    - ls -lh cubeos-api
   artifacts:
     paths:
       - cubeos-api
@@ -56,28 +69,18 @@ build:
     - if: $CI_COMMIT_BRANCH == "main"
 
 # ------------------------------------------------------------------------------
-# DEPLOY: Update running service on Pi
+# DEPLOY
 # ------------------------------------------------------------------------------
 deploy:
   stage: deploy
   tags: [arm64, cubeos, deploy]
   script:
     - echo "🚀 Deploying CubeOS API..."
-    
-    # Backup current binary
     - cp /cubeos/api/cubeos-api /cubeos/api/cubeos-api.bak 2>/dev/null || true
-    
-    # Deploy new binary
     - cp cubeos-api /cubeos/api/cubeos-api
     - chmod +x /cubeos/api/cubeos-api
-    
-    # Rebuild Docker image
     - cd /cubeos/api && docker build -t cubeos-api:latest .
-    
-    # Restart container
     - docker compose -f /cubeos/docker-compose.yml up -d --force-recreate cubeos-api
-    
-    # Health check with retry
     - |
       echo "⏳ Waiting for API to be healthy..."
       for i in $(seq 1 30); do
