@@ -1,20 +1,17 @@
 # Binaries
-build/
-tmp/
+cubeos-api
 *.exe
-*.dll
-*.so
-*.dylib
-
-# Test
-*.out
-coverage.html
+build/
 
 # IDE
 .idea/
 .vscode/
 *.swp
 
-# Environment
-.env
-.env.local
+# OS
+.DS_Store
+
+# Data
+*.db
+*.db-shm
+*.db-wal

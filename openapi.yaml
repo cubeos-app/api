@@ -1,0 +1,1139 @@
+openapi: 3.0.3
+info:
+  title: CubeOS API
+  description: |
+    RESTful API for CubeOS - an open-source operating system for headless ARM64 servers.
+    
+    ## Authentication
+    All protected endpoints require a JWT token in the Authorization header:
+    ```
+    Authorization: Bearer <token>
+    ```
+    
+    Obtain a token via `/api/v1/auth/login`.
+    
+    ## Rate Limiting
+    No rate limiting is currently enforced.
+    
+  version: 2.0.0
+  contact:
+    name: CubeOS
+    url: https://github.com/cubeos-app
+  license:
+    name: Apache 2.0
+    url: https://www.apache.org/licenses/LICENSE-2.0.html
+
+servers:
+  - url: http://192.168.42.1:9009
+    description: Local CubeOS server
+  - url: http://localhost:9009
+    description: Development server
+
+tags:
+  - name: Auth
+    description: Authentication endpoints
+  - name: System
+    description: System information and controls
+  - name: Services
+    description: Docker container management
+  - name: Network
+    description: Network interfaces and WiFi AP
+  - name: Storage
+    description: Disk management, SMB shares, health monitoring
+  - name: Logs
+    description: System and container logs
+  - name: Firewall
+    description: iptables firewall management
+  - name: Power
+    description: UPS and battery monitoring
+
+paths:
+  # =============================================================================
+  # Authentication
+  # =============================================================================
+  /api/v1/auth/login:
+    post:
+      tags: [Auth]
+      summary: Login and get JWT token
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [username, password]
+              properties:
+                username:
+                  type: string
+                  example: admin
+                password:
+                  type: string
+                  example: cubeos
+      responses:
+        '200':
+          description: Login successful
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  access_token:
+                    type: string
+                  token_type:
+                    type: string
+                    example: bearer
+                  expires_in:
+                    type: integer
+                    example: 86400
+        '401':
+          description: Invalid credentials
+
+  /api/v1/auth/refresh:
+    post:
+      tags: [Auth]
+      summary: Refresh JWT token
+      security:
+        - bearerAuth: []
+      responses:
+        '200':
+          description: Token refreshed
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  access_token:
+                    type: string
+                  token_type:
+                    type: string
+        '401':
+          description: Invalid or expired token
+
+  /api/v1/auth/logout:
+    post:
+      tags: [Auth]
+      summary: Logout (invalidate token)
+      security:
+        - bearerAuth: []
+      responses:
+        '200':
+          description: Logged out successfully
+
+  # =============================================================================
+  # System
+  # =============================================================================
+  /api/v1/system/info:
+    get:
+      tags: [System]
+      summary: Get system information
+      security:
+        - bearerAuth: []
+      responses:
+        '200':
+          description: System information
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SystemInfo'
+
+  /api/v1/system/stats:
+    get:
+      tags: [System]
+      summary: Get current system statistics
+      security:
+        - bearerAuth: []
+      responses:
+        '200':
+          description: Current system stats
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SystemStats'
+
+  /api/v1/system/reboot:
+    post:
+      tags: [System]
+      summary: Reboot the system
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: delay
+          in: query
+          schema:
+            type: integer
+            default: 0
+          description: Delay in seconds before reboot
+      responses:
+        '200':
+          description: Reboot initiated
+
+  /api/v1/system/shutdown:
+    post:
+      tags: [System]
+      summary: Shutdown the system
+      security:
+        - bearerAuth: []
+      responses:
+        '200':
+          description: Shutdown initiated
+
+  # =============================================================================
+  # Services (Docker)
+  # =============================================================================
+  /api/v1/services:
+    get:
+      tags: [Services]
+      summary: List all Docker containers
+      security:
+        - bearerAuth: []
+      responses:
+        '200':
+          description: List of services
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  services:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/Service'
+                  total:
+                    type: integer
+                  running:
+                    type: integer
+
+  /api/v1/services/{name}:
+    get:
+      tags: [Services]
+      summary: Get service details
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: name
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Service details
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Service'
+        '404':
+          description: Service not found
+
+  /api/v1/services/{name}/start:
+    post:
+      tags: [Services]
+      summary: Start a service
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: name
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Service started
+
+  /api/v1/services/{name}/stop:
+    post:
+      tags: [Services]
+      summary: Stop a service
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: name
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Service stopped
+
+  /api/v1/services/{name}/restart:
+    post:
+      tags: [Services]
+      summary: Restart a service
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: name
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Service restarted
+
+  /api/v1/services/{name}/logs:
+    get:
+      tags: [Services]
+      summary: Get service logs
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: name
+          in: path
+          required: true
+          schema:
+            type: string
+        - name: tail
+          in: query
+          schema:
+            type: integer
+            default: 100
+      responses:
+        '200':
+          description: Service logs
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  service:
+                    type: string
+                  logs:
+                    type: array
+                    items:
+                      type: string
+                  tail:
+                    type: integer
+
+  /api/v1/services/{name}/stats:
+    get:
+      tags: [Services]
+      summary: Get service resource statistics
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: name
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Service stats
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ServiceStats'
+
+  # =============================================================================
+  # Network
+  # =============================================================================
+  /api/v1/network/interfaces:
+    get:
+      tags: [Network]
+      summary: List network interfaces
+      security:
+        - bearerAuth: []
+      responses:
+        '200':
+          description: Network interfaces
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  interfaces:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/NetworkInterface'
+
+  /api/v1/network/wifi/ap/status:
+    get:
+      tags: [Network]
+      summary: Get WiFi Access Point status
+      security:
+        - bearerAuth: []
+      responses:
+        '200':
+          description: AP status
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/WiFiAPStatus'
+
+  /api/v1/network/wifi/ap/config:
+    get:
+      tags: [Network]
+      summary: Get WiFi AP configuration
+      security:
+        - bearerAuth: []
+      responses:
+        '200':
+          description: AP configuration
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/WiFiAPConfig'
+    put:
+      tags: [Network]
+      summary: Update WiFi AP configuration
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/WiFiAPConfig'
+      responses:
+        '200':
+          description: Configuration updated
+
+  /api/v1/network/wifi/ap/restart:
+    post:
+      tags: [Network]
+      summary: Restart WiFi Access Point
+      security:
+        - bearerAuth: []
+      responses:
+        '200':
+          description: AP restarted
+
+  /api/v1/network/wifi/ap/clients:
+    get:
+      tags: [Network]
+      summary: List connected WiFi clients
+      security:
+        - bearerAuth: []
+      responses:
+        '200':
+          description: Connected clients
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  clients:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/WiFiClient'
+
+  /api/v1/network/wifi/ap/clients/{mac}/kick:
+    post:
+      tags: [Network]
+      summary: Disconnect a WiFi client
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: mac
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Client disconnected
+
+  /api/v1/network/internet:
+    get:
+      tags: [Network]
+      summary: Check internet connectivity
+      security:
+        - bearerAuth: []
+      responses:
+        '200':
+          description: Internet status
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  connected:
+                    type: boolean
+                  rtt_ms:
+                    type: number
+                  target_name:
+                    type: string
+
+  # =============================================================================
+  # Storage
+  # =============================================================================
+  /api/v1/storage/overview:
+    get:
+      tags: [Storage]
+      summary: Get storage overview
+      security:
+        - bearerAuth: []
+      responses:
+        '200':
+          description: Storage overview
+
+  /api/v1/storage/health:
+    get:
+      tags: [Storage]
+      summary: Get disk S.M.A.R.T. health data
+      security:
+        - bearerAuth: []
+      responses:
+        '200':
+          description: Disk health information
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  disks:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/DiskHealth'
+                  count:
+                    type: integer
+                  overall_health:
+                    type: string
+                    enum: [PASSED, FAILED, UNKNOWN]
+
+  /api/v1/storage/health/{device}:
+    get:
+      tags: [Storage]
+      summary: Get S.M.A.R.T. data for specific device
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: device
+          in: path
+          required: true
+          schema:
+            type: string
+          example: sda
+      responses:
+        '200':
+          description: Disk health details
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/DiskHealth'
+
+  /api/v1/storage/smb/status:
+    get:
+      tags: [Storage]
+      summary: Get Samba server status
+      security:
+        - bearerAuth: []
+      responses:
+        '200':
+          description: SMB status
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  installed:
+                    type: boolean
+                  running:
+                    type: boolean
+                  enabled:
+                    type: boolean
+                  version:
+                    type: string
+
+  /api/v1/storage/smb/shares:
+    get:
+      tags: [Storage]
+      summary: List SMB shares
+      security:
+        - bearerAuth: []
+      responses:
+        '200':
+          description: SMB shares
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  shares:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/SMBShare'
+                  count:
+                    type: integer
+    post:
+      tags: [Storage]
+      summary: Create SMB share
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/SMBShare'
+      responses:
+        '201':
+          description: Share created
+
+  /api/v1/storage/smb/shares/{name}:
+    get:
+      tags: [Storage]
+      summary: Get SMB share details
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: name
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Share details
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SMBShare'
+    put:
+      tags: [Storage]
+      summary: Update SMB share
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: name
+          in: path
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/SMBShare'
+      responses:
+        '200':
+          description: Share updated
+    delete:
+      tags: [Storage]
+      summary: Delete SMB share
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: name
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Share deleted
+
+  # =============================================================================
+  # Logs
+  # =============================================================================
+  /api/v1/logs/container/{container}:
+    get:
+      tags: [Logs]
+      summary: Get container logs
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: container
+          in: path
+          required: true
+          schema:
+            type: string
+        - name: lines
+          in: query
+          schema:
+            type: integer
+            default: 100
+        - name: since
+          in: query
+          schema:
+            type: string
+        - name: timestamps
+          in: query
+          schema:
+            type: boolean
+            default: true
+      responses:
+        '200':
+          description: Container logs
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  container:
+                    type: string
+                  entries:
+                    type: array
+                    items:
+                      type: string
+                  count:
+                    type: integer
+
+  /api/v1/logs/kernel:
+    get:
+      tags: [Logs]
+      summary: Get kernel logs (dmesg)
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: lines
+          in: query
+          schema:
+            type: integer
+            default: 200
+      responses:
+        '200':
+          description: Kernel logs
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  entries:
+                    type: array
+                    items:
+                      type: string
+
+  /api/v1/logs/errors:
+    get:
+      tags: [Logs]
+      summary: Get recent error logs
+      security:
+        - bearerAuth: []
+      responses:
+        '200':
+          description: Error logs
+
+  # =============================================================================
+  # Firewall
+  # =============================================================================
+  /api/v1/firewall/status:
+    get:
+      tags: [Firewall]
+      summary: Get firewall status
+      security:
+        - bearerAuth: []
+      responses:
+        '200':
+          description: Firewall status
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  enabled:
+                    type: boolean
+                  ip_forward:
+                    type: boolean
+                  filter_rules:
+                    type: array
+                    items:
+                      type: object
+
+  /api/v1/firewall/nat:
+    get:
+      tags: [Firewall]
+      summary: Get NAT status
+      security:
+        - bearerAuth: []
+      responses:
+        '200':
+          description: NAT status
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  enabled:
+                    type: boolean
+
+  /api/v1/firewall/nat/enable:
+    post:
+      tags: [Firewall]
+      summary: Enable NAT (internet sharing)
+      security:
+        - bearerAuth: []
+      responses:
+        '200':
+          description: NAT enabled
+
+  /api/v1/firewall/nat/disable:
+    post:
+      tags: [Firewall]
+      summary: Disable NAT
+      security:
+        - bearerAuth: []
+      responses:
+        '200':
+          description: NAT disabled
+
+  # =============================================================================
+  # Power (UPS)
+  # =============================================================================
+  /api/v1/power/status:
+    get:
+      tags: [Power]
+      summary: Get UPS/battery status
+      security:
+        - bearerAuth: []
+      responses:
+        '200':
+          description: Power status
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PowerStatus'
+
+  # =============================================================================
+  # Docker Management
+  # =============================================================================
+  /api/v1/docker/disk-usage:
+    get:
+      tags: [Services]
+      summary: Get Docker disk usage
+      security:
+        - bearerAuth: []
+      responses:
+        '200':
+          description: Docker disk usage
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  images_size:
+                    type: integer
+                  containers_size:
+                    type: integer
+                  volumes_size:
+                    type: integer
+                  build_cache_size:
+                    type: integer
+                  total_size:
+                    type: integer
+
+  /api/v1/docker/prune:
+    post:
+      tags: [Services]
+      summary: Clean up unused Docker resources
+      security:
+        - bearerAuth: []
+      responses:
+        '200':
+          description: Cleanup completed
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  space_reclaimed:
+                    type: integer
+
+components:
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+
+  schemas:
+    SystemInfo:
+      type: object
+      properties:
+        hostname:
+          type: string
+        os:
+          type: string
+        kernel:
+          type: string
+        architecture:
+          type: string
+        hardware:
+          type: string
+        cpu_model:
+          type: string
+        cpu_cores:
+          type: integer
+        memory_total:
+          type: integer
+        api_version:
+          type: string
+
+    SystemStats:
+      type: object
+      properties:
+        cpu_percent:
+          type: number
+        memory_percent:
+          type: number
+        memory_used:
+          type: integer
+        memory_total:
+          type: integer
+        disk_percent:
+          type: number
+        disk_used:
+          type: integer
+        disk_total:
+          type: integer
+        disk_free:
+          type: integer
+        temperature:
+          type: number
+        uptime:
+          type: integer
+        load_avg:
+          type: array
+          items:
+            type: number
+
+    Service:
+      type: object
+      properties:
+        id:
+          type: string
+        name:
+          type: string
+        display_name:
+          type: string
+        image:
+          type: string
+        state:
+          type: string
+          enum: [running, stopped, paused, restarting]
+        status:
+          type: string
+        health:
+          type: string
+        is_core:
+          type: boolean
+        category:
+          type: string
+        ports:
+          type: array
+          items:
+            type: object
+            properties:
+              public_port:
+                type: integer
+              private_port:
+                type: integer
+              protocol:
+                type: string
+        created:
+          type: string
+          format: date-time
+        started_at:
+          type: string
+          format: date-time
+
+    ServiceStats:
+      type: object
+      properties:
+        cpu_percent:
+          type: number
+        memory_usage:
+          type: integer
+        memory_limit:
+          type: integer
+        memory_percent:
+          type: number
+        network_rx:
+          type: integer
+        network_tx:
+          type: integer
+        block_read:
+          type: integer
+        block_write:
+          type: integer
+
+    NetworkInterface:
+      type: object
+      properties:
+        name:
+          type: string
+        type:
+          type: string
+          enum: [ethernet, wifi, loopback, bridge]
+        mac_address:
+          type: string
+        mtu:
+          type: integer
+        state:
+          type: string
+        ipv4_addresses:
+          type: array
+          items:
+            type: string
+        ipv6_addresses:
+          type: array
+          items:
+            type: string
+        rx_bytes:
+          type: integer
+        tx_bytes:
+          type: integer
+
+    WiFiAPStatus:
+      type: object
+      properties:
+        ssid:
+          type: string
+        password:
+          type: string
+        channel:
+          type: integer
+        frequency:
+          type: string
+        hidden:
+          type: boolean
+        enabled:
+          type: boolean
+        status:
+          type: string
+          enum: [up, down]
+        interface:
+          type: string
+
+    WiFiAPConfig:
+      type: object
+      properties:
+        ssid:
+          type: string
+          maxLength: 32
+        password:
+          type: string
+          minLength: 8
+          maxLength: 63
+        channel:
+          type: integer
+          minimum: 1
+          maximum: 13
+        hidden:
+          type: boolean
+        country_code:
+          type: string
+          example: NL
+        hw_mode:
+          type: string
+          enum: [g, a]
+
+    WiFiClient:
+      type: object
+      properties:
+        mac_address:
+          type: string
+        ip_address:
+          type: string
+        hostname:
+          type: string
+        vendor:
+          type: string
+        connected_time:
+          type: integer
+        rx_bytes:
+          type: integer
+        tx_bytes:
+          type: integer
+        signal_strength:
+          type: integer
+
+    DiskHealth:
+      type: object
+      properties:
+        device:
+          type: string
+        model:
+          type: string
+        serial:
+          type: string
+        firmware:
+          type: string
+        capacity:
+          type: string
+        capacity_bytes:
+          type: integer
+        type:
+          type: string
+          enum: [HDD, SSD, NVMe]
+        health:
+          type: string
+          enum: [PASSED, FAILED, UNKNOWN]
+        temperature:
+          type: integer
+        power_on_hours:
+          type: integer
+        power_cycles:
+          type: integer
+        smart_enabled:
+          type: boolean
+        warnings:
+          type: array
+          items:
+            type: string
+        attributes:
+          type: array
+          items:
+            type: object
+            properties:
+              id:
+                type: integer
+              name:
+                type: string
+              value:
+                type: integer
+              worst:
+                type: integer
+              threshold:
+                type: integer
+              raw_value:
+                type: string
+
+    SMBShare:
+      type: object
+      properties:
+        name:
+          type: string
+        path:
+          type: string
+        comment:
+          type: string
+        browseable:
+          type: boolean
+        read_only:
+          type: boolean
+        guest_ok:
+          type: boolean
+        valid_users:
+          type: array
+          items:
+            type: string
+
+    PowerStatus:
+      type: object
+      properties:
+        available:
+          type: boolean
+        battery_percent:
+          type: number
+        battery_voltage:
+          type: number
+        cell_count:
+          type: integer
+        is_charging:
+          type: boolean
+        on_battery:
+          type: boolean
+        power_good:
+          type: boolean
+        status:
+          type: string
+          enum: [charging, discharging, full, unknown]
+        time_remaining:
+          type: string
+        estimated_mins:
+          type: integer
