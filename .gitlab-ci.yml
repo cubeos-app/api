@@ -10,19 +10,7 @@ stages:
 
 variables:
   GOPROXY: "https://proxy.golang.org,direct"
-  CGO_ENABLED: "0"
   GHCR_IMAGE: "ghcr.io/cubeos-app/api"
-
-# Cache Go modules
-cache:
-  key: go-mod-${CI_COMMIT_REF_SLUG}
-  paths:
-    - .go-cache/
-
-before_script:
-  - export GOPATH="${CI_PROJECT_DIR}/.go-cache"
-  - export GOCACHE="${CI_PROJECT_DIR}/.go-cache/build"
-  - mkdir -p "$GOPATH" "$GOCACHE"
 
 # -----------------------------------------------------------------------------
 # LINT
@@ -34,7 +22,7 @@ lint:
     - go version
     - go mod download
     - go vet ./...
-    - test -z "$(gofmt -l . | grep -v '.go-cache')" || (echo "Code not formatted" && gofmt -l . | grep -v '.go-cache' && exit 1)
+    - test -z "$(gofmt -l .)" || (echo "Code not formatted" && gofmt -l . && exit 1)
   rules:
     - if: $CI_PIPELINE_SOURCE == "merge_request_event"
     - if: $CI_COMMIT_BRANCH == "main"
