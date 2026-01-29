@@ -125,7 +125,7 @@ func TestHealth(t *testing.T) {
 	cfg := &config.Config{
 		Version: "test-v1.0.0",
 	}
-	
+
 	h := &Handlers{
 		cfg:       cfg,
 		startTime: time.Now().Add(-10 * time.Second), // Started 10 seconds ago

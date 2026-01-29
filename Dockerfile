@@ -7,7 +7,6 @@ ARG TARGETARCH
 
 WORKDIR /app
 
-# Install runtime dependencies only
 RUN apk add --no-cache \
     ca-certificates \
     tzdata \
@@ -17,10 +16,8 @@ RUN apk add --no-cache \
     docker-cli \
     i2c-tools
 
-# Copy the correct binary for the target architecture
 COPY cubeos-api-${TARGETARCH} /app/cubeos-api
 
-# Ensure executable
 RUN chmod +x /app/cubeos-api
 
 EXPOSE 9009

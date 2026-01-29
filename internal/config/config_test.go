@@ -75,9 +75,9 @@ func TestIsCoreService(t *testing.T) {
 
 func TestInferCategory(t *testing.T) {
 	tests := []struct {
-		name     string
-		service  string
-		wantCat  string
+		name    string
+		service string
+		wantCat string
 	}{
 		{"ollama is ai", "ollama", "ai"},
 		{"kiwix is knowledge", "kiwix", "knowledge"},
