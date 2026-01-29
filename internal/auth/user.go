@@ -18,13 +18,13 @@ var (
 
 // User represents a user in the system.
 type User struct {
-	ID           int64     `json:"id"`
-	Username     string    `json:"username"`
-	PasswordHash string    `json:"-"` // Never expose in JSON
-	Email        string    `json:"email,omitempty"`
-	IsAdmin      bool      `json:"is_admin"`
-	CreatedAt    time.Time `json:"created_at"`
-	UpdatedAt    time.Time `json:"updated_at"`
+	ID           int64      `json:"id"`
+	Username     string     `json:"username"`
+	PasswordHash string     `json:"-"` // Never expose in JSON
+	Email        string     `json:"email,omitempty"`
+	IsAdmin      bool       `json:"is_admin"`
+	CreatedAt    time.Time  `json:"created_at"`
+	UpdatedAt    time.Time  `json:"updated_at"`
 	LastLoginAt  *time.Time `json:"last_login_at,omitempty"`
 }
 

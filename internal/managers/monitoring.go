@@ -11,11 +11,11 @@ import (
 type MonitoringManager struct {
 	system  *SystemManager
 	network *NetworkManager
-	
+
 	history     []models.StatsSnapshot
 	historyLock sync.RWMutex
 	maxHistory  int
-	
+
 	thresholds     map[string]float64
 	thresholdsLock sync.RWMutex
 }
@@ -39,17 +39,17 @@ func NewMonitoringManager(system *SystemManager, network *NetworkManager) *Monit
 // RecordStats records current stats to history
 func (m *MonitoringManager) RecordStats() {
 	stats := m.system.GetStats()
-	
+
 	snapshot := models.StatsSnapshot{
 		Timestamp:     time.Now(),
 		CPUPercent:    stats.CPUPercent,
 		MemoryPercent: stats.MemoryPercent,
 		Temperature:   stats.TemperatureCPU,
 	}
-	
+
 	m.historyLock.Lock()
 	defer m.historyLock.Unlock()
-	
+
 	m.history = append(m.history, snapshot)
 	if len(m.history) > m.maxHistory {
 		m.history = m.history[len(m.history)-m.maxHistory:]
@@ -60,13 +60,13 @@ func (m *MonitoringManager) RecordStats() {
 func (m *MonitoringManager) GetHistory(minutes int) []models.StatsSnapshot {
 	m.historyLock.RLock()
 	defer m.historyLock.RUnlock()
-	
+
 	// At 2s interval, ~30 samples per minute
 	samples := minutes * 30
 	if samples > len(m.history) {
 		samples = len(m.history)
 	}
-	
+
 	return m.history[len(m.history)-samples:]
 }
 
@@ -75,7 +75,7 @@ func (m *MonitoringManager) GetCurrentStats() map[string]interface{} {
 	stats := m.system.GetStats()
 	interfaces := m.system.GetNetworkInterfaces()
 	clients := m.network.GetConnectedClients()
-	
+
 	// Build network traffic summary
 	networkTraffic := make(map[string]map[string]interface{})
 	for _, iface := range interfaces {
@@ -88,7 +88,7 @@ func (m *MonitoringManager) GetCurrentStats() map[string]interface{} {
 			"is_up":    iface.IsUp,
 		}
 	}
-	
+
 	return map[string]interface{}{
 		"timestamp": time.Now().Format(time.RFC3339),
 		"system": map[string]interface{}{
@@ -118,7 +118,7 @@ func (m *MonitoringManager) GetCurrentStats() map[string]interface{} {
 func (m *MonitoringManager) GetThresholds() map[string]float64 {
 	m.thresholdsLock.RLock()
 	defer m.thresholdsLock.RUnlock()
-	
+
 	result := make(map[string]float64)
 	for k, v := range m.thresholds {
 		result[k] = v
@@ -130,13 +130,13 @@ func (m *MonitoringManager) GetThresholds() map[string]float64 {
 func (m *MonitoringManager) SetThresholds(thresholds map[string]float64) map[string]float64 {
 	m.thresholdsLock.Lock()
 	defer m.thresholdsLock.Unlock()
-	
+
 	for key, value := range thresholds {
 		if _, ok := m.thresholds[key]; ok {
 			m.thresholds[key] = value
 		}
 	}
-	
+
 	return m.thresholds
 }
 
@@ -144,9 +144,9 @@ func (m *MonitoringManager) SetThresholds(thresholds map[string]float64) map[str
 func (m *MonitoringManager) GetCurrentAlerts() models.AlertsResponse {
 	stats := m.system.GetStats()
 	thresholds := m.GetThresholds()
-	
+
 	var alerts []models.Alert
-	
+
 	if stats.CPUPercent >= thresholds["cpu_percent"] {
 		alerts = append(alerts, models.Alert{
 			Type:     "cpu",
@@ -155,7 +155,7 @@ func (m *MonitoringManager) GetCurrentAlerts() models.AlertsResponse {
 			Value:    stats.CPUPercent,
 		})
 	}
-	
+
 	if stats.MemoryPercent >= thresholds["memory_percent"] {
 		alerts = append(alerts, models.Alert{
 			Type:     "memory",
@@ -164,7 +164,7 @@ func (m *MonitoringManager) GetCurrentAlerts() models.AlertsResponse {
 			Value:    stats.MemoryPercent,
 		})
 	}
-	
+
 	if stats.TemperatureCPU >= thresholds["temperature_c"] {
 		alerts = append(alerts, models.Alert{
 			Type:     "temperature",
@@ -173,7 +173,7 @@ func (m *MonitoringManager) GetCurrentAlerts() models.AlertsResponse {
 			Value:    stats.TemperatureCPU,
 		})
 	}
-	
+
 	if stats.Throttled {
 		alerts = append(alerts, models.Alert{
 			Type:     "throttling",
@@ -181,7 +181,7 @@ func (m *MonitoringManager) GetCurrentAlerts() models.AlertsResponse {
 			Severity: "warning",
 		})
 	}
-	
+
 	if stats.UnderVoltage {
 		alerts = append(alerts, models.Alert{
 			Type:     "power",
@@ -189,7 +189,7 @@ func (m *MonitoringManager) GetCurrentAlerts() models.AlertsResponse {
 			Severity: "critical",
 		})
 	}
-	
+
 	return models.AlertsResponse{
 		Alerts:     alerts,
 		AlertCount: len(alerts),
@@ -201,7 +201,7 @@ func (m *MonitoringManager) GetCurrentAlerts() models.AlertsResponse {
 func (m *MonitoringManager) StartRecording(interval time.Duration, stopCh <-chan struct{}) {
 	ticker := time.NewTicker(interval)
 	defer ticker.Stop()
-	
+
 	for {
 		select {
 		case <-stopCh:

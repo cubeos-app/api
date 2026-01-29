@@ -21,7 +21,7 @@ func Open(dbPath string) (*sql.DB, error) {
 
 	// Open database with WAL mode for better concurrency
 	dsn := fmt.Sprintf("%s?_pragma=busy_timeout(5000)&_pragma=journal_mode(WAL)&_pragma=foreign_keys(ON)", dbPath)
-	
+
 	db, err := sql.Open("sqlite", dsn)
 	if err != nil {
 		return nil, fmt.Errorf("failed to open database: %w", err)

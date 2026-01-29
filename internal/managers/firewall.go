@@ -25,30 +25,30 @@ func NewFirewallManager(cfg *config.Config) *FirewallManager {
 // GetStatus returns complete firewall status
 func (m *FirewallManager) GetStatus() map[string]interface{} {
 	return map[string]interface{}{
-		"filter_rules":    m.GetUserRules("filter"),
-		"nat_rules":       m.GetUserRules("nat"),
+		"filter_rules":     m.GetUserRules("filter"),
+		"nat_rules":        m.GetUserRules("nat"),
 		"all_filter_rules": m.GetRules("filter"),
-		"all_nat_rules":   m.GetRules("nat"),
-		"nat_enabled":     m.isNATEnabled(),
-		"ip_forward":      m.isIPForwardEnabled(),
+		"all_nat_rules":    m.GetRules("nat"),
+		"nat_enabled":      m.isNATEnabled(),
+		"ip_forward":       m.isIPForwardEnabled(),
 	}
 }
 
 // GetRules returns all rules in a table
 func (m *FirewallManager) GetRules(table string) []models.FirewallRule {
 	var rules []models.FirewallRule
-	
+
 	cmd := exec.Command("iptables", "-t", table, "-L", "-n", "-v", "--line-numbers")
 	output, err := cmd.Output()
 	if err != nil {
 		return rules
 	}
-	
+
 	var currentChain string
 	scanner := bufio.NewScanner(strings.NewReader(string(output)))
 	for scanner.Scan() {
 		line := scanner.Text()
-		
+
 		// Detect chain header
 		if strings.HasPrefix(line, "Chain ") {
 			parts := strings.Fields(line)
@@ -57,18 +57,18 @@ func (m *FirewallManager) GetRules(table string) []models.FirewallRule {
 			}
 			continue
 		}
-		
+
 		// Skip header lines
 		if strings.HasPrefix(line, " ") || strings.HasPrefix(line, "pkts") || line == "" {
 			continue
 		}
-		
+
 		rule := m.parseIptablesLine(line, currentChain)
 		if rule.Chain != "" {
 			rules = append(rules, rule)
 		}
 	}
-	
+
 	return rules
 }
 
@@ -76,14 +76,14 @@ func (m *FirewallManager) GetRules(table string) []models.FirewallRule {
 func (m *FirewallManager) GetUserRules(table string) []models.FirewallRule {
 	allRules := m.GetRules(table)
 	var userRules []models.FirewallRule
-	
+
 	for _, rule := range allRules {
 		if m.isDockerRule(rule) {
 			continue
 		}
 		userRules = append(userRules, rule)
 	}
-	
+
 	return userRules
 }
 
@@ -96,7 +96,7 @@ func (m *FirewallManager) isDockerRule(rule models.FirewallRule) bool {
 			return true
 		}
 	}
-	
+
 	// Skip rules involving Docker interfaces
 	if strings.HasPrefix(rule.InterfaceIn, "docker") ||
 		strings.HasPrefix(rule.InterfaceOut, "docker") ||
@@ -106,7 +106,7 @@ func (m *FirewallManager) isDockerRule(rule models.FirewallRule) bool {
 		strings.HasPrefix(rule.InterfaceOut, "veth") {
 		return true
 	}
-	
+
 	// Skip rules to Docker subnets (172.17.0.0/16, 172.18.0.0/16, etc.)
 	if strings.HasPrefix(rule.Source, "172.17.") ||
 		strings.HasPrefix(rule.Source, "172.18.") ||
@@ -116,25 +116,25 @@ func (m *FirewallManager) isDockerRule(rule models.FirewallRule) bool {
 		strings.HasPrefix(rule.Destination, "172.19.") {
 		return true
 	}
-	
+
 	return false
 }
 
 func (m *FirewallManager) parseIptablesLine(line, chain string) models.FirewallRule {
 	rule := models.FirewallRule{Chain: chain}
-	
+
 	fields := strings.Fields(line)
 	if len(fields) < 6 {
 		return rule
 	}
-	
+
 	// num pkts bytes target prot opt in out source destination [extra]
 	// Skip line number (first field if numeric)
 	startIdx := 0
 	if _, err := fmt.Sscanf(fields[0], "%d", new(int)); err == nil {
 		startIdx = 1
 	}
-	
+
 	if len(fields) > startIdx+3 {
 		rule.Target = fields[startIdx+2]
 	}
@@ -153,7 +153,7 @@ func (m *FirewallManager) parseIptablesLine(line, chain string) models.FirewallR
 	if len(fields) > startIdx+8 {
 		rule.Destination = fields[startIdx+8]
 	}
-	
+
 	// Parse port from extra fields (dpt:80)
 	for _, field := range fields {
 		if strings.HasPrefix(field, "dpt:") {
@@ -163,7 +163,7 @@ func (m *FirewallManager) parseIptablesLine(line, chain string) models.FirewallR
 			rule.Port = port
 		}
 	}
-	
+
 	return rule
 }
 
@@ -201,21 +201,21 @@ func (m *FirewallManager) isIPForwardEnabled() bool {
 func (m *FirewallManager) EnableNAT() *models.SuccessResponse {
 	// Enable IP forwarding
 	exec.Command("sysctl", "-w", "net.ipv4.ip_forward=1").Run()
-	
+
 	// Add MASQUERADE rule
 	cmd := exec.Command("iptables", "-t", "nat", "-A", "POSTROUTING",
 		"-o", m.cfg.WANInterface, "-j", "MASQUERADE")
 	if err := cmd.Run(); err != nil {
 		return &models.SuccessResponse{Status: "error", Message: err.Error()}
 	}
-	
+
 	// Add FORWARD rules
 	exec.Command("iptables", "-A", "FORWARD", "-i", m.cfg.WANInterface,
 		"-o", m.cfg.APInterface, "-m", "state", "--state", "RELATED,ESTABLISHED",
 		"-j", "ACCEPT").Run()
 	exec.Command("iptables", "-A", "FORWARD", "-i", m.cfg.APInterface,
 		"-o", m.cfg.WANInterface, "-j", "ACCEPT").Run()
-	
+
 	return &models.SuccessResponse{Status: "success", Message: "NAT enabled"}
 }
 
@@ -224,7 +224,7 @@ func (m *FirewallManager) DisableNAT() *models.SuccessResponse {
 	// Remove MASQUERADE rules
 	exec.Command("iptables", "-t", "nat", "-D", "POSTROUTING",
 		"-o", m.cfg.WANInterface, "-j", "MASQUERADE").Run()
-	
+
 	return &models.SuccessResponse{Status: "success", Message: "NAT disabled"}
 }
 
@@ -234,12 +234,12 @@ func (m *FirewallManager) AllowPort(port int, protocol, comment string) *models.
 	if comment != "" {
 		args = append(args, "-m", "comment", "--comment", comment)
 	}
-	
+
 	cmd := exec.Command("iptables", args...)
 	if err := cmd.Run(); err != nil {
 		return &models.SuccessResponse{Status: "error", Message: err.Error()}
 	}
-	
+
 	return &models.SuccessResponse{
 		Status:  "success",
 		Message: fmt.Sprintf("Allowed port %d/%s", port, protocol),
@@ -253,7 +253,7 @@ func (m *FirewallManager) BlockPort(port int, protocol string) *models.SuccessRe
 	if err := cmd.Run(); err != nil {
 		return &models.SuccessResponse{Status: "error", Message: err.Error()}
 	}
-	
+
 	return &models.SuccessResponse{
 		Status:  "success",
 		Message: fmt.Sprintf("Blocked port %d/%s", port, protocol),
@@ -267,7 +267,7 @@ func (m *FirewallManager) RemovePortRule(port int, protocol, action string) *mod
 	if err := cmd.Run(); err != nil {
 		return &models.SuccessResponse{Status: "error", Message: err.Error()}
 	}
-	
+
 	return &models.SuccessResponse{
 		Status:  "success",
 		Message: fmt.Sprintf("Removed port rule %d/%s", port, protocol),
@@ -283,7 +283,7 @@ func (m *FirewallManager) SaveRules() *models.SuccessResponse {
 		filterCmd = exec.Command("sh", "-c", "iptables-save > /etc/iptables.rules")
 		filterCmd.Run()
 	}
-	
+
 	return &models.SuccessResponse{
 		Status:  "success",
 		Message: "Firewall rules saved",
@@ -301,7 +301,7 @@ func (m *FirewallManager) RestoreRules() *models.SuccessResponse {
 			return &models.SuccessResponse{Status: "error", Message: "No saved rules found"}
 		}
 	}
-	
+
 	return &models.SuccessResponse{
 		Status:  "success",
 		Message: "Firewall rules restored",
@@ -314,12 +314,12 @@ func (m *FirewallManager) SetIPForward(enabled bool) *models.SuccessResponse {
 	if enabled {
 		value = "1"
 	}
-	
+
 	cmd := exec.Command("sysctl", "-w", fmt.Sprintf("net.ipv4.ip_forward=%s", value))
 	if err := cmd.Run(); err != nil {
 		return &models.SuccessResponse{Status: "error", Message: err.Error()}
 	}
-	
+
 	return &models.SuccessResponse{
 		Status:  "success",
 		Message: fmt.Sprintf("IP forwarding set to %s", value),
@@ -332,12 +332,12 @@ func (m *FirewallManager) ResetFirewall() *models.SuccessResponse {
 	for _, table := range tables {
 		exec.Command("iptables", "-t", table, "-F").Run()
 	}
-	
+
 	chains := []string{"INPUT", "FORWARD", "OUTPUT"}
 	for _, chain := range chains {
 		exec.Command("iptables", "-P", chain, "ACCEPT").Run()
 	}
-	
+
 	return &models.SuccessResponse{
 		Status:  "success",
 		Message: "Firewall reset to defaults",
@@ -367,16 +367,16 @@ func (m *FirewallManager) AllowService(service string) *models.SuccessResponse {
 // GetBlockedMACs returns list of blocked MAC addresses
 func (m *FirewallManager) GetBlockedMACs() []string {
 	var blocked []string
-	
+
 	cmd := exec.Command("iptables", "-L", "INPUT", "-n", "-v")
 	output, err := cmd.Output()
 	if err != nil {
 		return blocked
 	}
-	
+
 	macRegex := regexp.MustCompile(`MAC\s+([0-9A-Fa-f:]{17})`)
 	matches := macRegex.FindAllStringSubmatch(string(output), -1)
-	
+
 	seen := make(map[string]bool)
 	for _, match := range matches {
 		if len(match) > 1 {
@@ -387,6 +387,6 @@ func (m *FirewallManager) GetBlockedMACs() []string {
 			}
 		}
 	}
-	
+
 	return blocked
 }

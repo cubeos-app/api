@@ -8,8 +8,8 @@ type SetupConfig struct {
 	AdminEmail    string `json:"admin_email"`
 
 	// Step 2: Device Identity
-	Hostname    string `json:"hostname"`
-	DeviceName  string `json:"device_name"` // Human-friendly name
+	Hostname   string `json:"hostname"`
+	DeviceName string `json:"device_name"` // Human-friendly name
 
 	// Step 3: Network - WiFi AP
 	WiFiSSID     string `json:"wifi_ssid"`
@@ -34,9 +34,9 @@ type SetupConfig struct {
 	BaseDomain string `json:"base_domain"` // e.g., home.example.com
 
 	// Step 8: DNS Provider (for Let's Encrypt DNS-01)
-	DNSProvider    string `json:"dns_provider"`     // cloudflare, route53, duckdns, etc.
-	DNSAPIToken    string `json:"dns_api_token"`    // API token/key
-	DNSAPISecret   string `json:"dns_api_secret"`   // Additional secret if needed
+	DNSProvider  string `json:"dns_provider"`   // cloudflare, route53, duckdns, etc.
+	DNSAPIToken  string `json:"dns_api_token"`  // API token/key
+	DNSAPISecret string `json:"dns_api_secret"` // Additional secret if needed
 
 	// Step 9: NPM Credentials (for reverse proxy admin)
 	NPMAdminEmail    string `json:"npm_admin_email"`
@@ -106,26 +106,26 @@ type DeploymentPurposeInfo struct {
 
 // WiFiScanResult for available networks
 type WiFiScanResult struct {
-	SSID       string `json:"ssid"`
-	BSSID      string `json:"bssid"`
-	Signal     int    `json:"signal"`      // dBm
-	Security   string `json:"security"`    // WPA2, WPA3, Open
-	Channel    int    `json:"channel"`
-	Frequency  string `json:"frequency"`   // 2.4GHz, 5GHz
+	SSID      string `json:"ssid"`
+	BSSID     string `json:"bssid"`
+	Signal    int    `json:"signal"`   // dBm
+	Security  string `json:"security"` // WPA2, WPA3, Open
+	Channel   int    `json:"channel"`
+	Frequency string `json:"frequency"` // 2.4GHz, 5GHz
 }
 
 // SystemRequirements for showing device capabilities
 type SystemRequirements struct {
-	TotalRAM      int64  `json:"total_ram_mb"`
-	AvailableRAM  int64  `json:"available_ram_mb"`
-	TotalStorage  int64  `json:"total_storage_gb"`
-	AvailStorage  int64  `json:"available_storage_gb"`
-	CPUCores      int    `json:"cpu_cores"`
-	Architecture  string `json:"architecture"` // arm64, amd64
-	HasWiFi       bool   `json:"has_wifi"`
-	HasBluetooth  bool   `json:"has_bluetooth"`
-	HasGPU        bool   `json:"has_gpu"`
-	DeviceModel   string `json:"device_model"` // e.g., "Raspberry Pi 5"
+	TotalRAM     int64  `json:"total_ram_mb"`
+	AvailableRAM int64  `json:"available_ram_mb"`
+	TotalStorage int64  `json:"total_storage_gb"`
+	AvailStorage int64  `json:"available_storage_gb"`
+	CPUCores     int    `json:"cpu_cores"`
+	Architecture string `json:"architecture"` // arm64, amd64
+	HasWiFi      bool   `json:"has_wifi"`
+	HasBluetooth bool   `json:"has_bluetooth"`
+	HasGPU       bool   `json:"has_gpu"`
+	DeviceModel  string `json:"device_model"` // e.g., "Raspberry Pi 5"
 }
 
 // SetupWizardSteps defines all wizard steps
@@ -234,52 +234,52 @@ var SetupWizardSteps = []SetupStep{
 // DeploymentPurposes available options
 var DeploymentPurposes = []DeploymentPurposeInfo{
 	{
-		ID:          "generic",
-		Name:        "General Purpose",
-		Description: "Flexible home server for various applications",
-		Icon:        "Server",
+		ID:              "generic",
+		Name:            "General Purpose",
+		Description:     "Flexible home server for various applications",
+		Icon:            "Server",
 		RecommendedApps: []string{"filebrowser", "syncthing", "vaultwarden", "it-tools"},
-		Features:    []string{"App Store", "Docker Management", "File Sharing"},
+		Features:        []string{"App Store", "Docker Management", "File Sharing"},
 	},
 	{
-		ID:          "offline",
-		Name:        "Offline Knowledge Base",
-		Description: "Self-contained encyclopedia and reference library",
-		Icon:        "BookOpen",
+		ID:              "offline",
+		Name:            "Offline Knowledge Base",
+		Description:     "Self-contained encyclopedia and reference library",
+		Icon:            "BookOpen",
 		RecommendedApps: []string{"kiwix", "calibre-web", "tileserver", "emergency-ref"},
-		Features:    []string{"Offline Wikipedia", "Offline Maps", "E-book Library"},
+		Features:        []string{"Offline Wikipedia", "Offline Maps", "E-book Library"},
 	},
 	{
-		ID:          "mulecube",
-		Name:        "MuleCube Expedition",
-		Description: "Rugged offline server for expeditions and emergencies",
-		Icon:        "Mountain",
+		ID:              "mulecube",
+		Name:            "MuleCube Expedition",
+		Description:     "Rugged offline server for expeditions and emergencies",
+		Icon:            "Mountain",
 		RecommendedApps: []string{"kiwix", "tileserver", "meshtastic-web", "element", "cryptpad"},
-		Features:    []string{"Mesh Networking", "Offline Collaboration", "Emergency Reference"},
+		Features:        []string{"Mesh Networking", "Offline Collaboration", "Emergency Reference"},
 	},
 	{
-		ID:          "expedition",
-		Name:        "Field Team",
-		Description: "Collaboration tools for remote teams",
-		Icon:        "Users",
+		ID:              "expedition",
+		Name:            "Field Team",
+		Description:     "Collaboration tools for remote teams",
+		Icon:            "Users",
 		RecommendedApps: []string{"cryptpad", "excalidraw", "element", "filebrowser", "syncthing"},
-		Features:    []string{"Real-time Collaboration", "Secure Messaging", "File Sync"},
+		Features:        []string{"Real-time Collaboration", "Secure Messaging", "File Sync"},
 	},
 	{
-		ID:          "marine",
-		Name:        "Marine & Sailing",
-		Description: "Navigation and marine data systems",
-		Icon:        "Anchor",
+		ID:              "marine",
+		Name:            "Marine & Sailing",
+		Description:     "Navigation and marine data systems",
+		Icon:            "Anchor",
 		RecommendedApps: []string{"signalk-server", "tileserver", "jellyfin", "meshtastic-web"},
-		Features:    []string{"Signal K Integration", "Offline Charts", "Media Server"},
+		Features:        []string{"Signal K Integration", "Offline Charts", "Media Server"},
 	},
 	{
-		ID:          "ai",
-		Name:        "Local AI Lab",
-		Description: "Privacy-focused AI and machine learning",
-		Icon:        "Brain",
+		ID:              "ai",
+		Name:            "Local AI Lab",
+		Description:     "Privacy-focused AI and machine learning",
+		Icon:            "Brain",
 		RecommendedApps: []string{"ollama", "open-webui", "libretranslate", "whisper"},
-		Features:    []string{"Local LLMs", "Translation", "Speech Recognition"},
+		Features:        []string{"Local LLMs", "Translation", "Speech Recognition"},
 	},
 }
 

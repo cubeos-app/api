@@ -32,27 +32,27 @@ func JWTAuth(cfg *config.Config) func(http.Handler) http.Handler {
 				http.Error(w, `{"error":"Missing authorization header"}`, http.StatusUnauthorized)
 				return
 			}
-			
+
 			// Check Bearer prefix
 			parts := strings.SplitN(authHeader, " ", 2)
 			if len(parts) != 2 || strings.ToLower(parts[0]) != "bearer" {
 				http.Error(w, `{"error":"Invalid authorization header format"}`, http.StatusUnauthorized)
 				return
 			}
-			
+
 			tokenString := parts[1]
-			
+
 			// Parse and validate token
 			claims := &Claims{}
 			token, err := jwt.ParseWithClaims(tokenString, claims, func(token *jwt.Token) (interface{}, error) {
 				return []byte(cfg.JWTSecret), nil
 			})
-			
+
 			if err != nil || !token.Valid {
 				http.Error(w, `{"error":"Invalid or expired token"}`, http.StatusUnauthorized)
 				return
 			}
-			
+
 			// Add claims to context
 			ctx := context.WithValue(r.Context(), UserContextKey, claims)
 			next.ServeHTTP(w, r.WithContext(ctx))
@@ -63,7 +63,7 @@ func JWTAuth(cfg *config.Config) func(http.Handler) http.Handler {
 // GenerateToken creates a new JWT token
 func GenerateToken(username, role string, cfg *config.Config) (string, error) {
 	expirationTime := time.Now().Add(time.Duration(cfg.JWTExpirationHours) * time.Hour)
-	
+
 	claims := &Claims{
 		Username: username,
 		Role:     role,
@@ -73,7 +73,7 @@ func GenerateToken(username, role string, cfg *config.Config) (string, error) {
 			Subject:   username,
 		},
 	}
-	
+
 	token := jwt.NewWithClaims(jwt.SigningMethodHS256, claims)
 	return token.SignedString([]byte(cfg.JWTSecret))
 }
@@ -95,12 +95,12 @@ func RequireRole(role string) func(http.Handler) http.Handler {
 				http.Error(w, `{"error":"Unauthorized"}`, http.StatusUnauthorized)
 				return
 			}
-			
+
 			if claims.Role != role && claims.Role != "admin" {
 				http.Error(w, `{"error":"Insufficient permissions"}`, http.StatusForbidden)
 				return
 			}
-			
+
 			next.ServeHTTP(w, r)
 		})
 	}

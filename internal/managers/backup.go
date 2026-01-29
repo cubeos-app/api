@@ -54,22 +54,22 @@ var BackupPaths = map[string][]string{
 // ListBackups returns all available backups
 func (m *BackupManager) ListBackups() []models.BackupInfo {
 	var backups []models.BackupInfo
-	
+
 	entries, err := os.ReadDir(m.backupDir)
 	if err != nil {
 		return backups
 	}
-	
+
 	for _, entry := range entries {
 		if entry.IsDir() || !strings.HasSuffix(entry.Name(), ".tar.gz") {
 			continue
 		}
-		
+
 		info, err := entry.Info()
 		if err != nil {
 			continue
 		}
-		
+
 		// Parse backup metadata from filename or .meta file
 		backup := models.BackupInfo{
 			ID:        strings.TrimSuffix(entry.Name(), ".tar.gz"),
@@ -78,7 +78,7 @@ func (m *BackupManager) ListBackups() []models.BackupInfo {
 			SizeHuman: m.humanSize(info.Size()),
 			CreatedAt: info.ModTime().Format(time.RFC3339),
 		}
-		
+
 		// Try to read metadata file
 		metaPath := filepath.Join(m.backupDir, backup.ID+".meta")
 		if metaData, err := os.ReadFile(metaPath); err == nil {
@@ -99,7 +99,7 @@ func (m *BackupManager) ListBackups() []models.BackupInfo {
 				}
 			}
 		}
-		
+
 		// Infer type from filename if not in metadata
 		if backup.Type == "" {
 			if strings.Contains(entry.Name(), "full") {
@@ -112,15 +112,15 @@ func (m *BackupManager) ListBackups() []models.BackupInfo {
 				backup.Type = "unknown"
 			}
 		}
-		
+
 		backups = append(backups, backup)
 	}
-	
+
 	// Sort by creation time (newest first)
 	sort.Slice(backups, func(i, j int) bool {
 		return backups[i].CreatedAt > backups[j].CreatedAt
 	})
-	
+
 	return backups
 }
 
@@ -142,7 +142,7 @@ func (m *BackupManager) GetTotalSize() int64 {
 	if err != nil {
 		return 0
 	}
-	
+
 	for _, entry := range entries {
 		if info, err := entry.Info(); err == nil {
 			total += info.Size()
@@ -157,30 +157,30 @@ func (m *BackupManager) CreateBackup(backupType, description string, includeDock
 	if !ok {
 		return &models.SuccessResponse{Status: "error", Message: "Invalid backup type"}, nil
 	}
-	
+
 	// Generate backup ID and filename
 	timestamp := time.Now().Format("20060102-150405")
 	backupID := fmt.Sprintf("%s-%s", backupType, timestamp)
 	filename := backupID + ".tar.gz"
 	filepath := filepath.Join(m.backupDir, filename)
-	
+
 	// Create tarball
 	file, err := os.Create(filepath)
 	if err != nil {
 		return &models.SuccessResponse{Status: "error", Message: err.Error()}, err
 	}
 	defer file.Close()
-	
+
 	var writer io.WriteCloser = file
 	if compress {
 		gzWriter := gzip.NewWriter(file)
 		defer gzWriter.Close()
 		writer = gzWriter
 	}
-	
+
 	tarWriter := tar.NewWriter(writer)
 	defer tarWriter.Close()
-	
+
 	// Add files to tarball
 	var includedPaths []string
 	for _, path := range paths {
@@ -192,13 +192,13 @@ func (m *BackupManager) CreateBackup(backupType, description string, includeDock
 				continue
 			}
 		}
-		
+
 		err := m.addToTar(tarWriter, actualPath, path)
 		if err == nil {
 			includedPaths = append(includedPaths, path)
 		}
 	}
-	
+
 	// Write metadata file
 	meta := map[string]interface{}{
 		"type":        backupType,
@@ -209,7 +209,7 @@ func (m *BackupManager) CreateBackup(backupType, description string, includeDock
 	}
 	metaData, _ := json.MarshalIndent(meta, "", "  ")
 	os.WriteFile(filepath+".meta", metaData, 0644)
-	
+
 	// Get file size
 	if stat, err := os.Stat(filepath); err == nil {
 		return &models.SuccessResponse{
@@ -217,7 +217,7 @@ func (m *BackupManager) CreateBackup(backupType, description string, includeDock
 			Message: fmt.Sprintf("Backup created: %s (%s)", filename, m.humanSize(stat.Size())),
 		}, nil
 	}
-	
+
 	return &models.SuccessResponse{
 		Status:  "success",
 		Message: fmt.Sprintf("Backup created: %s", filename),
@@ -229,21 +229,21 @@ func (m *BackupManager) addToTar(tw *tar.Writer, srcPath, destPath string) error
 		if err != nil {
 			return err
 		}
-		
+
 		// Create header
 		header, err := tar.FileInfoHeader(fi, "")
 		if err != nil {
 			return err
 		}
-		
+
 		// Adjust the name to use destPath as base
 		relPath, _ := filepath.Rel(srcPath, file)
 		header.Name = filepath.Join(destPath, relPath)
-		
+
 		if err := tw.WriteHeader(header); err != nil {
 			return err
 		}
-		
+
 		// Write file content
 		if !fi.IsDir() {
 			f, err := os.Open(file)
@@ -251,12 +251,12 @@ func (m *BackupManager) addToTar(tw *tar.Writer, srcPath, destPath string) error
 				return err
 			}
 			defer f.Close()
-			
+
 			if _, err := io.Copy(tw, f); err != nil {
 				return err
 			}
 		}
-		
+
 		return nil
 	})
 }
@@ -267,24 +267,24 @@ func (m *BackupManager) RestoreBackup(backupID string, restartServices bool) (*m
 	if backup == nil {
 		return &models.SuccessResponse{Status: "error", Message: "Backup not found"}, nil
 	}
-	
+
 	backupPath := filepath.Join(m.backupDir, backup.Filename)
-	
+
 	// Open tarball
 	file, err := os.Open(backupPath)
 	if err != nil {
 		return &models.SuccessResponse{Status: "error", Message: err.Error()}, err
 	}
 	defer file.Close()
-	
+
 	gzReader, err := gzip.NewReader(file)
 	if err != nil {
 		return &models.SuccessResponse{Status: "error", Message: err.Error()}, err
 	}
 	defer gzReader.Close()
-	
+
 	tarReader := tar.NewReader(gzReader)
-	
+
 	// Extract files
 	for {
 		header, err := tarReader.Next()
@@ -294,33 +294,33 @@ func (m *BackupManager) RestoreBackup(backupID string, restartServices bool) (*m
 		if err != nil {
 			return &models.SuccessResponse{Status: "error", Message: err.Error()}, err
 		}
-		
+
 		// Security: don't extract outside expected paths
 		if strings.Contains(header.Name, "..") {
 			continue
 		}
-		
+
 		// Create directories
 		target := "/" + header.Name
 		if header.Typeflag == tar.TypeDir {
 			os.MkdirAll(target, 0755)
 			continue
 		}
-		
+
 		// Create parent directory
 		os.MkdirAll(filepath.Dir(target), 0755)
-		
+
 		// Extract file
 		outFile, err := os.Create(target)
 		if err != nil {
 			continue
 		}
-		
+
 		io.Copy(outFile, tarReader)
 		outFile.Close()
 		os.Chmod(target, os.FileMode(header.Mode))
 	}
-	
+
 	return &models.SuccessResponse{
 		Status:  "success",
 		Message: fmt.Sprintf("Restored from backup: %s", backup.Filename),
@@ -333,13 +333,13 @@ func (m *BackupManager) DeleteBackup(backupID string) *models.SuccessResponse {
 	if backup == nil {
 		return &models.SuccessResponse{Status: "error", Message: "Backup not found"}
 	}
-	
+
 	filepath := filepath.Join(m.backupDir, backup.Filename)
 	metaPath := filepath + ".meta"
-	
+
 	os.Remove(filepath)
 	os.Remove(metaPath)
-	
+
 	return &models.SuccessResponse{
 		Status:  "success",
 		Message: fmt.Sprintf("Deleted backup: %s", backup.Filename),
@@ -359,7 +359,7 @@ func (m *BackupManager) GetBackupFilePath(backupID string) string {
 func (m *BackupManager) GetStats() map[string]interface{} {
 	backups := m.ListBackups()
 	totalSize := m.GetTotalSize()
-	
+
 	byType := make(map[string]map[string]interface{})
 	for _, backup := range backups {
 		if _, ok := byType[backup.Type]; !ok {
@@ -371,7 +371,7 @@ func (m *BackupManager) GetStats() map[string]interface{} {
 		byType[backup.Type]["count"] = byType[backup.Type]["count"].(int) + 1
 		byType[backup.Type]["size"] = byType[backup.Type]["size"].(int64) + backup.SizeBytes
 	}
-	
+
 	return map[string]interface{}{
 		"total_backups":    len(backups),
 		"total_size_bytes": totalSize,
@@ -386,18 +386,18 @@ func (m *BackupManager) Checksum(backupID string) (string, error) {
 	if filepath == "" {
 		return "", fmt.Errorf("backup not found")
 	}
-	
+
 	file, err := os.Open(filepath)
 	if err != nil {
 		return "", err
 	}
 	defer file.Close()
-	
+
 	hash := sha256.New()
 	if _, err := io.Copy(hash, file); err != nil {
 		return "", err
 	}
-	
+
 	return hex.EncodeToString(hash.Sum(nil)), nil
 }
 

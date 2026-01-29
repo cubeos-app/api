@@ -29,15 +29,15 @@ func NewDockerManager(cfg *config.Config) (*DockerManager, error) {
 	if err != nil {
 		return nil, fmt.Errorf("failed to create Docker client: %w", err)
 	}
-	
+
 	// Verify connection
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
-	
+
 	if _, err := cli.Ping(ctx); err != nil {
 		return nil, fmt.Errorf("failed to connect to Docker: %w", err)
 	}
-	
+
 	return &DockerManager{
 		client: cli,
 		cfg:    cfg,
@@ -55,11 +55,11 @@ func (m *DockerManager) ListContainers(ctx context.Context) ([]models.ContainerI
 	if err != nil {
 		return nil, err
 	}
-	
+
 	var result []models.ContainerInfo
 	for _, c := range containers {
 		name := strings.TrimPrefix(c.Names[0], "/")
-		
+
 		info := models.ContainerInfo{
 			ID:          c.ID[:12],
 			Name:        name,
@@ -70,7 +70,7 @@ func (m *DockerManager) ListContainers(ctx context.Context) ([]models.ContainerI
 			IsCore:      config.IsCoreService(name),
 			Created:     time.Unix(c.Created, 0),
 		}
-		
+
 		// Get health status
 		if c.State == "running" {
 			// Inspect for health
@@ -84,12 +84,12 @@ func (m *DockerManager) ListContainers(ctx context.Context) ([]models.ContainerI
 				}
 			}
 		}
-		
+
 		// Get category from labels
 		if cat, ok := c.Labels["cubeos.category"]; ok {
 			info.Category = cat
 		}
-		
+
 		// Parse ports
 		for _, p := range c.Ports {
 			port := models.PortBinding{
@@ -100,12 +100,12 @@ func (m *DockerManager) ListContainers(ctx context.Context) ([]models.ContainerI
 			}
 			info.Ports = append(info.Ports, port)
 		}
-		
+
 		info.Labels = c.Labels
-		
+
 		result = append(result, info)
 	}
-	
+
 	return result, nil
 }
 
@@ -115,12 +115,12 @@ func (m *DockerManager) GetContainer(ctx context.Context, name string) (*models.
 	if err != nil {
 		return nil, err
 	}
-	
+
 	containerName := strings.TrimPrefix(inspect.Name, "/")
-	
+
 	// Parse created time
 	createdTime, _ := time.Parse(time.RFC3339Nano, inspect.Created)
-	
+
 	info := &models.ContainerInfo{
 		ID:          inspect.ID[:12],
 		Name:        containerName,
@@ -132,22 +132,22 @@ func (m *DockerManager) GetContainer(ctx context.Context, name string) (*models.
 		Created:     createdTime,
 		Labels:      inspect.Config.Labels,
 	}
-	
+
 	if inspect.State.Health != nil {
 		info.Health = inspect.State.Health.Status
 	}
-	
+
 	if inspect.State.StartedAt != "" {
 		if t, err := time.Parse(time.RFC3339Nano, inspect.State.StartedAt); err == nil {
 			info.StartedAt = &t
 		}
 	}
-	
+
 	// Get category
 	if cat, ok := inspect.Config.Labels["cubeos.category"]; ok {
 		info.Category = cat
 	}
-	
+
 	return info, nil
 }
 
@@ -190,28 +190,28 @@ func (m *DockerManager) EnableService(ctx context.Context, name string) (*models
 		Service: name,
 		Action:  "enable",
 	}
-	
+
 	// Set restart policy
 	if err := m.SetRestartPolicy(ctx, name, "unless-stopped"); err != nil {
 		result.Success = false
 		result.Message = fmt.Sprintf("Failed to set restart policy: %v", err)
 		return result, err
 	}
-	
+
 	// Start the container
 	if err := m.StartContainer(ctx, name); err != nil {
 		result.Success = false
 		result.Message = fmt.Sprintf("Failed to start container: %v", err)
 		return result, err
 	}
-	
+
 	// Get current status
 	status, _ := m.GetContainerStatus(ctx, name)
-	
+
 	result.Success = true
 	result.Status = status
 	result.Message = "Service enabled successfully"
-	
+
 	return result, nil
 }
 
@@ -221,34 +221,34 @@ func (m *DockerManager) DisableService(ctx context.Context, name string) (*model
 		Service: name,
 		Action:  "disable",
 	}
-	
+
 	// Get RAM usage before stopping
 	stats, err := m.GetContainerStats(ctx, name)
 	if err == nil {
 		result.RAMFreedMB = int(stats.MemoryMB)
 	}
-	
+
 	// Stop the container
 	if err := m.StopContainer(ctx, name, m.cfg.ContainerStopTimeout); err != nil {
 		result.Success = false
 		result.Message = fmt.Sprintf("Failed to stop container: %v", err)
 		return result, err
 	}
-	
+
 	// Set restart policy to 'no'
 	if err := m.SetRestartPolicy(ctx, name, "no"); err != nil {
 		result.Success = false
 		result.Message = fmt.Sprintf("Failed to set restart policy: %v", err)
 		return result, err
 	}
-	
+
 	// Get current status
 	status, _ := m.GetContainerStatus(ctx, name)
-	
+
 	result.Success = true
 	result.Status = status
 	result.Message = "Service disabled successfully"
-	
+
 	return result, nil
 }
 
@@ -259,41 +259,41 @@ func (m *DockerManager) GetContainerStats(ctx context.Context, name string) (*mo
 	if err != nil {
 		return nil, err
 	}
-	
+
 	if inspect.State.Status != "running" {
 		return &models.ContainerStats{}, nil
 	}
-	
+
 	// Get stats
 	statsReader, err := m.client.ContainerStats(ctx, name, false)
 	if err != nil {
 		return nil, err
 	}
 	defer statsReader.Body.Close()
-	
+
 	body, err := io.ReadAll(statsReader.Body)
 	if err != nil {
 		return nil, err
 	}
-	
+
 	var stats types.StatsJSON
 	if err := json.Unmarshal(body, &stats); err != nil {
 		return nil, err
 	}
-	
+
 	// Calculate memory
 	memoryMB := float64(stats.MemoryStats.Usage) / (1024 * 1024)
 	memoryLimitMB := float64(stats.MemoryStats.Limit) / (1024 * 1024)
-	
+
 	// Calculate CPU percentage
 	cpuDelta := float64(stats.CPUStats.CPUUsage.TotalUsage - stats.PreCPUStats.CPUUsage.TotalUsage)
 	systemDelta := float64(stats.CPUStats.SystemUsage - stats.PreCPUStats.SystemUsage)
-	
+
 	var cpuPercent float64
 	if systemDelta > 0 && cpuDelta > 0 {
 		cpuPercent = (cpuDelta / systemDelta) * float64(len(stats.CPUStats.CPUUsage.PercpuUsage)) * 100.0
 	}
-	
+
 	return &models.ContainerStats{
 		MemoryMB:      memoryMB,
 		MemoryLimitMB: memoryLimitMB,
@@ -307,14 +307,14 @@ func (m *DockerManager) GetServicesResponse(ctx context.Context) (*models.Servic
 	if err != nil {
 		return nil, err
 	}
-	
+
 	var running int
 	for _, c := range containers {
 		if c.State == "running" {
 			running++
 		}
 	}
-	
+
 	return &models.ServicesResponse{
 		Services: containers,
 		Total:    len(containers),
@@ -329,21 +329,21 @@ func (m *DockerManager) GetContainerLogs(ctx context.Context, name string, tail 
 		ShowStderr: true,
 		Timestamps: true,
 	}
-	
+
 	if tail > 0 {
 		options.Tail = fmt.Sprintf("%d", tail)
 	}
-	
+
 	if since != "" {
 		options.Since = since
 	}
-	
+
 	reader, err := m.client.ContainerLogs(ctx, name, options)
 	if err != nil {
 		return "", err
 	}
 	defer reader.Close()
-	
+
 	// Read logs (skip the 8-byte header for each line)
 	var logs strings.Builder
 	buf := make([]byte, 8192)
@@ -365,7 +365,7 @@ func (m *DockerManager) GetContainerLogs(ctx context.Context, name string, tail 
 			return logs.String(), err
 		}
 	}
-	
+
 	return logs.String(), nil
 }
 
@@ -375,7 +375,7 @@ func (m *DockerManager) GetAllContainerStatus(ctx context.Context) (map[string]m
 	if err != nil {
 		return nil, err
 	}
-	
+
 	result := make(map[string]map[string]interface{})
 	for _, c := range containers {
 		name := strings.TrimPrefix(c.Names[0], "/")
@@ -384,7 +384,7 @@ func (m *DockerManager) GetAllContainerStatus(ctx context.Context) (map[string]m
 			"running": c.State == "running",
 		}
 	}
-	
+
 	return result, nil
 }
 
@@ -393,11 +393,11 @@ func formatDisplayName(name string) string {
 	// Remove common prefixes
 	name = strings.TrimPrefix(name, "mulecube-")
 	name = strings.TrimPrefix(name, "cubeos-")
-	
+
 	// Replace dashes and underscores with spaces
 	name = strings.ReplaceAll(name, "-", " ")
 	name = strings.ReplaceAll(name, "_", " ")
-	
+
 	// Title case
 	words := strings.Fields(name)
 	for i, word := range words {
@@ -405,7 +405,7 @@ func formatDisplayName(name string) string {
 			words[i] = strings.ToUpper(word[:1]) + word[1:]
 		}
 	}
-	
+
 	return strings.Join(words, " ")
 }
 
@@ -439,14 +439,14 @@ func (m *DockerManager) PruneVolumes(ctx context.Context) (string, error) {
 // PruneAll runs all prune operations
 func (m *DockerManager) PruneAll(ctx context.Context) (map[string]interface{}, error) {
 	result := map[string]interface{}{
-		"containers": nil,
-		"images":     nil,
-		"volumes":    nil,
+		"containers":      nil,
+		"images":          nil,
+		"volumes":         nil,
 		"total_reclaimed": int64(0),
 	}
-	
+
 	var totalReclaimed int64
-	
+
 	// Prune containers
 	cReport, err := m.client.ContainersPrune(ctx, filters.Args{})
 	if err == nil {
@@ -456,7 +456,7 @@ func (m *DockerManager) PruneAll(ctx context.Context) (map[string]interface{}, e
 		}
 		totalReclaimed += int64(cReport.SpaceReclaimed)
 	}
-	
+
 	// Prune images
 	iReport, err := m.client.ImagesPrune(ctx, filters.Args{})
 	if err == nil {
@@ -466,7 +466,7 @@ func (m *DockerManager) PruneAll(ctx context.Context) (map[string]interface{}, e
 		}
 		totalReclaimed += int64(iReport.SpaceReclaimed)
 	}
-	
+
 	// Prune volumes
 	vReport, err := m.client.VolumesPrune(ctx, filters.Args{})
 	if err == nil {
@@ -476,9 +476,9 @@ func (m *DockerManager) PruneAll(ctx context.Context) (map[string]interface{}, e
 		}
 		totalReclaimed += int64(vReport.SpaceReclaimed)
 	}
-	
+
 	result["total_reclaimed"] = totalReclaimed
-	
+
 	return result, nil
 }
 
@@ -488,36 +488,36 @@ func (m *DockerManager) GetDiskUsage(ctx context.Context) (map[string]interface{
 	if err != nil {
 		return nil, err
 	}
-	
+
 	var imagesSize, containersSize, volumesSize, buildCacheSize int64
-	
+
 	for _, img := range usage.Images {
 		imagesSize += img.Size
 	}
-	
+
 	for _, c := range usage.Containers {
 		containersSize += c.SizeRw
 	}
-	
+
 	for _, v := range usage.Volumes {
 		volumesSize += v.UsageData.Size
 	}
-	
+
 	if usage.BuildCache != nil {
 		for _, bc := range usage.BuildCache {
 			buildCacheSize += bc.Size
 		}
 	}
-	
+
 	return map[string]interface{}{
-		"images_count":      len(usage.Images),
-		"images_size":       imagesSize,
-		"containers_count":  len(usage.Containers),
-		"containers_size":   containersSize,
-		"volumes_count":     len(usage.Volumes),
-		"volumes_size":      volumesSize,
-		"build_cache_size":  buildCacheSize,
-		"total_size":        imagesSize + containersSize + volumesSize + buildCacheSize,
+		"images_count":     len(usage.Images),
+		"images_size":      imagesSize,
+		"containers_count": len(usage.Containers),
+		"containers_size":  containersSize,
+		"volumes_count":    len(usage.Volumes),
+		"volumes_size":     volumesSize,
+		"build_cache_size": buildCacheSize,
+		"total_size":       imagesSize + containersSize + volumesSize + buildCacheSize,
 	}, nil
 }
 
@@ -525,12 +525,12 @@ func (m *DockerManager) GetDiskUsage(ctx context.Context) (map[string]interface{
 func (m *DockerManager) ListServices() []models.ServiceInfo {
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
-	
+
 	containers, err := m.ListContainers(ctx)
 	if err != nil {
 		return nil
 	}
-	
+
 	var services []models.ServiceInfo
 	for _, c := range containers {
 		svc := models.ServiceInfo{
@@ -543,7 +543,7 @@ func (m *DockerManager) ListServices() []models.ServiceInfo {
 			Health:      c.Health,
 			Enabled:     true, // Default to enabled
 		}
-		
+
 		// Get definition from config if available
 		if def, ok := config.ServiceDefinitions[c.Name]; ok {
 			svc.Description = def.Description
@@ -557,14 +557,14 @@ func (m *DockerManager) ListServices() []models.ServiceInfo {
 			svc.RAMEstimateMB = 256
 			svc.Icon = "box"
 		}
-		
+
 		// Infer category if not set
 		if svc.Category == "" {
 			svc.Category = config.InferCategory(c.Name)
 		}
-		
+
 		services = append(services, svc)
 	}
-	
+
 	return services
 }

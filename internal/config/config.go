@@ -25,12 +25,12 @@ type Config struct {
 	ContainerStopTimeout int
 
 	// Network
-	APInterface    string
-	WANInterface   string
-	APIP           string
-	HostapdConf    string
-	DnsmasqConf    string
-	DnsmasqLeases  string
+	APInterface   string
+	WANInterface  string
+	APIP          string
+	HostapdConf   string
+	DnsmasqConf   string
+	DnsmasqLeases string
 
 	// Paths
 	DataDir   string
@@ -40,9 +40,9 @@ type Config struct {
 	StatsInterval int
 
 	// UPS/Battery
-	UPSI2CAddress        int
-	BatteryCapacityMAH   int
-	CriticalBatteryPct   int
+	UPSI2CAddress      int
+	BatteryCapacityMAH int
+	CriticalBatteryPct int
 }
 
 // CoreServices that cannot be toggled
@@ -261,11 +261,11 @@ var ServiceDefinitions = map[string]ServiceDefinition{
 		Ports:       []int{11434},
 	},
 	"open-webui": {
-		Description: "ChatGPT-like UI for local LLMs",
-		Category:    "ai",
-		RAMEstimate: 512,
-		Icon:        "message-square",
-		Ports:       []int{8080},
+		Description:  "ChatGPT-like UI for local LLMs",
+		Category:     "ai",
+		RAMEstimate:  512,
+		Icon:         "message-square",
+		Ports:        []int{8080},
 		Dependencies: []string{"ollama"},
 	},
 	"libretranslate": {
@@ -304,11 +304,11 @@ var ServiceDefinitions = map[string]ServiceDefinition{
 		Ports:       []int{8384, 22000},
 	},
 	"element": {
-		Description: "Matrix chat client",
-		Category:    "communication",
-		RAMEstimate: 256,
-		Icon:        "message-circle",
-		Ports:       []int{80},
+		Description:  "Matrix chat client",
+		Category:     "communication",
+		RAMEstimate:  256,
+		Icon:         "message-circle",
+		Ports:        []int{80},
 		Dependencies: []string{"conduit"},
 	},
 	"conduit": {
@@ -365,48 +365,48 @@ var ServiceDefinitions = map[string]ServiceDefinition{
 // InferCategory tries to guess a service category from its name
 func InferCategory(name string) string {
 	name = strings.ToLower(name)
-	
+
 	// AI keywords
-	if strings.Contains(name, "ollama") || strings.Contains(name, "llm") || 
-	   strings.Contains(name, "whisper") || strings.Contains(name, "translate") {
+	if strings.Contains(name, "ollama") || strings.Contains(name, "llm") ||
+		strings.Contains(name, "whisper") || strings.Contains(name, "translate") {
 		return "ai"
 	}
-	
+
 	// Knowledge keywords
 	if strings.Contains(name, "wiki") || strings.Contains(name, "kiwix") ||
-	   strings.Contains(name, "calibre") || strings.Contains(name, "map") {
+		strings.Contains(name, "calibre") || strings.Contains(name, "map") {
 		return "knowledge"
 	}
-	
+
 	// Communication keywords
 	if strings.Contains(name, "chat") || strings.Contains(name, "matrix") ||
-	   strings.Contains(name, "element") || strings.Contains(name, "mesh") {
+		strings.Contains(name, "element") || strings.Contains(name, "mesh") {
 		return "communication"
 	}
-	
+
 	// Files keywords
 	if strings.Contains(name, "file") || strings.Contains(name, "sync") ||
-	   strings.Contains(name, "backup") || strings.Contains(name, "storage") {
+		strings.Contains(name, "backup") || strings.Contains(name, "storage") {
 		return "files"
 	}
-	
+
 	// Productivity keywords
 	if strings.Contains(name, "pad") || strings.Contains(name, "doc") ||
-	   strings.Contains(name, "note") || strings.Contains(name, "draw") {
+		strings.Contains(name, "note") || strings.Contains(name, "draw") {
 		return "productivity"
 	}
-	
+
 	// Infrastructure keywords
 	if strings.Contains(name, "postgres") || strings.Contains(name, "nginx") ||
-	   strings.Contains(name, "proxy") || strings.Contains(name, "monitor") {
+		strings.Contains(name, "proxy") || strings.Contains(name, "monitor") {
 		return "infrastructure"
 	}
-	
+
 	// Admin keywords
 	if strings.Contains(name, "admin") || strings.Contains(name, "manager") ||
-	   strings.Contains(name, "dashboard") || strings.Contains(name, "portal") {
+		strings.Contains(name, "dashboard") || strings.Contains(name, "portal") {
 		return "admin"
 	}
-	
+
 	return "tools"
 }

@@ -34,7 +34,7 @@ func (m *NetworkManager) GetAPConfig() *models.WiFiAPConfig {
 		HWMode:      "g",
 		CountryCode: "NL",
 	}
-	
+
 	data, err := os.ReadFile(m.cfg.HostapdConf)
 	if err != nil {
 		// Try host-mounted path
@@ -43,19 +43,19 @@ func (m *NetworkManager) GetAPConfig() *models.WiFiAPConfig {
 			return cfg
 		}
 	}
-	
+
 	scanner := bufio.NewScanner(strings.NewReader(string(data)))
 	for scanner.Scan() {
 		line := strings.TrimSpace(scanner.Text())
 		if strings.HasPrefix(line, "#") || !strings.Contains(line, "=") {
 			continue
 		}
-		
+
 		parts := strings.SplitN(line, "=", 2)
 		if len(parts) != 2 {
 			continue
 		}
-		
+
 		key, value := parts[0], parts[1]
 		switch key {
 		case "ssid":
@@ -72,7 +72,7 @@ func (m *NetworkManager) GetAPConfig() *models.WiFiAPConfig {
 			cfg.CountryCode = value
 		}
 	}
-	
+
 	return cfg
 }
 
@@ -82,7 +82,7 @@ func (m *NetworkManager) SetAPConfig(cfg *models.WiFiAPConfig) error {
 	if cfg.Hidden {
 		hidden = "1"
 	}
-	
+
 	lines := []string{
 		fmt.Sprintf("interface=%s", m.cfg.APInterface),
 		"driver=nl80211",
@@ -94,7 +94,7 @@ func (m *NetworkManager) SetAPConfig(cfg *models.WiFiAPConfig) error {
 		"wmm_enabled=1",
 		fmt.Sprintf("ignore_broadcast_ssid=%s", hidden),
 	}
-	
+
 	if cfg.Password != "" {
 		lines = append(lines,
 			"wpa=2",
@@ -103,15 +103,15 @@ func (m *NetworkManager) SetAPConfig(cfg *models.WiFiAPConfig) error {
 			"rsn_pairwise=CCMP",
 		)
 	}
-	
+
 	content := strings.Join(lines, "\n") + "\n"
-	
+
 	// Write to temp file first
 	tmpFile := "/tmp/cubeos_hostapd.tmp"
 	if err := os.WriteFile(tmpFile, []byte(content), 0644); err != nil {
 		return err
 	}
-	
+
 	// Copy to actual location (may need sudo)
 	cmd := exec.Command("cp", tmpFile, m.cfg.HostapdConf)
 	return cmd.Run()
@@ -120,7 +120,7 @@ func (m *NetworkManager) SetAPConfig(cfg *models.WiFiAPConfig) error {
 // GetAPStatus returns WiFi Access Point status
 func (m *NetworkManager) GetAPStatus() *models.WiFiAPStatus {
 	cfg := m.GetAPConfig()
-	
+
 	status := &models.WiFiAPStatus{
 		SSID:      cfg.SSID,
 		Password:  cfg.Password,
@@ -130,20 +130,20 @@ func (m *NetworkManager) GetAPStatus() *models.WiFiAPStatus {
 		Frequency: "2.4GHz",
 		Status:    "down",
 	}
-	
+
 	// Check if hostapd is active
 	cmd := exec.Command("systemctl", "is-active", "hostapd")
 	if output, err := cmd.Output(); err == nil && strings.TrimSpace(string(output)) == "active" {
 		status.Enabled = true
 		status.Status = "up"
 	}
-	
+
 	// Check interface status
 	cmd = exec.Command("ip", "link", "show", m.cfg.APInterface)
 	if output, err := cmd.Output(); err == nil && strings.Contains(string(output), "state UP") {
 		status.Status = "up"
 	}
-	
+
 	// Get channel/frequency from iw
 	cmd = exec.Command("iw", "dev", m.cfg.APInterface, "info")
 	if output, err := cmd.Output(); err == nil {
@@ -159,11 +159,11 @@ func (m *NetworkManager) GetAPStatus() *models.WiFiAPStatus {
 			}
 		}
 	}
-	
+
 	// Get client count
 	clients := m.GetConnectedClients()
 	status.ClientsConnected = len(clients)
-	
+
 	return status
 }
 
@@ -176,7 +176,7 @@ func (m *NetworkManager) RestartAP() error {
 // GetDHCPLeases returns current DHCP leases
 func (m *NetworkManager) GetDHCPLeases() []models.DHCPLease {
 	var leases []models.DHCPLease
-	
+
 	// Try multiple possible locations
 	leasePaths := []string{
 		"/var/lib/misc/dnsmasq.wlan0.leases",
@@ -185,7 +185,7 @@ func (m *NetworkManager) GetDHCPLeases() []models.DHCPLease {
 		"/host/var/lib/misc/dnsmasq.wlan0.leases",
 		"/host/var/lib/misc/dnsmasq.leases",
 	}
-	
+
 	var data []byte
 	var err error
 	for _, path := range leasePaths {
@@ -194,11 +194,11 @@ func (m *NetworkManager) GetDHCPLeases() []models.DHCPLease {
 			break
 		}
 	}
-	
+
 	if err != nil {
 		return leases
 	}
-	
+
 	scanner := bufio.NewScanner(strings.NewReader(string(data)))
 	for scanner.Scan() {
 		line := scanner.Text()
@@ -206,24 +206,24 @@ func (m *NetworkManager) GetDHCPLeases() []models.DHCPLease {
 		if len(parts) < 4 {
 			continue
 		}
-		
+
 		lease := models.DHCPLease{
 			MACAddress: parts[1],
 			IPAddress:  parts[2],
 		}
-		
+
 		if parts[3] != "*" {
 			lease.Hostname = parts[3]
 		}
-		
+
 		if ts, err := strconv.ParseInt(parts[0], 10, 64); err == nil && ts > 0 {
 			expiry := time.Unix(ts, 0)
 			lease.LeaseExpiry = &expiry
 		}
-		
+
 		leases = append(leases, lease)
 	}
-	
+
 	return leases
 }
 
@@ -231,7 +231,7 @@ func (m *NetworkManager) GetDHCPLeases() []models.DHCPLease {
 func (m *NetworkManager) GetConnectedClients() []models.WiFiClient {
 	var clients []models.WiFiClient
 	macs := make(map[string]bool)
-	
+
 	// Try hostapd_cli first (gives signal strength info)
 	cmd := exec.Command("hostapd_cli", "-i", m.cfg.APInterface, "all_sta")
 	if output, err := cmd.Output(); err == nil && len(output) > 10 {
@@ -240,7 +240,7 @@ func (m *NetworkManager) GetConnectedClients() []models.WiFiClient {
 			macs[strings.ToLower(c.MACAddress)] = true
 		}
 	}
-	
+
 	// Fallback to iw if no clients found from hostapd
 	if len(clients) == 0 {
 		cmd = exec.Command("iw", "dev", m.cfg.APInterface, "station", "dump")
@@ -251,14 +251,14 @@ func (m *NetworkManager) GetConnectedClients() []models.WiFiClient {
 			}
 		}
 	}
-	
+
 	// Get DHCP leases - always useful
 	leases := m.GetDHCPLeases()
 	leaseMap := make(map[string]models.DHCPLease)
 	for _, lease := range leases {
 		leaseMap[strings.ToLower(lease.MACAddress)] = lease
 	}
-	
+
 	// If we got clients from hostapd/iw, enrich them with DHCP data
 	if len(clients) > 0 {
 		for i := range clients {
@@ -279,20 +279,20 @@ func (m *NetworkManager) GetConnectedClients() []models.WiFiClient {
 			})
 		}
 	}
-	
+
 	return clients
 }
 
 func (m *NetworkManager) parseHostapdClients(output string) []models.WiFiClient {
 	var clients []models.WiFiClient
 	var currentClient *models.WiFiClient
-	
+
 	macRegex := regexp.MustCompile(`^([0-9a-fA-F:]{17})$`)
-	
+
 	scanner := bufio.NewScanner(strings.NewReader(output))
 	for scanner.Scan() {
 		line := strings.TrimSpace(scanner.Text())
-		
+
 		if macRegex.MatchString(line) {
 			if currentClient != nil {
 				clients = append(clients, *currentClient)
@@ -302,14 +302,14 @@ func (m *NetworkManager) parseHostapdClients(output string) []models.WiFiClient 
 			}
 			continue
 		}
-		
+
 		if currentClient != nil && strings.Contains(line, "=") {
 			parts := strings.SplitN(line, "=", 2)
 			if len(parts) != 2 {
 				continue
 			}
 			key, value := parts[0], parts[1]
-			
+
 			switch key {
 			case "rx_bytes":
 				currentClient.RxBytes, _ = strconv.ParseUint(value, 10, 64)
@@ -331,22 +331,22 @@ func (m *NetworkManager) parseHostapdClients(output string) []models.WiFiClient 
 			}
 		}
 	}
-	
+
 	if currentClient != nil {
 		clients = append(clients, *currentClient)
 	}
-	
+
 	return clients
 }
 
 func (m *NetworkManager) parseIWClients(output string) []models.WiFiClient {
 	var clients []models.WiFiClient
 	var currentClient *models.WiFiClient
-	
+
 	scanner := bufio.NewScanner(strings.NewReader(output))
 	for scanner.Scan() {
 		line := strings.TrimSpace(scanner.Text())
-		
+
 		if strings.HasPrefix(line, "Station") {
 			if currentClient != nil {
 				clients = append(clients, *currentClient)
@@ -359,7 +359,7 @@ func (m *NetworkManager) parseIWClients(output string) []models.WiFiClient {
 			}
 			continue
 		}
-		
+
 		if currentClient != nil && strings.Contains(line, ":") {
 			parts := strings.SplitN(line, ":", 2)
 			if len(parts) != 2 {
@@ -367,7 +367,7 @@ func (m *NetworkManager) parseIWClients(output string) []models.WiFiClient {
 			}
 			key := strings.TrimSpace(parts[0])
 			value := strings.TrimSpace(parts[1])
-			
+
 			switch key {
 			case "rx bytes":
 				currentClient.RxBytes, _ = strconv.ParseUint(value, 10, 64)
@@ -387,11 +387,11 @@ func (m *NetworkManager) parseIWClients(output string) []models.WiFiClient {
 			}
 		}
 	}
-	
+
 	if currentClient != nil {
 		clients = append(clients, *currentClient)
 	}
-	
+
 	return clients
 }
 
@@ -415,20 +415,20 @@ func (m *NetworkManager) CheckInternet() *models.InternetStatus {
 		{"1.1.1.1", "Cloudflare DNS"},
 		{"8.8.8.8", "Google DNS"},
 	}
-	
+
 	for _, target := range targets {
 		cmd := exec.Command("ping", "-c", "1", "-W", "3", target.IP)
 		output, err := cmd.Output()
 		if err != nil {
 			continue
 		}
-		
+
 		// Parse RTT
 		var rtt float64
 		if match := regexp.MustCompile(`time=(\d+\.?\d*)`).FindStringSubmatch(string(output)); len(match) > 1 {
 			rtt, _ = strconv.ParseFloat(match[1], 64)
 		}
-		
+
 		return &models.InternetStatus{
 			Connected:  true,
 			Target:     target.IP,
@@ -436,7 +436,7 @@ func (m *NetworkManager) CheckInternet() *models.InternetStatus {
 			RTTMs:      rtt,
 		}
 	}
-	
+
 	return &models.InternetStatus{Connected: false}
 }
 
@@ -449,23 +449,23 @@ func (m *NetworkManager) RestartDHCP() error {
 // GetWiFiQRCode generates WiFi QR code data
 func (m *NetworkManager) GetWiFiQRCode() *models.WiFiQRCode {
 	cfg := m.GetAPConfig()
-	
+
 	encryption := "nopass"
 	if cfg.Password != "" {
 		encryption = "WPA"
 	}
-	
+
 	// Escape special characters
 	ssid := escapeWiFiString(cfg.SSID)
 	password := escapeWiFiString(cfg.Password)
-	
+
 	var wifiString string
 	if cfg.Password == "" {
 		wifiString = fmt.Sprintf("WIFI:T:nopass;S:%s;;", ssid)
 	} else {
 		wifiString = fmt.Sprintf("WIFI:T:%s;S:%s;P:%s;;", encryption, ssid, password)
 	}
-	
+
 	return &models.WiFiQRCode{
 		WiFiString: wifiString,
 		SSID:       cfg.SSID,
@@ -485,13 +485,13 @@ func escapeWiFiString(s string) string {
 // BlockClient blocks a client by MAC address using iptables
 func (m *NetworkManager) BlockClient(mac string) error {
 	mac = strings.ToLower(strings.ReplaceAll(mac, "-", ":"))
-	
+
 	// Add INPUT rule
 	cmd := exec.Command("iptables", "-A", "INPUT", "-m", "mac", "--mac-source", mac, "-j", "DROP")
 	if err := cmd.Run(); err != nil {
 		return err
 	}
-	
+
 	// Add FORWARD rule
 	cmd = exec.Command("iptables", "-A", "FORWARD", "-m", "mac", "--mac-source", mac, "-j", "DROP")
 	return cmd.Run()
@@ -500,13 +500,13 @@ func (m *NetworkManager) BlockClient(mac string) error {
 // UnblockClient removes iptables rules blocking a client
 func (m *NetworkManager) UnblockClient(mac string) error {
 	mac = strings.ToLower(strings.ReplaceAll(mac, "-", ":"))
-	
+
 	// Remove INPUT rule
 	exec.Command("iptables", "-D", "INPUT", "-m", "mac", "--mac-source", mac, "-j", "DROP").Run()
-	
+
 	// Remove FORWARD rule
 	exec.Command("iptables", "-D", "FORWARD", "-m", "mac", "--mac-source", mac, "-j", "DROP").Run()
-	
+
 	return nil
 }
 
@@ -520,16 +520,16 @@ func (m *NetworkManager) KickClient(mac string) error {
 // GetBlockedClients returns list of blocked MAC addresses
 func (m *NetworkManager) GetBlockedClients() []string {
 	var blocked []string
-	
+
 	cmd := exec.Command("iptables", "-L", "INPUT", "-n", "-v")
 	output, err := cmd.Output()
 	if err != nil {
 		return blocked
 	}
-	
+
 	macRegex := regexp.MustCompile(`MAC\s+([0-9A-Fa-f:]{17})`)
 	matches := macRegex.FindAllStringSubmatch(string(output), -1)
-	
+
 	seen := make(map[string]bool)
 	for _, match := range matches {
 		if len(match) > 1 {
@@ -540,7 +540,7 @@ func (m *NetworkManager) GetBlockedClients() []string {
 			}
 		}
 	}
-	
+
 	return blocked
 }
 
@@ -548,7 +548,7 @@ func (m *NetworkManager) GetBlockedClients() []string {
 func (m *NetworkManager) GetClientStats() map[string]interface{} {
 	clients := m.GetConnectedClients()
 	leases := m.GetDHCPLeases()
-	
+
 	var totalRx, totalTx uint64
 	signalRanges := map[string]int{
 		"excellent": 0,
@@ -557,11 +557,11 @@ func (m *NetworkManager) GetClientStats() map[string]interface{} {
 		"weak":      0,
 		"unknown":   0,
 	}
-	
+
 	for _, client := range clients {
 		totalRx += client.RxBytes
 		totalTx += client.TxBytes
-		
+
 		if client.SignalDBM == nil {
 			signalRanges["unknown"]++
 		} else {
@@ -578,38 +578,38 @@ func (m *NetworkManager) GetClientStats() map[string]interface{} {
 			}
 		}
 	}
-	
+
 	return map[string]interface{}{
-		"connected_count":  len(clients),
-		"lease_count":      len(leases),
-		"total_rx_bytes":   totalRx,
-		"total_tx_bytes":   totalTx,
-		"signal_quality":   signalRanges,
+		"connected_count": len(clients),
+		"lease_count":     len(leases),
+		"total_rx_bytes":  totalRx,
+		"total_tx_bytes":  totalTx,
+		"signal_quality":  signalRanges,
 	}
 }
 
 // InterfaceInfo holds network interface information
 type InterfaceInfo struct {
-	Name       string `json:"name"`
-	State      string `json:"state"`
-	MAC        string `json:"mac_address"`
-	IPv4       string `json:"ipv4,omitempty"`
-	IPv6       string `json:"ipv6,omitempty"`
-	Speed      string `json:"speed,omitempty"`
-	MTU        int    `json:"mtu"`
-	RxBytes    uint64 `json:"rx_bytes"`
-	TxBytes    uint64 `json:"tx_bytes"`
-	RxPackets  uint64 `json:"rx_packets"`
-	TxPackets  uint64 `json:"tx_packets"`
-	RxErrors   uint64 `json:"rx_errors"`
-	TxErrors   uint64 `json:"tx_errors"`
-	Type       string `json:"type"` // ethernet, wifi, loopback, bridge
+	Name      string `json:"name"`
+	State     string `json:"state"`
+	MAC       string `json:"mac_address"`
+	IPv4      string `json:"ipv4,omitempty"`
+	IPv6      string `json:"ipv6,omitempty"`
+	Speed     string `json:"speed,omitempty"`
+	MTU       int    `json:"mtu"`
+	RxBytes   uint64 `json:"rx_bytes"`
+	TxBytes   uint64 `json:"tx_bytes"`
+	RxPackets uint64 `json:"rx_packets"`
+	TxPackets uint64 `json:"tx_packets"`
+	RxErrors  uint64 `json:"rx_errors"`
+	TxErrors  uint64 `json:"tx_errors"`
+	Type      string `json:"type"` // ethernet, wifi, loopback, bridge
 }
 
 // GetInterfaces returns all network interfaces with their stats
 func (m *NetworkManager) GetInterfaces() []InterfaceInfo {
 	var interfaces []InterfaceInfo
-	
+
 	// Get interface list
 	cmd := exec.Command("ip", "-j", "addr", "show")
 	output, err := cmd.Output()
@@ -617,29 +617,29 @@ func (m *NetworkManager) GetInterfaces() []InterfaceInfo {
 		// Fallback to non-JSON parsing
 		return m.getInterfacesFallback()
 	}
-	
+
 	// Parse JSON output
 	var ipData []struct {
-		IfName   string `json:"ifname"`
+		IfName    string `json:"ifname"`
 		OperState string `json:"operstate"`
-		Address  string `json:"address"`
-		Mtu      int    `json:"mtu"`
-		AddrInfo []struct {
+		Address   string `json:"address"`
+		Mtu       int    `json:"mtu"`
+		AddrInfo  []struct {
 			Family string `json:"family"`
 			Local  string `json:"local"`
 		} `json:"addr_info"`
 	}
-	
+
 	if err := json.Unmarshal(output, &ipData); err != nil {
 		return m.getInterfacesFallback()
 	}
-	
+
 	for _, iface := range ipData {
 		// Skip loopback
 		if iface.IfName == "lo" {
 			continue
 		}
-		
+
 		info := InterfaceInfo{
 			Name:  iface.IfName,
 			State: iface.OperState,
@@ -647,7 +647,7 @@ func (m *NetworkManager) GetInterfaces() []InterfaceInfo {
 			MTU:   iface.Mtu,
 			Type:  m.getInterfaceType(iface.IfName),
 		}
-		
+
 		// Get IPs
 		for _, addr := range iface.AddrInfo {
 			if addr.Family == "inet" && info.IPv4 == "" {
@@ -656,7 +656,7 @@ func (m *NetworkManager) GetInterfaces() []InterfaceInfo {
 				info.IPv6 = addr.Local
 			}
 		}
-		
+
 		// Get traffic stats from /sys
 		info.RxBytes = m.readSysNetStat(iface.IfName, "rx_bytes")
 		info.TxBytes = m.readSysNetStat(iface.IfName, "tx_bytes")
@@ -664,27 +664,27 @@ func (m *NetworkManager) GetInterfaces() []InterfaceInfo {
 		info.TxPackets = m.readSysNetStat(iface.IfName, "tx_packets")
 		info.RxErrors = m.readSysNetStat(iface.IfName, "rx_errors")
 		info.TxErrors = m.readSysNetStat(iface.IfName, "tx_errors")
-		
+
 		// Get speed for ethernet
 		if info.Type == "ethernet" {
 			info.Speed = m.getEthernetSpeed(iface.IfName)
 		}
-		
+
 		interfaces = append(interfaces, info)
 	}
-	
+
 	return interfaces
 }
 
 func (m *NetworkManager) getInterfacesFallback() []InterfaceInfo {
 	var interfaces []InterfaceInfo
-	
+
 	// Try host-mounted path first, then container path
 	netPaths := []string{"/host/sys/class/net", "/sys/class/net"}
 	var basePath string
 	var entries []os.DirEntry
 	var err error
-	
+
 	for _, path := range netPaths {
 		entries, err = os.ReadDir(path)
 		if err == nil {
@@ -692,46 +692,46 @@ func (m *NetworkManager) getInterfacesFallback() []InterfaceInfo {
 			break
 		}
 	}
-	
+
 	if basePath == "" || err != nil {
 		return interfaces
 	}
-	
+
 	for _, entry := range entries {
 		name := entry.Name()
 		if name == "lo" {
 			continue
 		}
-		
+
 		info := InterfaceInfo{
 			Name: name,
 			Type: m.getInterfaceType(name),
 		}
-		
+
 		// Get stats from basePath
 		info.RxBytes = m.readSysNetStatPath(basePath, name, "rx_bytes")
 		info.TxBytes = m.readSysNetStatPath(basePath, name, "tx_bytes")
 		info.RxPackets = m.readSysNetStatPath(basePath, name, "rx_packets")
 		info.TxPackets = m.readSysNetStatPath(basePath, name, "tx_packets")
-		
+
 		// Get state
 		stateData, _ := os.ReadFile(fmt.Sprintf("%s/%s/operstate", basePath, name))
 		info.State = strings.TrimSpace(string(stateData))
 		if info.State == "" {
 			info.State = "unknown"
 		}
-		
+
 		// Get MAC
 		macData, _ := os.ReadFile(fmt.Sprintf("%s/%s/address", basePath, name))
 		info.MAC = strings.TrimSpace(string(macData))
-		
+
 		// Get MTU
 		mtuData, _ := os.ReadFile(fmt.Sprintf("%s/%s/mtu", basePath, name))
 		info.MTU, _ = strconv.Atoi(strings.TrimSpace(string(mtuData)))
-		
+
 		interfaces = append(interfaces, info)
 	}
-	
+
 	return interfaces
 }
 
@@ -766,7 +766,7 @@ func (m *NetworkManager) readSysNetStat(iface, stat string) uint64 {
 		fmt.Sprintf("/host/sys/class/net/%s/statistics/%s", iface, stat),
 		fmt.Sprintf("/sys/class/net/%s/statistics/%s", iface, stat),
 	}
-	
+
 	for _, path := range paths {
 		data, err := os.ReadFile(path)
 		if err == nil {
@@ -782,7 +782,7 @@ func (m *NetworkManager) getEthernetSpeed(iface string) string {
 		fmt.Sprintf("/host/sys/class/net/%s/speed", iface),
 		fmt.Sprintf("/sys/class/net/%s/speed", iface),
 	}
-	
+
 	for _, path := range paths {
 		data, err := os.ReadFile(path)
 		if err == nil {
@@ -815,10 +815,10 @@ func (m *NetworkManager) GetTrafficStats() []TrafficStats {
 	interfaces := m.GetInterfaces()
 	now := time.Now()
 	var stats []TrafficStats
-	
+
 	trafficMutex.Lock()
 	defer trafficMutex.Unlock()
-	
+
 	for _, iface := range interfaces {
 		current := TrafficStats{
 			Interface: iface.Name,
@@ -826,7 +826,7 @@ func (m *NetworkManager) GetTrafficStats() []TrafficStats {
 			TxBytes:   iface.TxBytes,
 			Timestamp: now,
 		}
-		
+
 		// Calculate rate from last sample
 		if last, ok := lastTrafficSample[iface.Name]; ok {
 			elapsed := now.Sub(last.Timestamp).Seconds()
@@ -835,10 +835,10 @@ func (m *NetworkManager) GetTrafficStats() []TrafficStats {
 				current.TxRate = float64(current.TxBytes-last.TxBytes) / elapsed
 			}
 		}
-		
+
 		// Store for next calculation
 		lastTrafficSample[iface.Name] = current
-		
+
 		// Add to history (keep last hour)
 		history := trafficHistory[iface.Name]
 		history = append(history, current)
@@ -846,10 +846,10 @@ func (m *NetworkManager) GetTrafficStats() []TrafficStats {
 			history = history[1:]
 		}
 		trafficHistory[iface.Name] = history
-		
+
 		stats = append(stats, current)
 	}
-	
+
 	return stats
 }
 
@@ -857,12 +857,12 @@ func (m *NetworkManager) GetTrafficStats() []TrafficStats {
 func (m *NetworkManager) GetTrafficHistory(iface string, minutes int) []TrafficStats {
 	trafficMutex.Lock()
 	defer trafficMutex.Unlock()
-	
+
 	history := trafficHistory[iface]
 	if minutes <= 0 || minutes > 60 {
 		minutes = 60
 	}
-	
+
 	// Filter to requested time range
 	cutoff := time.Now().Add(-time.Duration(minutes) * time.Minute)
 	var filtered []TrafficStats
@@ -871,6 +871,6 @@ func (m *NetworkManager) GetTrafficHistory(iface string, minutes int) []TrafficS
 			filtered = append(filtered, s)
 		}
 	}
-	
+
 	return filtered
 }

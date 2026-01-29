@@ -42,19 +42,19 @@ type ChangePasswordRequest struct {
 // =============================================================================
 
 type SystemInfo struct {
-	Hostname     string            `json:"hostname"`
-	OSName       string            `json:"os_name"`
-	OSVersion    string            `json:"os_version"`
-	Kernel       string            `json:"kernel"`
-	Architecture string            `json:"architecture"`
-	PiModel      string            `json:"pi_model,omitempty"`
-	PiSerial     string            `json:"pi_serial,omitempty"`
-	PiRevision   string            `json:"pi_revision,omitempty"`
-	CPUModel     string            `json:"cpu_model,omitempty"`
-	CPUCores     int               `json:"cpu_cores"`
-	UptimeSeconds int64            `json:"uptime_seconds"`
-	UptimeHuman   string           `json:"uptime_human"`
-	BootTime      time.Time        `json:"boot_time"`
+	Hostname      string            `json:"hostname"`
+	OSName        string            `json:"os_name"`
+	OSVersion     string            `json:"os_version"`
+	Kernel        string            `json:"kernel"`
+	Architecture  string            `json:"architecture"`
+	PiModel       string            `json:"pi_model,omitempty"`
+	PiSerial      string            `json:"pi_serial,omitempty"`
+	PiRevision    string            `json:"pi_revision,omitempty"`
+	CPUModel      string            `json:"cpu_model,omitempty"`
+	CPUCores      int               `json:"cpu_cores"`
+	UptimeSeconds int64             `json:"uptime_seconds"`
+	UptimeHuman   string            `json:"uptime_human"`
+	BootTime      time.Time         `json:"boot_time"`
 	MACAddresses  map[string]string `json:"mac_addresses"`
 	IPAddresses   map[string]string `json:"ip_addresses"`
 }
@@ -74,14 +74,14 @@ type SystemStats struct {
 }
 
 type Temperature struct {
-	CPUTempC       float64 `json:"cpu_temp_c"`
-	GPUTempC       float64 `json:"gpu_temp_c,omitempty"`
-	Throttled      bool    `json:"throttled"`
-	ThrottleFlags  string  `json:"throttle_flags"`
-	SoftTempLimit  bool    `json:"soft_temp_limit"`
-	UnderVoltage   bool    `json:"under_voltage"`
-	FrequencyCapped bool   `json:"frequency_capped"`
-	Status         string  `json:"status"` // normal, warm, hot, throttled
+	CPUTempC        float64 `json:"cpu_temp_c"`
+	GPUTempC        float64 `json:"gpu_temp_c,omitempty"`
+	Throttled       bool    `json:"throttled"`
+	ThrottleFlags   string  `json:"throttle_flags"`
+	SoftTempLimit   bool    `json:"soft_temp_limit"`
+	UnderVoltage    bool    `json:"under_voltage"`
+	FrequencyCapped bool    `json:"frequency_capped"`
+	Status          string  `json:"status"` // normal, warm, hot, throttled
 }
 
 type PowerAction struct {
@@ -104,18 +104,18 @@ type ServiceStatus struct {
 // =============================================================================
 
 type BatteryStatus struct {
-	Available      bool      `json:"available"`
-	Voltage        float64   `json:"voltage,omitempty"`
-	Percent        float64   `json:"percent,omitempty"`
-	Charging       bool      `json:"charging,omitempty"`
-	OnBattery      bool      `json:"on_battery,omitempty"`      // True when running on battery
-	PowerGood      bool      `json:"power_good,omitempty"`      // True when AC present
-	CellCount      int       `json:"cell_count,omitempty"`      // Number of cells (4 for X1202)
-	EstimatedMins  int       `json:"estimated_mins,omitempty"`  // Estimated runtime
-	TimeRemaining  string    `json:"time_remaining,omitempty"`
-	Status         string    `json:"status,omitempty"`          // charging, discharging, full, critical, low
-	LastUpdated    time.Time `json:"last_updated,omitempty"`
-	Message        string    `json:"message,omitempty"`
+	Available     bool      `json:"available"`
+	Voltage       float64   `json:"voltage,omitempty"`
+	Percent       float64   `json:"percent,omitempty"`
+	Charging      bool      `json:"charging,omitempty"`
+	OnBattery     bool      `json:"on_battery,omitempty"`     // True when running on battery
+	PowerGood     bool      `json:"power_good,omitempty"`     // True when AC present
+	CellCount     int       `json:"cell_count,omitempty"`     // Number of cells (4 for X1202)
+	EstimatedMins int       `json:"estimated_mins,omitempty"` // Estimated runtime
+	TimeRemaining string    `json:"time_remaining,omitempty"`
+	Status        string    `json:"status,omitempty"` // charging, discharging, full, critical, low
+	LastUpdated   time.Time `json:"last_updated,omitempty"`
+	Message       string    `json:"message,omitempty"`
 }
 
 // =============================================================================
@@ -204,16 +204,16 @@ type WiFiQRCode struct {
 // =============================================================================
 
 type DiskInfo struct {
-	Device       string  `json:"device"`
-	Mountpoint   string  `json:"mountpoint"`
-	FSType       string  `json:"fstype"`
-	TotalBytes   uint64  `json:"total_bytes"`
-	UsedBytes    uint64  `json:"used_bytes"`
-	FreeBytes    uint64  `json:"free_bytes"`
-	PercentUsed  float64 `json:"percent_used"`
-	TotalHuman   string  `json:"total_human"`
-	UsedHuman    string  `json:"used_human"`
-	FreeHuman    string  `json:"free_human"`
+	Device      string  `json:"device"`
+	Mountpoint  string  `json:"mountpoint"`
+	FSType      string  `json:"fstype"`
+	TotalBytes  uint64  `json:"total_bytes"`
+	UsedBytes   uint64  `json:"used_bytes"`
+	FreeBytes   uint64  `json:"free_bytes"`
+	PercentUsed float64 `json:"percent_used"`
+	TotalHuman  string  `json:"total_human"`
+	UsedHuman   string  `json:"used_human"`
+	FreeHuman   string  `json:"free_human"`
 }
 
 type DockerDiskUsage struct {
@@ -238,19 +238,19 @@ type StorageOverview struct {
 // =============================================================================
 
 type ContainerInfo struct {
-	ID           string            `json:"id"`
-	Name         string            `json:"name"`
-	DisplayName  string            `json:"display_name"`
-	Image        string            `json:"image"`
-	State        string            `json:"state"`   // running, exited, paused, etc
-	Status       string            `json:"status"`  // human readable status
-	Health       string            `json:"health"`  // healthy, unhealthy, starting, none
-	IsCore       bool              `json:"is_core"`
-	Category     string            `json:"category,omitempty"`
-	Ports        []PortBinding     `json:"ports,omitempty"`
-	Created      time.Time         `json:"created"`
-	StartedAt    *time.Time        `json:"started_at,omitempty"`
-	Labels       map[string]string `json:"labels,omitempty"`
+	ID          string            `json:"id"`
+	Name        string            `json:"name"`
+	DisplayName string            `json:"display_name"`
+	Image       string            `json:"image"`
+	State       string            `json:"state"`  // running, exited, paused, etc
+	Status      string            `json:"status"` // human readable status
+	Health      string            `json:"health"` // healthy, unhealthy, starting, none
+	IsCore      bool              `json:"is_core"`
+	Category    string            `json:"category,omitempty"`
+	Ports       []PortBinding     `json:"ports,omitempty"`
+	Created     time.Time         `json:"created"`
+	StartedAt   *time.Time        `json:"started_at,omitempty"`
+	Labels      map[string]string `json:"labels,omitempty"`
 }
 
 type PortBinding struct {
@@ -286,9 +286,9 @@ type ContainerStats struct {
 // =============================================================================
 
 type ErrorResponse struct {
-	Error   string `json:"error"`
-	Detail  string `json:"detail,omitempty"`
-	Code    int    `json:"code,omitempty"`
+	Error  string `json:"error"`
+	Detail string `json:"detail,omitempty"`
+	Code   int    `json:"code,omitempty"`
 }
 
 type SuccessResponse struct {

@@ -10,7 +10,7 @@ import (
 	"time"
 
 	"github.com/gorilla/websocket"
-	
+
 	"cubeos-api/internal/managers"
 )
 
@@ -75,12 +75,12 @@ func (m *WSManager) Broadcast(data interface{}) {
 		connections = append(connections, conn)
 	}
 	m.lock.RUnlock()
-	
+
 	message, err := json.Marshal(data)
 	if err != nil {
 		return
 	}
-	
+
 	var disconnected []*websocket.Conn
 	for _, conn := range connections {
 		err := conn.WriteMessage(websocket.TextMessage, message)
@@ -88,7 +88,7 @@ func (m *WSManager) Broadcast(data interface{}) {
 			disconnected = append(disconnected, conn)
 		}
 	}
-	
+
 	for _, conn := range disconnected {
 		m.Disconnect(conn)
 	}
@@ -98,7 +98,7 @@ func (m *WSManager) Broadcast(data interface{}) {
 func (m *WSManager) StartBroadcasting(interval time.Duration, stopCh <-chan struct{}) {
 	ticker := time.NewTicker(interval)
 	defer ticker.Stop()
-	
+
 	for {
 		select {
 		case <-stopCh:
@@ -107,11 +107,11 @@ func (m *WSManager) StartBroadcasting(interval time.Duration, stopCh <-chan stru
 			if m.Count() == 0 {
 				continue
 			}
-			
+
 			// Get current stats
 			stats := m.buildStatsMessage()
 			m.Broadcast(stats)
-			
+
 			// Also record to monitoring history
 			m.monitoring.RecordStats()
 		}
@@ -122,7 +122,7 @@ func (m *WSManager) buildStatsMessage() map[string]interface{} {
 	sysStats := m.system.GetStats()
 	interfaces := m.system.GetNetworkInterfaces()
 	clients := m.network.GetConnectedClients()
-	
+
 	// Build network traffic summary
 	networkTraffic := make(map[string]map[string]interface{})
 	for _, iface := range interfaces {
@@ -135,12 +135,12 @@ func (m *WSManager) buildStatsMessage() map[string]interface{} {
 			"is_up":    iface.IsUp,
 		}
 	}
-	
+
 	// Get Docker container summary
 	var runningContainers int
 	var totalContainers int
 	containerStats := make([]map[string]interface{}, 0)
-	
+
 	if m.docker != nil {
 		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 		defer cancel()
@@ -161,7 +161,7 @@ func (m *WSManager) buildStatsMessage() map[string]interface{} {
 			}
 		}
 	}
-	
+
 	return map[string]interface{}{
 		"type":      "stats",
 		"timestamp": time.Now().Format(time.RFC3339),
@@ -215,27 +215,27 @@ func (h *WSHandlers) StatsWebSocket(w http.ResponseWriter, r *http.Request) {
 	if interval < 1 || interval > 60 {
 		interval = 2
 	}
-	
+
 	// Upgrade connection
 	conn, err := upgrader.Upgrade(w, r, nil)
 	if err != nil {
 		log.Printf("WebSocket upgrade error: %v", err)
 		return
 	}
-	
+
 	h.manager.Connect(conn)
 	defer h.manager.Disconnect(conn)
-	
+
 	// Send initial stats immediately
 	stats := h.manager.buildStatsMessage()
 	if err := conn.WriteJSON(stats); err != nil {
 		return
 	}
-	
+
 	// Create ticker for this connection's interval
 	ticker := time.NewTicker(time.Duration(interval) * time.Second)
 	defer ticker.Stop()
-	
+
 	// Handle incoming messages (for ping/pong)
 	done := make(chan struct{})
 	go func() {
@@ -247,7 +247,7 @@ func (h *WSHandlers) StatsWebSocket(w http.ResponseWriter, r *http.Request) {
 			}
 		}
 	}()
-	
+
 	// Send stats at interval
 	for {
 		select {

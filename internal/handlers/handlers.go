@@ -75,7 +75,7 @@ func (h *Handlers) Login(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, "Invalid request body")
 		return
 	}
-	
+
 	// Get user from database
 	var user models.User
 	err := h.db.Get(&user, "SELECT * FROM users WHERE username = ?", req.Username)
@@ -87,20 +87,20 @@ func (h *Handlers) Login(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusInternalServerError, "Database error")
 		return
 	}
-	
+
 	// Verify password
 	if err := bcrypt.CompareHashAndPassword([]byte(user.PasswordHash), []byte(req.Password)); err != nil {
 		writeError(w, http.StatusUnauthorized, "Invalid credentials")
 		return
 	}
-	
+
 	// Generate token
 	token, err := middleware.GenerateToken(user.Username, user.Role, h.cfg)
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, "Failed to generate token")
 		return
 	}
-	
+
 	writeJSON(w, http.StatusOK, models.LoginResponse{
 		AccessToken: token,
 		TokenType:   "bearer",
@@ -121,13 +121,13 @@ func (h *Handlers) RefreshToken(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusUnauthorized, "Invalid token")
 		return
 	}
-	
+
 	token, err := middleware.GenerateToken(claims.Username, claims.Role, h.cfg)
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, "Failed to generate token")
 		return
 	}
-	
+
 	writeJSON(w, http.StatusOK, map[string]interface{}{
 		"access_token": token,
 		"token_type":   "bearer",
@@ -141,7 +141,7 @@ func (h *Handlers) GetMe(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusUnauthorized, "Invalid token")
 		return
 	}
-	
+
 	writeJSON(w, http.StatusOK, map[string]interface{}{
 		"username": claims.Username,
 		"role":     claims.Role,
@@ -154,13 +154,13 @@ func (h *Handlers) ChangePassword(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusUnauthorized, "Invalid token")
 		return
 	}
-	
+
 	var req models.ChangePasswordRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		writeError(w, http.StatusBadRequest, "Invalid request body")
 		return
 	}
-	
+
 	// Get current password hash
 	var currentHash string
 	err := h.db.Get(&currentHash, "SELECT password_hash FROM users WHERE username = ?", claims.Username)
@@ -168,27 +168,27 @@ func (h *Handlers) ChangePassword(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusInternalServerError, "Database error")
 		return
 	}
-	
+
 	// Verify current password
 	if err := bcrypt.CompareHashAndPassword([]byte(currentHash), []byte(req.CurrentPassword)); err != nil {
 		writeError(w, http.StatusUnauthorized, "Current password is incorrect")
 		return
 	}
-	
+
 	// Hash new password
 	newHash, err := bcrypt.GenerateFromPassword([]byte(req.NewPassword), bcrypt.DefaultCost)
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, "Failed to hash password")
 		return
 	}
-	
+
 	// Update password
 	_, err = h.db.Exec("UPDATE users SET password_hash = ? WHERE username = ?", string(newHash), claims.Username)
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, "Failed to update password")
 		return
 	}
-	
+
 	writeJSON(w, http.StatusOK, models.SuccessResponse{
 		Status:  "success",
 		Message: "Password changed successfully",
@@ -216,25 +216,25 @@ func (h *Handlers) GetTemperature(w http.ResponseWriter, r *http.Request) {
 
 func (h *Handlers) Reboot(w http.ResponseWriter, r *http.Request) {
 	delay, _ := strconv.Atoi(r.URL.Query().Get("delay"))
-	
+
 	result, err := h.system.Reboot(delay)
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, err.Error())
 		return
 	}
-	
+
 	writeJSON(w, http.StatusOK, result)
 }
 
 func (h *Handlers) Shutdown(w http.ResponseWriter, r *http.Request) {
 	delay, _ := strconv.Atoi(r.URL.Query().Get("delay"))
-	
+
 	result, err := h.system.Shutdown(delay)
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, err.Error())
 		return
 	}
-	
+
 	writeJSON(w, http.StatusOK, result)
 }
 
@@ -270,11 +270,11 @@ func (h *Handlers) GetDateTime(w http.ResponseWriter, r *http.Request) {
 func (h *Handlers) GetSystemdServices(w http.ResponseWriter, r *http.Request) {
 	services := []string{"hostapd", "dnsmasq", "docker", "nginx", "pihole-FTL"}
 	statuses := make(map[string]interface{})
-	
+
 	for _, svc := range services {
 		statuses[svc] = h.system.GetServiceStatus(svc)
 	}
-	
+
 	writeJSON(w, http.StatusOK, map[string]interface{}{"services": statuses})
 }
 
@@ -286,22 +286,22 @@ func (h *Handlers) GetSystemdService(w http.ResponseWriter, r *http.Request) {
 
 func (h *Handlers) RestartSystemdService(w http.ResponseWriter, r *http.Request) {
 	service := chi.URLParam(r, "service")
-	
+
 	// Allowed services
 	allowed := map[string]bool{
 		"hostapd": true, "dnsmasq": true, "docker": true, "nginx": true, "pihole-FTL": true,
 	}
-	
+
 	if !allowed[service] {
 		writeError(w, http.StatusForbidden, "Service not allowed")
 		return
 	}
-	
+
 	if err := h.system.RestartService(service); err != nil {
 		writeError(w, http.StatusInternalServerError, err.Error())
 		return
 	}
-	
+
 	writeJSON(w, http.StatusOK, models.SuccessResponse{
 		Status:  "success",
 		Message: "Service " + service + " restarted",
@@ -320,14 +320,14 @@ func (h *Handlers) GetNetworkInterfaces(w http.ResponseWriter, r *http.Request) 
 func (h *Handlers) GetNetworkInterface(w http.ResponseWriter, r *http.Request) {
 	name := chi.URLParam(r, "name")
 	interfaces := h.system.GetNetworkInterfaces()
-	
+
 	for _, iface := range interfaces {
 		if iface.Name == name {
 			writeJSON(w, http.StatusOK, iface)
 			return
 		}
 	}
-	
+
 	writeError(w, http.StatusNotFound, "Interface not found")
 }
 
@@ -347,12 +347,12 @@ func (h *Handlers) UpdateAPConfig(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, "Invalid request body")
 		return
 	}
-	
+
 	if err := h.network.SetAPConfig(&cfg); err != nil {
 		writeError(w, http.StatusInternalServerError, err.Error())
 		return
 	}
-	
+
 	writeJSON(w, http.StatusOK, models.SuccessResponse{
 		Status:  "success",
 		Message: "AP configuration updated",
@@ -364,7 +364,7 @@ func (h *Handlers) RestartAP(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusInternalServerError, err.Error())
 		return
 	}
-	
+
 	writeJSON(w, http.StatusOK, models.SuccessResponse{
 		Status:  "success",
 		Message: "WiFi AP restarted",
@@ -381,7 +381,7 @@ func (h *Handlers) RestartDHCP(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusInternalServerError, err.Error())
 		return
 	}
-	
+
 	writeJSON(w, http.StatusOK, models.SuccessResponse{
 		Status:  "success",
 		Message: "DHCP server restarted",
@@ -421,7 +421,7 @@ func (h *Handlers) GetTrafficHistory(w http.ResponseWriter, r *http.Request) {
 	if minutes == 0 {
 		minutes = 60
 	}
-	
+
 	history := h.network.GetTrafficHistory(iface, minutes)
 	writeJSON(w, http.StatusOK, map[string]interface{}{
 		"interface": iface,
@@ -459,12 +459,12 @@ func (h *Handlers) GetClientStats(w http.ResponseWriter, r *http.Request) {
 
 func (h *Handlers) BlockClient(w http.ResponseWriter, r *http.Request) {
 	mac := chi.URLParam(r, "mac")
-	
+
 	if err := h.network.BlockClient(mac); err != nil {
 		writeError(w, http.StatusInternalServerError, err.Error())
 		return
 	}
-	
+
 	writeJSON(w, http.StatusOK, models.SuccessResponse{
 		Status:  "success",
 		Message: "Client " + mac + " blocked",
@@ -473,12 +473,12 @@ func (h *Handlers) BlockClient(w http.ResponseWriter, r *http.Request) {
 
 func (h *Handlers) UnblockClient(w http.ResponseWriter, r *http.Request) {
 	mac := chi.URLParam(r, "mac")
-	
+
 	if err := h.network.UnblockClient(mac); err != nil {
 		writeError(w, http.StatusInternalServerError, err.Error())
 		return
 	}
-	
+
 	writeJSON(w, http.StatusOK, models.SuccessResponse{
 		Status:  "success",
 		Message: "Client " + mac + " unblocked",
@@ -487,12 +487,12 @@ func (h *Handlers) UnblockClient(w http.ResponseWriter, r *http.Request) {
 
 func (h *Handlers) KickClient(w http.ResponseWriter, r *http.Request) {
 	mac := chi.URLParam(r, "mac")
-	
+
 	if err := h.network.KickClient(mac); err != nil {
 		writeError(w, http.StatusInternalServerError, err.Error())
 		return
 	}
-	
+
 	writeJSON(w, http.StatusOK, models.SuccessResponse{
 		Status:  "success",
 		Message: "Client " + mac + " disconnected",
@@ -523,17 +523,17 @@ func (h *Handlers) GetStorageOverview(w http.ResponseWriter, r *http.Request) {
 
 func (h *Handlers) GetServiceDataSizes(w http.ResponseWriter, r *http.Request) {
 	sizes := h.system.GetServiceDataSizes("/cubeos/apps")
-	
+
 	// Calculate totals
 	var totalSize int64
 	for _, s := range sizes {
 		totalSize += s.Size
 	}
-	
+
 	writeJSON(w, http.StatusOK, map[string]interface{}{
-		"services":   sizes,
-		"count":      len(sizes),
-		"total_size": totalSize,
+		"services":    sizes,
+		"count":       len(sizes),
+		"total_size":  totalSize,
 		"total_human": formatByteSize(totalSize),
 	})
 }
@@ -579,29 +579,29 @@ func (h *Handlers) GetAllContainerStatus(w http.ResponseWriter, r *http.Request)
 
 func (h *Handlers) GetService(w http.ResponseWriter, r *http.Request) {
 	name := chi.URLParam(r, "name")
-	
+
 	container, err := h.docker.GetContainer(r.Context(), name)
 	if err != nil {
 		writeError(w, http.StatusNotFound, "Service not found")
 		return
 	}
-	
+
 	writeJSON(w, http.StatusOK, container)
 }
 
 func (h *Handlers) StartService(w http.ResponseWriter, r *http.Request) {
 	name := chi.URLParam(r, "name")
-	
+
 	if config.IsCoreService(name) {
 		writeError(w, http.StatusForbidden, "Cannot modify core service")
 		return
 	}
-	
+
 	if err := h.docker.StartContainer(r.Context(), name); err != nil {
 		writeError(w, http.StatusInternalServerError, err.Error())
 		return
 	}
-	
+
 	writeJSON(w, http.StatusOK, models.ServiceAction{
 		Success: true,
 		Service: name,
@@ -612,17 +612,17 @@ func (h *Handlers) StartService(w http.ResponseWriter, r *http.Request) {
 
 func (h *Handlers) StopService(w http.ResponseWriter, r *http.Request) {
 	name := chi.URLParam(r, "name")
-	
+
 	if config.IsCoreService(name) {
 		writeError(w, http.StatusForbidden, "Cannot modify core service")
 		return
 	}
-	
+
 	if err := h.docker.StopContainer(r.Context(), name, h.cfg.ContainerStopTimeout); err != nil {
 		writeError(w, http.StatusInternalServerError, err.Error())
 		return
 	}
-	
+
 	writeJSON(w, http.StatusOK, models.ServiceAction{
 		Success: true,
 		Service: name,
@@ -633,12 +633,12 @@ func (h *Handlers) StopService(w http.ResponseWriter, r *http.Request) {
 
 func (h *Handlers) RestartService(w http.ResponseWriter, r *http.Request) {
 	name := chi.URLParam(r, "name")
-	
+
 	if err := h.docker.RestartContainer(r.Context(), name, h.cfg.ContainerStopTimeout); err != nil {
 		writeError(w, http.StatusInternalServerError, err.Error())
 		return
 	}
-	
+
 	writeJSON(w, http.StatusOK, models.ServiceAction{
 		Success: true,
 		Service: name,
@@ -649,35 +649,35 @@ func (h *Handlers) RestartService(w http.ResponseWriter, r *http.Request) {
 
 func (h *Handlers) EnableService(w http.ResponseWriter, r *http.Request) {
 	name := chi.URLParam(r, "name")
-	
+
 	if config.IsCoreService(name) {
 		writeError(w, http.StatusForbidden, "Cannot modify core service")
 		return
 	}
-	
+
 	result, err := h.docker.EnableService(r.Context(), name)
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, err.Error())
 		return
 	}
-	
+
 	writeJSON(w, http.StatusOK, result)
 }
 
 func (h *Handlers) DisableService(w http.ResponseWriter, r *http.Request) {
 	name := chi.URLParam(r, "name")
-	
+
 	if config.IsCoreService(name) {
 		writeError(w, http.StatusForbidden, "Cannot modify core service")
 		return
 	}
-	
+
 	result, err := h.docker.DisableService(r.Context(), name)
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, err.Error())
 		return
 	}
-	
+
 	writeJSON(w, http.StatusOK, result)
 }
 
@@ -688,13 +688,13 @@ func (h *Handlers) GetServiceLogs(w http.ResponseWriter, r *http.Request) {
 		tail = 100
 	}
 	since := r.URL.Query().Get("since")
-	
+
 	logs, err := h.docker.GetContainerLogs(r.Context(), name, tail, since)
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, err.Error())
 		return
 	}
-	
+
 	writeJSON(w, http.StatusOK, map[string]interface{}{
 		"service": name,
 		"logs":    logs,
@@ -704,13 +704,13 @@ func (h *Handlers) GetServiceLogs(w http.ResponseWriter, r *http.Request) {
 
 func (h *Handlers) GetServiceStats(w http.ResponseWriter, r *http.Request) {
 	name := chi.URLParam(r, "name")
-	
+
 	stats, err := h.docker.GetContainerStats(r.Context(), name)
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, err.Error())
 		return
 	}
-	
+
 	writeJSON(w, http.StatusOK, stats)
 }
 
@@ -720,7 +720,7 @@ func (h *Handlers) GetServiceStats(w http.ResponseWriter, r *http.Request) {
 
 func (h *Handlers) GetCategories(w http.ResponseWriter, r *http.Request) {
 	categories := make([]map[string]interface{}, 0)
-	
+
 	for id, info := range config.Categories {
 		categories = append(categories, map[string]interface{}{
 			"id":          id,
@@ -729,7 +729,7 @@ func (h *Handlers) GetCategories(w http.ResponseWriter, r *http.Request) {
 			"icon":        info.Icon,
 		})
 	}
-	
+
 	writeJSON(w, http.StatusOK, map[string]interface{}{
 		"categories": categories,
 	})
@@ -744,13 +744,13 @@ func (h *Handlers) DockerPrune(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusServiceUnavailable, "Docker not available")
 		return
 	}
-	
+
 	result, err := h.docker.PruneAll(r.Context())
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, err.Error())
 		return
 	}
-	
+
 	writeJSON(w, http.StatusOK, map[string]interface{}{
 		"status":  "success",
 		"message": "Docker cleanup completed",
@@ -763,12 +763,12 @@ func (h *Handlers) DockerDiskUsage(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusServiceUnavailable, "Docker not available")
 		return
 	}
-	
+
 	usage, err := h.docker.GetDiskUsage(r.Context())
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, err.Error())
 		return
 	}
-	
+
 	writeJSON(w, http.StatusOK, usage)
 }

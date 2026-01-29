@@ -35,13 +35,13 @@ func NewPreferencesManager() *PreferencesManager {
 		filePath: "/cubeos/data/user-preferences.json",
 		prefs:    DefaultPreferences(),
 	}
-	
+
 	// Ensure directory exists
 	os.MkdirAll(filepath.Dir(pm.filePath), 0755)
-	
+
 	// Load existing preferences
 	pm.load()
-	
+
 	return pm
 }
 
@@ -49,30 +49,30 @@ func NewPreferencesManager() *PreferencesManager {
 func (pm *PreferencesManager) load() {
 	pm.lock.Lock()
 	defer pm.lock.Unlock()
-	
+
 	data, err := os.ReadFile(pm.filePath)
 	if err != nil {
 		return // Use defaults
 	}
-	
+
 	var loaded models.Preferences
 	if err := json.Unmarshal(data, &loaded); err != nil {
 		return // Use defaults
 	}
-	
+
 	// Merge with defaults (to handle new fields)
 	defaults := DefaultPreferences()
-	
+
 	if loaded.Theme != "" {
 		pm.prefs.Theme = loaded.Theme
 	} else {
 		pm.prefs.Theme = defaults.Theme
 	}
-	
+
 	pm.prefs.SetupComplete = loaded.SetupComplete
 	pm.prefs.TourComplete = loaded.TourComplete
 	pm.prefs.AdminExpanded = loaded.AdminExpanded
-	
+
 	if loaded.Favorites != nil {
 		pm.prefs.Favorites = loaded.Favorites
 	}
@@ -90,7 +90,7 @@ func (pm *PreferencesManager) save() error {
 	if err != nil {
 		return err
 	}
-	
+
 	return os.WriteFile(pm.filePath, data, 0644)
 }
 
@@ -105,7 +105,7 @@ func (pm *PreferencesManager) Get() models.Preferences {
 func (pm *PreferencesManager) Update(update models.PreferencesUpdate) (models.Preferences, error) {
 	pm.lock.Lock()
 	defer pm.lock.Unlock()
-	
+
 	// Apply updates (only non-nil fields)
 	if update.SetupComplete != nil {
 		pm.prefs.SetupComplete = *update.SetupComplete
@@ -128,12 +128,12 @@ func (pm *PreferencesManager) Update(update models.PreferencesUpdate) (models.Pr
 	if update.AdminExpanded != nil {
 		pm.prefs.AdminExpanded = *update.AdminExpanded
 	}
-	
+
 	// Save to file
 	if err := pm.save(); err != nil {
 		return pm.prefs, err
 	}
-	
+
 	return pm.prefs, nil
 }
 
@@ -141,10 +141,10 @@ func (pm *PreferencesManager) Update(update models.PreferencesUpdate) (models.Pr
 func (pm *PreferencesManager) Reset() models.Preferences {
 	pm.lock.Lock()
 	defer pm.lock.Unlock()
-	
+
 	pm.prefs = DefaultPreferences()
 	pm.save()
-	
+
 	return pm.prefs
 }
 
@@ -152,17 +152,17 @@ func (pm *PreferencesManager) Reset() models.Preferences {
 func (pm *PreferencesManager) AddFavorite(service string) models.Preferences {
 	pm.lock.Lock()
 	defer pm.lock.Unlock()
-	
+
 	// Check if already in favorites
 	for _, f := range pm.prefs.Favorites {
 		if f == service {
 			return pm.prefs
 		}
 	}
-	
+
 	pm.prefs.Favorites = append(pm.prefs.Favorites, service)
 	pm.save()
-	
+
 	return pm.prefs
 }
 
@@ -170,17 +170,17 @@ func (pm *PreferencesManager) AddFavorite(service string) models.Preferences {
 func (pm *PreferencesManager) RemoveFavorite(service string) models.Preferences {
 	pm.lock.Lock()
 	defer pm.lock.Unlock()
-	
+
 	filtered := []string{}
 	for _, f := range pm.prefs.Favorites {
 		if f != service {
 			filtered = append(filtered, f)
 		}
 	}
-	
+
 	pm.prefs.Favorites = filtered
 	pm.save()
-	
+
 	return pm.prefs
 }
 
@@ -188,7 +188,7 @@ func (pm *PreferencesManager) RemoveFavorite(service string) models.Preferences 
 func (pm *PreferencesManager) AddRecentService(service string) models.Preferences {
 	pm.lock.Lock()
 	defer pm.lock.Unlock()
-	
+
 	// Remove if already exists (to move to front)
 	filtered := []string{service}
 	for _, r := range pm.prefs.RecentServices {
@@ -196,15 +196,15 @@ func (pm *PreferencesManager) AddRecentService(service string) models.Preference
 			filtered = append(filtered, r)
 		}
 	}
-	
+
 	// Keep max 10 recent
 	if len(filtered) > 10 {
 		filtered = filtered[:10]
 	}
-	
+
 	pm.prefs.RecentServices = filtered
 	pm.save()
-	
+
 	return pm.prefs
 }
 
@@ -212,7 +212,7 @@ func (pm *PreferencesManager) AddRecentService(service string) models.Preference
 func (pm *PreferencesManager) ToggleCategory(category string) models.Preferences {
 	pm.lock.Lock()
 	defer pm.lock.Unlock()
-	
+
 	// Check if already collapsed
 	found := false
 	filtered := []string{}
@@ -223,7 +223,7 @@ func (pm *PreferencesManager) ToggleCategory(category string) models.Preferences
 			filtered = append(filtered, c)
 		}
 	}
-	
+
 	if found {
 		// Was collapsed, now expanded
 		pm.prefs.CollapsedCategories = filtered
@@ -231,8 +231,8 @@ func (pm *PreferencesManager) ToggleCategory(category string) models.Preferences
 		// Was expanded, now collapsed
 		pm.prefs.CollapsedCategories = append(pm.prefs.CollapsedCategories, category)
 	}
-	
+
 	pm.save()
-	
+
 	return pm.prefs
 }

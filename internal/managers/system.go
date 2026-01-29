@@ -38,12 +38,12 @@ func (m *SystemManager) GetHostname() string {
 	if data, err := os.ReadFile("/host/etc/hostname"); err == nil {
 		return strings.TrimSpace(string(data))
 	}
-	
+
 	// Try /etc/hostname
 	if data, err := os.ReadFile("/etc/hostname"); err == nil {
 		return strings.TrimSpace(string(data))
 	}
-	
+
 	// Fall back to os.Hostname()
 	hostname, _ := os.Hostname()
 	return hostname
@@ -55,7 +55,7 @@ func (m *SystemManager) GetOSInfo() (name string, version string) {
 	if err != nil {
 		return runtime.GOOS, ""
 	}
-	
+
 	info := make(map[string]string)
 	scanner := bufio.NewScanner(strings.NewReader(string(data)))
 	for scanner.Scan() {
@@ -66,7 +66,7 @@ func (m *SystemManager) GetOSInfo() (name string, version string) {
 			info[key] = value
 		}
 	}
-	
+
 	return info["NAME"], info["VERSION_ID"]
 }
 
@@ -90,13 +90,13 @@ func (m *SystemManager) GetPiInfo() (model, serial, revision string) {
 	if data, err := os.ReadFile("/proc/device-tree/model"); err == nil {
 		model = strings.TrimRight(string(data), "\x00\n")
 	}
-	
+
 	// Read serial and revision from cpuinfo
 	data, err := os.ReadFile("/proc/cpuinfo")
 	if err != nil {
 		return
 	}
-	
+
 	scanner := bufio.NewScanner(strings.NewReader(string(data)))
 	for scanner.Scan() {
 		line := scanner.Text()
@@ -130,7 +130,7 @@ func (m *SystemManager) GetUptime() (int64, string) {
 	if err != nil {
 		return 0, ""
 	}
-	
+
 	uptime := int64(info.Uptime)
 	return uptime, formatDuration(time.Duration(uptime) * time.Second)
 }
@@ -147,12 +147,12 @@ func (m *SystemManager) GetBootTime() time.Time {
 // GetMACAddresses returns MAC addresses for all interfaces
 func (m *SystemManager) GetMACAddresses() map[string]string {
 	macs := make(map[string]string)
-	
+
 	interfaces, err := net.Interfaces()
 	if err != nil {
 		return macs
 	}
-	
+
 	for _, iface := range interfaces {
 		if iface.HardwareAddr != nil && len(iface.HardwareAddr) > 0 {
 			macs[iface.Name] = iface.HardwareAddr.String()
@@ -164,12 +164,12 @@ func (m *SystemManager) GetMACAddresses() map[string]string {
 // GetIPAddresses returns IP addresses for all interfaces
 func (m *SystemManager) GetIPAddresses() map[string]string {
 	ips := make(map[string]string)
-	
+
 	interfaces, err := net.Interfaces()
 	if err != nil {
 		return ips
 	}
-	
+
 	for _, iface := range interfaces {
 		addrs, err := iface.Addrs()
 		if err != nil {
@@ -190,9 +190,9 @@ func (m *SystemManager) GetSystemInfo() *models.SystemInfo {
 	osName, osVersion := m.GetOSInfo()
 	uptimeSecs, uptimeHuman := m.GetUptime()
 	piModel, piSerial, piRevision := m.GetPiInfo()
-	
+
 	cpuCount, _ := cpu.Counts(false)
-	
+
 	return &models.SystemInfo{
 		Hostname:      m.GetHostname(),
 		OSName:        osName,
@@ -249,13 +249,13 @@ func (m *SystemManager) GetTemperature() *models.Temperature {
 	result := &models.Temperature{
 		Status: "unknown",
 	}
-	
+
 	// Try to read CPU temperature from thermal zone
 	thermalPaths := []string{
 		"/sys/class/thermal/thermal_zone0/temp",
 		"/host/sys/class/thermal/thermal_zone0/temp",
 	}
-	
+
 	for _, path := range thermalPaths {
 		if data, err := os.ReadFile(path); err == nil {
 			if temp, err := strconv.ParseInt(strings.TrimSpace(string(data)), 10, 64); err == nil {
@@ -264,7 +264,7 @@ func (m *SystemManager) GetTemperature() *models.Temperature {
 			}
 		}
 	}
-	
+
 	// Try vcgencmd for GPU temp (Raspberry Pi)
 	if output, err := exec.Command("vcgencmd", "measure_temp").Output(); err == nil {
 		re := regexp.MustCompile(`temp=(\d+\.?\d*)`)
@@ -274,13 +274,13 @@ func (m *SystemManager) GetTemperature() *models.Temperature {
 			}
 		}
 	}
-	
+
 	// Get throttling status
 	throttlePaths := []string{
 		"/sys/devices/platform/soc/soc:firmware/get_throttled",
 		"/host/sys/devices/platform/soc/soc:firmware/get_throttled",
 	}
-	
+
 	var throttleValue int64
 	for _, path := range throttlePaths {
 		if data, err := os.ReadFile(path); err == nil {
@@ -288,7 +288,7 @@ func (m *SystemManager) GetTemperature() *models.Temperature {
 			break
 		}
 	}
-	
+
 	// Fall back to vcgencmd
 	if throttleValue == 0 {
 		if output, err := exec.Command("vcgencmd", "get_throttled").Output(); err == nil {
@@ -298,13 +298,13 @@ func (m *SystemManager) GetTemperature() *models.Temperature {
 			}
 		}
 	}
-	
+
 	result.ThrottleFlags = fmt.Sprintf("0x%x", throttleValue)
 	result.UnderVoltage = throttleValue&0x1 != 0
 	result.FrequencyCapped = throttleValue&0x2 != 0
 	result.Throttled = throttleValue&0x4 != 0
 	result.SoftTempLimit = throttleValue&0x8 != 0
-	
+
 	// Determine status
 	switch {
 	case result.Throttled:
@@ -318,7 +318,7 @@ func (m *SystemManager) GetTemperature() *models.Temperature {
 	case result.CPUTempC > 0:
 		result.Status = "normal"
 	}
-	
+
 	return result
 }
 
@@ -327,7 +327,7 @@ func (m *SystemManager) GetSystemStats() *models.SystemStats {
 	memTotal, memUsed, memAvail, memPercent := m.GetMemoryStats()
 	diskTotal, diskUsed, diskFree, diskPercent := m.GetDiskStats()
 	temp := m.GetTemperature()
-	
+
 	return &models.SystemStats{
 		CPUPercent:      m.GetCPUPercent(),
 		MemoryPercent:   memPercent,
@@ -348,7 +348,7 @@ func (m *SystemManager) GetStats() models.ExtendedStats {
 	memTotal, memUsed, _, memPercent := m.GetMemoryStats()
 	diskTotal, diskUsed, _, diskPercent := m.GetDiskStats()
 	temp := m.GetTemperature()
-	
+
 	return models.ExtendedStats{
 		CPUPercent:     m.GetCPUPercent(),
 		CPUCores:       runtime.NumCPU(),
@@ -388,13 +388,13 @@ func (m *SystemManager) Reboot(delayMinutes int) (*models.PowerAction, error) {
 			Message:       fmt.Sprintf("Reboot scheduled in %d minute(s)", delayMinutes),
 		}, nil
 	}
-	
+
 	// Immediate reboot - use goroutine to allow response to be sent
 	go func() {
 		time.Sleep(2 * time.Second)
 		exec.Command("reboot").Run()
 	}()
-	
+
 	return &models.PowerAction{
 		Status:  "initiated",
 		Action:  "reboot",
@@ -417,12 +417,12 @@ func (m *SystemManager) Shutdown(delayMinutes int) (*models.PowerAction, error) 
 			Message:       fmt.Sprintf("Shutdown scheduled in %d minute(s)", delayMinutes),
 		}, nil
 	}
-	
+
 	go func() {
 		time.Sleep(2 * time.Second)
 		exec.Command("shutdown", "-h", "now").Run()
 	}()
-	
+
 	return &models.PowerAction{
 		Status:  "initiated",
 		Action:  "shutdown",
@@ -451,19 +451,19 @@ func (m *SystemManager) GetServiceStatus(serviceName string) *models.ServiceStat
 		Service: serviceName,
 		State:   "unknown",
 	}
-	
+
 	// Check if service is active
 	cmd := exec.Command("systemctl", "is-active", serviceName)
 	output, _ := cmd.Output()
 	status.Active = strings.TrimSpace(string(output)) == "active"
-	
+
 	// Get detailed status
 	cmd = exec.Command("systemctl", "show", serviceName, "--property=ActiveState,SubState,MainPID")
 	output, err := cmd.Output()
 	if err != nil {
 		return status
 	}
-	
+
 	scanner := bufio.NewScanner(strings.NewReader(string(output)))
 	for scanner.Scan() {
 		line := scanner.Text()
@@ -482,7 +482,7 @@ func (m *SystemManager) GetServiceStatus(serviceName string) *models.ServiceStat
 			}
 		}
 	}
-	
+
 	return status
 }
 
@@ -495,14 +495,14 @@ func (m *SystemManager) RestartService(serviceName string) error {
 // GetDateTime returns current date/time and timezone
 func (m *SystemManager) GetDateTime() (datetime time.Time, timezone string) {
 	datetime = time.Now()
-	
+
 	cmd := exec.Command("timedatectl", "show", "--property=Timezone", "--value")
 	if output, err := cmd.Output(); err == nil {
 		timezone = strings.TrimSpace(string(output))
 	} else {
 		timezone = "Unknown"
 	}
-	
+
 	return
 }
 
@@ -512,7 +512,7 @@ func formatDuration(d time.Duration) string {
 	hours := int(d.Hours()) % 24
 	minutes := int(d.Minutes()) % 60
 	seconds := int(d.Seconds()) % 60
-	
+
 	var parts []string
 	if days > 0 {
 		parts = append(parts, fmt.Sprintf("%dd", days))
@@ -524,25 +524,25 @@ func formatDuration(d time.Duration) string {
 		parts = append(parts, fmt.Sprintf("%dm", minutes))
 	}
 	parts = append(parts, fmt.Sprintf("%ds", seconds))
-	
+
 	return strings.Join(parts, " ")
 }
 
 // GetNetworkInterfaces returns all network interfaces with statistics
 func (m *SystemManager) GetNetworkInterfaces() []models.NetworkInterface {
 	var result []models.NetworkInterface
-	
+
 	interfaces, err := net.Interfaces()
 	if err != nil {
 		return result
 	}
-	
+
 	ioCounters, _ := psnet.IOCounters(true)
 	ioMap := make(map[string]psnet.IOCountersStat)
 	for _, io := range ioCounters {
 		ioMap[io.Name] = io
 	}
-	
+
 	for _, iface := range interfaces {
 		ni := models.NetworkInterface{
 			Name:       iface.Name,
@@ -550,11 +550,11 @@ func (m *SystemManager) GetNetworkInterfaces() []models.NetworkInterface {
 			IsUp:       iface.Flags&net.FlagUp != 0,
 			IsLoopback: iface.Flags&net.FlagLoopback != 0,
 		}
-		
+
 		if iface.HardwareAddr != nil {
 			ni.MACAddress = iface.HardwareAddr.String()
 		}
-		
+
 		addrs, _ := iface.Addrs()
 		for _, addr := range addrs {
 			if ipnet, ok := addr.(*net.IPNet); ok {
@@ -565,7 +565,7 @@ func (m *SystemManager) GetNetworkInterfaces() []models.NetworkInterface {
 				}
 			}
 		}
-		
+
 		if io, ok := ioMap[iface.Name]; ok {
 			ni.RxBytes = io.BytesRecv
 			ni.TxBytes = io.BytesSent
@@ -574,17 +574,17 @@ func (m *SystemManager) GetNetworkInterfaces() []models.NetworkInterface {
 			ni.RxErrors = io.Errin
 			ni.TxErrors = io.Errout
 		}
-		
+
 		result = append(result, ni)
 	}
-	
+
 	return result
 }
 
 // GetDisks returns all mounted disks with usage statistics
 func (m *SystemManager) GetDisks() []models.DiskInfo {
 	var result []models.DiskInfo
-	
+
 	// Try host filesystem first (when running in container), fall back to /
 	rootPath := "/hostfs"
 	usage, err := disk.Usage(rootPath)
@@ -592,7 +592,7 @@ func (m *SystemManager) GetDisks() []models.DiskInfo {
 		rootPath = "/"
 		usage, err = disk.Usage(rootPath)
 	}
-	
+
 	if err == nil {
 		result = append(result, models.DiskInfo{
 			Device:      "/dev/mmcblk0p2",
@@ -607,13 +607,13 @@ func (m *SystemManager) GetDisks() []models.DiskInfo {
 			FreeHuman:   humanSize(usage.Free),
 		})
 	}
-	
+
 	// Add other partitions (skip virtual and container filesystems)
 	partitions, err := disk.Partitions(false)
 	if err != nil {
 		return result
 	}
-	
+
 	seen := map[string]bool{"/": true, rootPath: true, "/hostfs": true}
 	for _, p := range partitions {
 		if seen[p.Mountpoint] {
@@ -631,12 +631,12 @@ func (m *SystemManager) GetDisks() []models.DiskInfo {
 			continue
 		}
 		seen[p.Mountpoint] = true
-		
+
 		usage, err := disk.Usage(p.Mountpoint)
 		if err != nil {
 			continue
 		}
-		
+
 		result = append(result, models.DiskInfo{
 			Device:      p.Device,
 			Mountpoint:  p.Mountpoint,
@@ -650,7 +650,7 @@ func (m *SystemManager) GetDisks() []models.DiskInfo {
 			FreeHuman:   humanSize(usage.Free),
 		})
 	}
-	
+
 	return result
 }
 
@@ -670,14 +670,14 @@ func humanSize(bytes uint64) string {
 // GetStorageOverview returns complete storage information
 func (m *SystemManager) GetStorageOverview() *models.StorageOverview {
 	disks := m.GetDisks()
-	
+
 	var totalCapacity, totalUsed, totalFree uint64
 	for _, d := range disks {
 		totalCapacity += d.TotalBytes
 		totalUsed += d.UsedBytes
 		totalFree += d.FreeBytes
 	}
-	
+
 	return &models.StorageOverview{
 		Disks:         disks,
 		TotalCapacity: totalCapacity,
@@ -689,20 +689,20 @@ func (m *SystemManager) GetStorageOverview() *models.StorageOverview {
 // ListDataDirectories returns directories under a path with sizes
 func (m *SystemManager) ListDataDirectories(basePath string) ([]map[string]interface{}, error) {
 	var dirs []map[string]interface{}
-	
+
 	entries, err := os.ReadDir(basePath)
 	if err != nil {
 		return nil, err
 	}
-	
+
 	for _, entry := range entries {
 		if !entry.IsDir() {
 			continue
 		}
-		
+
 		path := filepath.Join(basePath, entry.Name())
 		size := getDirSize(path)
-		
+
 		dirs = append(dirs, map[string]interface{}{
 			"name":       entry.Name(),
 			"path":       path,
@@ -710,7 +710,7 @@ func (m *SystemManager) ListDataDirectories(basePath string) ([]map[string]inter
 			"size_human": humanSize(uint64(size)),
 		})
 	}
-	
+
 	return dirs, nil
 }
 
@@ -737,7 +737,7 @@ type ServiceDataInfo struct {
 // GetServiceDataSizes returns sizes of service data directories
 func (m *SystemManager) GetServiceDataSizes(basePath string) []ServiceDataInfo {
 	var services []ServiceDataInfo
-	
+
 	// Try multiple paths (container vs host)
 	paths := []string{
 		basePath,
@@ -748,7 +748,7 @@ func (m *SystemManager) GetServiceDataSizes(basePath string) []ServiceDataInfo {
 		"/var/lib/docker/volumes",
 		"/hostfs/var/lib/docker/volumes",
 	}
-	
+
 	var appsDir string
 	for _, p := range paths {
 		if info, err := os.Stat(p); err == nil && info.IsDir() {
@@ -756,33 +756,33 @@ func (m *SystemManager) GetServiceDataSizes(basePath string) []ServiceDataInfo {
 			break
 		}
 	}
-	
+
 	if appsDir == "" {
 		return services
 	}
-	
+
 	// Read app directories
 	entries, err := os.ReadDir(appsDir)
 	if err != nil {
 		return services
 	}
-	
+
 	for _, entry := range entries {
 		if !entry.IsDir() {
 			continue
 		}
-		
+
 		name := entry.Name()
-		
+
 		// Check for data directory
 		dataPath := filepath.Join(appsDir, name, "data")
-		
+
 		info := ServiceDataInfo{
 			Name:   name,
 			Path:   dataPath,
 			Exists: false,
 		}
-		
+
 		if stat, err := os.Stat(dataPath); err == nil && stat.IsDir() {
 			info.Exists = true
 			info.Size = getDirSize(dataPath)
@@ -795,10 +795,10 @@ func (m *SystemManager) GetServiceDataSizes(basePath string) []ServiceDataInfo {
 			info.Size = getDirSize(appPath)
 			info.SizeHuman = formatByteSize(info.Size)
 		}
-		
+
 		services = append(services, info)
 	}
-	
+
 	return services
 }
 

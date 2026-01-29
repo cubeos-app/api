@@ -33,17 +33,17 @@ func NewStorageManager() *StorageManager {
 
 // SMBShare represents a Samba share configuration
 type SMBShare struct {
-	Name        string   `json:"name"`
-	Path        string   `json:"path"`
-	Comment     string   `json:"comment,omitempty"`
-	Browseable  bool     `json:"browseable"`
-	ReadOnly    bool     `json:"read_only"`
-	GuestOK     bool     `json:"guest_ok"`
-	ValidUsers  []string `json:"valid_users,omitempty"`
-	CreateMask  string   `json:"create_mask,omitempty"`
-	DirMask     string   `json:"dir_mask,omitempty"`
-	ForceUser   string   `json:"force_user,omitempty"`
-	ForceGroup  string   `json:"force_group,omitempty"`
+	Name       string   `json:"name"`
+	Path       string   `json:"path"`
+	Comment    string   `json:"comment,omitempty"`
+	Browseable bool     `json:"browseable"`
+	ReadOnly   bool     `json:"read_only"`
+	GuestOK    bool     `json:"guest_ok"`
+	ValidUsers []string `json:"valid_users,omitempty"`
+	CreateMask string   `json:"create_mask,omitempty"`
+	DirMask    string   `json:"dir_mask,omitempty"`
+	ForceUser  string   `json:"force_user,omitempty"`
+	ForceGroup string   `json:"force_group,omitempty"`
 }
 
 // SMBConfig represents the global Samba configuration
@@ -58,21 +58,21 @@ type SMBConfig struct {
 func (m *StorageManager) GetSMBConfig() (*SMBConfig, error) {
 	m.mu.RLock()
 	defer m.mu.RUnlock()
-	
+
 	config := &SMBConfig{
 		Workgroup:   "WORKGROUP",
 		ServerName:  "CUBEOS",
 		Description: "CubeOS File Server",
 		Shares:      []SMBShare{},
 	}
-	
+
 	// Try multiple paths
 	paths := []string{
 		m.smbConfPath,
 		"/hostfs" + m.smbConfPath,
 		"/host" + m.smbConfPath,
 	}
-	
+
 	var data []byte
 	var err error
 	for _, p := range paths {
@@ -84,29 +84,29 @@ func (m *StorageManager) GetSMBConfig() (*SMBConfig, error) {
 	if err != nil {
 		return config, nil // Return defaults if no config exists
 	}
-	
+
 	// Parse smb.conf
 	var currentSection string
 	var currentShare *SMBShare
-	
+
 	scanner := bufio.NewScanner(strings.NewReader(string(data)))
 	for scanner.Scan() {
 		line := strings.TrimSpace(scanner.Text())
-		
+
 		// Skip comments and empty lines
 		if line == "" || strings.HasPrefix(line, "#") || strings.HasPrefix(line, ";") {
 			continue
 		}
-		
+
 		// Check for section header
 		if strings.HasPrefix(line, "[") && strings.HasSuffix(line, "]") {
 			// Save previous share
 			if currentShare != nil {
 				config.Shares = append(config.Shares, *currentShare)
 			}
-			
+
 			currentSection = line[1 : len(line)-1]
-			
+
 			// Skip global section for shares
 			if currentSection != "global" {
 				currentShare = &SMBShare{
@@ -122,16 +122,16 @@ func (m *StorageManager) GetSMBConfig() (*SMBConfig, error) {
 			}
 			continue
 		}
-		
+
 		// Parse key = value
 		parts := strings.SplitN(line, "=", 2)
 		if len(parts) != 2 {
 			continue
 		}
-		
+
 		key := strings.TrimSpace(strings.ToLower(parts[0]))
 		value := strings.TrimSpace(parts[1])
-		
+
 		// Global settings
 		if currentSection == "global" {
 			switch key {
@@ -144,7 +144,7 @@ func (m *StorageManager) GetSMBConfig() (*SMBConfig, error) {
 			}
 			continue
 		}
-		
+
 		// Share settings
 		if currentShare != nil {
 			switch key {
@@ -171,12 +171,12 @@ func (m *StorageManager) GetSMBConfig() (*SMBConfig, error) {
 			}
 		}
 	}
-	
+
 	// Don't forget the last share
 	if currentShare != nil {
 		config.Shares = append(config.Shares, *currentShare)
 	}
-	
+
 	return config, nil
 }
 
@@ -193,7 +193,7 @@ func (m *StorageManager) GetSMBShares() ([]SMBShare, error) {
 func (m *StorageManager) CreateSMBShare(share SMBShare) error {
 	m.mu.Lock()
 	defer m.mu.Unlock()
-	
+
 	// Validate
 	if share.Name == "" {
 		return fmt.Errorf("share name is required")
@@ -201,20 +201,20 @@ func (m *StorageManager) CreateSMBShare(share SMBShare) error {
 	if share.Path == "" {
 		return fmt.Errorf("share path is required")
 	}
-	
+
 	// Clean name (no special chars)
 	share.Name = regexp.MustCompile(`[^a-zA-Z0-9_-]`).ReplaceAllString(share.Name, "_")
-	
+
 	// Ensure path exists
 	if _, err := os.Stat(share.Path); os.IsNotExist(err) {
 		if err := os.MkdirAll(share.Path, 0755); err != nil {
 			return fmt.Errorf("failed to create share path: %w", err)
 		}
 	}
-	
+
 	// Generate share config block
 	shareConfig := m.generateShareConfig(share)
-	
+
 	// Append to smb.conf
 	f, err := os.OpenFile(m.smbConfPath, os.O_APPEND|os.O_WRONLY, 0644)
 	if err != nil {
@@ -222,11 +222,11 @@ func (m *StorageManager) CreateSMBShare(share SMBShare) error {
 		return m.createDefaultSMBConfig(share)
 	}
 	defer f.Close()
-	
+
 	if _, err := f.WriteString("\n" + shareConfig); err != nil {
 		return fmt.Errorf("failed to write share config: %w", err)
 	}
-	
+
 	// Reload Samba
 	return m.reloadSamba()
 }
@@ -238,7 +238,7 @@ func (m *StorageManager) UpdateSMBShare(name string, share SMBShare) error {
 	if err != nil {
 		return err
 	}
-	
+
 	// Find and update the share
 	found := false
 	for i, s := range config.Shares {
@@ -249,11 +249,11 @@ func (m *StorageManager) UpdateSMBShare(name string, share SMBShare) error {
 			break
 		}
 	}
-	
+
 	if !found {
 		return fmt.Errorf("share '%s' not found", name)
 	}
-	
+
 	// Rewrite entire config
 	return m.writeSMBConfig(config)
 }
@@ -265,7 +265,7 @@ func (m *StorageManager) DeleteSMBShare(name string) error {
 	if err != nil {
 		return err
 	}
-	
+
 	// Remove the share
 	newShares := []SMBShare{}
 	found := false
@@ -276,11 +276,11 @@ func (m *StorageManager) DeleteSMBShare(name string) error {
 			found = true
 		}
 	}
-	
+
 	if !found {
 		return fmt.Errorf("share '%s' not found", name)
 	}
-	
+
 	config.Shares = newShares
 	return m.writeSMBConfig(config)
 }
@@ -293,7 +293,7 @@ func (m *StorageManager) GetSMBStatus() map[string]interface{} {
 		"enabled":   false,
 		"version":   "",
 	}
-	
+
 	// Check if samba is installed - try multiple methods
 	// Method 1: Direct lookup
 	if _, err := exec.LookPath("smbd"); err == nil {
@@ -315,7 +315,7 @@ func (m *StorageManager) GetSMBStatus() map[string]interface{} {
 			break
 		}
 	}
-	
+
 	// Check service status via nsenter (runs on host)
 	cmd := exec.Command("nsenter", "-t", "1", "-m", "-u", "-i", "-n", "-p", "--", "systemctl", "is-active", "smbd")
 	if output, err := cmd.Output(); err == nil && strings.TrimSpace(string(output)) == "active" {
@@ -327,19 +327,19 @@ func (m *StorageManager) GetSMBStatus() map[string]interface{} {
 			status["running"] = true
 		}
 	}
-	
+
 	// Check if enabled
 	cmd = exec.Command("nsenter", "-t", "1", "-m", "-u", "-i", "-n", "-p", "--", "systemctl", "is-enabled", "smbd")
 	if output, err := cmd.Output(); err == nil && strings.TrimSpace(string(output)) == "enabled" {
 		status["enabled"] = true
 	}
-	
+
 	// Get version via nsenter
 	cmd = exec.Command("nsenter", "-t", "1", "-m", "-u", "-i", "-n", "-p", "--", "smbd", "--version")
 	if output, err := cmd.Output(); err == nil {
 		status["version"] = strings.TrimSpace(string(output))
 	}
-	
+
 	// Get connected clients
 	cmd = exec.Command("nsenter", "-t", "1", "-m", "-u", "-i", "-n", "-p", "--", "smbstatus", "-b", "--json")
 	if output, err := cmd.Output(); err == nil {
@@ -350,7 +350,7 @@ func (m *StorageManager) GetSMBStatus() map[string]interface{} {
 			}
 		}
 	}
-	
+
 	return status
 }
 
@@ -358,19 +358,19 @@ func (m *StorageManager) generateShareConfig(share SMBShare) string {
 	var lines []string
 	lines = append(lines, fmt.Sprintf("[%s]", share.Name))
 	lines = append(lines, fmt.Sprintf("   path = %s", share.Path))
-	
+
 	if share.Comment != "" {
 		lines = append(lines, fmt.Sprintf("   comment = %s", share.Comment))
 	}
-	
+
 	lines = append(lines, fmt.Sprintf("   browseable = %s", boolToYesNo(share.Browseable)))
 	lines = append(lines, fmt.Sprintf("   read only = %s", boolToYesNo(share.ReadOnly)))
 	lines = append(lines, fmt.Sprintf("   guest ok = %s", boolToYesNo(share.GuestOK)))
-	
+
 	if len(share.ValidUsers) > 0 {
 		lines = append(lines, fmt.Sprintf("   valid users = %s", strings.Join(share.ValidUsers, " ")))
 	}
-	
+
 	if share.CreateMask != "" {
 		lines = append(lines, fmt.Sprintf("   create mask = %s", share.CreateMask))
 	}
@@ -383,7 +383,7 @@ func (m *StorageManager) generateShareConfig(share SMBShare) string {
 	if share.ForceGroup != "" {
 		lines = append(lines, fmt.Sprintf("   force group = %s", share.ForceGroup))
 	}
-	
+
 	return strings.Join(lines, "\n")
 }
 
@@ -400,7 +400,7 @@ func (m *StorageManager) createDefaultSMBConfig(share SMBShare) error {
 
 `
 	config += m.generateShareConfig(share) + "\n"
-	
+
 	// Write config
 	if err := os.MkdirAll(filepath.Dir(m.smbConfPath), 0755); err != nil {
 		return err
@@ -408,16 +408,16 @@ func (m *StorageManager) createDefaultSMBConfig(share SMBShare) error {
 	if err := os.WriteFile(m.smbConfPath, []byte(config), 0644); err != nil {
 		return err
 	}
-	
+
 	return m.reloadSamba()
 }
 
 func (m *StorageManager) writeSMBConfig(config *SMBConfig) error {
 	m.mu.Lock()
 	defer m.mu.Unlock()
-	
+
 	var lines []string
-	
+
 	// Global section
 	lines = append(lines, "[global]")
 	lines = append(lines, fmt.Sprintf("   workgroup = %s", config.Workgroup))
@@ -429,18 +429,18 @@ func (m *StorageManager) writeSMBConfig(config *SMBConfig) error {
 	lines = append(lines, "   log file = /var/log/samba/log.%m")
 	lines = append(lines, "   max log size = 1000")
 	lines = append(lines, "")
-	
+
 	// Shares
 	for _, share := range config.Shares {
 		lines = append(lines, m.generateShareConfig(share))
 		lines = append(lines, "")
 	}
-	
+
 	content := strings.Join(lines, "\n")
 	if err := os.WriteFile(m.smbConfPath, []byte(content), 0644); err != nil {
 		return err
 	}
-	
+
 	return m.reloadSamba()
 }
 
@@ -461,46 +461,46 @@ func (m *StorageManager) reloadSamba() error {
 
 // DiskHealth represents S.M.A.R.T. health data for a disk
 type DiskHealth struct {
-	Device       string                 `json:"device"`
-	Model        string                 `json:"model"`
-	Serial       string                 `json:"serial"`
-	Firmware     string                 `json:"firmware"`
-	Capacity     string                 `json:"capacity"`
-	CapacityBytes int64                 `json:"capacity_bytes"`
-	Type         string                 `json:"type"` // HDD, SSD, NVMe
-	Health       string                 `json:"health"` // PASSED, FAILED, UNKNOWN
-	Temperature  int                    `json:"temperature"`
-	PowerOnHours int                    `json:"power_on_hours"`
-	PowerCycles  int                    `json:"power_cycles"`
-	Attributes   []SMARTAttribute       `json:"attributes,omitempty"`
-	SmartEnabled bool                   `json:"smart_enabled"`
-	LastChecked  time.Time              `json:"last_checked"`
-	Warnings     []string               `json:"warnings,omitempty"`
-	Raw          map[string]interface{} `json:"raw,omitempty"`
+	Device        string                 `json:"device"`
+	Model         string                 `json:"model"`
+	Serial        string                 `json:"serial"`
+	Firmware      string                 `json:"firmware"`
+	Capacity      string                 `json:"capacity"`
+	CapacityBytes int64                  `json:"capacity_bytes"`
+	Type          string                 `json:"type"`   // HDD, SSD, NVMe
+	Health        string                 `json:"health"` // PASSED, FAILED, UNKNOWN
+	Temperature   int                    `json:"temperature"`
+	PowerOnHours  int                    `json:"power_on_hours"`
+	PowerCycles   int                    `json:"power_cycles"`
+	Attributes    []SMARTAttribute       `json:"attributes,omitempty"`
+	SmartEnabled  bool                   `json:"smart_enabled"`
+	LastChecked   time.Time              `json:"last_checked"`
+	Warnings      []string               `json:"warnings,omitempty"`
+	Raw           map[string]interface{} `json:"raw,omitempty"`
 }
 
 // SMARTAttribute represents a single S.M.A.R.T. attribute
 type SMARTAttribute struct {
-	ID         int    `json:"id"`
-	Name       string `json:"name"`
-	Value      int    `json:"value"`
-	Worst      int    `json:"worst"`
-	Threshold  int    `json:"threshold"`
-	RawValue   string `json:"raw_value"`
-	Failing    bool   `json:"failing"`
-	Type       string `json:"type"` // pre-fail, old-age
+	ID        int    `json:"id"`
+	Name      string `json:"name"`
+	Value     int    `json:"value"`
+	Worst     int    `json:"worst"`
+	Threshold int    `json:"threshold"`
+	RawValue  string `json:"raw_value"`
+	Failing   bool   `json:"failing"`
+	Type      string `json:"type"` // pre-fail, old-age
 }
 
 // GetDiskHealth returns S.M.A.R.T. health data for all disks
 func (m *StorageManager) GetDiskHealth() ([]DiskHealth, error) {
 	var disks []DiskHealth
-	
+
 	// Find block devices
 	devices, err := m.listBlockDevices()
 	if err != nil {
 		return nil, err
 	}
-	
+
 	for _, dev := range devices {
 		health, err := m.getDiskHealthInfo(dev)
 		if err != nil {
@@ -508,7 +508,7 @@ func (m *StorageManager) GetDiskHealth() ([]DiskHealth, error) {
 		}
 		disks = append(disks, *health)
 	}
-	
+
 	return disks, nil
 }
 
@@ -519,7 +519,7 @@ func (m *StorageManager) GetDiskHealthByDevice(device string) (*DiskHealth, erro
 
 func (m *StorageManager) listBlockDevices() ([]string, error) {
 	var devices []string
-	
+
 	// Try nsenter to run lsblk on host
 	cmd := exec.Command("nsenter", "-t", "1", "-m", "-u", "-i", "-n", "-p", "--", "lsblk", "-d", "-n", "-o", "NAME,TYPE", "-J")
 	output, err := cmd.Output()
@@ -528,7 +528,7 @@ func (m *StorageManager) listBlockDevices() ([]string, error) {
 		cmd = exec.Command("lsblk", "-d", "-n", "-o", "NAME,TYPE", "-J")
 		output, err = cmd.Output()
 	}
-	
+
 	if err != nil {
 		// Fallback: scan /dev and /host/dev directly
 		devPaths := []string{"/dev", "/host/dev", "/hostfs/dev"}
@@ -556,24 +556,24 @@ func (m *StorageManager) listBlockDevices() ([]string, error) {
 		}
 		return devices, nil
 	}
-	
+
 	var lsblkOutput struct {
 		Blockdevices []struct {
 			Name string `json:"name"`
 			Type string `json:"type"`
 		} `json:"blockdevices"`
 	}
-	
+
 	if err := json.Unmarshal(output, &lsblkOutput); err != nil {
 		return nil, err
 	}
-	
+
 	for _, dev := range lsblkOutput.Blockdevices {
 		if dev.Type == "disk" {
 			devices = append(devices, "/dev/"+dev.Name)
 		}
 	}
-	
+
 	return devices, nil
 }
 
@@ -583,13 +583,13 @@ func (m *StorageManager) getDiskHealthInfo(device string) (*DiskHealth, error) {
 		Health:      "UNKNOWN",
 		LastChecked: time.Now(),
 	}
-	
+
 	// SD/eMMC cards don't support SMART - handle gracefully
 	if strings.Contains(device, "mmcblk") {
 		health.Type = "SD/eMMC"
 		health.Health = "N/A"
 		health.Model = "SD/eMMC Card"
-		
+
 		// Try to get capacity from lsblk
 		cmd := exec.Command("nsenter", "-t", "1", "-m", "-u", "-i", "-n", "-p", "--", "lsblk", "-b", "-d", "-n", "-o", "SIZE", device)
 		if output, err := cmd.Output(); err == nil {
@@ -598,11 +598,11 @@ func (m *StorageManager) getDiskHealthInfo(device string) (*DiskHealth, error) {
 				health.Capacity = formatBytes(size)
 			}
 		}
-		
+
 		health.Warnings = append(health.Warnings, "SD/eMMC cards do not support S.M.A.R.T. monitoring")
 		return health, nil
 	}
-	
+
 	// Try to run smartctl via nsenter (on host)
 	// First check if smartctl exists on host
 	checkCmd := exec.Command("nsenter", "-t", "1", "-m", "-u", "-i", "-n", "-p", "--", "which", "smartctl")
@@ -612,7 +612,7 @@ func (m *StorageManager) getDiskHealthInfo(device string) (*DiskHealth, error) {
 			return health, fmt.Errorf("smartctl not found on host")
 		}
 	}
-	
+
 	// Get SMART info in JSON format via nsenter
 	cmd := exec.Command("nsenter", "-t", "1", "-m", "-u", "-i", "-n", "-p", "--", "smartctl", "-a", "-j", device)
 	output, err := cmd.Output()
@@ -625,15 +625,15 @@ func (m *StorageManager) getDiskHealthInfo(device string) (*DiskHealth, error) {
 			return m.getDiskHealthLegacy(device)
 		}
 	}
-	
+
 	var smartData map[string]interface{}
 	if err := json.Unmarshal(output, &smartData); err != nil {
 		return m.getDiskHealthLegacy(device)
 	}
-	
+
 	// Store raw data
 	health.Raw = smartData
-	
+
 	// Parse device info
 	if deviceInfo, ok := smartData["device"].(map[string]interface{}); ok {
 		if name, ok := deviceInfo["name"].(string); ok {
@@ -643,7 +643,7 @@ func (m *StorageManager) getDiskHealthInfo(device string) (*DiskHealth, error) {
 			health.Type = strings.ToUpper(devType)
 		}
 	}
-	
+
 	// Parse model info
 	if modelName, ok := smartData["model_name"].(string); ok {
 		health.Model = modelName
@@ -654,7 +654,7 @@ func (m *StorageManager) getDiskHealthInfo(device string) (*DiskHealth, error) {
 	if firmware, ok := smartData["firmware_version"].(string); ok {
 		health.Firmware = firmware
 	}
-	
+
 	// Parse capacity
 	if userCap, ok := smartData["user_capacity"].(map[string]interface{}); ok {
 		if bytes, ok := userCap["bytes"].(float64); ok {
@@ -662,7 +662,7 @@ func (m *StorageManager) getDiskHealthInfo(device string) (*DiskHealth, error) {
 			health.Capacity = formatBytes(int64(bytes))
 		}
 	}
-	
+
 	// Determine disk type
 	if rotationRate, ok := smartData["rotation_rate"].(float64); ok {
 		if rotationRate == 0 {
@@ -674,7 +674,7 @@ func (m *StorageManager) getDiskHealthInfo(device string) (*DiskHealth, error) {
 	if strings.Contains(device, "nvme") {
 		health.Type = "NVMe"
 	}
-	
+
 	// Parse SMART status
 	if smartStatus, ok := smartData["smart_status"].(map[string]interface{}); ok {
 		if passed, ok := smartStatus["passed"].(bool); ok {
@@ -686,33 +686,33 @@ func (m *StorageManager) getDiskHealthInfo(device string) (*DiskHealth, error) {
 			}
 		}
 	}
-	
+
 	// Check if SMART is enabled
 	if smartSupport, ok := smartData["smart_support"].(map[string]interface{}); ok {
 		if enabled, ok := smartSupport["enabled"].(bool); ok {
 			health.SmartEnabled = enabled
 		}
 	}
-	
+
 	// Parse temperature
 	if temp, ok := smartData["temperature"].(map[string]interface{}); ok {
 		if current, ok := temp["current"].(float64); ok {
 			health.Temperature = int(current)
 		}
 	}
-	
+
 	// Parse power on time
 	if powerOn, ok := smartData["power_on_time"].(map[string]interface{}); ok {
 		if hours, ok := powerOn["hours"].(float64); ok {
 			health.PowerOnHours = int(hours)
 		}
 	}
-	
+
 	// Parse power cycles
 	if powerCycle, ok := smartData["power_cycle_count"].(float64); ok {
 		health.PowerCycles = int(powerCycle)
 	}
-	
+
 	// Parse SMART attributes (for SATA drives)
 	if ataAttrs, ok := smartData["ata_smart_attributes"].(map[string]interface{}); ok {
 		if table, ok := ataAttrs["table"].([]interface{}); ok {
@@ -755,10 +755,10 @@ func (m *StorageManager) getDiskHealthInfo(device string) (*DiskHealth, error) {
 			}
 		}
 	}
-	
+
 	// Check for critical attributes
 	m.checkCriticalAttributes(health)
-	
+
 	return health, nil
 }
 
@@ -768,7 +768,7 @@ func (m *StorageManager) getDiskHealthLegacy(device string) (*DiskHealth, error)
 		Health:      "UNKNOWN",
 		LastChecked: time.Now(),
 	}
-	
+
 	// Run smartctl without JSON via nsenter
 	cmd := exec.Command("nsenter", "-t", "1", "-m", "-u", "-i", "-n", "-p", "--", "smartctl", "-H", "-i", device)
 	output, _ := cmd.CombinedOutput()
@@ -778,26 +778,26 @@ func (m *StorageManager) getDiskHealthLegacy(device string) (*DiskHealth, error)
 		output, _ = cmd.CombinedOutput()
 	}
 	outputStr := string(output)
-	
+
 	// Parse health status
 	if strings.Contains(outputStr, "PASSED") {
 		health.Health = "PASSED"
 	} else if strings.Contains(outputStr, "FAILED") {
 		health.Health = "FAILED"
 	}
-	
+
 	// Parse model
 	if match := regexp.MustCompile(`Device Model:\s+(.+)`).FindStringSubmatch(outputStr); len(match) > 1 {
 		health.Model = strings.TrimSpace(match[1])
 	} else if match := regexp.MustCompile(`Model Number:\s+(.+)`).FindStringSubmatch(outputStr); len(match) > 1 {
 		health.Model = strings.TrimSpace(match[1])
 	}
-	
+
 	// Parse serial
 	if match := regexp.MustCompile(`Serial Number:\s+(.+)`).FindStringSubmatch(outputStr); len(match) > 1 {
 		health.Serial = strings.TrimSpace(match[1])
 	}
-	
+
 	// Determine type
 	if strings.Contains(device, "nvme") {
 		health.Type = "NVMe"
@@ -806,7 +806,7 @@ func (m *StorageManager) getDiskHealthLegacy(device string) (*DiskHealth, error)
 	} else if strings.Contains(outputStr, "Rotation Rate") {
 		health.Type = "HDD"
 	}
-	
+
 	return health, nil
 }
 
@@ -818,7 +818,7 @@ func (m *StorageManager) checkCriticalAttributes(health *DiskHealth) {
 		197: "Current_Pending_Sector",
 		198: "Offline_Uncorrectable",
 	}
-	
+
 	for _, attr := range health.Attributes {
 		if name, ok := criticalIDs[attr.ID]; ok {
 			if rawVal, _ := strconv.ParseInt(strings.Fields(attr.RawValue)[0], 10, 64); rawVal > 0 {

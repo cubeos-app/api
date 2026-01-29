@@ -78,17 +78,17 @@ func (h *SetupHandler) GetSystemRequirements(w http.ResponseWriter, r *http.Requ
 // GetTimezones returns available timezones
 func (h *SetupHandler) GetTimezones(w http.ResponseWriter, r *http.Request) {
 	timezones := h.manager.GetTimezones()
-	
+
 	// Group by region
 	byRegion := make(map[string][]models.TimezoneInfo)
 	for _, tz := range timezones {
 		byRegion[tz.Region] = append(byRegion[tz.Region], tz)
 	}
-	
+
 	json.NewEncoder(w).Encode(map[string]interface{}{
-		"timezones":  timezones,
-		"by_region":  byRegion,
-		"total":      len(timezones),
+		"timezones": timezones,
+		"by_region": byRegion,
+		"total":     len(timezones),
 	})
 }
 
@@ -177,9 +177,9 @@ func SetupRequiredMiddleware(setupMgr *managers.SetupManager) func(http.Handler)
 	return func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			// Allow setup endpoints
-			if r.URL.Path == "/api/v1/setup" || 
-			   r.URL.Path == "/api/v1/setup/" ||
-			   len(r.URL.Path) > 13 && r.URL.Path[:14] == "/api/v1/setup/" {
+			if r.URL.Path == "/api/v1/setup" ||
+				r.URL.Path == "/api/v1/setup/" ||
+				len(r.URL.Path) > 13 && r.URL.Path[:14] == "/api/v1/setup/" {
 				next.ServeHTTP(w, r)
 				return
 			}

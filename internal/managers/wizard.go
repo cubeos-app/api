@@ -83,28 +83,28 @@ var UseCaseProfiles = map[string]UseCaseProfile{
 // GetProfiles returns all available profiles
 func (m *WizardManager) GetProfiles() []models.WizardProfile {
 	var profiles []models.WizardProfile
-	
+
 	// Get all services for "full" profile
 	allServices := m.docker.ListServices()
 	var allServiceNames []string
 	var totalRAM int
-	
+
 	for _, svc := range allServices {
 		if !svc.IsCore {
 			allServiceNames = append(allServiceNames, svc.Name)
 			totalRAM += svc.RAMEstimateMB
 		}
 	}
-	
+
 	for id, profile := range UseCaseProfiles {
 		services := profile.Services
 		ramEstimate := profile.RAMEstimate
-		
+
 		if id == "full" {
 			services = allServiceNames
 			ramEstimate = totalRAM
 		}
-		
+
 		// Get unique categories
 		categories := make(map[string]bool)
 		for _, svcName := range services {
@@ -115,13 +115,13 @@ func (m *WizardManager) GetProfiles() []models.WizardProfile {
 				}
 			}
 		}
-		
+
 		var categoryList []string
 		for cat := range categories {
 			categoryList = append(categoryList, cat)
 		}
 		sort.Strings(categoryList)
-		
+
 		profiles = append(profiles, models.WizardProfile{
 			ID:          id,
 			Name:        profile.Name,
@@ -131,26 +131,26 @@ func (m *WizardManager) GetProfiles() []models.WizardProfile {
 			Categories:  categoryList,
 		})
 	}
-	
+
 	// Sort profiles by RAM estimate
 	sort.Slice(profiles, func(i, j int) bool {
 		return profiles[i].RAMEstimate < profiles[j].RAMEstimate
 	})
-	
+
 	return profiles
 }
 
 // GetWizardServices returns services grouped by category
 func (m *WizardManager) GetWizardServices() models.WizardServicesResponse {
 	services := m.docker.ListServices()
-	
+
 	// Group by category
 	byCategory := make(map[string][]models.WizardService)
 	for _, svc := range services {
 		if svc.IsCore {
 			continue
 		}
-		
+
 		wizardSvc := models.WizardService{
 			Name:        svc.Name,
 			DisplayName: svc.DisplayName,
@@ -159,19 +159,19 @@ func (m *WizardManager) GetWizardServices() models.WizardServicesResponse {
 			Icon:        svc.Icon,
 			Enabled:     svc.Enabled,
 		}
-		
+
 		byCategory[svc.Category] = append(byCategory[svc.Category], wizardSvc)
 	}
-	
+
 	var categories []models.WizardCategory
 	totalServices := 0
-	
+
 	for catID, catInfo := range config.Categories {
 		svcs, ok := byCategory[catID]
 		if !ok || len(svcs) == 0 {
 			continue
 		}
-		
+
 		categories = append(categories, models.WizardCategory{
 			ID:          catID,
 			Name:        catInfo.Name,
@@ -179,15 +179,15 @@ func (m *WizardManager) GetWizardServices() models.WizardServicesResponse {
 			Icon:        catInfo.Icon,
 			Services:    svcs,
 		})
-		
+
 		totalServices += len(svcs)
 	}
-	
+
 	// Sort categories by name
 	sort.Slice(categories, func(i, j int) bool {
 		return categories[i].Name < categories[j].Name
 	})
-	
+
 	return models.WizardServicesResponse{
 		Categories:    categories,
 		TotalServices: totalServices,
@@ -203,10 +203,10 @@ func (m *WizardManager) ApplyProfile(profileID string, additionalServices, exclu
 			Message: "Unknown profile: " + profileID,
 		}
 	}
-	
+
 	// Build service list
 	toEnable := make(map[string]bool)
-	
+
 	if profileID == "full" {
 		// Enable all non-core services
 		services := m.docker.ListServices()
@@ -220,17 +220,17 @@ func (m *WizardManager) ApplyProfile(profileID string, additionalServices, exclu
 			toEnable[svc] = true
 		}
 	}
-	
+
 	// Add additional services
 	for _, svc := range additionalServices {
 		toEnable[svc] = true
 	}
-	
+
 	// Remove excluded services
 	for _, svc := range excludedServices {
 		delete(toEnable, svc)
 	}
-	
+
 	// Get all toggleable services
 	services := m.docker.ListServices()
 	allToggleable := make(map[string]bool)
@@ -239,13 +239,13 @@ func (m *WizardManager) ApplyProfile(profileID string, additionalServices, exclu
 			allToggleable[svc.Name] = true
 		}
 	}
-	
+
 	var enabled, disabled []string
 	var totalRAM int
-	
+
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Minute)
 	defer cancel()
-	
+
 	// Disable services not in toEnable
 	for svcName := range allToggleable {
 		if !toEnable[svcName] {
@@ -254,12 +254,12 @@ func (m *WizardManager) ApplyProfile(profileID string, additionalServices, exclu
 			}
 		}
 	}
-	
+
 	// Enable services in toEnable
 	for svcName := range toEnable {
 		if err := m.docker.StartContainer(ctx, svcName); err == nil {
 			enabled = append(enabled, svcName)
-			
+
 			// Get RAM estimate
 			for _, svc := range services {
 				if svc.Name == svcName {
@@ -269,7 +269,7 @@ func (m *WizardManager) ApplyProfile(profileID string, additionalServices, exclu
 			}
 		}
 	}
-	
+
 	return models.ApplyProfileResponse{
 		Success:          true,
 		EnabledServices:  enabled,
@@ -282,17 +282,17 @@ func (m *WizardManager) ApplyProfile(profileID string, additionalServices, exclu
 // GetRecommendations returns service recommendations based on available RAM
 func (m *WizardManager) GetRecommendations(availableRAM int) map[string]interface{} {
 	services := m.docker.ListServices()
-	
+
 	// Sort by RAM usage
 	sort.Slice(services, func(i, j int) bool {
 		return services[i].RAMEstimateMB < services[j].RAMEstimateMB
 	})
-	
+
 	// Find services that fit
 	var fittingServices []string
 	var totalRAM int
 	headroom := int(float64(availableRAM) * 0.8) // Keep 20% headroom
-	
+
 	for _, svc := range services {
 		if svc.IsCore {
 			continue
@@ -302,35 +302,35 @@ func (m *WizardManager) GetRecommendations(availableRAM int) map[string]interfac
 			totalRAM += svc.RAMEstimateMB
 		}
 	}
-	
+
 	// Find best matching profile
 	bestProfile := "minimal"
 	bestMatch := 0
-	
+
 	for profileID, profile := range UseCaseProfiles {
 		if profileID == "full" {
 			continue
 		}
-		
+
 		// Count matching services
 		matchCount := 0
 		fittingSet := make(map[string]bool)
 		for _, s := range fittingServices {
 			fittingSet[s] = true
 		}
-		
+
 		for _, svc := range profile.Services {
 			if fittingSet[svc] {
 				matchCount++
 			}
 		}
-		
+
 		if matchCount > bestMatch && profile.RAMEstimate <= availableRAM {
 			bestMatch = matchCount
 			bestProfile = profileID
 		}
 	}
-	
+
 	return map[string]interface{}{
 		"recommended_profile": bestProfile,
 		"fitting_services":    fittingServices,
@@ -343,16 +343,16 @@ func (m *WizardManager) GetRecommendations(availableRAM int) map[string]interfac
 // EstimateResources estimates resource usage for a list of services
 func (m *WizardManager) EstimateResources(serviceNames []string) map[string]interface{} {
 	services := m.docker.ListServices()
-	
+
 	var totalRAM int
 	var found []string
 	var missing []string
-	
+
 	serviceMap := make(map[string]models.ServiceInfo)
 	for _, svc := range services {
 		serviceMap[svc.Name] = svc
 	}
-	
+
 	for _, name := range serviceNames {
 		if svc, ok := serviceMap[name]; ok {
 			totalRAM += svc.RAMEstimateMB
@@ -361,7 +361,7 @@ func (m *WizardManager) EstimateResources(serviceNames []string) map[string]inte
 			missing = append(missing, name)
 		}
 	}
-	
+
 	return map[string]interface{}{
 		"services":         found,
 		"missing_services": missing,

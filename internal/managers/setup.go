@@ -101,7 +101,7 @@ func (m *SetupManager) GetSetupStatus() *models.SetupStatus {
 
 	err := m.db.QueryRow(`SELECT is_complete, current_step, started_at, completed_at, config_json 
 		FROM setup_status WHERE id = 1`).Scan(&isComplete, &currentStep, &startedAt, &completedAt, &configJSON)
-	
+
 	if err != nil {
 		return status
 	}
@@ -463,7 +463,7 @@ func (m *SetupManager) setHostname(hostname string) error {
 
 	// Apply hostname
 	exec.Command("hostname", hostname).Run()
-	
+
 	m.saveConfig("hostname", hostname)
 	return nil
 }
@@ -611,11 +611,11 @@ func (m *SetupManager) configureSSL(mode, domain, dnsProvider, apiToken, apiSecr
 
 	if mode == "letsencrypt" && domain != "" && dnsProvider != "" {
 		m.saveConfig("dns_provider", dnsProvider)
-		
+
 		// Write DNS credentials to env file for acme.sh
 		envPath := filepath.Join(m.configPath, "acme-dns.env")
 		envContent := ""
-		
+
 		switch dnsProvider {
 		case "cloudflare":
 			envContent = fmt.Sprintf("CF_API_TOKEN=%s\n", apiToken)
@@ -699,17 +699,17 @@ func (m *SetupManager) ResetSetup() error {
 func (m *SetupManager) MarkSetupComplete(cfg *models.SetupConfig) error {
 	// Save minimal config
 	configJSON, _ := json.Marshal(cfg)
-	
+
 	_, err := m.db.Exec(`UPDATE setup_status SET 
 		is_complete = 1, 
 		completed_at = CURRENT_TIMESTAMP,
 		config_json = ?
 		WHERE id = 1`, string(configJSON))
-	
+
 	if err != nil {
 		return err
 	}
-	
+
 	m.setupDone = true
 	return nil
 }

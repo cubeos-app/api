@@ -30,13 +30,13 @@ type AppStoreManager struct {
 	db           *DatabaseManager
 	dataPath     string
 	cachePath    string
-	appsPath     string      // /cubeos/apps - user apps, freely removable
-	coreAppsPath string      // /cubeos/coreapps - system critical, protected
-	appDataPath  string      // deprecated - now per-app at /cubeos/apps/{app}/appdata
+	appsPath     string // /cubeos/apps - user apps, freely removable
+	coreAppsPath string // /cubeos/coreapps - system critical, protected
+	appDataPath  string // deprecated - now per-app at /cubeos/apps/{app}/appdata
 	baseDomain   string
 	gatewayIP    string
-	npmAPIURL    string      // NPM API endpoint
-	npmToken     string      // NPM API token (cached)
+	npmAPIURL    string // NPM API endpoint
+	npmToken     string // NPM API token (cached)
 	stores       map[string]*models.AppStore
 	catalog      map[string]*models.StoreApp
 	installed    map[string]*models.InstalledApp
@@ -1243,12 +1243,12 @@ func (m *AppStoreManager) GetNPMProxyHosts() ([]NPMProxyHost, error) {
 
 // AppConfig represents an app's configuration files
 type AppConfig struct {
-	AppID         string `json:"app_id"`
-	AppPath       string `json:"app_path"`
-	IsCoreApp     bool   `json:"is_core_app"`
-	ComposeYAML   string `json:"compose_yaml"`
-	EnvContent    string `json:"env_content"`
-	LastModified  string `json:"last_modified"`
+	AppID        string `json:"app_id"`
+	AppPath      string `json:"app_path"`
+	IsCoreApp    bool   `json:"is_core_app"`
+	ComposeYAML  string `json:"compose_yaml"`
+	EnvContent   string `json:"env_content"`
+	LastModified string `json:"last_modified"`
 }
 
 // GetAppConfig returns the configuration files for an app

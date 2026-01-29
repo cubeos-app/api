@@ -8,7 +8,7 @@ import (
 	"strings"
 
 	"github.com/go-chi/chi/v5"
-	
+
 	"cubeos-api/internal/managers"
 	"cubeos-api/internal/models"
 )
@@ -65,9 +65,9 @@ func (h *ExtendedHandlers) GetJournalLogs(w http.ResponseWriter, r *http.Request
 	until := r.URL.Query().Get("until")
 	priority := r.URL.Query().Get("priority")
 	grep := r.URL.Query().Get("grep")
-	
+
 	entries := h.logs.GetJournalLogs(unit, lines, since, until, priority, grep)
-	
+
 	writeJSON(w, http.StatusOK, models.LogsResponse{
 		Entries: entries,
 		Count:   len(entries),
@@ -76,7 +76,7 @@ func (h *ExtendedHandlers) GetJournalLogs(w http.ResponseWriter, r *http.Request
 
 func (h *ExtendedHandlers) GetLogUnits(w http.ResponseWriter, r *http.Request) {
 	units := h.logs.GetAvailableUnits()
-	
+
 	writeJSON(w, http.StatusOK, models.LogUnitsResponse{
 		Units: units,
 		Count: len(units),
@@ -91,14 +91,14 @@ func (h *ExtendedHandlers) GetServiceLogs(w http.ResponseWriter, r *http.Request
 	}
 	since := r.URL.Query().Get("since")
 	priority := r.URL.Query().Get("priority")
-	
+
 	// Ensure .service suffix
 	if len(service) > 0 && !strings.HasSuffix(service, ".service") {
 		service = service + ".service"
 	}
-	
+
 	entries := h.logs.GetJournalLogs(service, lines, since, "", priority, "")
-	
+
 	writeJSON(w, http.StatusOK, map[string]interface{}{
 		"service": service,
 		"entries": entries,
@@ -114,9 +114,9 @@ func (h *ExtendedHandlers) GetContainerLogs(w http.ResponseWriter, r *http.Reque
 	}
 	since := r.URL.Query().Get("since")
 	timestamps := r.URL.Query().Get("timestamps") != "false"
-	
+
 	entries := h.logs.GetContainerLogs(r.Context(), container, lines, since, timestamps)
-	
+
 	writeJSON(w, http.StatusOK, models.ContainerLogsResponse{
 		Container: container,
 		Entries:   entries,
@@ -129,9 +129,9 @@ func (h *ExtendedHandlers) GetKernelLogs(w http.ResponseWriter, r *http.Request)
 	if lines == 0 {
 		lines = 200
 	}
-	
+
 	entries := h.logs.GetKernelLogs(lines)
-	
+
 	writeJSON(w, http.StatusOK, map[string]interface{}{
 		"entries": entries,
 		"count":   len(entries),
@@ -144,9 +144,9 @@ func (h *ExtendedHandlers) GetBootLogs(w http.ResponseWriter, r *http.Request) {
 	if lines == 0 {
 		lines = 500
 	}
-	
+
 	entries := h.logs.GetBootLogs(boot, lines)
-	
+
 	writeJSON(w, http.StatusOK, map[string]interface{}{
 		"boot_id": boot,
 		"entries": entries,
@@ -160,19 +160,19 @@ func (h *ExtendedHandlers) ReadLogFile(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, "path parameter required")
 		return
 	}
-	
+
 	lines, _ := strconv.Atoi(r.URL.Query().Get("lines"))
 	if lines == 0 {
 		lines = 100
 	}
 	grep := r.URL.Query().Get("grep")
-	
+
 	entries, err := h.logs.ReadLogFile(path, lines, grep)
 	if err != nil {
 		writeError(w, http.StatusForbidden, err.Error())
 		return
 	}
-	
+
 	writeJSON(w, http.StatusOK, map[string]interface{}{
 		"path":    path,
 		"entries": entries,
@@ -189,9 +189,9 @@ func (h *ExtendedHandlers) GetRecentErrors(w http.ResponseWriter, r *http.Reques
 	if hours == 0 {
 		hours = 24
 	}
-	
+
 	entries := h.logs.GetRecentErrors(lines, hours)
-	
+
 	writeJSON(w, http.StatusOK, map[string]interface{}{
 		"entries": entries,
 		"count":   len(entries),
@@ -213,22 +213,22 @@ func (h *ExtendedHandlers) GetFirewallRules(w http.ResponseWriter, r *http.Reque
 	if table == "" {
 		table = "filter"
 	}
-	
+
 	if table != "filter" && table != "nat" && table != "mangle" && table != "raw" {
 		writeError(w, http.StatusBadRequest, "Invalid table name")
 		return
 	}
-	
+
 	// Check if user wants all rules including Docker auto-generated
 	showAll := r.URL.Query().Get("all") == "true"
-	
+
 	var rules []models.FirewallRule
 	if showAll {
 		rules = h.firewall.GetRules(table)
 	} else {
 		rules = h.firewall.GetUserRules(table)
 	}
-	
+
 	writeJSON(w, http.StatusOK, map[string]interface{}{
 		"table":    table,
 		"rules":    rules,
@@ -267,13 +267,13 @@ func (h *ExtendedHandlers) AllowPort(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, "Invalid port")
 		return
 	}
-	
+
 	protocol := r.URL.Query().Get("protocol")
 	if protocol == "" {
 		protocol = "tcp"
 	}
 	comment := r.URL.Query().Get("comment")
-	
+
 	result := h.firewall.AllowPort(port, protocol, comment)
 	if result.Status == "error" {
 		writeError(w, http.StatusInternalServerError, result.Message)
@@ -289,12 +289,12 @@ func (h *ExtendedHandlers) BlockPort(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, "Invalid port")
 		return
 	}
-	
+
 	protocol := r.URL.Query().Get("protocol")
 	if protocol == "" {
 		protocol = "tcp"
 	}
-	
+
 	result := h.firewall.BlockPort(port, protocol)
 	if result.Status == "error" {
 		writeError(w, http.StatusInternalServerError, result.Message)
@@ -310,7 +310,7 @@ func (h *ExtendedHandlers) RemovePortRule(w http.ResponseWriter, r *http.Request
 		writeError(w, http.StatusBadRequest, "Invalid port")
 		return
 	}
-	
+
 	protocol := r.URL.Query().Get("protocol")
 	if protocol == "" {
 		protocol = "tcp"
@@ -319,7 +319,7 @@ func (h *ExtendedHandlers) RemovePortRule(w http.ResponseWriter, r *http.Request
 	if action == "" {
 		action = "ACCEPT"
 	}
-	
+
 	result := h.firewall.RemovePortRule(port, protocol, action)
 	if result.Status == "error" {
 		writeError(w, http.StatusInternalServerError, result.Message)
@@ -363,7 +363,7 @@ func (h *ExtendedHandlers) SetIPForward(w http.ResponseWriter, r *http.Request) 
 		writeError(w, http.StatusBadRequest, "Invalid request body")
 		return
 	}
-	
+
 	result := h.firewall.SetIPForward(req.Enabled)
 	writeJSON(w, http.StatusOK, result)
 }
@@ -374,7 +374,7 @@ func (h *ExtendedHandlers) ResetFirewall(w http.ResponseWriter, r *http.Request)
 		writeError(w, http.StatusBadRequest, "Set confirm=true to reset")
 		return
 	}
-	
+
 	result := h.firewall.ResetFirewall()
 	writeJSON(w, http.StatusOK, result)
 }
@@ -386,7 +386,7 @@ func (h *ExtendedHandlers) ResetFirewall(w http.ResponseWriter, r *http.Request)
 func (h *ExtendedHandlers) ListBackups(w http.ResponseWriter, r *http.Request) {
 	backups := h.backup.ListBackups()
 	totalSize := h.backup.GetTotalSize()
-	
+
 	writeJSON(w, http.StatusOK, models.BackupListResponse{
 		Backups:        backups,
 		TotalCount:     len(backups),
@@ -411,11 +411,11 @@ func (h *ExtendedHandlers) CreateBackup(w http.ResponseWriter, r *http.Request) 
 		req.Type = "config"
 		req.Compress = true
 	}
-	
+
 	if req.Type == "" {
 		req.Type = "config"
 	}
-	
+
 	result, err := h.backup.CreateBackup(req.Type, req.Description, req.IncludeDockerVolumes, req.Compress)
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, err.Error())
@@ -433,7 +433,7 @@ func (h *ExtendedHandlers) QuickBackup(w http.ResponseWriter, r *http.Request) {
 	if description == "" {
 		description = "Quick " + backupType + " backup"
 	}
-	
+
 	result, err := h.backup.CreateBackup(backupType, description, false, true)
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, err.Error())
@@ -445,14 +445,14 @@ func (h *ExtendedHandlers) QuickBackup(w http.ResponseWriter, r *http.Request) {
 func (h *ExtendedHandlers) RestoreBackup(w http.ResponseWriter, r *http.Request) {
 	backupID := chi.URLParam(r, "backup_id")
 	confirm := r.URL.Query().Get("confirm") == "true"
-	
+
 	if !confirm {
 		writeError(w, http.StatusBadRequest, "Set confirm=true to restore")
 		return
 	}
-	
+
 	restartServices := r.URL.Query().Get("restart_services") != "false"
-	
+
 	result, err := h.backup.RestoreBackup(backupID, restartServices)
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, err.Error())
@@ -478,13 +478,13 @@ func (h *ExtendedHandlers) DownloadBackup(w http.ResponseWriter, r *http.Request
 		writeError(w, http.StatusNotFound, "Backup not found")
 		return
 	}
-	
+
 	filepath := h.backup.GetBackupFilePath(backupID)
 	if filepath == "" {
 		writeError(w, http.StatusNotFound, "Backup file not found")
 		return
 	}
-	
+
 	w.Header().Set("Content-Disposition", "attachment; filename="+backup.Filename)
 	w.Header().Set("Content-Type", "application/gzip")
 	http.ServeFile(w, r, filepath)
@@ -504,16 +504,16 @@ func (h *ExtendedHandlers) ListProcesses(w http.ResponseWriter, r *http.Request)
 	if sortBy == "" {
 		sortBy = "cpu"
 	}
-	
+
 	limit, _ := strconv.Atoi(r.URL.Query().Get("limit"))
 	if limit == 0 {
 		limit = 50
 	}
-	
+
 	filterName := r.URL.Query().Get("filter_name")
-	
+
 	processes := h.processes.ListProcesses(sortBy, limit, filterName)
-	
+
 	writeJSON(w, http.StatusOK, models.ProcessListResponse{
 		Processes:  processes,
 		TotalCount: len(processes),
@@ -528,13 +528,13 @@ func (h *ExtendedHandlers) GetProcess(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, "Invalid PID")
 		return
 	}
-	
+
 	proc := h.processes.GetProcess(pid)
 	if proc == nil {
 		writeError(w, http.StatusNotFound, "Process not found")
 		return
 	}
-	
+
 	writeJSON(w, http.StatusOK, proc)
 }
 
@@ -545,18 +545,18 @@ func (h *ExtendedHandlers) KillProcess(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, "Invalid PID")
 		return
 	}
-	
+
 	signal := r.URL.Query().Get("sig")
 	if signal == "" {
 		signal = "SIGTERM"
 	}
-	
+
 	result := h.processes.KillProcess(pid, signal)
 	if result.Status == "error" {
 		writeError(w, http.StatusForbidden, result.Message)
 		return
 	}
-	
+
 	writeJSON(w, http.StatusOK, result)
 }
 
@@ -567,13 +567,13 @@ func (h *ExtendedHandlers) TerminateProcess(w http.ResponseWriter, r *http.Reque
 		writeError(w, http.StatusBadRequest, "Invalid PID")
 		return
 	}
-	
+
 	result := h.processes.KillProcess(pid, "SIGTERM")
 	if result.Status == "error" {
 		writeError(w, http.StatusForbidden, result.Message)
 		return
 	}
-	
+
 	writeJSON(w, http.StatusOK, result)
 }
 
@@ -587,7 +587,7 @@ func (h *ExtendedHandlers) TopCPUProcesses(w http.ResponseWriter, r *http.Reques
 	if limit == 0 {
 		limit = 10
 	}
-	
+
 	processes := h.processes.TopCPU(limit)
 	writeJSON(w, http.StatusOK, models.ProcessListResponse{
 		Processes:  processes,
@@ -601,7 +601,7 @@ func (h *ExtendedHandlers) TopMemoryProcesses(w http.ResponseWriter, r *http.Req
 	if limit == 0 {
 		limit = 10
 	}
-	
+
 	processes := h.processes.TopMemory(limit)
 	writeJSON(w, http.StatusOK, models.ProcessListResponse{
 		Processes:  processes,
@@ -613,9 +613,9 @@ func (h *ExtendedHandlers) TopMemoryProcesses(w http.ResponseWriter, r *http.Req
 func (h *ExtendedHandlers) SearchProcesses(w http.ResponseWriter, r *http.Request) {
 	name := chi.URLParam(r, "name")
 	exact := r.URL.Query().Get("exact") == "true"
-	
+
 	processes := h.processes.SearchProcesses(name, exact)
-	
+
 	writeJSON(w, http.StatusOK, map[string]interface{}{
 		"query":     name,
 		"exact":     exact,
@@ -646,18 +646,18 @@ func (h *ExtendedHandlers) ApplyProfile(w http.ResponseWriter, r *http.Request) 
 		writeError(w, http.StatusBadRequest, "Invalid request body")
 		return
 	}
-	
+
 	if req.ProfileID == "" {
 		writeError(w, http.StatusBadRequest, "profile_id required")
 		return
 	}
-	
+
 	response := h.wizard.ApplyProfile(req.ProfileID, req.AdditionalServices, req.ExcludedServices)
 	if !response.Success {
 		writeError(w, http.StatusBadRequest, response.Message)
 		return
 	}
-	
+
 	writeJSON(w, http.StatusOK, response)
 }
 
@@ -667,7 +667,7 @@ func (h *ExtendedHandlers) GetRecommendations(w http.ResponseWriter, r *http.Req
 	if ram == 0 {
 		ram = 4096
 	}
-	
+
 	recommendations := h.wizard.GetRecommendations(ram)
 	writeJSON(w, http.StatusOK, recommendations)
 }
@@ -680,7 +680,7 @@ func (h *ExtendedHandlers) EstimateResources(w http.ResponseWriter, r *http.Requ
 		writeError(w, http.StatusBadRequest, "Invalid request body")
 		return
 	}
-	
+
 	estimate := h.wizard.EstimateResources(req.Services)
 	writeJSON(w, http.StatusOK, estimate)
 }
@@ -706,9 +706,9 @@ func (h *ExtendedHandlers) GetStatsHistory(w http.ResponseWriter, r *http.Reques
 	if minutes == 0 || minutes > 60 {
 		minutes = 60
 	}
-	
+
 	history := h.monitoring.GetHistory(minutes)
-	
+
 	writeJSON(w, http.StatusOK, models.StatsHistoryResponse{
 		History: history,
 		Count:   len(history),
@@ -726,7 +726,7 @@ func (h *ExtendedHandlers) SetAlertThresholds(w http.ResponseWriter, r *http.Req
 		writeError(w, http.StatusBadRequest, "Invalid request body")
 		return
 	}
-	
+
 	updated := h.monitoring.SetThresholds(thresholds)
 	writeJSON(w, http.StatusOK, updated)
 }
@@ -751,13 +751,13 @@ func (h *ExtendedHandlers) SetPreferences(w http.ResponseWriter, r *http.Request
 		writeError(w, http.StatusBadRequest, "Invalid request body")
 		return
 	}
-	
+
 	prefs, err := h.preferences.Update(update)
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, "Failed to save preferences")
 		return
 	}
-	
+
 	writeJSON(w, http.StatusOK, map[string]interface{}{
 		"status":      "ok",
 		"preferences": prefs,
@@ -791,7 +791,7 @@ func (h *ExtendedHandlers) AddFavorite(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, "Service name required")
 		return
 	}
-	
+
 	prefs := h.preferences.AddFavorite(serviceName)
 	writeJSON(w, http.StatusOK, map[string]interface{}{
 		"status":    "ok",
@@ -806,7 +806,7 @@ func (h *ExtendedHandlers) RemoveFavorite(w http.ResponseWriter, r *http.Request
 		writeError(w, http.StatusBadRequest, "Service name required")
 		return
 	}
-	
+
 	prefs := h.preferences.RemoveFavorite(serviceName)
 	writeJSON(w, http.StatusOK, map[string]interface{}{
 		"status":    "ok",
@@ -821,9 +821,9 @@ func (h *ExtendedHandlers) ToggleFavorite(w http.ResponseWriter, r *http.Request
 		writeError(w, http.StatusBadRequest, "Service name required")
 		return
 	}
-	
+
 	prefs := h.preferences.Get()
-	
+
 	// Check if already in favorites
 	isFavorite := false
 	for _, f := range prefs.Favorites {
@@ -832,13 +832,13 @@ func (h *ExtendedHandlers) ToggleFavorite(w http.ResponseWriter, r *http.Request
 			break
 		}
 	}
-	
+
 	if isFavorite {
 		prefs = h.preferences.RemoveFavorite(serviceName)
 	} else {
 		prefs = h.preferences.AddFavorite(serviceName)
 	}
-	
+
 	writeJSON(w, http.StatusOK, map[string]interface{}{
 		"status":      "ok",
 		"is_favorite": !isFavorite,
@@ -858,9 +858,9 @@ func (h *ExtendedHandlers) GetPowerStatus(w http.ResponseWriter, r *http.Request
 		})
 		return
 	}
-	
+
 	status := h.power.GetStatus()
-	
+
 	// Convert to API response format
 	response := map[string]interface{}{
 		"available":       status.Available,
@@ -873,11 +873,11 @@ func (h *ExtendedHandlers) GetPowerStatus(w http.ResponseWriter, r *http.Request
 		"estimated_mins":  status.EstimatedMins,
 		"last_updated":    status.LastUpdated,
 	}
-	
+
 	if status.Error != "" {
 		response["error"] = status.Error
 	}
-	
+
 	// Add human-readable status
 	if !status.Available {
 		response["status"] = "unavailable"
@@ -896,7 +896,7 @@ func (h *ExtendedHandlers) GetPowerStatus(w http.ResponseWriter, r *http.Request
 	} else {
 		response["status"] = "plugged_in"
 	}
-	
+
 	// Add time remaining estimate
 	if status.EstimatedMins > 0 {
 		hours := status.EstimatedMins / 60
@@ -907,7 +907,7 @@ func (h *ExtendedHandlers) GetPowerStatus(w http.ResponseWriter, r *http.Request
 			response["time_remaining"] = fmt.Sprintf("%dm", mins)
 		}
 	}
-	
+
 	writeJSON(w, http.StatusOK, response)
 }
 
@@ -916,7 +916,7 @@ func (h *ExtendedHandlers) SetCharging(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusServiceUnavailable, "Power manager not available")
 		return
 	}
-	
+
 	var req struct {
 		Enable bool `json:"enable"`
 	}
@@ -924,12 +924,12 @@ func (h *ExtendedHandlers) SetCharging(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, "Invalid request body")
 		return
 	}
-	
+
 	if err := h.power.SetCharging(req.Enable); err != nil {
 		writeError(w, http.StatusInternalServerError, err.Error())
 		return
 	}
-	
+
 	writeJSON(w, http.StatusOK, map[string]interface{}{
 		"status":   "success",
 		"charging": req.Enable,
@@ -951,7 +951,7 @@ func (h *ExtendedHandlers) GetSMBShares(w http.ResponseWriter, r *http.Request) 
 		writeError(w, http.StatusInternalServerError, err.Error())
 		return
 	}
-	
+
 	writeJSON(w, http.StatusOK, map[string]interface{}{
 		"shares": shares,
 		"count":  len(shares),
@@ -960,20 +960,20 @@ func (h *ExtendedHandlers) GetSMBShares(w http.ResponseWriter, r *http.Request) 
 
 func (h *ExtendedHandlers) GetSMBShare(w http.ResponseWriter, r *http.Request) {
 	name := chi.URLParam(r, "name")
-	
+
 	shares, err := h.storage.GetSMBShares()
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, err.Error())
 		return
 	}
-	
+
 	for _, share := range shares {
 		if share.Name == name {
 			writeJSON(w, http.StatusOK, share)
 			return
 		}
 	}
-	
+
 	writeError(w, http.StatusNotFound, "Share not found")
 }
 
@@ -983,12 +983,12 @@ func (h *ExtendedHandlers) CreateSMBShare(w http.ResponseWriter, r *http.Request
 		writeError(w, http.StatusBadRequest, "Invalid request body")
 		return
 	}
-	
+
 	if err := h.storage.CreateSMBShare(share); err != nil {
 		writeError(w, http.StatusInternalServerError, err.Error())
 		return
 	}
-	
+
 	writeJSON(w, http.StatusCreated, map[string]interface{}{
 		"status":  "success",
 		"message": "Share created successfully",
@@ -998,18 +998,18 @@ func (h *ExtendedHandlers) CreateSMBShare(w http.ResponseWriter, r *http.Request
 
 func (h *ExtendedHandlers) UpdateSMBShare(w http.ResponseWriter, r *http.Request) {
 	name := chi.URLParam(r, "name")
-	
+
 	var share managers.SMBShare
 	if err := json.NewDecoder(r.Body).Decode(&share); err != nil {
 		writeError(w, http.StatusBadRequest, "Invalid request body")
 		return
 	}
-	
+
 	if err := h.storage.UpdateSMBShare(name, share); err != nil {
 		writeError(w, http.StatusInternalServerError, err.Error())
 		return
 	}
-	
+
 	writeJSON(w, http.StatusOK, map[string]interface{}{
 		"status":  "success",
 		"message": "Share updated successfully",
@@ -1018,12 +1018,12 @@ func (h *ExtendedHandlers) UpdateSMBShare(w http.ResponseWriter, r *http.Request
 
 func (h *ExtendedHandlers) DeleteSMBShare(w http.ResponseWriter, r *http.Request) {
 	name := chi.URLParam(r, "name")
-	
+
 	if err := h.storage.DeleteSMBShare(name); err != nil {
 		writeError(w, http.StatusInternalServerError, err.Error())
 		return
 	}
-	
+
 	writeJSON(w, http.StatusOK, map[string]interface{}{
 		"status":  "success",
 		"message": "Share deleted successfully",
@@ -1040,7 +1040,7 @@ func (h *ExtendedHandlers) GetDiskHealth(w http.ResponseWriter, r *http.Request)
 		writeError(w, http.StatusInternalServerError, err.Error())
 		return
 	}
-	
+
 	// Count warnings and calculate overall status
 	totalWarnings := 0
 	overallHealth := "PASSED"
@@ -1052,7 +1052,7 @@ func (h *ExtendedHandlers) GetDiskHealth(w http.ResponseWriter, r *http.Request)
 			overallHealth = "UNKNOWN"
 		}
 	}
-	
+
 	writeJSON(w, http.StatusOK, map[string]interface{}{
 		"disks":          disks,
 		"count":          len(disks),
@@ -1063,17 +1063,17 @@ func (h *ExtendedHandlers) GetDiskHealth(w http.ResponseWriter, r *http.Request)
 
 func (h *ExtendedHandlers) GetDiskHealthByDevice(w http.ResponseWriter, r *http.Request) {
 	device := chi.URLParam(r, "device")
-	
+
 	// Reconstruct device path
 	if !strings.HasPrefix(device, "/dev/") {
 		device = "/dev/" + device
 	}
-	
+
 	health, err := h.storage.GetDiskHealthByDevice(device)
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, err.Error())
 		return
 	}
-	
+
 	writeJSON(w, http.StatusOK, health)
 }
