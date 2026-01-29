@@ -11,30 +11,34 @@ stages:
 variables:
   GOPROXY: "https://proxy.golang.org,direct"
   GHCR_IMAGE: "ghcr.io/cubeos-app/api"
+  BUILDER_IMAGE: "ghcr.io/cubeos-app/api-builder:latest"
 
 # -----------------------------------------------------------------------------
-# LINT
+# LINT - Uses builder image with pre-cached deps
 # -----------------------------------------------------------------------------
 lint:
   stage: lint
-  tags: [arm64, cubeos]
+  tags: [docker]
+  image: ${BUILDER_IMAGE}
   script:
-    - go version
-    - go mod download
+    - cp -r . /app/
+    - cd /app
     - go vet ./...
-    - test -z "$(gofmt -l .)" || (echo "Code not formatted" && gofmt -l . && exit 1)
+    - test -z "$(gofmt -l . | grep -v vendor)" || (echo "Code not formatted" && gofmt -l . && exit 1)
   rules:
     - if: $CI_PIPELINE_SOURCE == "merge_request_event"
     - if: $CI_COMMIT_BRANCH == "main"
 
 # -----------------------------------------------------------------------------
-# TEST
+# TEST - Uses builder image with pre-cached deps
 # -----------------------------------------------------------------------------
 test:
   stage: test
-  tags: [arm64, cubeos]
+  tags: [docker]
+  image: ${BUILDER_IMAGE}
   script:
-    - go mod download
+    - cp -r . /app/
+    - cd /app
     - go test -v -coverprofile=coverage.out ./... || true
   artifacts:
     paths:
@@ -45,15 +49,17 @@ test:
     - if: $CI_COMMIT_BRANCH == "main"
 
 # -----------------------------------------------------------------------------
-# BUILD
+# BUILD - Uses builder image with pre-cached deps
 # -----------------------------------------------------------------------------
 build:
   stage: build
-  tags: [arm64, cubeos]
+  tags: [docker]
+  image: ${BUILDER_IMAGE}
   script:
-    - go mod download
+    - cp -r . /app/
+    - cd /app
     - CGO_ENABLED=1 go build -ldflags="-s -w -X main.Version=${CI_COMMIT_SHORT_SHA}" -o cubeos-api ./cmd/cubeos-api/
-    - ls -lh cubeos-api
+    - cp cubeos-api ${CI_PROJECT_DIR}/
   artifacts:
     paths:
       - cubeos-api
