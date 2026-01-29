@@ -1,7 +1,6 @@
 module cubeos-api
 
-go 1.24
-
+go 1.24.0
 
 require (
 	github.com/docker/docker v27.0.0+incompatible
