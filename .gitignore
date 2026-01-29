@@ -1,5 +1,5 @@
-# Binaries
-cubeos-api
+# Binaries (only in root)
+/cubeos-api
 *.exe
 build/
 
