@@ -97,4 +97,4 @@ deploy:
     url: http://nllei01mule01:9009
   rules:
     - if: $CI_COMMIT_BRANCH == "main"
-      when: manual
+      when: on_success
