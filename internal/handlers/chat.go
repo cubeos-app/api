@@ -122,6 +122,9 @@ SYSTEM INFO:
 
 Be direct. No greetings or filler words.`
 
+// GitHub base URL for documentation links
+const docsBaseURL = "https://github.com/cubeos-app/docs/blob/main/"
+
 // getRelevantDocs queries ChromaDB for documents relevant to the query
 func (h *ChatHandler) getRelevantDocs(query string, nResults int) ([]string, []string, error) {
 	// Generate embedding for the query
@@ -170,22 +173,24 @@ func (h *ChatHandler) getRelevantDocs(query string, nResults int) ([]string, []s
 		return nil, nil, nil
 	}
 
-	// Extract documents and sources
+	// Extract documents and sources (convert to GitHub URLs)
 	docs := result.Documents[0]
 	var sources []string
 	if len(result.Metadatas) > 0 {
 		for _, meta := range result.Metadatas[0] {
 			if source, ok := meta["source"]; ok {
+				// Convert to GitHub URL
+				githubURL := docsBaseURL + source
 				// Deduplicate sources
 				found := false
 				for _, s := range sources {
-					if s == source {
+					if s == githubURL {
 						found = true
 						break
 					}
 				}
 				if !found {
-					sources = append(sources, source)
+					sources = append(sources, githubURL)
 				}
 			}
 		}
@@ -276,8 +281,8 @@ func (h *ChatHandler) getDocsCount() int {
 
 // buildSystemPrompt creates a system prompt with RAG context
 func (h *ChatHandler) buildSystemPrompt(query string) (string, []string) {
-	// Try to get relevant documents
-	docs, sources, err := h.getRelevantDocs(query, 3)
+	// Try to get relevant documents (reduced to 2 for more focused responses)
+	docs, sources, err := h.getRelevantDocs(query, 2)
 	if err != nil || len(docs) == 0 {
 		// Fallback to static prompt if RAG fails
 		return fallbackSystemPrompt, nil
@@ -286,9 +291,9 @@ func (h *ChatHandler) buildSystemPrompt(query string) (string, []string) {
 	// Combine documents into context
 	context := strings.Join(docs, "\n\n---\n\n")
 
-	// Truncate if too long (keep under ~1500 chars for small model context)
-	if len(context) > 1500 {
-		context = context[:1500] + "..."
+	// Truncate if too long (reduced to 1000 chars for more concise responses)
+	if len(context) > 1000 {
+		context = context[:1000] + "..."
 	}
 
 	return fmt.Sprintf(systemPromptTemplate, context), sources
