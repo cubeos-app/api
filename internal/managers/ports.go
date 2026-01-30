@@ -379,6 +379,101 @@ func (m *PortManager) SyncFromSystem(composeManager *ComposeManager) error {
 	}
 
 	return nil
+
+// SyncFromDockerPS scans running containers via docker ps and creates allocations
+// This complements SyncFromSystem (compose files) by detecting actual runtime ports
+func (m *PortManager) SyncFromDockerPS(db *sql.DB) error {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+
+	// Run docker ps to get running containers with their ports
+	cmd := exec.Command("docker", "ps", "--format", "{{.Names}}:{{.Ports}}")
+	output, err := cmd.Output()
+	if err != nil {
+		return fmt.Errorf("failed to run docker ps: %w", err)
+	}
+
+	lines := strings.Split(strings.TrimSpace(string(output)), "\n")
+	portRe := regexp.MustCompile(`(?:[\d.]+:)?(\d+)->(\d+)/(tcp|udp)`)
+
+	for _, line := range lines {
+		if line == "" {
+			continue
+		}
+
+		parts := strings.SplitN(line, ":", 2)
+		if len(parts) < 2 {
+			continue
+		}
+
+		containerName := parts[0]
+		portsStr := parts[1]
+
+		// Extract app name from container name
+		appName := containerName
+		if strings.HasPrefix(containerName, "cubeos-") {
+			appName = strings.TrimPrefix(containerName, "cubeos-")
+		} else if strings.HasPrefix(containerName, "mulecube-") {
+			appName = strings.TrimPrefix(containerName, "mulecube-")
+		}
+
+		// Get app ID from database
+		var appID int64
+		err := db.QueryRow("SELECT id FROM apps WHERE name = ?", appName).Scan(&appID)
+		if err != nil {
+			err = db.QueryRow("SELECT id FROM apps WHERE name = ?", containerName).Scan(&appID)
+			if err != nil {
+				continue
+			}
+		}
+
+		// Extract all port mappings
+		matches := portRe.FindAllStringSubmatch(portsStr, -1)
+		for _, match := range matches {
+			if len(match) < 4 {
+				continue
+			}
+
+			hostPort, _ := strconv.Atoi(match[1])
+			protocol := match[3]
+
+			if hostPort == 0 {
+				continue
+			}
+
+			if ReservedPorts[hostPort] {
+				continue
+			}
+
+			var count int
+			db.QueryRow("SELECT COUNT(*) FROM port_allocations WHERE port = ?", hostPort).Scan(&count)
+			if count > 0 {
+				continue
+			}
+
+			db.Exec(`
+				INSERT OR IGNORE INTO port_allocations (app_id, port, protocol, description)
+				VALUES (?, ?, ?, ?)
+			`, appID, hostPort, protocol, fmt.Sprintf("Auto-synced from container %s", containerName))
+		}
+	}
+
+	return nil
+}
+
+// SyncFromSystemEnhanced combines compose file scanning AND docker ps scanning
+func (m *PortManager) SyncFromSystemEnhanced(composeManager *ComposeManager, db *sql.DB) error {
+	// First, sync from compose files
+	if err := m.SyncFromSystem(composeManager); err != nil {
+		// Log but continue
+	}
+
+	// Then, sync from running containers
+	if err := m.SyncFromDockerPS(db); err != nil {
+		// Log but continue
+	}
+
+	return nil
 }
 
 // GetPortStats returns statistics about port usage

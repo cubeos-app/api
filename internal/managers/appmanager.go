@@ -1188,11 +1188,35 @@ func (m *AppManager) ListDomainsEnhanced() ([]models.DomainInfo, error) {
 	return domains, nil
 }
 
-// SyncDomainsFromPihole imports existing Pi-hole DNS entries
+
+// SyncDomainsFromPihole imports existing Pi-hole DNS entries with improved app matching
+// Uses NPM as primary source for port info and better subdomain-to-app matching
 func (m *AppManager) SyncDomainsFromPihole() error {
 	entries, err := m.piholeManager.GetCubeOSDomains()
 	if err != nil {
 		return err
+	}
+
+	// Pre-fetch NPM hosts to get accurate port mappings
+	npmHosts, _ := m.npmManager.ListProxyHosts()
+	npmMap := make(map[string]*NPMProxyHost)
+	for i := range npmHosts {
+		for _, domain := range npmHosts[i].DomainNames {
+			npmMap[domain] = &npmHosts[i]
+		}
+	}
+
+	// Build a map of all registered apps for matching
+	rows, _ := m.db.Query("SELECT id, name FROM apps")
+	appMap := make(map[string]int64) // name -> id
+	if rows != nil {
+		defer rows.Close()
+		for rows.Next() {
+			var id int64
+			var name string
+			rows.Scan(&id, &name)
+			appMap[name] = id
+		}
 	}
 
 	for _, entry := range entries {
@@ -1209,25 +1233,172 @@ func (m *AppManager) SyncDomainsFromPihole() error {
 			subdomain = "" // It's cubeos.cube itself
 		}
 
-		// Try to find matching app
-		var appID int64 = 1 // Default to first app (pihole)
-		var foundID int64
-		m.db.QueryRow("SELECT id FROM apps WHERE name = ?", subdomain).Scan(&foundID)
-		if foundID > 0 {
-			appID = foundID
-		}
-
-		// Get port from NPM if available
+		// Determine the correct app and port using multiple strategies
+		var appID int64 = 0
 		backendPort := 80
-		if host, _ := m.npmManager.FindProxyHostByDomain(entry.Domain); host != nil {
-			backendPort = host.ForwardPort
+
+		// Strategy 1: Get info from NPM (most accurate - has actual forward port)
+		if npmHost, ok := npmMap[entry.Domain]; ok {
+			backendPort = npmHost.ForwardPort
+
+			// Try to match app by ForwardHost (container name pattern)
+			containerName := npmHost.ForwardHost
+			if strings.HasPrefix(containerName, "cubeos-") {
+				appName := strings.TrimPrefix(containerName, "cubeos-")
+				if id, ok := appMap[appName]; ok {
+					appID = id
+				}
+			}
 		}
 
-		// Insert into database
+		// Strategy 2: Match by subdomain name directly (if NPM didn't match)
+		if appID == 0 && subdomain != "" {
+			if id, ok := appMap[subdomain]; ok {
+				appID = id
+			}
+		}
+
+		// Strategy 3: Special cases for known domains
+		if appID == 0 {
+			switch subdomain {
+			case "api":
+				if id, ok := appMap["orchestrator"]; ok {
+					appID = id
+				}
+			case "logs":
+				if id, ok := appMap["dozzle"]; ok {
+					appID = id
+				}
+			case "": // cubeos.cube itself - main dashboard
+				if id, ok := appMap["orchestrator"]; ok {
+					appID = id
+				}
+			}
+		}
+
+		// Strategy 4: Partial match
+		if appID == 0 && subdomain != "" {
+			for appName, id := range appMap {
+				if strings.Contains(subdomain, appName) || strings.Contains(appName, subdomain) {
+					appID = id
+					break
+				}
+			}
+		}
+
+		// Strategy 5: Check if there's a coreapps folder for this subdomain
+		if appID == 0 && subdomain != "" {
+			composePath := filepath.Join(filepath.Dir(m.dataDir), "coreapps", subdomain, "appconfig", "docker-compose.yml")
+			if _, err := os.Stat(composePath); err == nil {
+				// Found a compose file - register the app
+				result, err := m.db.Exec(`
+					INSERT OR IGNORE INTO apps (name, display_name, description, type, source, enabled)
+					VALUES (?, ?, '', 'system', 'cubeos', TRUE)
+				`, subdomain, strings.Title(subdomain))
+				if err == nil {
+					if id, err := result.LastInsertId(); err == nil && id > 0 {
+						appID = id
+					} else {
+						m.db.QueryRow("SELECT id FROM apps WHERE name = ?", subdomain).Scan(&appID)
+					}
+				}
+			}
+		}
+
+		// Skip unmatched domains rather than wrongly attributing them
+		if appID == 0 {
+			continue
+		}
+
+		// Insert into database with correct app and port
 		m.db.Exec(`
 			INSERT OR IGNORE INTO fqdns (app_id, fqdn, subdomain, backend_port, ssl_enabled)
 			VALUES (?, ?, ?, ?, FALSE)
 		`, appID, entry.Domain, subdomain, backendPort)
+	}
+
+	return nil
+}
+
+// SyncDomainsFromNPM syncs domains directly from NPM proxy hosts
+// This provides more accurate port information
+func (m *AppManager) SyncDomainsFromNPM() error {
+	hosts, err := m.npmManager.ListProxyHosts()
+	if err != nil {
+		return err
+	}
+
+	// Build app map
+	rows, _ := m.db.Query("SELECT id, name FROM apps")
+	appMap := make(map[string]int64)
+	if rows != nil {
+		defer rows.Close()
+		for rows.Next() {
+			var id int64
+			var name string
+			rows.Scan(&id, &name)
+			appMap[name] = id
+		}
+	}
+
+	for _, host := range hosts {
+		for _, domain := range host.DomainNames {
+			// Skip if already in database
+			var count int
+			m.db.QueryRow("SELECT COUNT(*) FROM fqdns WHERE fqdn = ?", domain).Scan(&count)
+			if count > 0 {
+				// Update the backend port if it changed
+				m.db.Exec("UPDATE fqdns SET backend_port = ? WHERE fqdn = ?", host.ForwardPort, domain)
+				continue
+			}
+
+			// Extract subdomain
+			subdomain := strings.TrimSuffix(domain, ".cubeos.cube")
+			if subdomain == domain {
+				subdomain = ""
+			}
+
+			// Find matching app
+			var appID int64 = 0
+
+			// By container name pattern
+			if strings.HasPrefix(host.ForwardHost, "cubeos-") {
+				appName := strings.TrimPrefix(host.ForwardHost, "cubeos-")
+				if id, ok := appMap[appName]; ok {
+					appID = id
+				}
+			}
+
+			// By subdomain
+			if appID == 0 && subdomain != "" {
+				if id, ok := appMap[subdomain]; ok {
+					appID = id
+				}
+			}
+
+			// Special cases
+			if appID == 0 {
+				switch subdomain {
+				case "api":
+					if id, ok := appMap["orchestrator"]; ok {
+						appID = id
+					}
+				case "logs":
+					if id, ok := appMap["dozzle"]; ok {
+						appID = id
+					}
+				}
+			}
+
+			if appID == 0 {
+				continue
+			}
+
+			m.db.Exec(`
+				INSERT OR IGNORE INTO fqdns (app_id, fqdn, subdomain, backend_port, ssl_enabled)
+				VALUES (?, ?, ?, ?, FALSE)
+			`, appID, domain, subdomain, host.ForwardPort)
+		}
 	}
 
 	return nil
