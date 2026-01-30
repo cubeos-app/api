@@ -46,53 +46,102 @@ type ChatMessage struct {
 	Content string `json:"content"`
 }
 
-const systemPrompt = `You are CubeOS Assistant, a helpful AI built into CubeOS - an open-source OS for self-hosted ARM64 servers.
+type ChatResponse struct {
+	Response string `json:"response"`
+	Done     bool   `json:"done"`
+}
 
-## Your Role
-- Help users navigate and use CubeOS
-- Answer questions about installed services
-- Be concise - users are often on mobile
+type ChatStatusResponse struct {
+	Available  bool   `json:"available"`
+	Model      string `json:"model"`
+	ModelReady bool   `json:"model_ready"`
+}
 
-## CubeOS Info
-- Dashboard: cubeos.cube or 192.168.42.1
-- Pi-hole: pihole.cubeos.cube/admin (password: cubeos)
-- NPM: npm.cubeos.cube
-- Dockge: dockge.cubeos.cube
-- Logs: logs.cubeos.cube
+// Optimized system prompt for small LLMs (Qwen2.5:0.5b)
+// Based on research: 50-150 tokens, explicit format, repeated constraints
+// Key changes from original:
+// - Reduced from ~300 tokens to ~100 tokens
+// - Explicit numbered rules (small models follow these better)
+// - No markdown headers (saves tokens, clearer structure)
+// - Direct facts section (easier for small models to retrieve)
+// - Explicit "don't know" fallback instruction
+const systemPrompt = `You are CubeOS Assistant. Answer questions about this home server system.
 
-## Guidelines
-- Keep responses SHORT (2-3 sentences)
-- If unsure, say so
-- For live stats, direct users to the Dashboard`
+RULES (follow exactly):
+1. Maximum 2-3 sentences per response
+2. Use plain text only
+3. If unsure, say "I don't have that information"
+4. Never invent URLs or passwords
 
+SYSTEM INFO:
+- Dashboard: http://cubeos.cube
+- Pi-hole DNS: http://pihole.cubeos.cube/admin (password: cubeos)
+- Proxy Manager: http://npm.cubeos.cube (cubeos@cubeos.app / cubeos123)
+- Logs: http://logs.cubeos.cube
+- Containers: http://dockge.cubeos.cube
+- WiFi: CubeOS-XXXX network
+- IP range: 192.168.42.x
+
+Be direct. No greetings or filler words.`
+
+// HandleChat handles non-streaming chat requests
 func (h *ChatHandler) HandleChat(w http.ResponseWriter, r *http.Request) {
 	var req ChatRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		http.Error(w, "Invalid request", http.StatusBadRequest)
+		http.Error(w, `{"error":"Invalid request"}`, http.StatusBadRequest)
 		return
 	}
 
-	if strings.TrimSpace(req.Message) == "" {
-		http.Error(w, "Message required", http.StatusBadRequest)
+	if req.Message == "" {
+		http.Error(w, `{"error":"Message required"}`, http.StatusBadRequest)
 		return
 	}
 
-	messages := []map[string]string{{"role": "system", "content": systemPrompt}}
+	// Build messages array with system prompt
+	messages := []map[string]string{
+		{"role": "system", "content": systemPrompt},
+	}
+
+	// Add history (limited to last 6 messages for small model context)
+	historyLimit := 6
+	if len(req.History) > historyLimit {
+		req.History = req.History[len(req.History)-historyLimit:]
+	}
 	for _, msg := range req.History {
-		messages = append(messages, map[string]string{"role": msg.Role, "content": msg.Content})
+		messages = append(messages, map[string]string{
+			"role":    msg.Role,
+			"content": msg.Content,
+		})
 	}
-	messages = append(messages, map[string]string{"role": "user", "content": req.Message})
 
+	// Add current message
+	messages = append(messages, map[string]string{
+		"role":    "user",
+		"content": req.Message,
+	})
+
+	// Optimized parameters for Qwen2.5:0.5b on Raspberry Pi
+	// Based on research: lower temp for factual, Qwen-specific top_p/top_k
 	ollamaReq := map[string]interface{}{
-		"model": h.ollamaModel, "messages": messages, "stream": false,
-		"options": map[string]interface{}{"temperature": 0.7, "num_predict": 512},
+		"model":    h.ollamaModel,
+		"messages": messages,
+		"stream":   false,
+		"options": map[string]interface{}{
+			"temperature":      0.5,  // Lower for factual accuracy (research: 0.3-0.5)
+			"top_p":            0.8,  // Qwen documentation recommended
+			"top_k":            20,   // Qwen documentation recommended
+			"repeat_penalty":   1.1,  // Reduce repetition
+			"num_predict":      256,  // Force concise output
+			"num_ctx":          2048, // Context window for small model
+		},
 	}
 
-	reqBody, _ := json.Marshal(ollamaReq)
+	body, _ := json.Marshal(ollamaReq)
+
 	client := &http.Client{Timeout: 120 * time.Second}
-	resp, err := client.Post(h.ollamaURL+"/api/chat", "application/json", bytes.NewReader(reqBody))
+	resp, err := client.Post(h.ollamaURL+"/api/chat", "application/json", bytes.NewReader(body))
 	if err != nil {
-		http.Error(w, "AI service unavailable", http.StatusServiceUnavailable)
+		http.Error(w, `{"error":"AI service unavailable"}`, http.StatusServiceUnavailable)
 		return
 	}
 	defer resp.Body.Close()
@@ -102,104 +151,184 @@ func (h *ChatHandler) HandleChat(w http.ResponseWriter, r *http.Request) {
 			Content string `json:"content"`
 		} `json:"message"`
 	}
-	json.NewDecoder(resp.Body).Decode(&ollamaResp)
-
-	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(map[string]interface{}{"response": ollamaResp.Message.Content, "model": h.ollamaModel})
-}
-
-func (h *ChatHandler) HandleChatStream(w http.ResponseWriter, r *http.Request) {
-	var req ChatRequest
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		http.Error(w, "Invalid request", http.StatusBadRequest)
+	if err := json.NewDecoder(resp.Body).Decode(&ollamaResp); err != nil {
+		http.Error(w, `{"error":"Failed to parse AI response"}`, http.StatusInternalServerError)
 		return
 	}
 
-	messages := []map[string]string{{"role": "system", "content": systemPrompt}}
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(ChatResponse{
+		Response: ollamaResp.Message.Content,
+		Done:     true,
+	})
+}
+
+// HandleChatStream handles streaming chat requests via SSE
+func (h *ChatHandler) HandleChatStream(w http.ResponseWriter, r *http.Request) {
+	var req ChatRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		http.Error(w, `{"error":"Invalid request"}`, http.StatusBadRequest)
+		return
+	}
+
+	if req.Message == "" {
+		http.Error(w, `{"error":"Message required"}`, http.StatusBadRequest)
+		return
+	}
+
+	// Set SSE headers
+	w.Header().Set("Content-Type", "text/event-stream")
+	w.Header().Set("Cache-Control", "no-cache")
+	w.Header().Set("Connection", "keep-alive")
+	w.Header().Set("Access-Control-Allow-Origin", "*")
+
+	flusher, ok := w.(http.Flusher)
+	if !ok {
+		http.Error(w, `{"error":"Streaming not supported"}`, http.StatusInternalServerError)
+		return
+	}
+
+	// Build messages array
+	messages := []map[string]string{
+		{"role": "system", "content": systemPrompt},
+	}
+
+	// Add limited history
+	historyLimit := 6
+	if len(req.History) > historyLimit {
+		req.History = req.History[len(req.History)-historyLimit:]
+	}
 	for _, msg := range req.History {
-		messages = append(messages, map[string]string{"role": msg.Role, "content": msg.Content})
+		messages = append(messages, map[string]string{
+			"role":    msg.Role,
+			"content": msg.Content,
+		})
 	}
-	messages = append(messages, map[string]string{"role": "user", "content": req.Message})
 
+	messages = append(messages, map[string]string{
+		"role":    "user",
+		"content": req.Message,
+	})
+
+	// Optimized parameters for streaming
 	ollamaReq := map[string]interface{}{
-		"model": h.ollamaModel, "messages": messages, "stream": true,
-		"options": map[string]interface{}{"temperature": 0.7, "num_predict": 512},
+		"model":    h.ollamaModel,
+		"messages": messages,
+		"stream":   true,
+		"options": map[string]interface{}{
+			"temperature":    0.5,
+			"top_p":          0.8,
+			"top_k":          20,
+			"repeat_penalty": 1.1,
+			"num_predict":    256,
+			"num_ctx":        2048,
+		},
 	}
 
-	reqBody, _ := json.Marshal(ollamaReq)
+	body, _ := json.Marshal(ollamaReq)
+
 	client := &http.Client{Timeout: 120 * time.Second}
-	resp, err := client.Post(h.ollamaURL+"/api/chat", "application/json", bytes.NewReader(reqBody))
+	resp, err := client.Post(h.ollamaURL+"/api/chat", "application/json", bytes.NewReader(body))
 	if err != nil {
-		http.Error(w, "AI service unavailable", http.StatusServiceUnavailable)
+		fmt.Fprintf(w, "data: {\"error\":\"AI service unavailable\"}\n\n")
+		flusher.Flush()
 		return
 	}
 	defer resp.Body.Close()
 
-	w.Header().Set("Content-Type", "text/event-stream")
-	w.Header().Set("Cache-Control", "no-cache")
-	w.Header().Set("Connection", "keep-alive")
-
-	flusher, _ := w.(http.Flusher)
 	scanner := bufio.NewScanner(resp.Body)
 	for scanner.Scan() {
 		line := scanner.Text()
 		if line == "" {
 			continue
 		}
+
 		var chunk struct {
 			Message struct {
 				Content string `json:"content"`
 			} `json:"message"`
 			Done bool `json:"done"`
 		}
-		if json.Unmarshal([]byte(line), &chunk) == nil {
-			data, _ := json.Marshal(map[string]interface{}{"content": chunk.Message.Content, "done": chunk.Done})
-			fmt.Fprintf(w, "data: %s\n\n", data)
-			flusher.Flush()
-			if chunk.Done {
-				break
+
+		if err := json.Unmarshal([]byte(line), &chunk); err != nil {
+			continue
+		}
+
+		if chunk.Message.Content != "" {
+			data := map[string]interface{}{
+				"content": chunk.Message.Content,
+				"done":    chunk.Done,
 			}
+			jsonData, _ := json.Marshal(data)
+			fmt.Fprintf(w, "data: %s\n\n", jsonData)
+			flusher.Flush()
+		}
+
+		if chunk.Done {
+			fmt.Fprintf(w, "data: {\"done\":true}\n\n")
+			flusher.Flush()
+			break
 		}
 	}
 }
 
+// HandleChatStatus checks if Ollama is available and model is ready
 func (h *ChatHandler) HandleChatStatus(w http.ResponseWriter, r *http.Request) {
+	status := ChatStatusResponse{
+		Available:  false,
+		Model:      h.ollamaModel,
+		ModelReady: false,
+	}
+
+	// Check if Ollama is responding
 	client := &http.Client{Timeout: 5 * time.Second}
 	resp, err := client.Get(h.ollamaURL + "/api/tags")
-
-	w.Header().Set("Content-Type", "application/json")
 	if err != nil {
-		json.NewEncoder(w).Encode(map[string]interface{}{"available": false, "error": err.Error()})
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(status)
 		return
 	}
 	defer resp.Body.Close()
 
-	var tags struct {
+	status.Available = true
+
+	// Check if model is downloaded
+	var tagsResp struct {
 		Models []struct {
 			Name string `json:"name"`
 		} `json:"models"`
 	}
-	json.NewDecoder(resp.Body).Decode(&tags)
-
-	modelReady := false
-	for _, m := range tags.Models {
-		if strings.Contains(m.Name, "qwen") {
-			modelReady = true
-			break
+	if err := json.NewDecoder(resp.Body).Decode(&tagsResp); err == nil {
+		for _, model := range tagsResp.Models {
+			if strings.HasPrefix(model.Name, "qwen2.5:0.5b") ||
+				strings.HasPrefix(model.Name, h.ollamaModel) {
+				status.ModelReady = true
+				break
+			}
 		}
 	}
-	json.NewEncoder(w).Encode(map[string]interface{}{"available": true, "model": h.ollamaModel, "model_ready": modelReady})
+
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(status)
 }
 
+// HandlePullModel triggers model download
 func (h *ChatHandler) HandlePullModel(w http.ResponseWriter, r *http.Request) {
-	pullReq, _ := json.Marshal(map[string]interface{}{"name": h.ollamaModel, "stream": false})
-	client := &http.Client{Timeout: 600 * time.Second}
-	resp, err := client.Post(h.ollamaURL+"/api/pull", "application/json", bytes.NewReader(pullReq))
+	pullReq := map[string]interface{}{
+		"name":   h.ollamaModel,
+		"stream": false,
+	}
+
+	body, _ := json.Marshal(pullReq)
+
+	client := &http.Client{Timeout: 600 * time.Second} // 10 min for download
+	resp, err := client.Post(h.ollamaURL+"/api/pull", "application/json", bytes.NewReader(body))
 	if err != nil {
-		http.Error(w, "Failed to pull model", http.StatusServiceUnavailable)
+		http.Error(w, `{"error":"Failed to pull model"}`, http.StatusServiceUnavailable)
 		return
 	}
 	defer resp.Body.Close()
+
 	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(map[string]interface{}{"status": "pulling", "model": h.ollamaModel})
+	w.Write([]byte(`{"status":"pulling","model":"` + h.ollamaModel + `"}`))
 }
