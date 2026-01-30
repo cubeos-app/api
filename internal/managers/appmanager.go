@@ -51,7 +51,7 @@ func NewAppManager(db *sql.DB, dataDir string) *AppManager {
 		registryURL:    "localhost:5000",
 		npmManager:     NewNPMManager(filepath.Join(dataDir, "config")),
 		piholeManager:  NewPiholeManager(dataDir),
-		composeManager: NewComposeManager(dataDir),
+		composeManager: NewComposeManager(filepath.Dir(dataDir)),
 		portManager:    NewPortManager(db),
 	}
 	// Initialize NPM token in background
