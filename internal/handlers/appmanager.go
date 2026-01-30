@@ -36,17 +36,29 @@ func (h *AppManagerHandler) Routes() chi.Router {
 	r.Post("/apps/{name}/stop", h.StopApp)
 	r.Post("/apps/{name}/restart", h.RestartApp)
 	r.Get("/apps/{name}/status", h.GetAppStatus)
+	r.Get("/apps/{name}/config", h.GetAppConfig)
+	r.Put("/apps/{name}/config", h.SaveAppConfig)
 
 	// Ports
 	r.Get("/ports", h.ListPorts)
 	r.Post("/ports", h.AllocatePort)
 	r.Delete("/ports/{port}", h.ReleasePort)
 	r.Get("/ports/available", h.GetAvailablePort)
+	r.Get("/ports/listening", h.GetListeningPorts)
+	r.Get("/ports/stats", h.GetPortStats)
+	r.Post("/ports/sync", h.SyncPorts)
 
-	// FQDNs
+	// FQDNs / Domains
 	r.Get("/fqdns", h.ListFQDNs)
 	r.Post("/fqdns", h.RegisterFQDN)
 	r.Delete("/fqdns/{fqdn}", h.DeregisterFQDN)
+	r.Get("/domains", h.ListDomains)
+	r.Post("/domains/sync", h.SyncDomains)
+
+	// NPM (Nginx Proxy Manager)
+	r.Get("/npm/status", h.GetNPMStatus)
+	r.Get("/npm/hosts", h.ListNPMHosts)
+	r.Post("/npm/init", h.InitNPM)
 
 	// Profiles
 	r.Get("/profiles", h.ListProfiles)
@@ -67,6 +79,9 @@ func (h *AppManagerHandler) Routes() chi.Router {
 	r.Post("/casaos/preview", h.PreviewCasaOSApp)
 	r.Post("/casaos/import", h.ImportCasaOSApp)
 	r.Get("/casaos/stores", h.FetchCasaOSStore)
+
+	// Migration
+	r.Post("/migrate", h.RunMigration)
 
 	return r
 }
@@ -495,4 +510,120 @@ func (h *AppManagerHandler) FetchCasaOSStore(w http.ResponseWriter, r *http.Requ
 		apps = []models.CasaOSApp{}
 	}
 	json.NewEncoder(w).Encode(models.CasaOSStoreResponse{Apps: apps})
+}
+
+// === Config Editing ===
+
+func (h *AppManagerHandler) GetAppConfig(w http.ResponseWriter, r *http.Request) {
+	name := chi.URLParam(r, "name")
+	config, err := h.mgr.GetAppConfig(name)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusNotFound)
+		return
+	}
+	json.NewEncoder(w).Encode(config)
+}
+
+func (h *AppManagerHandler) SaveAppConfig(w http.ResponseWriter, r *http.Request) {
+	name := chi.URLParam(r, "name")
+
+	var req models.SaveConfigRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		http.Error(w, "Invalid request body", http.StatusBadRequest)
+		return
+	}
+
+	if err := h.mgr.SaveAppConfig(name, req.Compose, req.Env, req.Recreate); err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+
+	json.NewEncoder(w).Encode(map[string]interface{}{
+		"success":   true,
+		"recreated": req.Recreate,
+	})
+}
+
+// === Enhanced Ports ===
+
+func (h *AppManagerHandler) GetListeningPorts(w http.ResponseWriter, r *http.Request) {
+	ports, err := h.mgr.GetListeningPorts()
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+	json.NewEncoder(w).Encode(map[string]interface{}{
+		"ports": ports,
+	})
+}
+
+func (h *AppManagerHandler) GetPortStats(w http.ResponseWriter, r *http.Request) {
+	stats := h.mgr.GetPortStats()
+	json.NewEncoder(w).Encode(stats)
+}
+
+func (h *AppManagerHandler) SyncPorts(w http.ResponseWriter, r *http.Request) {
+	if err := h.mgr.SyncPortsFromSystem(); err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+	json.NewEncoder(w).Encode(map[string]string{"status": "synced"})
+}
+
+// === Enhanced Domains ===
+
+func (h *AppManagerHandler) ListDomains(w http.ResponseWriter, r *http.Request) {
+	domains, err := h.mgr.ListDomainsEnhanced()
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+	json.NewEncoder(w).Encode(map[string]interface{}{
+		"domains": domains,
+	})
+}
+
+func (h *AppManagerHandler) SyncDomains(w http.ResponseWriter, r *http.Request) {
+	if err := h.mgr.SyncDomainsFromPihole(); err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+	json.NewEncoder(w).Encode(map[string]string{"status": "synced"})
+}
+
+// === NPM (Nginx Proxy Manager) ===
+
+func (h *AppManagerHandler) GetNPMStatus(w http.ResponseWriter, r *http.Request) {
+	status := h.mgr.GetNPMStatus()
+	json.NewEncoder(w).Encode(status)
+}
+
+func (h *AppManagerHandler) ListNPMHosts(w http.ResponseWriter, r *http.Request) {
+	hosts, err := h.mgr.ListNPMHosts()
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+	json.NewEncoder(w).Encode(map[string]interface{}{
+		"hosts": hosts,
+	})
+}
+
+func (h *AppManagerHandler) InitNPM(w http.ResponseWriter, r *http.Request) {
+	if err := h.mgr.InitNPM(); err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+	json.NewEncoder(w).Encode(map[string]string{"status": "initialized"})
+}
+
+// === Migration ===
+
+func (h *AppManagerHandler) RunMigration(w http.ResponseWriter, r *http.Request) {
+	result, err := h.mgr.RunMigration()
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+	json.NewEncoder(w).Encode(result)
 }

@@ -33,19 +33,30 @@ var reservedPorts = map[int]bool{
 
 // AppManager manages applications, ports, FQDNs, and profiles
 type AppManager struct {
-	db          *sql.DB
-	dataDir     string
-	registryURL string
-	mu          sync.RWMutex
+	db             *sql.DB
+	dataDir        string
+	registryURL    string
+	npmManager     *NPMManager
+	piholeManager  *PiholeManager
+	composeManager *ComposeManager
+	portManager    *PortManager
+	mu             sync.RWMutex
 }
 
 // NewAppManager creates a new AppManager
 func NewAppManager(db *sql.DB, dataDir string) *AppManager {
-	return &AppManager{
-		db:          db,
-		dataDir:     dataDir,
-		registryURL: "localhost:5000",
+	mgr := &AppManager{
+		db:             db,
+		dataDir:        dataDir,
+		registryURL:    "localhost:5000",
+		npmManager:     NewNPMManager(filepath.Join(dataDir, "config")),
+		piholeManager:  NewPiholeManager(dataDir),
+		composeManager: NewComposeManager(dataDir),
+		portManager:    NewPortManager(db),
 	}
+	// Initialize NPM token in background
+	go mgr.npmManager.Init()
+	return mgr
 }
 
 // InitSchema creates the required database tables
@@ -507,14 +518,14 @@ func (m *AppManager) getFQDNByID(id int64) (*models.FQDN, error) {
 func (m *AppManager) addPiholeDNS(fqdn, ip string) {
 	customList := "/cubeos/coreapps/pihole/appdata/etc-pihole/custom.list"
 	entry := fmt.Sprintf("%s %s\n", ip, fqdn)
-
+	
 	f, err := os.OpenFile(customList, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644)
 	if err != nil {
 		return
 	}
 	defer f.Close()
 	f.WriteString(entry)
-
+	
 	// Reload Pi-hole DNS
 	exec.Command("docker", "exec", "pihole", "pihole", "restartdns").Run()
 }
@@ -1069,4 +1080,256 @@ func (m *AppManager) FetchCasaOSStore(storeURL string) ([]models.CasaOSApp, erro
 	}
 
 	return nil, fmt.Errorf("could not fetch apps from store")
+}
+
+// ============================================================================
+// Config Editing Methods
+// ============================================================================
+
+// GetAppConfig returns the compose and env file contents for an app
+func (m *AppManager) GetAppConfig(appName string) (*models.AppConfig, error) {
+	config, err := m.composeManager.GetConfig(appName)
+	if err != nil {
+		return nil, err
+	}
+	return &models.AppConfig{
+		AppName:     config.AppName,
+		ComposePath: config.ComposePath,
+		EnvPath:     config.EnvPath,
+		Compose:     config.ComposeFile,
+		Env:         config.EnvFile,
+		HasEnv:      config.HasEnv,
+	}, nil
+}
+
+// SaveAppConfig saves compose and env files with optional container recreate
+func (m *AppManager) SaveAppConfig(appName, compose, env string, recreate bool) error {
+	return m.composeManager.SaveConfig(appName, compose, env, recreate)
+}
+
+// ============================================================================
+// Enhanced Port Methods
+// ============================================================================
+
+// GetListeningPorts returns all ports currently listening (ss -tulnp)
+func (m *AppManager) GetListeningPorts() ([]models.ListeningPort, error) {
+	ports, err := m.portManager.GetListeningPorts()
+	if err != nil {
+		return nil, err
+	}
+	
+	var result []models.ListeningPort
+	for _, p := range ports {
+		result = append(result, models.ListeningPort{
+			Port:      p.Port,
+			Protocol:  p.Protocol,
+			Process:   p.Process,
+			LocalAddr: p.LocalAddr,
+		})
+	}
+	return result, nil
+}
+
+// GetPortStats returns port allocation statistics
+func (m *AppManager) GetPortStats() map[string]interface{} {
+	return m.portManager.GetPortStats()
+}
+
+// SyncPortsFromSystem scans running containers and syncs ports to database
+func (m *AppManager) SyncPortsFromSystem() error {
+	return m.portManager.SyncFromSystem(m.composeManager)
+}
+
+// ============================================================================
+// Enhanced Domain Methods (Pi-hole + NPM Integration)
+// ============================================================================
+
+// ListDomainsEnhanced returns domains with Pi-hole and NPM status
+func (m *AppManager) ListDomainsEnhanced() ([]models.DomainInfo, error) {
+	// Get FQDNs from database
+	fqdns, err := m.ListFQDNs()
+	if err != nil {
+		return nil, err
+	}
+
+	// Get Pi-hole entries
+	piholeEntries, _ := m.piholeManager.GetCubeOSDomains()
+	piholeMap := make(map[string]bool)
+	for _, e := range piholeEntries {
+		piholeMap[e.Domain] = true
+	}
+
+	// Get NPM hosts
+	npmHosts, _ := m.npmManager.ListProxyHosts()
+	npmMap := make(map[string]int) // domain -> proxy ID
+	for _, h := range npmHosts {
+		for _, d := range h.DomainNames {
+			npmMap[d] = h.ID
+		}
+	}
+
+	var domains []models.DomainInfo
+	for _, f := range fqdns {
+		domains = append(domains, models.DomainInfo{
+			ID:            f.ID,
+			AppID:         f.AppID,
+			AppName:       f.AppName,
+			FQDN:          f.FQDN,
+			Subdomain:     f.Subdomain,
+			BackendPort:   f.BackendPort,
+			SSLEnabled:    f.SSLEnabled,
+			NPMProxyID:    npmMap[f.FQDN],
+			PiholeEnabled: piholeMap[f.FQDN],
+			NPMEnabled:    npmMap[f.FQDN] > 0,
+			CreatedAt:     f.CreatedAt.Format(time.RFC3339),
+		})
+	}
+
+	return domains, nil
+}
+
+// SyncDomainsFromPihole imports existing Pi-hole DNS entries
+func (m *AppManager) SyncDomainsFromPihole() error {
+	entries, err := m.piholeManager.GetCubeOSDomains()
+	if err != nil {
+		return err
+	}
+
+	for _, entry := range entries {
+		// Skip if already in database
+		var count int
+		m.db.QueryRow("SELECT COUNT(*) FROM fqdns WHERE fqdn = ?", entry.Domain).Scan(&count)
+		if count > 0 {
+			continue
+		}
+
+		// Extract subdomain
+		subdomain := strings.TrimSuffix(entry.Domain, ".cubeos.cube")
+		if subdomain == entry.Domain {
+			subdomain = "" // It's cubeos.cube itself
+		}
+
+		// Try to find matching app
+		var appID int64 = 1 // Default to first app (pihole)
+		var foundID int64
+		m.db.QueryRow("SELECT id FROM apps WHERE name = ?", subdomain).Scan(&foundID)
+		if foundID > 0 {
+			appID = foundID
+		}
+
+		// Get port from NPM if available
+		backendPort := 80
+		if host, _ := m.npmManager.FindProxyHostByDomain(entry.Domain); host != nil {
+			backendPort = host.ForwardPort
+		}
+
+		// Insert into database
+		m.db.Exec(`
+			INSERT OR IGNORE INTO fqdns (app_id, fqdn, subdomain, backend_port, ssl_enabled)
+			VALUES (?, ?, ?, ?, FALSE)
+		`, appID, entry.Domain, subdomain, backendPort)
+	}
+
+	return nil
+}
+
+// ============================================================================
+// NPM (Nginx Proxy Manager) Methods
+// ============================================================================
+
+// GetNPMStatus returns NPM connection status
+func (m *AppManager) GetNPMStatus() map[string]interface{} {
+	healthy := m.npmManager.IsHealthy()
+	return map[string]interface{}{
+		"healthy":   healthy,
+		"connected": m.npmManager.token != "",
+		"url":       "http://npm.cubeos.cube",
+	}
+}
+
+// ListNPMHosts returns all NPM proxy hosts
+func (m *AppManager) ListNPMHosts() ([]models.NPMProxyHostInfo, error) {
+	hosts, err := m.npmManager.ListProxyHosts()
+	if err != nil {
+		return nil, err
+	}
+
+	var result []models.NPMProxyHostInfo
+	for _, h := range hosts {
+		result = append(result, models.NPMProxyHostInfo{
+			ID:            h.ID,
+			DomainNames:   h.DomainNames,
+			ForwardHost:   h.ForwardHost,
+			ForwardPort:   h.ForwardPort,
+			ForwardScheme: h.ForwardScheme,
+			SSLForced:     h.SSLForced,
+			Enabled:       h.Enabled == 1,
+			CreatedOn:     h.CreatedOn,
+		})
+	}
+	return result, nil
+}
+
+// InitNPM initializes the NPM connection
+func (m *AppManager) InitNPM() error {
+	return m.npmManager.Init()
+}
+
+// ============================================================================
+// Migration Methods
+// ============================================================================
+
+// RunMigration imports existing apps, ports, and domains
+func (m *AppManager) RunMigration() (*models.MigrationResult, error) {
+	result := &models.MigrationResult{}
+
+	// 1. Import apps from coreapps directory
+	apps, err := m.composeManager.ListApps()
+	if err != nil {
+		result.Errors = append(result.Errors, fmt.Sprintf("Failed to list apps: %v", err))
+	} else {
+		for _, appName := range apps {
+			// Check if already exists
+			var count int
+			m.db.QueryRow("SELECT COUNT(*) FROM apps WHERE name = ?", appName).Scan(&count)
+			if count > 0 {
+				continue
+			}
+
+			// Get display name
+			displayName := strings.ReplaceAll(appName, "-", " ")
+			displayName = strings.Title(displayName)
+
+			// Insert
+			_, err := m.db.Exec(`
+				INSERT INTO apps (name, display_name, description, type, source, enabled)
+				VALUES (?, ?, '', 'system', 'cubeos', TRUE)
+			`, appName, displayName)
+			if err == nil {
+				result.AppsImported++
+			}
+		}
+	}
+
+	// 2. Sync domains from Pi-hole
+	if err := m.SyncDomainsFromPihole(); err != nil {
+		result.Errors = append(result.Errors, fmt.Sprintf("Failed to sync domains: %v", err))
+	} else {
+		// Count domains
+		var count int
+		m.db.QueryRow("SELECT COUNT(*) FROM fqdns").Scan(&count)
+		result.DomainsImported = count
+	}
+
+	// 3. Sync ports from running containers
+	if err := m.SyncPortsFromSystem(); err != nil {
+		result.Errors = append(result.Errors, fmt.Sprintf("Failed to sync ports: %v", err))
+	} else {
+		// Count ports
+		var count int
+		m.db.QueryRow("SELECT COUNT(*) FROM port_allocations").Scan(&count)
+		result.PortsImported = count
+	}
+
+	return result, nil
 }

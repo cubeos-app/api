@@ -8,7 +8,7 @@ type App struct {
 	Name        string    `db:"name" json:"name"`
 	DisplayName string    `db:"display_name" json:"display_name"`
 	Description string    `db:"description" json:"description"`
-	Type        string    `db:"type" json:"type"`     // "system" or "user"
+	Type        string    `db:"type" json:"type"` // "system" or "user"
 	Source      string    `db:"source" json:"source"` // "cubeos", "casaos", "custom"
 	IconURL     string    `db:"icon_url" json:"icon_url,omitempty"`
 	GithubRepo  string    `db:"github_repo" json:"github_repo,omitempty"`
@@ -29,6 +29,7 @@ type PortAllocation struct {
 	Port        int       `db:"port" json:"port"`
 	Protocol    string    `db:"protocol" json:"protocol"` // "tcp" or "udp"
 	Description string    `db:"description" json:"description,omitempty"`
+	InUse       bool      `db:"-" json:"in_use"` // From ss -tulnp check
 	CreatedAt   time.Time `db:"created_at" json:"created_at"`
 }
 
@@ -41,6 +42,7 @@ type FQDN struct {
 	Subdomain   string    `db:"subdomain" json:"subdomain"`
 	BackendPort int       `db:"backend_port" json:"backend_port"`
 	SSLEnabled  bool      `db:"ssl_enabled" json:"ssl_enabled"`
+	NPMProxyID  int       `db:"npm_proxy_id" json:"npm_proxy_id,omitempty"`
 	CreatedAt   time.Time `db:"created_at" json:"created_at"`
 }
 
@@ -58,10 +60,11 @@ type Profile struct {
 
 // ProfileApp represents an app's state within a profile
 type ProfileApp struct {
-	ProfileID int64  `db:"profile_id" json:"profile_id"`
-	AppID     int64  `db:"app_id" json:"app_id"`
-	AppName   string `db:"app_name" json:"app_name,omitempty"`
-	Enabled   bool   `db:"enabled" json:"enabled"`
+	ProfileID      int64  `db:"profile_id" json:"profile_id"`
+	AppID          int64  `db:"app_id" json:"app_id"`
+	AppName        string `db:"app_name" json:"app_name,omitempty"`
+	AppDisplayName string `db:"app_display_name" json:"app_display_name,omitempty"`
+	Enabled        bool   `db:"enabled" json:"enabled"`
 }
 
 // Request/Response types
@@ -79,7 +82,7 @@ type RegisterAppRequest struct {
 
 type AllocatePortRequest struct {
 	AppName     string `json:"app_name"`
-	Port        int    `json:"port,omitempty"`     // 0 = auto-allocate
+	Port        int    `json:"port,omitempty"` // 0 = auto-allocate
 	Protocol    string `json:"protocol,omitempty"` // default: tcp
 	Description string `json:"description,omitempty"`
 }
@@ -110,21 +113,21 @@ type CasaOSImportRequest struct {
 
 // CasaOS app format
 type CasaOSApp struct {
-	Name        string            `json:"name"`
-	Title       string            `json:"title,omitempty"`
-	Tagline     string            `json:"tagline,omitempty"`
-	Overview    string            `json:"overview,omitempty"`
-	Developer   string            `json:"developer,omitempty"`
-	Icon        string            `json:"icon,omitempty"`
-	Category    string            `json:"category,omitempty"`
-	Container   CasaOSContainer   `json:"container,omitempty"`
-	WebUI       CasaOSWebUI       `json:"web_ui,omitempty"`
-	Envs        []CasaOSEnv       `json:"envs,omitempty"`
-	Ports       []CasaOSPort      `json:"ports,omitempty"`
-	Volumes     []CasaOSVolume    `json:"volumes,omitempty"`
-	Devices     []CasaOSDevice    `json:"devices,omitempty"`
-	Sysctls     map[string]string `json:"sysctls,omitempty"`
-	Constraints CasaOSConstraints `json:"constraints,omitempty"`
+	Name        string             `json:"name"`
+	Title       string             `json:"title,omitempty"`
+	Tagline     string             `json:"tagline,omitempty"`
+	Overview    string             `json:"overview,omitempty"`
+	Developer   string             `json:"developer,omitempty"`
+	Icon        string             `json:"icon,omitempty"`
+	Category    string             `json:"category,omitempty"`
+	Container   CasaOSContainer    `json:"container,omitempty"`
+	WebUI       CasaOSWebUI        `json:"web_ui,omitempty"`
+	Envs        []CasaOSEnv        `json:"envs,omitempty"`
+	Ports       []CasaOSPort       `json:"ports,omitempty"`
+	Volumes     []CasaOSVolume     `json:"volumes,omitempty"`
+	Devices     []CasaOSDevice     `json:"devices,omitempty"`
+	Sysctls     map[string]string  `json:"sysctls,omitempty"`
+	Constraints CasaOSConstraints  `json:"constraints,omitempty"`
 }
 
 type CasaOSContainer struct {
@@ -212,6 +215,86 @@ type CasaOSPreviewResponse struct {
 }
 
 type AppStatusResponse struct {
-	Name   string `json:"name"`
-	Status string `json:"status"` // "running", "stopped", "partial", "unknown"
+	Name          string `json:"name"`
+	Status        string `json:"status"` // "running", "stopped", "partial", "unknown"
+	ContainerName string `json:"container_name,omitempty"`
+	Running       bool   `json:"running"`
+}
+
+// AppConfig represents compose and env file contents
+type AppConfig struct {
+	AppName     string `json:"app_name"`
+	ComposePath string `json:"compose_path"`
+	EnvPath     string `json:"env_path"`
+	Compose     string `json:"compose"`
+	Env         string `json:"env"`
+	HasEnv      bool   `json:"has_env"`
+}
+
+// SaveConfigRequest for saving compose/env files
+type SaveConfigRequest struct {
+	Compose  string `json:"compose"`
+	Env      string `json:"env,omitempty"`
+	Recreate bool   `json:"recreate"` // Whether to recreate container after save
+}
+
+// NPMProxyHostInfo represents NPM proxy host info for display
+type NPMProxyHostInfo struct {
+	ID            int      `json:"id"`
+	DomainNames   []string `json:"domain_names"`
+	ForwardHost   string   `json:"forward_host"`
+	ForwardPort   int      `json:"forward_port"`
+	ForwardScheme string   `json:"forward_scheme"`
+	SSLForced     bool     `json:"ssl_forced"`
+	Enabled       bool     `json:"enabled"`
+	CreatedOn     string   `json:"created_on,omitempty"`
+}
+
+// DomainInfo represents a domain with both Pi-hole and NPM status
+type DomainInfo struct {
+	ID            int64  `json:"id"`
+	AppID         int64  `json:"app_id"`
+	AppName       string `json:"app_name"`
+	FQDN          string `json:"fqdn"`
+	Subdomain     string `json:"subdomain"`
+	BackendPort   int    `json:"backend_port"`
+	SSLEnabled    bool   `json:"ssl_enabled"`
+	NPMProxyID    int    `json:"npm_proxy_id"`
+	PiholeEnabled bool   `json:"pihole_enabled"`
+	NPMEnabled    bool   `json:"npm_enabled"`
+	CreatedAt     string `json:"created_at"`
+}
+
+// DomainsResponse with enriched domain info
+type DomainsResponse struct {
+	Domains []DomainInfo `json:"domains"`
+}
+
+// PortStats for port usage statistics
+type PortStats struct {
+	TotalAllocated       int    `json:"total_allocated"`
+	SystemAllocated      int    `json:"system_allocated"`
+	UserAllocated        int    `json:"user_allocated"`
+	SystemRange          string `json:"system_range"`
+	UserRange            string `json:"user_range"`
+	ReservedCount        int    `json:"reserved_count"`
+	CurrentlyListening   int    `json:"currently_listening"`
+	SystemPortsAvailable int    `json:"system_ports_available"`
+	UserPortsAvailable   int    `json:"user_ports_available"`
+}
+
+// ListeningPort represents a port from ss -tulnp
+type ListeningPort struct {
+	Port      int    `json:"port"`
+	Protocol  string `json:"protocol"`
+	Process   string `json:"process"`
+	LocalAddr string `json:"local_addr"`
+}
+
+// MigrationResult represents result of migration operation
+type MigrationResult struct {
+	AppsImported    int      `json:"apps_imported"`
+	PortsImported   int      `json:"ports_imported"`
+	DomainsImported int      `json:"domains_imported"`
+	Errors          []string `json:"errors,omitempty"`
 }
