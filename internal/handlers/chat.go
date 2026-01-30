@@ -127,12 +127,12 @@ func (h *ChatHandler) HandleChat(w http.ResponseWriter, r *http.Request) {
 		"messages": messages,
 		"stream":   false,
 		"options": map[string]interface{}{
-			"temperature":      0.5,  // Lower for factual accuracy (research: 0.3-0.5)
-			"top_p":            0.8,  // Qwen documentation recommended
-			"top_k":            20,   // Qwen documentation recommended
-			"repeat_penalty":   1.1,  // Reduce repetition
-			"num_predict":      256,  // Force concise output
-			"num_ctx":          2048, // Context window for small model
+			"temperature":    0.5,  // Lower for factual accuracy (research: 0.3-0.5)
+			"top_p":          0.8,  // Qwen documentation recommended
+			"top_k":          20,   // Qwen documentation recommended
+			"repeat_penalty": 1.1,  // Reduce repetition
+			"num_predict":    256,  // Force concise output
+			"num_ctx":        2048, // Context window for small model
 		},
 	}
 
