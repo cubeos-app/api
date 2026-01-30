@@ -311,6 +311,7 @@ func (m *PortManager) Release(port int, protocol string) error {
 
 	return nil
 }
+}
 
 // GetAppPorts returns all ports allocated to an app
 func (m *PortManager) GetAppPorts(appID int64) ([]PortAllocation, error) {
@@ -379,6 +380,7 @@ func (m *PortManager) SyncFromSystem(composeManager *ComposeManager) error {
 	}
 
 	return nil
+}
 
 // SyncFromDockerPS scans running containers via docker ps and creates allocations
 // This complements SyncFromSystem (compose files) by detecting actual runtime ports
@@ -460,6 +462,7 @@ func (m *PortManager) SyncFromDockerPS(db *sql.DB) error {
 
 	return nil
 }
+}
 
 // SyncFromSystemEnhanced combines compose file scanning AND docker ps scanning
 func (m *PortManager) SyncFromSystemEnhanced(composeManager *ComposeManager, db *sql.DB) error {
@@ -474,6 +477,7 @@ func (m *PortManager) SyncFromSystemEnhanced(composeManager *ComposeManager, db 
 	}
 
 	return nil
+}
 }
 
 // GetPortStats returns statistics about port usage
