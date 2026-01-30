@@ -87,7 +87,6 @@ func (m *NPMManager) generateToken() error {
 	payload := map[string]string{
 		"identity": m.email,
 		"secret":   m.password,
-		"expiry":   "10y", // 10 year token
 	}
 
 	body, err := json.Marshal(payload)
