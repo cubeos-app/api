@@ -1,9 +1,7 @@
 # =============================================================================
-# CubeOS API - Production Multi-Arch Image
+# CubeOS API - Production Image
 # =============================================================================
 FROM alpine:3.19
-
-ARG TARGETARCH
 
 WORKDIR /app
 
@@ -16,7 +14,7 @@ RUN apk add --no-cache \
     docker-cli \
     i2c-tools
 
-COPY cubeos-api-${TARGETARCH} /app/cubeos-api
+COPY cubeos-api /app/cubeos-api
 
 RUN chmod +x /app/cubeos-api
 

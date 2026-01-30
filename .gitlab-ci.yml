@@ -50,7 +50,7 @@ test:
     - if: $CI_COMMIT_BRANCH == "main"
 
 # -----------------------------------------------------------------------------
-# BUILD - Compile binaries for both architectures
+# BUILD - Compile binary for ARM64
 # -----------------------------------------------------------------------------
 build:
   stage: build
@@ -59,63 +59,40 @@ build:
   script:
     - cp -r . /app/
     - cd /app
-    - GOOS=linux GOARCH=arm64 CGO_ENABLED=0 go build -ldflags="-s -w -X main.Version=${CI_COMMIT_SHORT_SHA}" -o cubeos-api-arm64 ./cmd/cubeos-api/
-    - GOOS=linux GOARCH=amd64 CGO_ENABLED=0 go build -ldflags="-s -w -X main.Version=${CI_COMMIT_SHORT_SHA}" -o cubeos-api-amd64 ./cmd/cubeos-api/
-    - cp cubeos-api-arm64 cubeos-api-amd64 ${CI_PROJECT_DIR}/
-    - ls -lh ${CI_PROJECT_DIR}/cubeos-api-*
+    - GOOS=linux GOARCH=arm64 CGO_ENABLED=0 go build -ldflags="-s -w -X main.Version=${CI_COMMIT_SHORT_SHA}" -o cubeos-api ./cmd/cubeos-api/
+    - cp cubeos-api ${CI_PROJECT_DIR}/
+    - ls -lh ${CI_PROJECT_DIR}/cubeos-api
   artifacts:
     paths:
-      - cubeos-api-arm64
-      - cubeos-api-amd64
+      - cubeos-api
     expire_in: 1 week
   rules:
     - if: $CI_COMMIT_BRANCH == "main"
 
 # -----------------------------------------------------------------------------
-# PACKAGE - Build multi-arch Docker image and push to ghcr.io
+# PACKAGE - Build Docker image on Pi (shell executor) and push
 # -----------------------------------------------------------------------------
 package:
   stage: package
-  tags: [docker]
-  image: docker:24
-  services:
-    - name: docker:24-dind
-      command: ["--tls=false"]
-  variables:
-    DOCKER_HOST: tcp://docker:2375
-    DOCKER_TLS_CERTDIR: ""
-  before_script:
-    - echo "$GHCR_TOKEN" | docker login ghcr.io -u "$GHCR_USER" --password-stdin
-    - docker run --rm --privileged multiarch/qemu-user-static --reset -p yes
-    - docker buildx create --name mybuilder --driver docker-container --driver-opt network=host
-    - docker buildx use mybuilder
-    - docker buildx inspect --bootstrap
-  script:
-    - |
-      docker buildx build \
-        --platform linux/amd64,linux/arm64 \
-        --push \
-        -t ${GHCR_IMAGE}:${CI_COMMIT_SHORT_SHA} \
-        -t ${GHCR_IMAGE}:latest \
-        .
-    - echo "✅ Pushed multi-arch ${GHCR_IMAGE}:${CI_COMMIT_SHORT_SHA}"
-  after_script:
-    - docker buildx rm mybuilder || true
-  rules:
-    - if: $CI_COMMIT_BRANCH == "main"
-
-# -----------------------------------------------------------------------------
-# DEPLOY - Pull image on Pi and restart
-# -----------------------------------------------------------------------------
-deploy:
-  stage: deploy
   tags: [arm64, cubeos, deploy]
   before_script:
     - echo "$GHCR_TOKEN" | docker login ghcr.io -u "$GHCR_USER" --password-stdin
   script:
+    - docker build -t ${GHCR_IMAGE}:${CI_COMMIT_SHORT_SHA} -t ${GHCR_IMAGE}:latest .
+    - docker push ${GHCR_IMAGE}:${CI_COMMIT_SHORT_SHA}
+    - docker push ${GHCR_IMAGE}:latest
+    - echo "✅ Pushed ${GHCR_IMAGE}:${CI_COMMIT_SHORT_SHA}"
+  rules:
+    - if: $CI_COMMIT_BRANCH == "main"
+
+# -----------------------------------------------------------------------------
+# DEPLOY - Restart container on Pi
+# -----------------------------------------------------------------------------
+deploy:
+  stage: deploy
+  tags: [arm64, cubeos, deploy]
+  script:
     - echo "🚀 Deploying CubeOS API..."
-    - docker pull ${GHCR_IMAGE}:${CI_COMMIT_SHORT_SHA}
-    - docker tag ${GHCR_IMAGE}:${CI_COMMIT_SHORT_SHA} cubeos-api:latest
     - docker compose -f /cubeos/docker-compose.yml up -d --force-recreate cubeos-api
     - |
       echo "⏳ Waiting for API to be healthy..."
