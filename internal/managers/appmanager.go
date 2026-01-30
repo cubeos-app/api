@@ -507,14 +507,14 @@ func (m *AppManager) getFQDNByID(id int64) (*models.FQDN, error) {
 func (m *AppManager) addPiholeDNS(fqdn, ip string) {
 	customList := "/cubeos/coreapps/pihole/appdata/etc-pihole/custom.list"
 	entry := fmt.Sprintf("%s %s\n", ip, fqdn)
-	
+
 	f, err := os.OpenFile(customList, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644)
 	if err != nil {
 		return
 	}
 	defer f.Close()
 	f.WriteString(entry)
-	
+
 	// Reload Pi-hole DNS
 	exec.Command("docker", "exec", "pihole", "pihole", "restartdns").Run()
 }
