@@ -68,6 +68,18 @@ func main() {
 	dbMgr := managers.NewDatabaseManager(db.DB)
 	appStoreMgr := managers.NewAppStoreManager(dbMgr, cfg.DataDir)
 
+	// Create App Manager
+	appMgr := managers.NewAppManager(db.DB, cfg.DataDir)
+	if err := appMgr.InitSchema(); err != nil {
+		log.Printf("Warning: Failed to initialize AppManager schema: %v", err)
+	}
+	if err := appMgr.SeedSystemApps(); err != nil {
+		log.Printf("Warning: Failed to seed system apps: %v", err)
+	}
+	if err := appMgr.SeedDefaultProfiles(); err != nil {
+		log.Printf("Warning: Failed to seed default profiles: %v", err)
+	}
+
 	// Create Setup manager (first boot wizard)
 	setupMgr := managers.NewSetupManager(cfg, db.DB)
 
@@ -82,6 +94,9 @@ func main() {
 
 	// Create Docs handler (Documentation viewer)
 	docsHandler := handlers.NewDocsHandler()
+
+	// Create App Manager handler
+	appManagerHandler := handlers.NewAppManagerHandler(appMgr)
 
 	// Create WebSocket manager and handlers
 	wsManager := handlers.NewWSManager(systemMgr, networkMgr, monitoringMgr, docker)
@@ -388,6 +403,9 @@ func main() {
 
 			// Documentation (offline docs viewer)
 			r.Mount("/documentation", docsHandler.Routes())
+
+			// App Manager
+			r.Mount("/appmanager", appManagerHandler.Routes())
 		})
 
 		// Setup wizard routes (semi-public - accessible before full setup)
