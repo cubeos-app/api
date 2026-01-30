@@ -59,9 +59,7 @@ build:
   script:
     - cp -r . /app/
     - cd /app
-    # Build for ARM64 (Pi)
     - GOOS=linux GOARCH=arm64 CGO_ENABLED=0 go build -ldflags="-s -w -X main.Version=${CI_COMMIT_SHORT_SHA}" -o cubeos-api-arm64 ./cmd/cubeos-api/
-    # Build for AMD64 (x86 servers)
     - GOOS=linux GOARCH=amd64 CGO_ENABLED=0 go build -ldflags="-s -w -X main.Version=${CI_COMMIT_SHORT_SHA}" -o cubeos-api-amd64 ./cmd/cubeos-api/
     - cp cubeos-api-arm64 cubeos-api-amd64 ${CI_PROJECT_DIR}/
     - ls -lh ${CI_PROJECT_DIR}/cubeos-api-*
@@ -81,13 +79,17 @@ package:
   tags: [docker]
   image: docker:24
   services:
-    - docker:24-dind
+    - name: docker:24-dind
+      command: ["--tls=false"]
   variables:
-    DOCKER_TLS_CERTDIR: "/certs"
+    DOCKER_HOST: tcp://docker:2375
+    DOCKER_TLS_CERTDIR: ""
+    DOCKER_DRIVER: overlay2
   before_script:
     - echo "$GHCR_TOKEN" | docker login ghcr.io -u "$GHCR_USER" --password-stdin
-    # Setup buildx with unique name per job
-    - docker buildx create --name builder-${CI_JOB_ID} --driver docker-container --bootstrap --use
+    - docker context create builder-ctx
+    - docker buildx create --name builder-${CI_JOB_ID} --driver docker-container --use builder-ctx
+    - docker buildx inspect --bootstrap
   script:
     - |
       docker buildx build \
