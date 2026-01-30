@@ -50,8 +50,8 @@ func NewAppManager(db *sql.DB, dataDir string) *AppManager {
 		dataDir:        dataDir,
 		registryURL:    "localhost:5000",
 		npmManager:     NewNPMManager(filepath.Join(dataDir, "config")),
-		piholeManager:  NewPiholeManager(filepath.Dir(dataDir)),
-		composeManager: NewComposeManager(filepath.Dir(dataDir)),
+		piholeManager:  NewPiholeManager("/cubeos"),
+		composeManager: NewComposeManager("/cubeos"),
 		portManager:    NewPortManager(db),
 	}
 	// Initialize NPM token in background
