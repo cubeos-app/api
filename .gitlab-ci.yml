@@ -108,7 +108,7 @@ deploy:
     - echo "🚀 Deploying CubeOS API..."
     - docker pull ${GHCR_IMAGE}:${CI_COMMIT_SHORT_SHA}
     - docker tag ${GHCR_IMAGE}:${CI_COMMIT_SHORT_SHA} cubeos-api:latest
-    - docker compose -f /cubeos/docker-compose.yml up -d --force-recreate cubeos-api
+    - docker compose -f /cubeos/coreapps/orchestrator/appconfig/docker-compose.yml up -d --force-recreate api
     - |
       echo "⏳ Waiting for API to be healthy..."
       for i in $(seq 1 30); do
