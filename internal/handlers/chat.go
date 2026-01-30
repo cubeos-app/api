@@ -13,11 +13,13 @@ import (
 	"github.com/go-chi/chi/v5"
 )
 
-// ChatHandler handles AI assistant endpoints
+// ChatHandler handles AI assistant endpoints with RAG support
 type ChatHandler struct {
-	ollamaURL   string
-	ollamaModel string
-	chromaURL   string
+	ollamaURL      string
+	ollamaModel    string
+	embeddingModel string
+	chromaURL      string
+	collectionName string
 }
 
 // NewChatHandler creates a new chat handler with config from environment
@@ -25,13 +27,17 @@ func NewChatHandler() *ChatHandler {
 	ollamaHost := getEnvDefault("OLLAMA_HOST", "192.168.42.1")
 	ollamaPort := getEnvDefault("OLLAMA_PORT", "11434")
 	chromaHost := getEnvDefault("CHROMADB_HOST", "192.168.42.1")
-	chromaPort := getEnvDefault("CHROMADB_PORT", "8100")
+	chromaPort := getEnvDefault("CHROMADB_PORT", "8000")
 	model := getEnvDefault("OLLAMA_MODEL", "qwen2.5:0.5b")
+	embModel := getEnvDefault("EMBEDDING_MODEL", "nomic-embed-text")
+	collection := getEnvDefault("CHROMADB_COLLECTION", "cubeos_docs")
 
 	return &ChatHandler{
-		ollamaURL:   fmt.Sprintf("http://%s:%s", ollamaHost, ollamaPort),
-		ollamaModel: model,
-		chromaURL:   fmt.Sprintf("http://%s:%s", chromaHost, chromaPort),
+		ollamaURL:      fmt.Sprintf("http://%s:%s", ollamaHost, ollamaPort),
+		ollamaModel:    model,
+		embeddingModel: embModel,
+		chromaURL:      fmt.Sprintf("http://%s:%s", chromaHost, chromaPort),
+		collectionName: collection,
 	}
 }
 
@@ -64,36 +70,51 @@ type ChatMessage struct {
 }
 
 type ChatResponse struct {
-	Response string `json:"response"`
-	Done     bool   `json:"done"`
+	Response string   `json:"response"`
+	Done     bool     `json:"done"`
+	Sources  []string `json:"sources,omitempty"`
 }
 
 type ChatStatusResponse struct {
 	Available  bool   `json:"available"`
 	Model      string `json:"model"`
 	ModelReady bool   `json:"model_ready"`
+	RAGEnabled bool   `json:"rag_enabled"`
+	DocsCount  int    `json:"docs_count"`
 }
 
-// Optimized system prompt for small LLMs (Qwen2.5:0.5b)
-// Based on research: 50-150 tokens, explicit format, repeated constraints
-// Key changes from original:
-// - Reduced from ~300 tokens to ~100 tokens
-// - Explicit numbered rules (small models follow these better)
-// - No markdown headers (saves tokens, clearer structure)
-// - Direct facts section (easier for small models to retrieve)
-// - Explicit "don't know" fallback instruction
-const systemPrompt = `You are CubeOS Assistant. Answer questions about this home server system.
+// RAG-aware system prompt
+const systemPromptTemplate = `You are CubeOS Assistant. Answer questions about this home server system using the provided documentation.
 
-RULES (follow exactly):
+RULES:
+1. Use the DOCUMENTATION below to answer questions accurately
+2. Maximum 2-3 sentences per response
+3. If the documentation doesn't cover the topic, say "I don't have that information in my documentation"
+4. Never invent URLs, passwords, or commands not in the documentation
+5. Be direct and helpful
+
+DOCUMENTATION:
+%s
+
+SYSTEM INFO (always available):
+- Dashboard: http://cubeos.cube
+- WiFi: CubeOS-XXXX network
+- IP range: 192.168.42.x
+
+Answer the user's question based on the documentation above.`
+
+// Fallback prompt when RAG is unavailable
+const fallbackSystemPrompt = `You are CubeOS Assistant. Answer questions about this home server system.
+
+RULES:
 1. Maximum 2-3 sentences per response
-2. Use plain text only
-3. If unsure, say "I don't have that information"
-4. Never invent URLs or passwords
+2. If unsure, say "I don't have that information"
+3. Never invent URLs or passwords
 
 SYSTEM INFO:
 - Dashboard: http://cubeos.cube
-- Pi-hole DNS: http://pihole.cubeos.cube/admin (password: cubeos)
-- Proxy Manager: http://npm.cubeos.cube (cubeos@cubeos.app / cubeos123)
+- Pi-hole DNS: http://pihole.cubeos.cube/admin
+- Proxy Manager: http://npm.cubeos.cube
 - Logs: http://logs.cubeos.cube
 - Containers: http://dockge.cubeos.cube
 - WiFi: CubeOS-XXXX network
@@ -101,7 +122,179 @@ SYSTEM INFO:
 
 Be direct. No greetings or filler words.`
 
-// HandleChat handles non-streaming chat requests
+// getRelevantDocs queries ChromaDB for documents relevant to the query
+func (h *ChatHandler) getRelevantDocs(query string, nResults int) ([]string, []string, error) {
+	// Generate embedding for the query
+	embedding, err := h.getEmbedding(query)
+	if err != nil {
+		return nil, nil, fmt.Errorf("failed to generate query embedding: %w", err)
+	}
+
+	// Get collection ID
+	collectionID, err := h.getCollectionID()
+	if err != nil {
+		return nil, nil, fmt.Errorf("failed to get collection: %w", err)
+	}
+
+	// Query ChromaDB
+	queryURL := fmt.Sprintf("%s/api/v2/tenants/default_tenant/databases/default_database/collections/%s/query",
+		h.chromaURL, collectionID)
+
+	queryReq := map[string]interface{}{
+		"query_embeddings": [][]float32{embedding},
+		"n_results":        nResults,
+		"include":          []string{"documents", "metadatas"},
+	}
+	body, _ := json.Marshal(queryReq)
+
+	client := &http.Client{Timeout: 10 * time.Second}
+	resp, err := client.Post(queryURL, "application/json", bytes.NewReader(body))
+	if err != nil {
+		return nil, nil, fmt.Errorf("ChromaDB query failed: %w", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != 200 {
+		return nil, nil, fmt.Errorf("ChromaDB query returned status %d", resp.StatusCode)
+	}
+
+	var result struct {
+		Documents [][]string            `json:"documents"`
+		Metadatas [][]map[string]string `json:"metadatas"`
+	}
+	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
+		return nil, nil, fmt.Errorf("failed to decode ChromaDB response: %w", err)
+	}
+
+	if len(result.Documents) == 0 || len(result.Documents[0]) == 0 {
+		return nil, nil, nil
+	}
+
+	// Extract documents and sources
+	docs := result.Documents[0]
+	var sources []string
+	if len(result.Metadatas) > 0 {
+		for _, meta := range result.Metadatas[0] {
+			if source, ok := meta["source"]; ok {
+				// Deduplicate sources
+				found := false
+				for _, s := range sources {
+					if s == source {
+						found = true
+						break
+					}
+				}
+				if !found {
+					sources = append(sources, source)
+				}
+			}
+		}
+	}
+
+	return docs, sources, nil
+}
+
+// getEmbedding generates an embedding for text using Ollama
+func (h *ChatHandler) getEmbedding(text string) ([]float32, error) {
+	reqBody := map[string]string{
+		"model":  h.embeddingModel,
+		"prompt": text,
+	}
+	body, _ := json.Marshal(reqBody)
+
+	client := &http.Client{Timeout: 30 * time.Second}
+	resp, err := client.Post(h.ollamaURL+"/api/embeddings", "application/json", bytes.NewReader(body))
+	if err != nil {
+		return nil, err
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != 200 {
+		return nil, fmt.Errorf("embedding request failed with status %d", resp.StatusCode)
+	}
+
+	var result struct {
+		Embedding []float32 `json:"embedding"`
+	}
+	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
+		return nil, err
+	}
+
+	return result.Embedding, nil
+}
+
+// getCollectionID retrieves the ChromaDB collection ID
+func (h *ChatHandler) getCollectionID() (string, error) {
+	url := fmt.Sprintf("%s/api/v2/tenants/default_tenant/databases/default_database/collections/%s",
+		h.chromaURL, h.collectionName)
+
+	client := &http.Client{Timeout: 5 * time.Second}
+	resp, err := client.Get(url)
+	if err != nil {
+		return "", err
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != 200 {
+		return "", fmt.Errorf("collection not found (status %d)", resp.StatusCode)
+	}
+
+	var collection struct {
+		ID string `json:"id"`
+	}
+	if err := json.NewDecoder(resp.Body).Decode(&collection); err != nil {
+		return "", err
+	}
+
+	return collection.ID, nil
+}
+
+// getDocsCount returns the number of documents in ChromaDB
+func (h *ChatHandler) getDocsCount() int {
+	collectionID, err := h.getCollectionID()
+	if err != nil {
+		return 0
+	}
+
+	url := fmt.Sprintf("%s/api/v2/tenants/default_tenant/databases/default_database/collections/%s/count",
+		h.chromaURL, collectionID)
+
+	client := &http.Client{Timeout: 5 * time.Second}
+	resp, err := client.Get(url)
+	if err != nil {
+		return 0
+	}
+	defer resp.Body.Close()
+
+	var count int
+	if err := json.NewDecoder(resp.Body).Decode(&count); err != nil {
+		return 0
+	}
+
+	return count
+}
+
+// buildSystemPrompt creates a system prompt with RAG context
+func (h *ChatHandler) buildSystemPrompt(query string) (string, []string) {
+	// Try to get relevant documents
+	docs, sources, err := h.getRelevantDocs(query, 3)
+	if err != nil || len(docs) == 0 {
+		// Fallback to static prompt if RAG fails
+		return fallbackSystemPrompt, nil
+	}
+
+	// Combine documents into context
+	context := strings.Join(docs, "\n\n---\n\n")
+
+	// Truncate if too long (keep under ~1500 chars for small model context)
+	if len(context) > 1500 {
+		context = context[:1500] + "..."
+	}
+
+	return fmt.Sprintf(systemPromptTemplate, context), sources
+}
+
+// HandleChat handles non-streaming chat requests with RAG
 func (h *ChatHandler) HandleChat(w http.ResponseWriter, r *http.Request) {
 	var req ChatRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
@@ -114,13 +307,16 @@ func (h *ChatHandler) HandleChat(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Build messages array with system prompt
+	// Build RAG-enhanced system prompt
+	systemPrompt, sources := h.buildSystemPrompt(req.Message)
+
+	// Build messages array
 	messages := []map[string]string{
 		{"role": "system", "content": systemPrompt},
 	}
 
-	// Add history (limited to last 6 messages for small model context)
-	historyLimit := 6
+	// Add history (limited to last 4 messages for small model context)
+	historyLimit := 4
 	if len(req.History) > historyLimit {
 		req.History = req.History[len(req.History)-historyLimit:]
 	}
@@ -137,19 +333,18 @@ func (h *ChatHandler) HandleChat(w http.ResponseWriter, r *http.Request) {
 		"content": req.Message,
 	})
 
-	// Optimized parameters for Qwen2.5:0.5b on Raspberry Pi
-	// Based on research: lower temp for factual, Qwen-specific top_p/top_k
+	// Optimized parameters for Qwen2.5:0.5b
 	ollamaReq := map[string]interface{}{
 		"model":    h.ollamaModel,
 		"messages": messages,
 		"stream":   false,
 		"options": map[string]interface{}{
-			"temperature":    0.5,  // Lower for factual accuracy (research: 0.3-0.5)
-			"top_p":          0.8,  // Qwen documentation recommended
-			"top_k":          20,   // Qwen documentation recommended
-			"repeat_penalty": 1.1,  // Reduce repetition
-			"num_predict":    256,  // Force concise output
-			"num_ctx":        2048, // Context window for small model
+			"temperature":    0.3,  // Lower for factual RAG responses
+			"top_p":          0.8,
+			"top_k":          20,
+			"repeat_penalty": 1.1,
+			"num_predict":    256,
+			"num_ctx":        2048,
 		},
 	}
 
@@ -177,10 +372,11 @@ func (h *ChatHandler) HandleChat(w http.ResponseWriter, r *http.Request) {
 	json.NewEncoder(w).Encode(ChatResponse{
 		Response: ollamaResp.Message.Content,
 		Done:     true,
+		Sources:  sources,
 	})
 }
 
-// HandleChatStream handles streaming chat requests via SSE
+// HandleChatStream handles streaming chat requests via SSE with RAG
 func (h *ChatHandler) HandleChatStream(w http.ResponseWriter, r *http.Request) {
 	var req ChatRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
@@ -205,13 +401,25 @@ func (h *ChatHandler) HandleChatStream(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// Build RAG-enhanced system prompt
+	systemPrompt, sources := h.buildSystemPrompt(req.Message)
+
+	// Send sources first if available
+	if len(sources) > 0 {
+		sourcesData, _ := json.Marshal(map[string]interface{}{
+			"sources": sources,
+		})
+		fmt.Fprintf(w, "data: %s\n\n", sourcesData)
+		flusher.Flush()
+	}
+
 	// Build messages array
 	messages := []map[string]string{
 		{"role": "system", "content": systemPrompt},
 	}
 
 	// Add limited history
-	historyLimit := 6
+	historyLimit := 4
 	if len(req.History) > historyLimit {
 		req.History = req.History[len(req.History)-historyLimit:]
 	}
@@ -233,7 +441,7 @@ func (h *ChatHandler) HandleChatStream(w http.ResponseWriter, r *http.Request) {
 		"messages": messages,
 		"stream":   true,
 		"options": map[string]interface{}{
-			"temperature":    0.5,
+			"temperature":    0.3,
 			"top_p":          0.8,
 			"top_k":          20,
 			"repeat_penalty": 1.1,
@@ -289,12 +497,14 @@ func (h *ChatHandler) HandleChatStream(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
-// HandleChatStatus checks if Ollama is available and model is ready
+// HandleChatStatus checks if Ollama and RAG are available
 func (h *ChatHandler) HandleChatStatus(w http.ResponseWriter, r *http.Request) {
 	status := ChatStatusResponse{
 		Available:  false,
 		Model:      h.ollamaModel,
 		ModelReady: false,
+		RAGEnabled: false,
+		DocsCount:  0,
 	}
 
 	// Check if Ollama is responding
@@ -325,6 +535,13 @@ func (h *ChatHandler) HandleChatStatus(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
+	// Check RAG availability
+	docsCount := h.getDocsCount()
+	if docsCount > 0 {
+		status.RAGEnabled = true
+		status.DocsCount = docsCount
+	}
+
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(status)
 }
@@ -338,7 +555,7 @@ func (h *ChatHandler) HandlePullModel(w http.ResponseWriter, r *http.Request) {
 
 	body, _ := json.Marshal(pullReq)
 
-	client := &http.Client{Timeout: 600 * time.Second} // 10 min for download
+	client := &http.Client{Timeout: 600 * time.Second}
 	resp, err := client.Post(h.ollamaURL+"/api/pull", "application/json", bytes.NewReader(body))
 	if err != nil {
 		http.Error(w, `{"error":"Failed to pull model"}`, http.StatusServiceUnavailable)
