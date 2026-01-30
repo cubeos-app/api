@@ -8,7 +8,7 @@ type App struct {
 	Name        string    `db:"name" json:"name"`
 	DisplayName string    `db:"display_name" json:"display_name"`
 	Description string    `db:"description" json:"description"`
-	Type        string    `db:"type" json:"type"` // "system" or "user"
+	Type        string    `db:"type" json:"type"`     // "system" or "user"
 	Source      string    `db:"source" json:"source"` // "cubeos", "casaos", "custom"
 	IconURL     string    `db:"icon_url" json:"icon_url,omitempty"`
 	GithubRepo  string    `db:"github_repo" json:"github_repo,omitempty"`
@@ -82,7 +82,7 @@ type RegisterAppRequest struct {
 
 type AllocatePortRequest struct {
 	AppName     string `json:"app_name"`
-	Port        int    `json:"port,omitempty"` // 0 = auto-allocate
+	Port        int    `json:"port,omitempty"`     // 0 = auto-allocate
 	Protocol    string `json:"protocol,omitempty"` // default: tcp
 	Description string `json:"description,omitempty"`
 }
@@ -113,21 +113,21 @@ type CasaOSImportRequest struct {
 
 // CasaOS app format
 type CasaOSApp struct {
-	Name        string             `json:"name"`
-	Title       string             `json:"title,omitempty"`
-	Tagline     string             `json:"tagline,omitempty"`
-	Overview    string             `json:"overview,omitempty"`
-	Developer   string             `json:"developer,omitempty"`
-	Icon        string             `json:"icon,omitempty"`
-	Category    string             `json:"category,omitempty"`
-	Container   CasaOSContainer    `json:"container,omitempty"`
-	WebUI       CasaOSWebUI        `json:"web_ui,omitempty"`
-	Envs        []CasaOSEnv        `json:"envs,omitempty"`
-	Ports       []CasaOSPort       `json:"ports,omitempty"`
-	Volumes     []CasaOSVolume     `json:"volumes,omitempty"`
-	Devices     []CasaOSDevice     `json:"devices,omitempty"`
-	Sysctls     map[string]string  `json:"sysctls,omitempty"`
-	Constraints CasaOSConstraints  `json:"constraints,omitempty"`
+	Name        string            `json:"name"`
+	Title       string            `json:"title,omitempty"`
+	Tagline     string            `json:"tagline,omitempty"`
+	Overview    string            `json:"overview,omitempty"`
+	Developer   string            `json:"developer,omitempty"`
+	Icon        string            `json:"icon,omitempty"`
+	Category    string            `json:"category,omitempty"`
+	Container   CasaOSContainer   `json:"container,omitempty"`
+	WebUI       CasaOSWebUI       `json:"web_ui,omitempty"`
+	Envs        []CasaOSEnv       `json:"envs,omitempty"`
+	Ports       []CasaOSPort      `json:"ports,omitempty"`
+	Volumes     []CasaOSVolume    `json:"volumes,omitempty"`
+	Devices     []CasaOSDevice    `json:"devices,omitempty"`
+	Sysctls     map[string]string `json:"sysctls,omitempty"`
+	Constraints CasaOSConstraints `json:"constraints,omitempty"`
 }
 
 type CasaOSContainer struct {
