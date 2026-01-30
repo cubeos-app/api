@@ -10,13 +10,8 @@ import (
 	"sync"
 )
 
-// Port ranges
-const (
-	SystemPortMin = 6000
-	SystemPortMax = 6999
-	UserPortMin   = 7000
-	UserPortMax   = 7999
-)
+// Note: Port range constants (SystemPortMin, SystemPortMax, UserPortMin, UserPortMax)
+// are defined in appmanager.go and available here since we're in the same package.
 
 // ReservedPorts that cannot be allocated
 var ReservedPorts = map[int]bool{
@@ -188,6 +183,7 @@ func (m *PortManager) GetAvailablePort(portType string) (int, error) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 
+	// Use constants from appmanager.go (same package)
 	minPort, maxPort := UserPortMin, UserPortMax
 	if portType == "system" {
 		minPort, maxPort = SystemPortMin, SystemPortMax

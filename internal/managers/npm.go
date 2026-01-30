@@ -23,8 +23,9 @@ type NPMManager struct {
 	mu         sync.RWMutex
 }
 
-// NPMProxyHost represents a proxy host in NPM
-type NPMProxyHost struct {
+// NPMProxyHostExtended represents a proxy host in NPM with full API fields
+// Note: This is separate from NPMProxyHost in appstore.go which has fewer fields
+type NPMProxyHostExtended struct {
 	ID                    int      `json:"id,omitempty"`
 	CreatedOn             string   `json:"created_on,omitempty"`
 	ModifiedOn            string   `json:"modified_on,omitempty"`
@@ -51,12 +52,6 @@ type NPMProxyHost struct {
 type NPMMeta struct {
 	LetsencryptAgree bool `json:"letsencrypt_agree"`
 	DNSChallenge     bool `json:"dns_challenge"`
-}
-
-// NPMTokenResponse is the response from token endpoint
-type NPMTokenResponse struct {
-	Token   string `json:"token"`
-	Expires string `json:"expires"`
 }
 
 // NewNPMManager creates a new NPM manager
@@ -115,6 +110,7 @@ func (m *NPMManager) generateToken() error {
 		return fmt.Errorf("token request failed: %s - %s", resp.Status, string(respBody))
 	}
 
+	// Use NPMTokenResponse from appstore.go (same package, no import needed)
 	var tokenResp NPMTokenResponse
 	if err := json.NewDecoder(resp.Body).Decode(&tokenResp); err != nil {
 		return fmt.Errorf("failed to decode token response: %w", err)
@@ -184,7 +180,7 @@ func (m *NPMManager) doRequest(method, endpoint string, body interface{}) (*http
 }
 
 // ListProxyHosts returns all proxy hosts
-func (m *NPMManager) ListProxyHosts() ([]NPMProxyHost, error) {
+func (m *NPMManager) ListProxyHosts() ([]NPMProxyHostExtended, error) {
 	resp, err := m.doRequest("GET", "/api/nginx/proxy-hosts", nil)
 	if err != nil {
 		return nil, err
@@ -196,7 +192,7 @@ func (m *NPMManager) ListProxyHosts() ([]NPMProxyHost, error) {
 		return nil, fmt.Errorf("failed to list proxy hosts: %s - %s", resp.Status, string(body))
 	}
 
-	var hosts []NPMProxyHost
+	var hosts []NPMProxyHostExtended
 	if err := json.NewDecoder(resp.Body).Decode(&hosts); err != nil {
 		return nil, fmt.Errorf("failed to decode proxy hosts: %w", err)
 	}
@@ -205,7 +201,7 @@ func (m *NPMManager) ListProxyHosts() ([]NPMProxyHost, error) {
 }
 
 // GetProxyHost returns a specific proxy host by ID
-func (m *NPMManager) GetProxyHost(id int) (*NPMProxyHost, error) {
+func (m *NPMManager) GetProxyHost(id int) (*NPMProxyHostExtended, error) {
 	resp, err := m.doRequest("GET", fmt.Sprintf("/api/nginx/proxy-hosts/%d", id), nil)
 	if err != nil {
 		return nil, err
@@ -217,7 +213,7 @@ func (m *NPMManager) GetProxyHost(id int) (*NPMProxyHost, error) {
 		return nil, fmt.Errorf("failed to get proxy host: %s - %s", resp.Status, string(body))
 	}
 
-	var host NPMProxyHost
+	var host NPMProxyHostExtended
 	if err := json.NewDecoder(resp.Body).Decode(&host); err != nil {
 		return nil, fmt.Errorf("failed to decode proxy host: %w", err)
 	}
@@ -226,7 +222,7 @@ func (m *NPMManager) GetProxyHost(id int) (*NPMProxyHost, error) {
 }
 
 // CreateProxyHost creates a new proxy host
-func (m *NPMManager) CreateProxyHost(host *NPMProxyHost) (*NPMProxyHost, error) {
+func (m *NPMManager) CreateProxyHost(host *NPMProxyHostExtended) (*NPMProxyHostExtended, error) {
 	// Set defaults
 	if host.ForwardScheme == "" {
 		host.ForwardScheme = "http"
@@ -251,7 +247,7 @@ func (m *NPMManager) CreateProxyHost(host *NPMProxyHost) (*NPMProxyHost, error) 
 		return nil, fmt.Errorf("failed to create proxy host: %s - %s", resp.Status, string(body))
 	}
 
-	var created NPMProxyHost
+	var created NPMProxyHostExtended
 	if err := json.NewDecoder(resp.Body).Decode(&created); err != nil {
 		return nil, fmt.Errorf("failed to decode created proxy host: %w", err)
 	}
@@ -260,7 +256,7 @@ func (m *NPMManager) CreateProxyHost(host *NPMProxyHost) (*NPMProxyHost, error) 
 }
 
 // UpdateProxyHost updates an existing proxy host
-func (m *NPMManager) UpdateProxyHost(id int, host *NPMProxyHost) (*NPMProxyHost, error) {
+func (m *NPMManager) UpdateProxyHost(id int, host *NPMProxyHostExtended) (*NPMProxyHostExtended, error) {
 	resp, err := m.doRequest("PUT", fmt.Sprintf("/api/nginx/proxy-hosts/%d", id), host)
 	if err != nil {
 		return nil, err
@@ -272,7 +268,7 @@ func (m *NPMManager) UpdateProxyHost(id int, host *NPMProxyHost) (*NPMProxyHost,
 		return nil, fmt.Errorf("failed to update proxy host: %s - %s", resp.Status, string(body))
 	}
 
-	var updated NPMProxyHost
+	var updated NPMProxyHostExtended
 	if err := json.NewDecoder(resp.Body).Decode(&updated); err != nil {
 		return nil, fmt.Errorf("failed to decode updated proxy host: %w", err)
 	}
@@ -297,7 +293,7 @@ func (m *NPMManager) DeleteProxyHost(id int) error {
 }
 
 // FindProxyHostByDomain finds a proxy host by domain name
-func (m *NPMManager) FindProxyHostByDomain(domain string) (*NPMProxyHost, error) {
+func (m *NPMManager) FindProxyHostByDomain(domain string) (*NPMProxyHostExtended, error) {
 	hosts, err := m.ListProxyHosts()
 	if err != nil {
 		return nil, err

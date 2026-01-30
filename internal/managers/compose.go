@@ -17,8 +17,9 @@ type ComposeManager struct {
 	userAppsDir string
 }
 
-// AppConfig represents an app's configuration files
-type AppConfig struct {
+// ComposeConfig represents an app's compose configuration files
+// Note: Different from AppConfig in appstore.go which is used for API responses
+type ComposeConfig struct {
 	AppName       string `json:"app_name"`
 	ComposeFile   string `json:"compose_file"`
 	EnvFile       string `json:"env_file"`
@@ -74,11 +75,11 @@ func (m *ComposeManager) GetEnvPath(appName string) string {
 }
 
 // GetConfig reads both compose and env files for an app
-func (m *ComposeManager) GetConfig(appName string) (*AppConfig, error) {
+func (m *ComposeManager) GetConfig(appName string) (*ComposeConfig, error) {
 	composePath := m.GetComposePath(appName)
 	envPath := m.GetEnvPath(appName)
 
-	config := &AppConfig{
+	config := &ComposeConfig{
 		AppName:     appName,
 		ComposePath: composePath,
 		EnvPath:     envPath,
