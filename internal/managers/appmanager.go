@@ -1231,7 +1231,7 @@ func (m *AppManager) SyncDomainsFromPihole() error {
 
 	// Pre-fetch NPM hosts to get accurate port mappings
 	npmHosts, _ := m.npmManager.ListProxyHosts()
-	npmMap := make(map[string]*NPMProxyHost)
+	npmMap := make(map[string]*NPMProxyHostExtended)
 	for i := range npmHosts {
 		for _, domain := range npmHosts[i].DomainNames {
 			npmMap[domain] = &npmHosts[i]
