@@ -57,7 +57,7 @@ type NPMMeta struct {
 // NewNPMManager creates a new NPM manager
 func NewNPMManager(configDir string) *NPMManager {
 	return &NPMManager{
-		baseURL:   "http://npm.cubeos.cube",
+		baseURL:   "http://192.168.42.1:6000",
 		tokenFile: filepath.Join(configDir, "npm_token"),
 		email:     "cubeos@cubeos.app",
 		password:  "cubeos123",

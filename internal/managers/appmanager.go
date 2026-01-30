@@ -50,7 +50,7 @@ func NewAppManager(db *sql.DB, dataDir string) *AppManager {
 		dataDir:        dataDir,
 		registryURL:    "localhost:5000",
 		npmManager:     NewNPMManager(filepath.Join(dataDir, "config")),
-		piholeManager:  NewPiholeManager(dataDir),
+		piholeManager:  NewPiholeManager(filepath.Dir(dataDir)),
 		composeManager: NewComposeManager(filepath.Dir(dataDir)),
 		portManager:    NewPortManager(db),
 	}
