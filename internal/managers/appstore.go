@@ -66,7 +66,7 @@ func NewAppStoreManager(db *DatabaseManager, dataPath string) *AppStoreManager {
 		appDataPath:  "", // deprecated - now per-app
 		baseDomain:   "cubeos.net",
 		gatewayIP:    "192.168.42.1",
-		npmAPIURL:    "http://127.0.0.1:81/api",
+		npmAPIURL:    "http://192.168.42.1:6000/api",
 		stores:       make(map[string]*models.AppStore),
 		catalog:      make(map[string]*models.StoreApp),
 		installed:    make(map[string]*models.InstalledApp),
