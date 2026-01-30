@@ -10,8 +10,8 @@ import (
 	chimw "github.com/go-chi/chi/v5/middleware"
 	"github.com/go-chi/cors"
 	"github.com/jmoiron/sqlx"
-	_ "modernc.org/sqlite"
 	"golang.org/x/crypto/bcrypt"
+	_ "modernc.org/sqlite"
 
 	"cubeos-api/internal/config"
 	"cubeos-api/internal/handlers"
