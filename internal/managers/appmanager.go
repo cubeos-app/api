@@ -1188,7 +1188,6 @@ func (m *AppManager) ListDomainsEnhanced() ([]models.DomainInfo, error) {
 	return domains, nil
 }
 
-
 // SyncDomainsFromPihole imports existing Pi-hole DNS entries with improved app matching
 // Uses NPM as primary source for port info and better subdomain-to-app matching
 func (m *AppManager) SyncDomainsFromPihole() error {
