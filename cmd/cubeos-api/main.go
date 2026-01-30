@@ -10,7 +10,7 @@ import (
 	chimw "github.com/go-chi/chi/v5/middleware"
 	"github.com/go-chi/cors"
 	"github.com/jmoiron/sqlx"
-	_ "github.com/mattn/go-sqlite3"
+	_ "modernc.org/sqlite"
 	"golang.org/x/crypto/bcrypt"
 
 	"cubeos-api/internal/config"
@@ -28,7 +28,7 @@ func main() {
 	log.Printf("Starting CubeOS API v%s", cfg.Version)
 
 	// Connect to database
-	db, err := sqlx.Connect("sqlite3", cfg.DatabasePath)
+	db, err := sqlx.Connect("sqlite", cfg.DatabasePath)
 	if err != nil {
 		log.Fatalf("Failed to connect to database: %v", err)
 	}
