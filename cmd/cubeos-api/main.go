@@ -77,6 +77,9 @@ func main() {
 	appStoreHandler := handlers.NewAppStoreHandler(appStoreMgr)
 	setupHandler := handlers.NewSetupHandler(setupMgr)
 
+	// Create Chat handler (AI Assistant)
+	chatHandler := handlers.NewChatHandler()
+
 	// Create WebSocket manager and handlers
 	wsManager := handlers.NewWSManager(systemMgr, networkMgr, monitoringMgr, docker)
 	wsHandlers := handlers.NewWSHandlers(wsManager)
@@ -376,6 +379,9 @@ func main() {
 
 			// App Store
 			r.Mount("/appstore", appStoreHandler.Routes())
+
+			// Chat (AI Assistant)
+			r.Mount("/chat", chatHandler.Routes())
 		})
 
 		// Setup wizard routes (semi-public - accessible before full setup)
