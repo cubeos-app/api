@@ -86,8 +86,8 @@ package:
     DOCKER_TLS_CERTDIR: "/certs"
   before_script:
     - echo "$GHCR_TOKEN" | docker login ghcr.io -u "$GHCR_USER" --password-stdin
-    - docker buildx create --name multiarch --driver docker-container --use 2>/dev/null || docker buildx use multiarch
-    - docker buildx inspect --bootstrap
+    # Setup buildx with unique name per job
+    - docker buildx create --name builder-${CI_JOB_ID} --driver docker-container --bootstrap --use
   script:
     - |
       docker buildx build \
@@ -97,6 +97,8 @@ package:
         -t ${GHCR_IMAGE}:latest \
         .
     - echo "✅ Pushed multi-arch ${GHCR_IMAGE}:${CI_COMMIT_SHORT_SHA}"
+  after_script:
+    - docker buildx rm builder-${CI_JOB_ID} || true
   rules:
     - if: $CI_COMMIT_BRANCH == "main"
 
