@@ -98,7 +98,9 @@ func (h *ChatHandler) HandleChat(w http.ResponseWriter, r *http.Request) {
 	defer resp.Body.Close()
 
 	var ollamaResp struct {
-		Message struct{ Content string `json:"content"` } `json:"message"`
+		Message struct {
+			Content string `json:"content"`
+		} `json:"message"`
 	}
 	json.NewDecoder(resp.Body).Decode(&ollamaResp)
 
@@ -145,8 +147,10 @@ func (h *ChatHandler) HandleChatStream(w http.ResponseWriter, r *http.Request) {
 			continue
 		}
 		var chunk struct {
-			Message struct{ Content string `json:"content"` } `json:"message"`
-			Done    bool                                      `json:"done"`
+			Message struct {
+				Content string `json:"content"`
+			} `json:"message"`
+			Done bool `json:"done"`
 		}
 		if json.Unmarshal([]byte(line), &chunk) == nil {
 			data, _ := json.Marshal(map[string]interface{}{"content": chunk.Message.Content, "done": chunk.Done})
@@ -170,7 +174,11 @@ func (h *ChatHandler) HandleChatStatus(w http.ResponseWriter, r *http.Request) {
 	}
 	defer resp.Body.Close()
 
-	var tags struct{ Models []struct{ Name string `json:"name"` } `json:"models"` }
+	var tags struct {
+		Models []struct {
+			Name string `json:"name"`
+		} `json:"models"`
+	}
 	json.NewDecoder(resp.Body).Decode(&tags)
 
 	modelReady := false
