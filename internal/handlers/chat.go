@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/http"
+	"os"
 	"strings"
 	"time"
 
@@ -16,14 +17,30 @@ import (
 type ChatHandler struct {
 	ollamaURL   string
 	ollamaModel string
+	chromaURL   string
 }
 
-// NewChatHandler creates a new chat handler
+// NewChatHandler creates a new chat handler with config from environment
 func NewChatHandler() *ChatHandler {
+	ollamaHost := getEnvDefault("OLLAMA_HOST", "192.168.42.1")
+	ollamaPort := getEnvDefault("OLLAMA_PORT", "11434")
+	chromaHost := getEnvDefault("CHROMADB_HOST", "192.168.42.1")
+	chromaPort := getEnvDefault("CHROMADB_PORT", "8100")
+	model := getEnvDefault("OLLAMA_MODEL", "qwen2.5:0.5b")
+
 	return &ChatHandler{
-		ollamaURL:   "http://cubeos-ollama:11434",
-		ollamaModel: "qwen2.5:0.5b",
+		ollamaURL:   fmt.Sprintf("http://%s:%s", ollamaHost, ollamaPort),
+		ollamaModel: model,
+		chromaURL:   fmt.Sprintf("http://%s:%s", chromaHost, chromaPort),
 	}
+}
+
+// getEnvDefault returns the environment variable value or a default
+func getEnvDefault(key, defaultVal string) string {
+	if val := os.Getenv(key); val != "" {
+		return val
+	}
+	return defaultVal
 }
 
 // Routes returns the router for chat endpoints
