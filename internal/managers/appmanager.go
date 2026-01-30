@@ -1243,7 +1243,7 @@ func (m *AppManager) GetNPMStatus() map[string]interface{} {
 	return map[string]interface{}{
 		"healthy":   healthy,
 		"connected": m.npmManager.token != "",
-		"url":       "http://npm.cubeos.cube",
+		"url":       "http://192.168.42.1:6000",
 	}
 }
 
