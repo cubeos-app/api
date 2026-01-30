@@ -339,7 +339,7 @@ func (h *ChatHandler) HandleChat(w http.ResponseWriter, r *http.Request) {
 		"messages": messages,
 		"stream":   false,
 		"options": map[string]interface{}{
-			"temperature":    0.3,  // Lower for factual RAG responses
+			"temperature":    0.3, // Lower for factual RAG responses
 			"top_p":          0.8,
 			"top_k":          20,
 			"repeat_penalty": 1.1,
