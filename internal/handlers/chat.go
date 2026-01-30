@@ -122,8 +122,8 @@ SYSTEM INFO:
 
 Be direct. No greetings or filler words.`
 
-// GitHub base URL for documentation links
-const docsBaseURL = "https://github.com/cubeos-app/docs/blob/main/"
+// Local docs URL - serves documentation from the CubeOS dashboard
+const docsBaseURL = "/docs/"
 
 // getRelevantDocs queries ChromaDB for documents relevant to the query
 func (h *ChatHandler) getRelevantDocs(query string, nResults int) ([]string, []string, error) {
@@ -179,18 +179,18 @@ func (h *ChatHandler) getRelevantDocs(query string, nResults int) ([]string, []s
 	if len(result.Metadatas) > 0 {
 		for _, meta := range result.Metadatas[0] {
 			if source, ok := meta["source"]; ok {
-				// Convert to GitHub URL
-				githubURL := docsBaseURL + source
+				// Convert to local docs URL
+				docsURL := docsBaseURL + strings.TrimSuffix(source, ".md")
 				// Deduplicate sources
 				found := false
 				for _, s := range sources {
-					if s == githubURL {
+					if s == docsURL {
 						found = true
 						break
 					}
 				}
 				if !found {
-					sources = append(sources, githubURL)
+					sources = append(sources, docsURL)
 				}
 			}
 		}

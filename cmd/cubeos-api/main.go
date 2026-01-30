@@ -80,6 +80,9 @@ func main() {
 	// Create Chat handler (AI Assistant)
 	chatHandler := handlers.NewChatHandler()
 
+	// Create Docs handler (Documentation viewer)
+	docsHandler := handlers.NewDocsHandler()
+
 	// Create WebSocket manager and handlers
 	wsManager := handlers.NewWSManager(systemMgr, networkMgr, monitoringMgr, docker)
 	wsHandlers := handlers.NewWSHandlers(wsManager)
@@ -382,6 +385,9 @@ func main() {
 
 			// Chat (AI Assistant)
 			r.Mount("/chat", chatHandler.Routes())
+
+			// Documentation (offline docs viewer)
+			r.Mount("/documentation", docsHandler.Routes())
 		})
 
 		// Setup wizard routes (semi-public - accessible before full setup)
