@@ -142,14 +142,47 @@ func (m *AppManager) SeedSystemApps() error {
 	}
 
 	for _, app := range systemApps {
+		// Get compose path - will auto-discover from /cubeos/coreapps/{name}/appconfig/docker-compose.yml
+		composePath := m.composeManager.GetComposePath(app.Name)
+
+		// Only set compose_path if the file actually exists
+		if _, err := os.Stat(composePath); err != nil {
+			composePath = "" // File doesn't exist, leave empty
+		}
+
 		_, err := m.db.Exec(`
-			INSERT OR IGNORE INTO apps (name, display_name, description, type, source, enabled)
-			VALUES (?, ?, ?, ?, ?, TRUE)
-		`, app.Name, app.DisplayName, app.Description, app.Type, app.Source)
+			INSERT OR IGNORE INTO apps (name, display_name, description, type, source, compose_path, enabled)
+			VALUES (?, ?, ?, ?, ?, ?, TRUE)
+		`, app.Name, app.DisplayName, app.Description, app.Type, app.Source, composePath)
 		if err != nil {
 			return err
 		}
 	}
+	return nil
+}
+
+// UpdateAppComposePaths updates compose_path for existing apps by auto-discovering compose files
+func (m *AppManager) UpdateAppComposePaths() error {
+	rows, err := m.db.Query("SELECT id, name FROM apps WHERE compose_path = '' OR compose_path IS NULL")
+	if err != nil {
+		return err
+	}
+	defer rows.Close()
+
+	for rows.Next() {
+		var id int64
+		var name string
+		if err := rows.Scan(&id, &name); err != nil {
+			continue
+		}
+
+		// Try to find compose file
+		composePath := m.composeManager.GetComposePath(name)
+		if _, err := os.Stat(composePath); err == nil {
+			m.db.Exec("UPDATE apps SET compose_path = ? WHERE id = ?", composePath, id)
+		}
+	}
+
 	return nil
 }
 
@@ -1198,7 +1231,7 @@ func (m *AppManager) SyncDomainsFromPihole() error {
 
 	// Pre-fetch NPM hosts to get accurate port mappings
 	npmHosts, _ := m.npmManager.ListProxyHosts()
-	npmMap := make(map[string]*NPMProxyHostExtended)
+	npmMap := make(map[string]*NPMProxyHost)
 	for i := range npmHosts {
 		for _, domain := range npmHosts[i].DomainNames {
 			npmMap[domain] = &npmHosts[i]
@@ -1470,36 +1503,53 @@ func (m *AppManager) RunMigration() (*models.MigrationResult, error) {
 			displayName := strings.ReplaceAll(appName, "-", " ")
 			displayName = strings.Title(displayName)
 
-			// Insert
+			// Get compose path
+			composePath := m.composeManager.GetComposePath(appName)
+
+			// Insert with compose_path
 			_, err := m.db.Exec(`
-				INSERT INTO apps (name, display_name, description, type, source, enabled)
-				VALUES (?, ?, '', 'system', 'cubeos', TRUE)
-			`, appName, displayName)
+				INSERT INTO apps (name, display_name, description, type, source, compose_path, enabled)
+				VALUES (?, ?, '', 'system', 'cubeos', ?, TRUE)
+			`, appName, displayName, composePath)
 			if err == nil {
 				result.AppsImported++
 			}
 		}
 	}
 
-	// 2. Sync domains from Pi-hole
-	if err := m.SyncDomainsFromPihole(); err != nil {
-		result.Errors = append(result.Errors, fmt.Sprintf("Failed to sync domains: %v", err))
-	} else {
-		// Count domains
-		var count int
-		m.db.QueryRow("SELECT COUNT(*) FROM fqdns").Scan(&count)
-		result.DomainsImported = count
+	// 2. Update compose paths for existing apps that are missing them
+	if err := m.UpdateAppComposePaths(); err != nil {
+		result.Errors = append(result.Errors, fmt.Sprintf("Failed to update compose paths: %v", err))
 	}
 
-	// 3. Sync ports from running containers
-	if err := m.SyncPortsFromSystem(); err != nil {
-		result.Errors = append(result.Errors, fmt.Sprintf("Failed to sync ports: %v", err))
-	} else {
-		// Count ports
-		var count int
-		m.db.QueryRow("SELECT COUNT(*) FROM port_allocations").Scan(&count)
-		result.PortsImported = count
+	// 3. Sync domains from NPM first (has accurate port info)
+	if err := m.SyncDomainsFromNPM(); err != nil {
+		// NPM might not be available, continue with Pi-hole
 	}
+
+	// 4. Sync domains from Pi-hole
+	if err := m.SyncDomainsFromPihole(); err != nil {
+		result.Errors = append(result.Errors, fmt.Sprintf("Failed to sync domains: %v", err))
+	}
+	// Count domains
+	var domainCount int
+	m.db.QueryRow("SELECT COUNT(*) FROM fqdns").Scan(&domainCount)
+	result.DomainsImported = domainCount
+
+	// 5. Sync ports from compose files
+	if err := m.SyncPortsFromSystem(); err != nil {
+		result.Errors = append(result.Errors, fmt.Sprintf("Failed to sync ports from compose: %v", err))
+	}
+
+	// 6. Sync ports from running docker containers
+	if err := m.portManager.SyncFromDockerPS(m.db); err != nil {
+		result.Errors = append(result.Errors, fmt.Sprintf("Failed to sync ports from docker: %v", err))
+	}
+
+	// Count ports
+	var portCount int
+	m.db.QueryRow("SELECT COUNT(*) FROM port_allocations").Scan(&portCount)
+	result.PortsImported = portCount
 
 	return result, nil
 }
