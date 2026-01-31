@@ -363,6 +363,16 @@ func (m *PortManager) SyncFromSystem(composeManager *ComposeManager) error {
 		ports := composeManager.ExtractPorts(config.ComposeFile)
 
 		for _, p := range ports {
+			// Validate port number
+			if p.HostPort < 1 || p.HostPort > 65535 {
+				continue
+			}
+			// Skip port 1 (TCPmux - almost never used)
+			if p.HostPort == 1 {
+				fmt.Printf("Skipping suspicious port 1 in compose for %s\n", appName)
+				continue
+			}
+
 			// Check if already allocated
 			var count int
 			m.db.QueryRow("SELECT COUNT(*) FROM port_allocations WHERE port = ?", p.HostPort).Scan(&count)
@@ -388,7 +398,7 @@ func (m *PortManager) SyncFromDockerPS(db *sql.DB) error {
 	defer m.mu.Unlock()
 
 	// Run docker ps to get running containers with their ports
-	cmd := exec.Command("docker", "ps", "--format", "{{.Names}}:{{.Ports}}")
+	cmd := exec.Command("docker", "ps", "--format", "{{.Names}}\t{{.Ports}}")
 	output, err := cmd.Output()
 	if err != nil {
 		return fmt.Errorf("failed to run docker ps: %w", err)
@@ -396,25 +406,31 @@ func (m *PortManager) SyncFromDockerPS(db *sql.DB) error {
 
 	lines := strings.Split(strings.TrimSpace(string(output)), "\n")
 
-	// Enhanced regex to handle various port formats:
+	// Regex to match port mappings like:
 	// - 0.0.0.0:6004->8080/tcp
 	// - :::6004->8080/tcp (IPv6)
 	// - 192.168.42.1:80->80/tcp
-	// - 80/tcp (exposed but not mapped)
-	portRe := regexp.MustCompile(`(?:[\d.:[\]]+:)?(\d+)->(\d+)/(tcp|udp)`)
+	// Pattern: optional_ip:HOST_PORT->CONTAINER_PORT/PROTOCOL
+	portRe := regexp.MustCompile(`(?:[\d.]+:|:::)?(\d+)->(\d+)/(tcp|udp)`)
 
 	for _, line := range lines {
 		if line == "" {
 			continue
 		}
 
-		parts := strings.SplitN(line, ":", 2)
+		// Split by tab (safer than colon since IPs contain colons)
+		parts := strings.SplitN(line, "\t", 2)
 		if len(parts) < 2 {
 			continue
 		}
 
-		containerName := parts[0]
-		portsStr := parts[1]
+		containerName := strings.TrimSpace(parts[0])
+		portsStr := strings.TrimSpace(parts[1])
+
+		// Skip containers with no port mappings
+		if portsStr == "" {
+			continue
+		}
 
 		// Extract app name from container name
 		appName := containerName
@@ -431,28 +447,31 @@ func (m *PortManager) SyncFromDockerPS(db *sql.DB) error {
 			// Try with container name
 			err = db.QueryRow("SELECT id FROM apps WHERE name = ?", containerName).Scan(&appID)
 			if err != nil {
-				// Try partial match (e.g., "logs" for container "cubeos-logs")
-				err = db.QueryRow("SELECT id FROM apps WHERE ? LIKE '%' || name || '%'", containerName).Scan(&appID)
-				if err != nil {
-					// App not found - create it on the fly if it's a cubeos container
-					if strings.HasPrefix(containerName, "cubeos-") || strings.HasPrefix(containerName, "mulecube-") {
-						displayName := strings.ReplaceAll(appName, "-", " ")
-						displayName = strings.Title(displayName)
-						result, err := db.Exec(`
-							INSERT OR IGNORE INTO apps (name, display_name, description, type, source, enabled)
-							VALUES (?, ?, '', 'system', 'cubeos', TRUE)
-						`, appName, displayName)
-						if err == nil {
-							appID, _ = result.LastInsertId()
-							if appID == 0 {
-								// INSERT OR IGNORE didn't insert, get existing ID
-								db.QueryRow("SELECT id FROM apps WHERE name = ?", appName).Scan(&appID)
-							}
+				// App not found - create it on the fly if it's a cubeos container
+				if strings.HasPrefix(containerName, "cubeos-") || strings.HasPrefix(containerName, "mulecube-") {
+					displayName := strings.ReplaceAll(appName, "-", " ")
+					// Capitalize first letter of each word
+					words := strings.Fields(displayName)
+					for i, w := range words {
+						if len(w) > 0 {
+							words[i] = strings.ToUpper(w[:1]) + w[1:]
 						}
 					}
-					if appID == 0 {
-						continue // Skip if we still can't match
+					displayName = strings.Join(words, " ")
+
+					result, err := db.Exec(`
+						INSERT OR IGNORE INTO apps (name, display_name, description, type, source, enabled)
+						VALUES (?, ?, '', 'system', 'cubeos', TRUE)
+					`, appName, displayName)
+					if err == nil {
+						appID, _ = result.LastInsertId()
+						if appID == 0 {
+							db.QueryRow("SELECT id FROM apps WHERE name = ?", appName).Scan(&appID)
+						}
 					}
+				}
+				if appID == 0 {
+					continue
 				}
 			}
 		}
@@ -467,11 +486,22 @@ func (m *PortManager) SyncFromDockerPS(db *sql.DB) error {
 			hostPort, _ := strconv.Atoi(match[1])
 			protocol := match[3]
 
-			if hostPort == 0 {
+			// Validate port number - must be valid TCP/UDP port
+			if hostPort < 1 || hostPort > 65535 {
 				continue
 			}
 
-			// Note: We now include reserved ports in tracking, just mark them differently
+			// Skip very low ports (1-21) as they're unlikely to be real mappings
+			// Exception: common system ports like 22 (SSH), 53 (DNS), 80, 443
+			if hostPort < 22 && hostPort != 1 {
+				continue
+			}
+			// Port 1 is TCPmux - almost never used, skip it
+			if hostPort == 1 {
+				fmt.Printf("Skipping suspicious port 1 for container %s\n", containerName)
+				continue
+			}
+
 			description := fmt.Sprintf("Auto-synced from container %s", containerName)
 			if ReservedPorts[hostPort] {
 				description = fmt.Sprintf("System port from container %s", containerName)
@@ -493,6 +523,94 @@ func (m *PortManager) SyncFromDockerPS(db *sql.DB) error {
 	return nil
 }
 
+// SyncFromDockerInspect uses docker inspect for more reliable port detection
+// This catches containers with host networking or unusual port formats
+func (m *PortManager) SyncFromDockerInspect(db *sql.DB) error {
+	// Get all container IDs
+	cmd := exec.Command("docker", "ps", "-q")
+	output, err := cmd.Output()
+	if err != nil {
+		return fmt.Errorf("failed to list containers: %w", err)
+	}
+
+	containerIDs := strings.Fields(strings.TrimSpace(string(output)))
+	if len(containerIDs) == 0 {
+		return nil
+	}
+
+	// For each container, get name and port bindings via inspect
+	for _, containerID := range containerIDs {
+		// Get container name
+		nameCmd := exec.Command("docker", "inspect", "--format", "{{.Name}}", containerID)
+		nameOutput, err := nameCmd.Output()
+		if err != nil {
+			continue
+		}
+		containerName := strings.TrimPrefix(strings.TrimSpace(string(nameOutput)), "/")
+
+		// Extract app name
+		appName := containerName
+		if strings.HasPrefix(containerName, "cubeos-") {
+			appName = strings.TrimPrefix(containerName, "cubeos-")
+		} else if strings.HasPrefix(containerName, "mulecube-") {
+			appName = strings.TrimPrefix(containerName, "mulecube-")
+		}
+
+		// Get app ID
+		var appID int64
+		err = db.QueryRow("SELECT id FROM apps WHERE name = ?", appName).Scan(&appID)
+		if err != nil {
+			db.QueryRow("SELECT id FROM apps WHERE name = ?", containerName).Scan(&appID)
+		}
+		if appID == 0 {
+			continue
+		}
+
+		// Get port bindings using JSON format
+		portCmd := exec.Command("docker", "inspect", "--format", "{{json .NetworkSettings.Ports}}", containerID)
+		portOutput, err := portCmd.Output()
+		if err != nil {
+			continue
+		}
+
+		// Parse JSON port bindings
+		// Format: {"80/tcp":[{"HostIp":"0.0.0.0","HostPort":"6003"}],...}
+		portStr := strings.TrimSpace(string(portOutput))
+		if portStr == "null" || portStr == "{}" {
+			continue
+		}
+
+		// Simple regex to extract host ports
+		// Match: "HostPort":"1234"
+		portRe := regexp.MustCompile(`"HostPort"\s*:\s*"(\d+)"`)
+		matches := portRe.FindAllStringSubmatch(portStr, -1)
+
+		for _, match := range matches {
+			if len(match) < 2 {
+				continue
+			}
+			hostPort, _ := strconv.Atoi(match[1])
+			if hostPort < 10 || hostPort > 65535 {
+				continue
+			}
+
+			// Check if already exists
+			var count int
+			db.QueryRow("SELECT COUNT(*) FROM port_allocations WHERE port = ?", hostPort).Scan(&count)
+			if count > 0 {
+				continue
+			}
+
+			db.Exec(`
+				INSERT OR IGNORE INTO port_allocations (app_id, port, protocol, description)
+				VALUES (?, ?, 'tcp', ?)
+			`, appID, hostPort, fmt.Sprintf("Auto-synced from container %s (inspect)", containerName))
+		}
+	}
+
+	return nil
+}
+
 // SyncFromSystemEnhanced combines compose file scanning AND docker ps scanning
 func (m *PortManager) SyncFromSystemEnhanced(composeManager *ComposeManager, db *sql.DB) error {
 	// First, sync from compose files
@@ -500,8 +618,13 @@ func (m *PortManager) SyncFromSystemEnhanced(composeManager *ComposeManager, db 
 		// Log but continue
 	}
 
-	// Then, sync from running containers
+	// Then, sync from running containers (docker ps)
 	if err := m.SyncFromDockerPS(db); err != nil {
+		// Log but continue
+	}
+
+	// Finally, use docker inspect for any missed ports
+	if err := m.SyncFromDockerInspect(db); err != nil {
 		// Log but continue
 	}
 

@@ -171,39 +171,81 @@ func (m *AppManager) UpdateAppComposePaths() error {
 	if err != nil {
 		return err
 	}
-	defer rows.Close()
 
-	var updated int
+	// IMPORTANT: Collect all apps first, then close rows before executing updates
+	// Go's database/sql doesn't allow executing queries while iterating over rows
+	type appUpdate struct {
+		id   int64
+		name string
+	}
+	var appsToUpdate []appUpdate
+
 	for rows.Next() {
 		var id int64
 		var name string
 		if err := rows.Scan(&id, &name); err != nil {
 			continue
 		}
+		appsToUpdate = append(appsToUpdate, appUpdate{id: id, name: name})
+	}
+	rows.Close() // Close rows BEFORE executing updates
 
+	var updated int
+	for _, app := range appsToUpdate {
 		// Get the expected compose file path
-		composePath := m.composeManager.GetComposePath(name)
+		composePath := m.composeManager.GetComposePath(app.name)
 
-		// Check if file exists (might fail if /cubeos not mounted in container)
-		_, statErr := os.Stat(composePath)
-
-		// Set the path regardless - even if we can't verify it exists in the container,
-		// docker compose commands run on the host where the path should be valid
-		result, err := m.db.Exec("UPDATE apps SET compose_path = ? WHERE id = ?", composePath, id)
-		if err == nil {
-			if affected, _ := result.RowsAffected(); affected > 0 {
-				updated++
-				if statErr != nil {
-					fmt.Printf("Set compose_path for %s to %s (file not accessible from container, but may exist on host)\n", name, composePath)
-				}
-			}
+		// Set the path regardless of whether we can verify file exists
+		// Docker compose commands run on the host where the path should be valid
+		result, err := m.db.Exec("UPDATE apps SET compose_path = ? WHERE id = ?", composePath, app.id)
+		if err != nil {
+			fmt.Printf("Failed to update compose_path for %s: %v\n", app.name, err)
+			continue
+		}
+		if affected, _ := result.RowsAffected(); affected > 0 {
+			updated++
+			fmt.Printf("Set compose_path for %s to %s\n", app.name, composePath)
 		}
 	}
 
-	if updated > 0 {
-		fmt.Printf("Updated compose_path for %d apps\n", updated)
+	fmt.Printf("Updated compose_path for %d apps\n", updated)
+	return nil
+}
+
+// ForceUpdateAllComposePaths updates compose_path for ALL apps regardless of current value
+// This is called during migration to ensure all apps have correct paths
+func (m *AppManager) ForceUpdateAllComposePaths() error {
+	rows, err := m.db.Query("SELECT id, name FROM apps")
+	if err != nil {
+		return fmt.Errorf("failed to query apps: %w", err)
 	}
 
+	type appUpdate struct {
+		id   int64
+		name string
+	}
+	var appsToUpdate []appUpdate
+
+	for rows.Next() {
+		var id int64
+		var name string
+		if err := rows.Scan(&id, &name); err != nil {
+			continue
+		}
+		appsToUpdate = append(appsToUpdate, appUpdate{id: id, name: name})
+	}
+	rows.Close()
+
+	var updated int
+	for _, app := range appsToUpdate {
+		composePath := m.composeManager.GetComposePath(app.name)
+		_, err := m.db.Exec("UPDATE apps SET compose_path = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?", composePath, app.id)
+		if err == nil {
+			updated++
+		}
+	}
+
+	fmt.Printf("Force-updated compose_path for %d apps\n", updated)
 	return nil
 }
 
@@ -1252,25 +1294,64 @@ func (m *AppManager) SyncDomainsFromPihole() error {
 	}
 
 	// Pre-fetch NPM hosts to get accurate port mappings
-	npmHosts, _ := m.npmManager.ListProxyHosts()
+	npmHosts, npmErr := m.npmManager.ListProxyHosts()
 	npmMap := make(map[string]*NPMProxyHostExtended)
-	for i := range npmHosts {
-		for _, domain := range npmHosts[i].DomainNames {
-			npmMap[domain] = &npmHosts[i]
+	if npmErr == nil {
+		for i := range npmHosts {
+			for _, domain := range npmHosts[i].DomainNames {
+				npmMap[domain] = &npmHosts[i]
+			}
 		}
+	} else {
+		fmt.Printf("Warning: Could not fetch NPM hosts (auth may have failed), using fallback port detection\n")
+	}
+
+	// Build port fallback map from port_allocations table (populated by docker ps)
+	portFallbackMap := make(map[string]int) // appName -> port
+	portRows, _ := m.db.Query(`
+		SELECT a.name, pa.port 
+		FROM port_allocations pa 
+		JOIN apps a ON pa.app_id = a.id 
+		ORDER BY pa.port
+	`)
+	if portRows != nil {
+		for portRows.Next() {
+			var name string
+			var port int
+			portRows.Scan(&name, &port)
+			// Only use first (lowest) port for each app
+			if _, exists := portFallbackMap[name]; !exists {
+				portFallbackMap[name] = port
+			}
+		}
+		portRows.Close()
+	}
+
+	// Known port defaults for common apps
+	knownPorts := map[string]int{
+		"api":          9009,
+		"orchestrator": 9009,
+		"pihole":       80,
+		"npm":          81,
+		"dockge":       5001,
+		"dozzle":       8080,
+		"logs":         8080,
+		"homarr":       7575,
+		"terminal":     7681,
+		"ollama":       11434,
 	}
 
 	// Build a map of all registered apps for matching
 	rows, _ := m.db.Query("SELECT id, name FROM apps")
 	appMap := make(map[string]int64) // name -> id
 	if rows != nil {
-		defer rows.Close()
 		for rows.Next() {
 			var id int64
 			var name string
 			rows.Scan(&id, &name)
 			appMap[name] = id
 		}
+		rows.Close()
 	}
 
 	for _, entry := range entries {
@@ -1345,10 +1426,19 @@ func (m *AppManager) SyncDomainsFromPihole() error {
 			composePath := filepath.Join("/cubeos", "coreapps", subdomain, "appconfig", "docker-compose.yml")
 			if _, err := os.Stat(composePath); err == nil {
 				// Found a compose file - register the app
+				// Capitalize first letter of each word
+				words := strings.Fields(strings.ReplaceAll(subdomain, "-", " "))
+				for i, w := range words {
+					if len(w) > 0 {
+						words[i] = strings.ToUpper(w[:1]) + w[1:]
+					}
+				}
+				displayName := strings.Join(words, " ")
+
 				result, err := m.db.Exec(`
 					INSERT OR IGNORE INTO apps (name, display_name, description, type, source, enabled)
 					VALUES (?, ?, '', 'system', 'cubeos', TRUE)
-				`, subdomain, strings.Title(subdomain))
+				`, subdomain, displayName)
 				if err == nil {
 					if id, err := result.LastInsertId(); err == nil && id > 0 {
 						appID = id
@@ -1362,6 +1452,24 @@ func (m *AppManager) SyncDomainsFromPihole() error {
 		// Skip unmatched domains rather than wrongly attributing them
 		if appID == 0 {
 			continue
+		}
+
+		// If we didn't get port from NPM, try fallbacks
+		if backendPort == 80 {
+			// Get app name for the matched appID
+			var matchedAppName string
+			m.db.QueryRow("SELECT name FROM apps WHERE id = ?", appID).Scan(&matchedAppName)
+
+			// Try port from port_allocations
+			if port, ok := portFallbackMap[matchedAppName]; ok && port != 80 {
+				backendPort = port
+			} else if port, ok := knownPorts[matchedAppName]; ok {
+				// Try known defaults
+				backendPort = port
+			} else if port, ok := knownPorts[subdomain]; ok {
+				// Try subdomain in known ports
+				backendPort = port
+			}
 		}
 
 		// Insert into database with correct app and port
@@ -1458,6 +1566,91 @@ func (m *AppManager) SyncDomainsFromNPM() error {
 	return nil
 }
 
+// UpdateFQDNPortsFromAllocations updates FQDN backend_port values using port_allocations
+// This is a fallback when NPM auth fails - it matches apps to their allocated ports
+func (m *AppManager) UpdateFQDNPortsFromAllocations() error {
+	// Get all FQDNs with backend_port = 80 (default/unset)
+	rows, err := m.db.Query(`
+		SELECT f.id, f.app_id, f.subdomain, a.name as app_name
+		FROM fqdns f
+		JOIN apps a ON f.app_id = a.id
+		WHERE f.backend_port = 80
+	`)
+	if err != nil {
+		return err
+	}
+
+	type fqdnUpdate struct {
+		id        int64
+		appID     int64
+		subdomain string
+		appName   string
+	}
+	var fqdnsToUpdate []fqdnUpdate
+
+	for rows.Next() {
+		var f fqdnUpdate
+		if err := rows.Scan(&f.id, &f.appID, &f.subdomain, &f.appName); err != nil {
+			continue
+		}
+		fqdnsToUpdate = append(fqdnsToUpdate, f)
+	}
+	rows.Close()
+
+	var updated int
+	for _, f := range fqdnsToUpdate {
+		// Find the best port for this app from port_allocations
+		var port int
+		err := m.db.QueryRow(`
+			SELECT port FROM port_allocations 
+			WHERE app_id = ? AND port > 80 
+			ORDER BY port ASC LIMIT 1
+		`, f.appID).Scan(&port)
+
+		if err != nil || port == 0 {
+			// Try to find by common port patterns based on app name
+			port = m.guessAppPort(f.appName)
+		}
+
+		if port > 0 && port != 80 {
+			_, err := m.db.Exec("UPDATE fqdns SET backend_port = ? WHERE id = ?", port, f.id)
+			if err == nil {
+				updated++
+				fmt.Printf("Updated FQDN backend_port for %s to %d\n", f.subdomain, port)
+			}
+		}
+	}
+
+	if updated > 0 {
+		fmt.Printf("Updated backend_port for %d FQDNs\n", updated)
+	}
+	return nil
+}
+
+// guessAppPort returns a likely port for known apps based on common conventions
+func (m *AppManager) guessAppPort(appName string) int {
+	// Known app ports
+	knownPorts := map[string]int{
+		"pihole":       80, // Pi-hole web UI is on 80
+		"npm":          81, // NPM admin is on 81
+		"dockge":       5001,
+		"dozzle":       8080,
+		"logs":         8080,
+		"homarr":       7575,
+		"ollama":       11434,
+		"terminal":     7681,
+		"orchestrator": 9009,
+		"api":          9009,
+		"dashboard":    80,
+		"chromadb":     8000,
+	}
+
+	if port, ok := knownPorts[appName]; ok {
+		return port
+	}
+	return 0
+}
+
 // ============================================================================
 // NPM (Nginx Proxy Manager) Methods
 // ============================================================================
@@ -1539,14 +1732,15 @@ func (m *AppManager) RunMigration() (*models.MigrationResult, error) {
 		}
 	}
 
-	// 2. Update compose paths for existing apps that are missing them
-	if err := m.UpdateAppComposePaths(); err != nil {
+	// 2. Force update compose paths for ALL apps
+	if err := m.ForceUpdateAllComposePaths(); err != nil {
 		result.Errors = append(result.Errors, fmt.Sprintf("Failed to update compose paths: %v", err))
 	}
 
 	// 3. Sync domains from NPM first (has accurate port info)
 	if err := m.SyncDomainsFromNPM(); err != nil {
 		// NPM might not be available, continue with Pi-hole
+		fmt.Printf("NPM sync skipped: %v\n", err)
 	}
 
 	// 4. Sync domains from Pi-hole
@@ -1563,9 +1757,19 @@ func (m *AppManager) RunMigration() (*models.MigrationResult, error) {
 		result.Errors = append(result.Errors, fmt.Sprintf("Failed to sync ports from compose: %v", err))
 	}
 
-	// 6. Sync ports from running docker containers
+	// 6. Sync ports from running docker containers (docker ps)
 	if err := m.portManager.SyncFromDockerPS(m.db); err != nil {
-		result.Errors = append(result.Errors, fmt.Sprintf("Failed to sync ports from docker: %v", err))
+		result.Errors = append(result.Errors, fmt.Sprintf("Failed to sync ports from docker ps: %v", err))
+	}
+
+	// 6b. Sync ports using docker inspect (more reliable for some containers)
+	if err := m.portManager.SyncFromDockerInspect(m.db); err != nil {
+		result.Errors = append(result.Errors, fmt.Sprintf("Failed to sync ports from docker inspect: %v", err))
+	}
+
+	// 7. Update FQDN backend ports from port allocations (fallback when NPM auth fails)
+	if err := m.UpdateFQDNPortsFromAllocations(); err != nil {
+		result.Errors = append(result.Errors, fmt.Sprintf("Failed to update FQDN ports: %v", err))
 	}
 
 	// Count ports
