@@ -39,6 +39,8 @@ test:
   script:
     - cp -r . /app/
     - cd /app
+    - go clean -modcache
+    - go mod download
     - go test -v -coverprofile=coverage.out ./...
     - cp coverage.out ${CI_PROJECT_DIR}/ || true
   artifacts:
@@ -59,6 +61,9 @@ build:
   script:
     - cp -r . /app/
     - cd /app
+    # Force fresh module download (bypass cache for replace directive)
+    - go clean -modcache
+    - go mod download
     - GOOS=linux GOARCH=arm64 CGO_ENABLED=0 go build -ldflags="-s -w -X main.Version=${CI_COMMIT_SHORT_SHA}" -o cubeos-api-arm64 ./cmd/cubeos-api/
     - GOOS=linux GOARCH=amd64 CGO_ENABLED=0 go build -ldflags="-s -w -X main.Version=${CI_COMMIT_SHORT_SHA}" -o cubeos-api-amd64 ./cmd/cubeos-api/
     - cp cubeos-api-arm64 cubeos-api-amd64 ${CI_PROJECT_DIR}/
@@ -123,7 +128,7 @@ deploy:
       exit 1
   environment:
     name: production
-    url: http://nllei01mule01:9009
+    url: http://nllei01mule01:6010
   rules:
     - if: $CI_COMMIT_BRANCH == "main"
       when: on_success
