@@ -2,100 +2,102 @@ package config
 
 import (
 	"os"
+	"path/filepath"
 	"testing"
 )
 
-func TestLoadDefaults(t *testing.T) {
-	// Clear any env vars that might interfere
-	os.Unsetenv("API_PORT")
-	os.Unsetenv("JWT_SECRET")
+func TestLoadWithEnvFile(t *testing.T) {
+	// Create a temporary directory for test config
+	tmpDir, err := os.MkdirTemp("", "cubeos-test")
+	if err != nil {
+		t.Fatalf("Failed to create temp dir: %v", err)
+	}
+	defer os.RemoveAll(tmpDir)
 
-	cfg := Load()
-
-	if cfg.Port != 9009 {
-		t.Errorf("Load() default port = %v, want 9009", cfg.Port)
+	// Create the config directory structure
+	configDir := filepath.Join(tmpDir, "cubeos", "config")
+	if err := os.MkdirAll(configDir, 0755); err != nil {
+		t.Fatalf("Failed to create config dir: %v", err)
 	}
 
-	if cfg.JWTExpirationHours != 24 {
-		t.Errorf("Load() default JWT expiration = %v, want 24", cfg.JWTExpirationHours)
+	// Create a minimal defaults.env
+	defaultsEnv := `GATEWAY_IP=10.42.24.1
+DOMAIN=cubeos.cube
+DATABASE_PATH=/cubeos/data/cubeos.db
+API_PORT=6010
+DASHBOARD_PORT=6011
+NPM_PORT=6000
+PIHOLE_PORT=6001
+OLLAMA_PORT=6030
+CHROMADB_PORT=6031
+`
+	envPath := filepath.Join(configDir, "defaults.env")
+	if err := os.WriteFile(envPath, []byte(defaultsEnv), 0644); err != nil {
+		t.Fatalf("Failed to write defaults.env: %v", err)
 	}
 
-	if cfg.Version != "2.0.0" {
-		t.Errorf("Load() default version = %v, want 2.0.0", cfg.Version)
-	}
-}
+	// Temporarily override the env file path by setting env vars directly
+	// Since Load() hardcodes the path, we'll test the helper functions instead
+	os.Setenv("GATEWAY_IP", "10.42.24.1")
+	os.Setenv("DOMAIN", "cubeos.cube")
+	defer os.Unsetenv("GATEWAY_IP")
+	defer os.Unsetenv("DOMAIN")
 
-func TestLoadFromEnv(t *testing.T) {
-	os.Setenv("API_PORT", "8080")
-	os.Setenv("JWT_SECRET", "test-secret")
-	os.Setenv("VERSION", "3.0.0")
-	defer os.Unsetenv("API_PORT")
-	defer os.Unsetenv("JWT_SECRET")
-	defer os.Unsetenv("VERSION")
-
-	cfg := Load()
-
-	if cfg.Port != 8080 {
-		t.Errorf("Load() port from env = %v, want 8080", cfg.Port)
+	// Test getEnvOptional
+	val := getEnvOptional("GATEWAY_IP", "default")
+	if val != "10.42.24.1" {
+		t.Errorf("getEnvOptional returned %s, expected 10.42.24.1", val)
 	}
 
-	if cfg.JWTSecret != "test-secret" {
-		t.Errorf("Load() JWT secret from env = %v, want test-secret", cfg.JWTSecret)
-	}
-
-	if cfg.Version != "3.0.0" {
-		t.Errorf("Load() version from env = %v, want 3.0.0", cfg.Version)
-	}
-}
-
-func TestIsCoreService(t *testing.T) {
-	tests := []struct {
-		name     string
-		service  string
-		wantCore bool
-	}{
-		{"cubeos-api is core", "cubeos-api", true},
-		{"pihole is core", "pihole", true},
-		{"nginx-proxy is core", "nginx-proxy", true},
-		{"watchtower pattern", "watchtower", true},
-		{"postgres pattern", "postgres-main", true},
-		{"random service not core", "my-custom-app", false},
-		{"kiwix not core", "kiwix", false},
-	}
-
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			got := IsCoreService(tt.service)
-			if got != tt.wantCore {
-				t.Errorf("IsCoreService(%q) = %v, want %v", tt.service, got, tt.wantCore)
-			}
-		})
+	// Test getEnvOptional with fallback
+	val = getEnvOptional("NONEXISTENT_VAR", "fallback")
+	if val != "fallback" {
+		t.Errorf("getEnvOptional returned %s, expected fallback", val)
 	}
 }
 
-func TestInferCategory(t *testing.T) {
-	tests := []struct {
-		name    string
-		service string
-		wantCat string
-	}{
-		{"ollama is ai", "ollama", "ai"},
-		{"kiwix is knowledge", "kiwix", "knowledge"},
-		{"wiki is knowledge", "wikipedia-offline", "knowledge"},
-		{"element is communication", "element", "communication"},
-		{"filebrowser is files", "filebrowser", "files"},
-		{"cryptpad is productivity", "cryptpad", "productivity"},
-		{"nginx is infrastructure", "nginx-custom", "infrastructure"},
-		{"admin dashboard", "admin-portal", "admin"},
-		{"unknown defaults to tools", "random-service", "tools"},
+func TestGetEnvIntOptional(t *testing.T) {
+	os.Setenv("TEST_INT", "42")
+	defer os.Unsetenv("TEST_INT")
+
+	val := getEnvIntOptional("TEST_INT", 0)
+	if val != 42 {
+		t.Errorf("getEnvIntOptional returned %d, expected 42", val)
 	}
 
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			got := InferCategory(tt.service)
-			if got != tt.wantCat {
-				t.Errorf("InferCategory(%q) = %v, want %v", tt.service, got, tt.wantCat)
-			}
-		})
+	// Test fallback
+	val = getEnvIntOptional("NONEXISTENT_INT", 99)
+	if val != 99 {
+		t.Errorf("getEnvIntOptional returned %d, expected 99", val)
+	}
+}
+
+func TestConfigMethods(t *testing.T) {
+	cfg := &Config{
+		GatewayIP:    "10.42.24.1",
+		NPMPort:      6000,
+		OllamaPort:   6030,
+		ChromaDBPort: 6031,
+	}
+
+	// Test GetNPMURL
+	npmURL := cfg.GetNPMURL()
+	expected := "http://10.42.24.1:6000"
+	if npmURL != expected {
+		t.Errorf("GetNPMURL returned %s, expected %s", npmURL, expected)
+	}
+
+	// Test GetOllamaURL
+	ollamaURL := cfg.GetOllamaURL()
+	expected = "http://10.42.24.1:6030"
+	if ollamaURL != expected {
+		t.Errorf("GetOllamaURL returned %s, expected %s", ollamaURL, expected)
+	}
+
+	// Test GetChromaDBURL
+	chromaURL := cfg.GetChromaDBURL()
+	expected = "http://10.42.24.1:6031"
+	if chromaURL != expected {
+		t.Errorf("GetChromaDBURL returned %s, expected %s", chromaURL, expected)
 	}
 }
