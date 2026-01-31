@@ -112,7 +112,7 @@ deploy:
     - |
       echo "⏳ Waiting for API to be healthy..."
       for i in $(seq 1 30); do
-        if curl -sf http://localhost:9009/health > /dev/null 2>&1; then
+        if curl -sf http://localhost:6010/health > /dev/null 2>&1; then
           echo "✅ Health check passed!"
           exit 0
         fi
