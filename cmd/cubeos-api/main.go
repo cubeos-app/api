@@ -14,6 +14,7 @@ import (
 	_ "modernc.org/sqlite"
 
 	"cubeos-api/internal/config"
+	"cubeos-api/internal/database"
 	"cubeos-api/internal/handlers"
 	"cubeos-api/internal/managers"
 	"cubeos-api/internal/middleware"
@@ -28,7 +29,12 @@ func main() {
 	log.Printf("Starting CubeOS API v%s", cfg.Version)
 
 	// Connect to database
-	db, err := sqlx.Connect("sqlite", cfg.DatabasePath)
+	// Open database using pure-Go driver
+	rawDB, err := database.Open(cfg.DatabasePath)
+	if err != nil {
+		log.Fatalf("Failed to open database: %v", err)
+	}
+	db := sqlx.NewDb(rawDB, "sqlite")
 	if err != nil {
 		log.Fatalf("Failed to connect to database: %v", err)
 	}
