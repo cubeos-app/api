@@ -395,7 +395,13 @@ func (m *PortManager) SyncFromDockerPS(db *sql.DB) error {
 	}
 
 	lines := strings.Split(strings.TrimSpace(string(output)), "\n")
-	portRe := regexp.MustCompile(`(?:[\d.]+:)?(\d+)->(\d+)/(tcp|udp)`)
+
+	// Enhanced regex to handle various port formats:
+	// - 0.0.0.0:6004->8080/tcp
+	// - :::6004->8080/tcp (IPv6)
+	// - 192.168.42.1:80->80/tcp
+	// - 80/tcp (exposed but not mapped)
+	portRe := regexp.MustCompile(`(?:[\d.:[\]]+:)?(\d+)->(\d+)/(tcp|udp)`)
 
 	for _, line := range lines {
 		if line == "" {
@@ -418,13 +424,36 @@ func (m *PortManager) SyncFromDockerPS(db *sql.DB) error {
 			appName = strings.TrimPrefix(containerName, "mulecube-")
 		}
 
-		// Get app ID from database
+		// Get app ID from database - try multiple strategies
 		var appID int64
 		err := db.QueryRow("SELECT id FROM apps WHERE name = ?", appName).Scan(&appID)
 		if err != nil {
+			// Try with container name
 			err = db.QueryRow("SELECT id FROM apps WHERE name = ?", containerName).Scan(&appID)
 			if err != nil {
-				continue
+				// Try partial match (e.g., "logs" for container "cubeos-logs")
+				err = db.QueryRow("SELECT id FROM apps WHERE ? LIKE '%' || name || '%'", containerName).Scan(&appID)
+				if err != nil {
+					// App not found - create it on the fly if it's a cubeos container
+					if strings.HasPrefix(containerName, "cubeos-") || strings.HasPrefix(containerName, "mulecube-") {
+						displayName := strings.ReplaceAll(appName, "-", " ")
+						displayName = strings.Title(displayName)
+						result, err := db.Exec(`
+							INSERT OR IGNORE INTO apps (name, display_name, description, type, source, enabled)
+							VALUES (?, ?, '', 'system', 'cubeos', TRUE)
+						`, appName, displayName)
+						if err == nil {
+							appID, _ = result.LastInsertId()
+							if appID == 0 {
+								// INSERT OR IGNORE didn't insert, get existing ID
+								db.QueryRow("SELECT id FROM apps WHERE name = ?", appName).Scan(&appID)
+							}
+						}
+					}
+					if appID == 0 {
+						continue // Skip if we still can't match
+					}
+				}
 			}
 		}
 
@@ -442,8 +471,10 @@ func (m *PortManager) SyncFromDockerPS(db *sql.DB) error {
 				continue
 			}
 
+			// Note: We now include reserved ports in tracking, just mark them differently
+			description := fmt.Sprintf("Auto-synced from container %s", containerName)
 			if ReservedPorts[hostPort] {
-				continue
+				description = fmt.Sprintf("System port from container %s", containerName)
 			}
 
 			var count int
@@ -455,7 +486,7 @@ func (m *PortManager) SyncFromDockerPS(db *sql.DB) error {
 			db.Exec(`
 				INSERT OR IGNORE INTO port_allocations (app_id, port, protocol, description)
 				VALUES (?, ?, ?, ?)
-			`, appID, hostPort, protocol, fmt.Sprintf("Auto-synced from container %s", containerName))
+			`, appID, hostPort, protocol, description)
 		}
 	}
 

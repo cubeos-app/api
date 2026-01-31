@@ -133,6 +133,8 @@ func (m *AppManager) SeedSystemApps() error {
 		{Name: "npm", DisplayName: "Nginx Proxy Manager", Description: "Reverse proxy management", Type: "system", Source: "cubeos"},
 		{Name: "dockge", DisplayName: "Dockge", Description: "Docker compose management", Type: "system", Source: "cubeos"},
 		{Name: "dozzle", DisplayName: "Dozzle", Description: "Real-time container log viewer", Type: "system", Source: "cubeos"},
+		{Name: "logs", DisplayName: "Logs", Description: "Log viewer service", Type: "system", Source: "cubeos"},
+		{Name: "homarr", DisplayName: "Homarr", Description: "Dashboard and app launcher", Type: "system", Source: "cubeos"},
 		{Name: "ollama", DisplayName: "Ollama", Description: "Local LLM inference server", Type: "system", Source: "cubeos"},
 		{Name: "chromadb", DisplayName: "ChromaDB", Description: "Vector database for AI", Type: "system", Source: "cubeos"},
 		{Name: "backup", DisplayName: "Backup Service", Description: "Automated backup management", Type: "system", Source: "cubeos"},
@@ -143,16 +145,16 @@ func (m *AppManager) SeedSystemApps() error {
 
 	for _, app := range systemApps {
 		// Get compose path - will auto-discover from /cubeos/coreapps/{name}/appconfig/docker-compose.yml
+		// We always set the path even if we can't verify the file exists (container may not have /cubeos mounted)
 		composePath := m.composeManager.GetComposePath(app.Name)
 
-		// Only set compose_path if the file actually exists
-		if _, err := os.Stat(composePath); err != nil {
-			composePath = "" // File doesn't exist, leave empty
-		}
-
+		// Use UPSERT pattern to insert new apps or update existing ones with missing compose_path
 		_, err := m.db.Exec(`
-			INSERT OR IGNORE INTO apps (name, display_name, description, type, source, compose_path, enabled)
+			INSERT INTO apps (name, display_name, description, type, source, compose_path, enabled)
 			VALUES (?, ?, ?, ?, ?, ?, TRUE)
+			ON CONFLICT(name) DO UPDATE SET 
+				compose_path = CASE WHEN compose_path = '' OR compose_path IS NULL THEN excluded.compose_path ELSE compose_path END,
+				updated_at = CURRENT_TIMESTAMP
 		`, app.Name, app.DisplayName, app.Description, app.Type, app.Source, composePath)
 		if err != nil {
 			return err
@@ -162,6 +164,8 @@ func (m *AppManager) SeedSystemApps() error {
 }
 
 // UpdateAppComposePaths updates compose_path for existing apps by auto-discovering compose files
+// Note: Even if os.Stat fails (e.g., API container doesn't have /cubeos mounted), we still
+// set the compose_path because docker compose commands run against the host filesystem
 func (m *AppManager) UpdateAppComposePaths() error {
 	rows, err := m.db.Query("SELECT id, name FROM apps WHERE compose_path = '' OR compose_path IS NULL")
 	if err != nil {
@@ -169,6 +173,7 @@ func (m *AppManager) UpdateAppComposePaths() error {
 	}
 	defer rows.Close()
 
+	var updated int
 	for rows.Next() {
 		var id int64
 		var name string
@@ -176,11 +181,27 @@ func (m *AppManager) UpdateAppComposePaths() error {
 			continue
 		}
 
-		// Try to find compose file
+		// Get the expected compose file path
 		composePath := m.composeManager.GetComposePath(name)
-		if _, err := os.Stat(composePath); err == nil {
-			m.db.Exec("UPDATE apps SET compose_path = ? WHERE id = ?", composePath, id)
+
+		// Check if file exists (might fail if /cubeos not mounted in container)
+		_, statErr := os.Stat(composePath)
+
+		// Set the path regardless - even if we can't verify it exists in the container,
+		// docker compose commands run on the host where the path should be valid
+		result, err := m.db.Exec("UPDATE apps SET compose_path = ? WHERE id = ?", composePath, id)
+		if err == nil {
+			if affected, _ := result.RowsAffected(); affected > 0 {
+				updated++
+				if statErr != nil {
+					fmt.Printf("Set compose_path for %s to %s (file not accessible from container, but may exist on host)\n", name, composePath)
+				}
+			}
 		}
+	}
+
+	if updated > 0 {
+		fmt.Printf("Updated compose_path for %d apps\n", updated)
 	}
 
 	return nil

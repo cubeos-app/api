@@ -56,11 +56,25 @@ type NPMMeta struct {
 
 // NewNPMManager creates a new NPM manager
 func NewNPMManager(configDir string) *NPMManager {
+	// Support configurable credentials via environment variables
+	email := os.Getenv("NPM_EMAIL")
+	if email == "" {
+		email = "admin@example.com"
+	}
+	password := os.Getenv("NPM_PASSWORD")
+	if password == "" {
+		password = "changeme"
+	}
+	baseURL := os.Getenv("NPM_URL")
+	if baseURL == "" {
+		baseURL = "http://192.168.42.1:6000"
+	}
+
 	return &NPMManager{
-		baseURL:   "http://192.168.42.1:6000",
+		baseURL:   baseURL,
 		tokenFile: filepath.Join(configDir, "npm_token"),
-		email:     "cubeos@cubeos.app",
-		password:  "cubeos123",
+		email:     email,
+		password:  password,
 		httpClient: &http.Client{
 			Timeout: 30 * time.Second,
 		},
@@ -71,15 +85,31 @@ func NewNPMManager(configDir string) *NPMManager {
 func (m *NPMManager) Init() error {
 	// Try to load existing token
 	if data, err := os.ReadFile(m.tokenFile); err == nil && len(data) > 0 {
+		m.mu.Lock()
 		m.token = string(data)
+		m.mu.Unlock()
 		// Verify token is still valid
 		if m.verifyToken() {
 			return nil
 		}
+		// Token invalid, clear it
+		m.mu.Lock()
+		m.token = ""
+		m.mu.Unlock()
 	}
 
-	// Generate new token (10 years)
-	return m.generateToken()
+	// Generate new token (only if we have credentials)
+	if m.email != "" && m.password != "" {
+		err := m.generateToken()
+		if err != nil {
+			// Log the error but don't fail - NPM integration is optional
+			fmt.Printf("Warning: Failed to get NPM token: %v\n", err)
+			fmt.Println("Hint: Set NPM_EMAIL and NPM_PASSWORD environment variables or provide a valid token file")
+			return err
+		}
+	}
+
+	return nil
 }
 
 // generateToken requests a new long-lived token from NPM

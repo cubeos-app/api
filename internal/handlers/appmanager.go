@@ -188,7 +188,9 @@ func (h *AppManagerHandler) GetAppStatus(w http.ResponseWriter, r *http.Request)
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
-	json.NewEncoder(w).Encode(models.AppStatusResponse{Name: name, Status: status})
+	// Set Running to true only when status is "running"
+	running := status == "running"
+	json.NewEncoder(w).Encode(models.AppStatusResponse{Name: name, Status: status, Running: running})
 }
 
 // === Ports ===
