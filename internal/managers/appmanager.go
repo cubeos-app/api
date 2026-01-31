@@ -747,44 +747,45 @@ func (m *AppManager) RestartApp(name string) error {
 
 // GetAppStatus returns the running status of an app's containers
 func (m *AppManager) GetAppStatus(name string) (string, error) {
-	app, err := m.GetApp(name)
-	if err != nil {
-		return "unknown", err
-	}
-	if app.ComposePath == "" {
-		return "unknown", nil
-	}
-
-	dir := filepath.Dir(app.ComposePath)
-	cmd := exec.Command("docker", "compose", "-f", app.ComposePath, "ps", "--format", "json")
-	cmd.Dir = dir
-	output, err := cmd.Output()
-	if err != nil {
-		return "unknown", nil
+	// Try multiple container name patterns
+	containerNames := []string{
+		"cubeos-" + name,
+		"mulecube-" + name,
+		name,
 	}
 
-	var containers []struct {
-		State string `json:"State"`
-	}
-	json.Unmarshal(output, &containers)
-
-	if len(containers) == 0 {
-		return "stopped", nil
-	}
-
-	running := 0
-	for _, c := range containers {
-		if c.State == "running" {
-			running++
+	for _, containerName := range containerNames {
+		status, found := m.getContainerStatusByName(containerName)
+		if found {
+			return status, nil
 		}
 	}
 
-	if running == len(containers) {
-		return "running", nil
-	} else if running == 0 {
-		return "stopped", nil
+	return "unknown", nil
+}
+
+// getContainerStatusByName checks docker for a container by name using docker CLI
+func (m *AppManager) getContainerStatusByName(containerName string) (string, bool) {
+	// Use docker inspect which is simpler and more reliable
+	cmd := exec.Command("docker", "inspect", "--format", "{{.State.Status}}", containerName)
+	output, err := cmd.Output()
+	if err != nil {
+		return "", false
 	}
-	return "partial", nil
+
+	status := strings.TrimSpace(string(output))
+	switch status {
+	case "running":
+		return "running", true
+	case "exited", "dead":
+		return "stopped", true
+	case "paused":
+		return "paused", true
+	case "restarting":
+		return "restarting", true
+	default:
+		return status, true
+	}
 }
 
 func (m *AppManager) startAppContainers(app *models.App) {
@@ -1320,7 +1321,7 @@ func (m *AppManager) SyncDomainsFromPihole() error {
 
 		// Strategy 5: Check if there's a coreapps folder for this subdomain
 		if appID == 0 && subdomain != "" {
-			composePath := filepath.Join(filepath.Dir(m.dataDir), "coreapps", subdomain, "appconfig", "docker-compose.yml")
+			composePath := filepath.Join("/cubeos", "coreapps", subdomain, "appconfig", "docker-compose.yml")
 			if _, err := os.Stat(composePath); err == nil {
 				// Found a compose file - register the app
 				result, err := m.db.Exec(`
