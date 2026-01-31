@@ -249,8 +249,6 @@ var DeploymentPurposes = []DeploymentPurposeInfo{
 		RecommendedApps: []string{"kiwix", "calibre-web", "tileserver", "emergency-ref"},
 		Features:        []string{"Offline Wikipedia", "Offline Maps", "E-book Library"},
 	},
-		Features:        []string{"Mesh Networking", "Offline Collaboration", "Emergency Reference"},
-	},
 	{
 		ID:              "expedition",
 		Name:            "Field Team",

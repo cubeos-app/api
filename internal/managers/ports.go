@@ -672,8 +672,8 @@ func (m *PortManager) SyncFromSSOutput(db *sql.DB) error {
 		appName, found := processToApp[lp.Process]
 		if !found {
 			// Unknown process - check if it looks like a container
-			if strings.Contains(lp.Process, "cubeos") || strings.Contains(lp.Process, "cubeos") {
-				appName = strings.TrimPrefix(strings.TrimPrefix(lp.Process, "cubeos-"))
+			if strings.Contains(lp.Process, "cubeos") {
+				appName = strings.TrimPrefix(lp.Process, "cubeos-")
 			}
 		}
 
