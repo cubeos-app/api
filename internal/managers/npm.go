@@ -10,11 +10,14 @@ import (
 	"path/filepath"
 	"sync"
 	"time"
+
+	"cubeos-api/internal/config"
 )
 
 // NPMManager handles Nginx Proxy Manager API interactions
 type NPMManager struct {
 	baseURL    string
+	gatewayIP  string
 	token      string
 	tokenFile  string
 	email      string
@@ -54,8 +57,8 @@ type NPMMeta struct {
 	DNSChallenge     bool `json:"dns_challenge"`
 }
 
-// NewNPMManager creates a new NPM manager
-func NewNPMManager(configDir string) *NPMManager {
+// NewNPMManager creates a new NPM manager using centralized config
+func NewNPMManager(cfg *config.Config, configDir string) *NPMManager {
 	// Support configurable credentials via environment variables
 	email := os.Getenv("NPM_EMAIL")
 	if email == "" {
@@ -65,13 +68,10 @@ func NewNPMManager(configDir string) *NPMManager {
 	if password == "" {
 		password = "changeme"
 	}
-	baseURL := os.Getenv("NPM_URL")
-	if baseURL == "" {
-		baseURL = "http://192.168.42.1:6000"
-	}
 
 	return &NPMManager{
-		baseURL:   baseURL,
+		baseURL:   cfg.GetNPMURL(),
+		gatewayIP: cfg.GatewayIP,
 		tokenFile: filepath.Join(configDir, "npm_token"),
 		email:     email,
 		password:  password,
@@ -257,7 +257,7 @@ func (m *NPMManager) CreateProxyHost(host *NPMProxyHostExtended) (*NPMProxyHostE
 		host.ForwardScheme = "http"
 	}
 	if host.ForwardHost == "" {
-		host.ForwardHost = "192.168.42.1"
+		host.ForwardHost = m.gatewayIP
 	}
 	host.BlockExploits = true
 	host.AllowWebsocketUpgrade = true

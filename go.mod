@@ -9,6 +9,7 @@ require (
 	github.com/golang-jwt/jwt/v5 v5.2.1
 	github.com/gorilla/websocket v1.5.1
 	github.com/jmoiron/sqlx v1.4.0
+	github.com/joho/godotenv v1.5.1
 	github.com/rs/zerolog v1.34.0
 	github.com/shirou/gopsutil/v3 v3.24.5
 	golang.org/x/crypto v0.23.0

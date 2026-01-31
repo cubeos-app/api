@@ -10,6 +10,8 @@ import (
 	"strings"
 	"time"
 
+	"cubeos-api/internal/config"
+
 	"github.com/go-chi/chi/v5"
 )
 
@@ -22,21 +24,17 @@ type ChatHandler struct {
 	collectionName string
 }
 
-// NewChatHandler creates a new chat handler with config from environment
-func NewChatHandler() *ChatHandler {
-	ollamaHost := getEnvDefault("OLLAMA_HOST", "192.168.42.1")
-	ollamaPort := getEnvDefault("OLLAMA_PORT", "11434")
-	chromaHost := getEnvDefault("CHROMADB_HOST", "192.168.42.1")
-	chromaPort := getEnvDefault("CHROMADB_PORT", "8000")
+// NewChatHandler creates a new chat handler with config
+func NewChatHandler(cfg *config.Config) *ChatHandler {
 	model := getEnvDefault("OLLAMA_MODEL", "qwen2.5:0.5b")
 	embModel := getEnvDefault("EMBEDDING_MODEL", "nomic-embed-text")
 	collection := getEnvDefault("CHROMADB_COLLECTION", "cubeos_docs")
 
 	return &ChatHandler{
-		ollamaURL:      fmt.Sprintf("http://%s:%s", ollamaHost, ollamaPort),
+		ollamaURL:      cfg.GetOllamaURL(),
 		ollamaModel:    model,
 		embeddingModel: embModel,
-		chromaURL:      fmt.Sprintf("http://%s:%s", chromaHost, chromaPort),
+		chromaURL:      cfg.GetChromaDBURL(),
 		collectionName: collection,
 	}
 }
@@ -98,8 +96,8 @@ DOCUMENTATION:
 
 SYSTEM INFO (always available):
 - Dashboard: http://cubeos.cube
-- WiFi: CubeOS-XXXX network
-- IP range: 192.168.42.x
+- WiFi: CubeOS network
+- IP range: 10.42.24.x
 
 Answer the user's question based on the documentation above.`
 
@@ -115,10 +113,10 @@ SYSTEM INFO:
 - Dashboard: http://cubeos.cube
 - Pi-hole DNS: http://pihole.cubeos.cube/admin
 - Proxy Manager: http://npm.cubeos.cube
-- Logs: http://logs.cubeos.cube
-- Containers: http://dockge.cubeos.cube
-- WiFi: CubeOS-XXXX network
-- IP range: 192.168.42.x
+- Logs: http://logs.cubeos.cube or http://dozzle.cubeos.cube
+- WiFi: CubeOS network
+- IP range: 10.42.24.x
+- Gateway: 10.42.24.1
 
 Be direct. No greetings or filler words.`
 

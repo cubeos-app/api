@@ -9,12 +9,15 @@ import (
 	"sort"
 	"strings"
 	"sync"
+
+	"cubeos-api/internal/config"
 )
 
 // PiholeManager handles Pi-hole DNS custom.list management
 type PiholeManager struct {
 	customListPath string
 	cubeosIP       string
+	domain         string
 	mu             sync.RWMutex
 }
 
@@ -24,11 +27,12 @@ type DNSEntry struct {
 	Domain string `json:"domain"`
 }
 
-// NewPiholeManager creates a new Pi-hole manager
-func NewPiholeManager(basePath string) *PiholeManager {
+// NewPiholeManager creates a new Pi-hole manager using centralized config
+func NewPiholeManager(cfg *config.Config, basePath string) *PiholeManager {
 	return &PiholeManager{
 		customListPath: filepath.Join(basePath, "coreapps/pihole/appdata/etc-pihole/custom.list"),
-		cubeosIP:       "192.168.42.1",
+		cubeosIP:       cfg.GatewayIP,
+		domain:         cfg.Domain,
 	}
 }
 
@@ -177,16 +181,17 @@ func (m *PiholeManager) RemoveEntry(domain string) error {
 	return m.WriteCustomList(newEntries)
 }
 
-// GetCubeOSDomains returns all .cubeos.cube domains
+// GetCubeOSDomains returns all domains matching the configured base domain
 func (m *PiholeManager) GetCubeOSDomains() ([]DNSEntry, error) {
 	entries, err := m.ReadCustomList()
 	if err != nil {
 		return nil, err
 	}
 
+	suffix := "." + m.domain
 	var cubeosEntries []DNSEntry
 	for _, entry := range entries {
-		if strings.HasSuffix(entry.Domain, ".cubeos.cube") || entry.Domain == "cubeos.cube" {
+		if strings.HasSuffix(entry.Domain, suffix) || entry.Domain == m.domain {
 			cubeosEntries = append(cubeosEntries, entry)
 		}
 	}
@@ -210,19 +215,20 @@ func (m *PiholeManager) ReloadDNS() error {
 	return nil
 }
 
-// ValidateDomain checks if a domain is valid for .cubeos.cube
+// ValidateDomain checks if a domain is valid for the configured base domain
 func (m *PiholeManager) ValidateDomain(domain string) error {
 	if domain == "" {
 		return fmt.Errorf("domain cannot be empty")
 	}
 
-	// Must end with .cubeos.cube or be cubeos.cube
-	if !strings.HasSuffix(domain, ".cubeos.cube") && domain != "cubeos.cube" {
-		return fmt.Errorf("domain must end with .cubeos.cube")
+	suffix := "." + m.domain
+	// Must end with .<domain> or be the base domain itself
+	if !strings.HasSuffix(domain, suffix) && domain != m.domain {
+		return fmt.Errorf("domain must end with %s", suffix)
 	}
 
 	// Extract subdomain
-	subdomain := strings.TrimSuffix(domain, ".cubeos.cube")
+	subdomain := strings.TrimSuffix(domain, suffix)
 	if subdomain == "" || subdomain == domain {
 		return nil // It's cubeos.cube itself
 	}

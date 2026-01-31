@@ -66,10 +66,10 @@ func main() {
 
 	// Create App Store manager
 	dbMgr := managers.NewDatabaseManager(db.DB)
-	appStoreMgr := managers.NewAppStoreManager(dbMgr, cfg.DataDir)
+	appStoreMgr := managers.NewAppStoreManager(cfg, dbMgr, cfg.DataDir)
 
 	// Create App Manager
-	appMgr := managers.NewAppManager(db.DB, cfg.DataDir)
+	appMgr := managers.NewAppManager(cfg, db.DB, cfg.DataDir)
 	if err := appMgr.InitSchema(); err != nil {
 		log.Printf("Warning: Failed to initialize AppManager schema: %v", err)
 	}
@@ -90,7 +90,7 @@ func main() {
 	setupHandler := handlers.NewSetupHandler(setupMgr)
 
 	// Create Chat handler (AI Assistant)
-	chatHandler := handlers.NewChatHandler()
+	chatHandler := handlers.NewChatHandler(cfg)
 
 	// Create Docs handler (Documentation viewer)
 	docsHandler := handlers.NewDocsHandler()

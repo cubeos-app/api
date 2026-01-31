@@ -20,6 +20,7 @@ import (
 	"sync"
 	"time"
 
+	"cubeos-api/internal/config"
 	"cubeos-api/internal/models"
 
 	"gopkg.in/yaml.v3"
@@ -43,8 +44,8 @@ type AppStoreManager struct {
 	mu           sync.RWMutex
 }
 
-// NewAppStoreManager creates a new app store manager
-func NewAppStoreManager(db *DatabaseManager, dataPath string) *AppStoreManager {
+// NewAppStoreManager creates a new app store manager with centralized config
+func NewAppStoreManager(cfg *config.Config, db *DatabaseManager, dataPath string) *AppStoreManager {
 	// Directory structure:
 	// /cubeos/coreapps/ - NPM, Pi-hole, dashboard (system critical)
 	// /cubeos/apps/{app}/appconfig/ - docker-compose.yml, .env
@@ -64,9 +65,9 @@ func NewAppStoreManager(db *DatabaseManager, dataPath string) *AppStoreManager {
 		appsPath:     appsPath,
 		coreAppsPath: coreAppsPath,
 		appDataPath:  "", // deprecated - now per-app
-		baseDomain:   "cubeos.net",
-		gatewayIP:    "192.168.42.1",
-		npmAPIURL:    "http://192.168.42.1:6000/api",
+		baseDomain:   cfg.Domain,
+		gatewayIP:    cfg.GatewayIP,
+		npmAPIURL:    fmt.Sprintf("%s/api", cfg.GetNPMURL()),
 		stores:       make(map[string]*models.AppStore),
 		catalog:      make(map[string]*models.StoreApp),
 		installed:    make(map[string]*models.InstalledApp),

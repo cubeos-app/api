@@ -596,7 +596,7 @@ func (m *SetupManager) configureSSL(mode, domain, dnsProvider, apiToken, apiSecr
 			exec.Command("mkcert",
 				"-key-file", filepath.Join(certDir, "server.key"),
 				"-cert-file", filepath.Join(certDir, "server.crt"),
-				"cubeos.cube", "*.cubeos.cube", "localhost", "192.168.42.1",
+				m.cfg.Domain, "*."+m.cfg.Domain, "localhost", m.cfg.GatewayIP,
 			).Run()
 		} else {
 			// Fallback to openssl
@@ -604,7 +604,7 @@ func (m *SetupManager) configureSSL(mode, domain, dnsProvider, apiToken, apiSecr
 				"-newkey", "rsa:2048",
 				"-keyout", filepath.Join(certDir, "server.key"),
 				"-out", filepath.Join(certDir, "server.crt"),
-				"-subj", "/CN=cubeos.cube",
+				"-subj", "/CN="+m.cfg.Domain,
 			).Run()
 		}
 	}

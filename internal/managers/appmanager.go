@@ -14,6 +14,7 @@ import (
 	"sync"
 	"time"
 
+	"cubeos-api/internal/config"
 	"cubeos-api/internal/models"
 )
 
@@ -33,6 +34,7 @@ var reservedPorts = map[int]bool{
 
 // AppManager manages applications, ports, FQDNs, and profiles
 type AppManager struct {
+	cfg            *config.Config
 	db             *sql.DB
 	dataDir        string
 	registryURL    string
@@ -43,14 +45,15 @@ type AppManager struct {
 	mu             sync.RWMutex
 }
 
-// NewAppManager creates a new AppManager
-func NewAppManager(db *sql.DB, dataDir string) *AppManager {
+// NewAppManager creates a new AppManager with centralized config
+func NewAppManager(cfg *config.Config, db *sql.DB, dataDir string) *AppManager {
 	mgr := &AppManager{
+		cfg:            cfg,
 		db:             db,
 		dataDir:        dataDir,
 		registryURL:    "localhost:5000",
-		npmManager:     NewNPMManager(filepath.Join(dataDir, "config")),
-		piholeManager:  NewPiholeManager("/cubeos"),
+		npmManager:     NewNPMManager(cfg, filepath.Join(dataDir, "config")),
+		piholeManager:  NewPiholeManager(cfg, "/cubeos"),
 		composeManager: NewComposeManager("/cubeos"),
 		portManager:    NewPortManager(db),
 	}
@@ -1717,7 +1720,7 @@ func (m *AppManager) GetNPMStatus() map[string]interface{} {
 	return map[string]interface{}{
 		"healthy":   healthy,
 		"connected": m.npmManager.token != "",
-		"url":       "http://192.168.42.1:6000",
+		"url":       m.cfg.GetNPMURL(),
 	}
 }
 

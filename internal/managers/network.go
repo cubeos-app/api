@@ -29,7 +29,7 @@ func NewNetworkManager(cfg *config.Config) *NetworkManager {
 // GetAPConfig reads the hostapd configuration
 func (m *NetworkManager) GetAPConfig() *models.WiFiAPConfig {
 	cfg := &models.WiFiAPConfig{
-		SSID:        "MuleCube",
+		SSID:        "CubeOS",
 		Channel:     6,
 		HWMode:      "g",
 		CountryCode: "NL",

@@ -1,9 +1,13 @@
 package config
 
 import (
+	"fmt"
+	"log"
 	"os"
 	"strconv"
 	"strings"
+
+	"github.com/joho/godotenv"
 )
 
 // Config holds all application settings
@@ -24,13 +28,26 @@ type Config struct {
 	DockerSocket         string
 	ContainerStopTimeout int
 
-	// Network
+	// Network - CubeOS specific
+	GatewayIP string // 10.42.24.1
+	Domain    string // cubeos.cube
+	Subnet    string // 10.42.24.0/24
+
+	// Network - Interfaces
 	APInterface   string
 	WANInterface  string
 	APIP          string
 	HostapdConf   string
 	DnsmasqConf   string
 	DnsmasqLeases string
+
+	// Service Ports (from env)
+	APIPort       int
+	DashboardPort int
+	NPMPort       int
+	PiholePort    int
+	OllamaPort    int
+	ChromaDBPort  int
 
 	// Paths
 	DataDir   string
@@ -47,31 +64,21 @@ type Config struct {
 
 // CoreServices that cannot be toggled
 var CoreServices = map[string]bool{
-	"nginx-proxy":              true,
-	"pihole":                   true,
-	"postgres":                 true,
-	"valkey":                   true,
-	"cubeos-api":               true,
-	"cubeos-dashboard":         true,
-	"mulecube-hw-monitor":      true,
-	"mulecube-status":          true,
-	"mulecube-backup":          true,
-	"mulecube-reset":           true,
-	"mulecube-wifi-status":     true,
-	"mulecube-watchdog":        true,
-	"mulecube-usb-monitor":     true,
-	"mulecube-diagnostics":     true,
-	"mulecube-terminal":        true,
-	"mulecube-terminal-ro":     true,
-	"mulecube-gpio":            true,
-	"mulecube-nettools":        true,
-	"mulecube-logs":            true,
-	"mulecube-service-manager": true,
-	"mulecube-manager":         true,
-	"mulecube-dockge":          true,
-	"uptime-kuma":              true,
-	"beszel":                   true,
-	"beszel-agent":             true,
+	"nginx-proxy":        true,
+	"pihole":             true,
+	"cubeos-api":         true,
+	"cubeos-dashboard":   true,
+	"cubeos-pihole":      true,
+	"cubeos-npm":         true,
+	"cubeos-watchdog":    true,
+	"cubeos-logs":        true,
+	"cubeos-dozzle":      true,
+	"cubeos-terminal":    true,
+	"cubeos-diagnostics": true,
+	"cubeos-docs-indexer": true,
+	"uptime-kuma":        true,
+	"beszel":             true,
+	"beszel-agent":       true,
 }
 
 // CoreServicePatterns - containers matching these are also core
@@ -140,44 +147,74 @@ var SystemServices = map[string]string{
 	"pihole-FTL": "Pi-hole DNS",
 }
 
-// Load creates config from environment variables
+// Load creates config from environment variables with fail-fast behavior
+// CRITICAL: This function will log.Fatal if required config is missing
 func Load() *Config {
+	// Try to load defaults.env - fail-fast if missing
+	envPath := "/cubeos/config/defaults.env"
+	if err := godotenv.Load(envPath); err != nil {
+		// Check if file exists but has other issues
+		if _, statErr := os.Stat(envPath); os.IsNotExist(statErr) {
+			log.Fatalf("FATAL: Configuration file not found: %s\nCubeOS cannot start without configuration.", envPath)
+		}
+		log.Fatalf("FATAL: Failed to load configuration from %s: %v", envPath, err)
+	}
+
+	// Also try to load secrets.env (optional, but log if missing)
+	secretsPath := "/cubeos/config/secrets.env"
+	if err := godotenv.Load(secretsPath); err != nil {
+		log.Printf("Warning: Could not load secrets from %s: %v", secretsPath, err)
+	}
+
 	return &Config{
-		// Server
-		Host:    getEnv("API_HOST", "0.0.0.0"),
-		Port:    getEnvInt("API_PORT", 9009),
-		Version: getEnv("VERSION", "2.0.0"),
+		// Server - REQUIRED
+		Host:    getEnvOptional("API_HOST", "0.0.0.0"),
+		Port:    mustGetEnvInt("API_PORT"),
+		Version: getEnvOptional("VERSION", "2.0.0"),
 
-		// Database
-		DatabasePath: getEnv("DATABASE_PATH", "/cubeos/data/cubeos.db"),
+		// Database - REQUIRED
+		DatabasePath: mustGetEnv("DATABASE_PATH"),
 
-		// JWT
-		JWTSecret:          getEnv("JWT_SECRET", "cubeos-secret-change-me-in-production"),
-		JWTExpirationHours: getEnvInt("JWT_EXPIRATION_HOURS", 24),
+		// JWT - Secret is required in production
+		JWTSecret:          getEnvOptional("JWT_SECRET", "cubeos-dev-secret-change-in-production"),
+		JWTExpirationHours: getEnvIntOptional("JWT_EXPIRATION_HOURS", 24),
 
 		// Docker
-		DockerSocket:         getEnv("DOCKER_SOCKET", "/var/run/docker.sock"),
-		ContainerStopTimeout: getEnvInt("CONTAINER_STOP_TIMEOUT", 30),
+		DockerSocket:         getEnvOptional("DOCKER_SOCKET", "/var/run/docker.sock"),
+		ContainerStopTimeout: getEnvIntOptional("CONTAINER_STOP_TIMEOUT", 30),
 
-		// Network
-		APInterface:   getEnv("AP_INTERFACE", "wlan0"),
-		WANInterface:  getEnv("WAN_INTERFACE", "eth0"),
-		APIP:          getEnv("AP_IP", "192.168.42.1"),
-		HostapdConf:   getEnv("HOSTAPD_CONF", "/etc/hostapd/hostapd.conf"),
-		DnsmasqConf:   getEnv("DNSMASQ_CONF", "/etc/dnsmasq.d/090_mulecube.conf"),
-		DnsmasqLeases: getEnv("DNSMASQ_LEASES", "/var/lib/misc/dnsmasq.leases"),
+		// Network - REQUIRED (these are critical for CubeOS operation)
+		GatewayIP: mustGetEnv("GATEWAY_IP"),
+		Domain:    mustGetEnv("DOMAIN"),
+		Subnet:    getEnvOptional("SUBNET", "10.42.24.0/24"),
 
-		// Paths
-		DataDir:   getEnv("DATA_DIR", "/cubeos/data"),
-		BackupDir: getEnv("BACKUP_DIR", "/cubeos/backups"),
+		// Network - Interfaces
+		APInterface:   getEnvOptional("AP_INTERFACE", "wlan0"),
+		WANInterface:  getEnvOptional("WAN_INTERFACE", "eth0"),
+		APIP:          mustGetEnv("GATEWAY_IP"), // Same as GatewayIP
+		HostapdConf:   getEnvOptional("HOSTAPD_CONF", "/etc/hostapd/hostapd.conf"),
+		DnsmasqConf:   getEnvOptional("DNSMASQ_CONF", "/etc/dnsmasq.d/090_cubeos.conf"),
+		DnsmasqLeases: getEnvOptional("DNSMASQ_LEASES", "/var/lib/misc/dnsmasq.leases"),
+
+		// Service Ports - REQUIRED
+		APIPort:       mustGetEnvInt("API_PORT"),
+		DashboardPort: mustGetEnvInt("DASHBOARD_PORT"),
+		NPMPort:       mustGetEnvInt("NPM_PORT"),
+		PiholePort:    mustGetEnvInt("PIHOLE_PORT"),
+		OllamaPort:    mustGetEnvInt("OLLAMA_PORT"),
+		ChromaDBPort:  mustGetEnvInt("CHROMADB_PORT"),
+
+		// Paths - use env vars with fallbacks
+		DataDir:   getEnvOptional("CUBEOS_DATA_DIR", "/cubeos/data"),
+		BackupDir: getEnvOptional("BACKUP_DIR", "/cubeos/backups"),
 
 		// Monitoring
-		StatsInterval: getEnvInt("STATS_INTERVAL", 2),
+		StatsInterval: getEnvIntOptional("STATS_INTERVAL", 2),
 
 		// UPS
-		UPSI2CAddress:      getEnvHex("UPS_I2C_ADDRESS", 0x36),
-		BatteryCapacityMAH: getEnvInt("BATTERY_CAPACITY_MAH", 3000),
-		CriticalBatteryPct: getEnvInt("CRITICAL_BATTERY_PERCENT", 10),
+		UPSI2CAddress:      getEnvHexOptional("UPS_I2C_ADDRESS", 0x36),
+		BatteryCapacityMAH: getEnvIntOptional("BATTERY_CAPACITY_MAH", 3000),
+		CriticalBatteryPct: getEnvIntOptional("CRITICAL_BATTERY_PERCENT", 10),
 	}
 }
 
@@ -194,14 +231,40 @@ func IsCoreService(name string) bool {
 	return false
 }
 
-func getEnv(key, defaultVal string) string {
+// mustGetEnv returns the environment variable value or fatals if not set
+// Used for REQUIRED configuration that has no safe default
+func mustGetEnv(key string) string {
+	val := os.Getenv(key)
+	if val == "" {
+		log.Fatalf("FATAL: Required environment variable %s is not set.\nCheck /cubeos/config/defaults.env", key)
+	}
+	return val
+}
+
+// mustGetEnvInt returns the environment variable as int or fatals if not set/invalid
+func mustGetEnvInt(key string) int {
+	val := os.Getenv(key)
+	if val == "" {
+		log.Fatalf("FATAL: Required environment variable %s is not set.\nCheck /cubeos/config/defaults.env", key)
+	}
+	i, err := strconv.Atoi(val)
+	if err != nil {
+		log.Fatalf("FATAL: Environment variable %s must be an integer, got: %s", key, val)
+	}
+	return i
+}
+
+// getEnvOptional returns the environment variable value or a default
+// Used for OPTIONAL configuration with safe defaults
+func getEnvOptional(key, defaultVal string) string {
 	if val := os.Getenv(key); val != "" {
 		return val
 	}
 	return defaultVal
 }
 
-func getEnvInt(key string, defaultVal int) int {
+// getEnvIntOptional returns the environment variable as int or a default
+func getEnvIntOptional(key string, defaultVal int) int {
 	if val := os.Getenv(key); val != "" {
 		if i, err := strconv.Atoi(val); err == nil {
 			return i
@@ -210,13 +273,29 @@ func getEnvInt(key string, defaultVal int) int {
 	return defaultVal
 }
 
-func getEnvHex(key string, defaultVal int) int {
+// getEnvHexOptional returns the environment variable as hex int or a default
+func getEnvHexOptional(key string, defaultVal int) int {
 	if val := os.Getenv(key); val != "" {
 		if i, err := strconv.ParseInt(strings.TrimPrefix(val, "0x"), 16, 32); err == nil {
 			return int(i)
 		}
 	}
 	return defaultVal
+}
+
+// GetNPMURL returns the NPM API URL constructed from config
+func (c *Config) GetNPMURL() string {
+	return fmt.Sprintf("http://%s:%d", c.GatewayIP, c.NPMPort)
+}
+
+// GetOllamaURL returns the Ollama API URL constructed from config
+func (c *Config) GetOllamaURL() string {
+	return fmt.Sprintf("http://%s:%d", c.GatewayIP, c.OllamaPort)
+}
+
+// GetChromaDBURL returns the ChromaDB API URL constructed from config
+func (c *Config) GetChromaDBURL() string {
+	return fmt.Sprintf("http://%s:%d", c.GatewayIP, c.ChromaDBPort)
 }
 
 // ServiceDefinition holds static service metadata
