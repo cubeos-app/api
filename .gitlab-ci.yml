@@ -61,7 +61,6 @@ build:
   script:
     - cp -r . /app/
     - cd /app
-    # Force fresh module download (bypass cache for replace directive)
     - go clean -modcache
     - go mod download
     - GOOS=linux GOARCH=arm64 CGO_ENABLED=0 go build -ldflags="-s -w -X main.Version=${CI_COMMIT_SHORT_SHA}" -o cubeos-api-arm64 ./cmd/cubeos-api/
@@ -113,11 +112,14 @@ deploy:
     - echo "🚀 Deploying CubeOS API..."
     - docker pull ${GHCR_IMAGE}:${CI_COMMIT_SHORT_SHA}
     - docker tag ${GHCR_IMAGE}:${CI_COMMIT_SHORT_SHA} cubeos-api:latest
-    - docker compose -f /cubeos/coreapps/cubeos-api/appconfig/docker-compose.yml up -d --force-recreate api
+    - docker rm -f cubeos-api 2>/dev/null || true
+    - cd /cubeos/coreapps/cubeos-api/appconfig
+    - docker compose down --remove-orphans || true
+    - docker compose up -d --force-recreate
     - |
       echo "⏳ Waiting for API to be healthy..."
       for i in $(seq 1 30); do
-        if curl -sf http://localhost:6010/health > /dev/null 2>&1; then
+        if curl -sf http://127.0.0.1:6010/health > /dev/null 2>&1; then
           echo "✅ Health check passed!"
           exit 0
         fi
