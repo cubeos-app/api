@@ -11,7 +11,6 @@ import (
 	"github.com/go-chi/cors"
 	"github.com/jmoiron/sqlx"
 	"golang.org/x/crypto/bcrypt"
-	_ "modernc.org/sqlite"
 
 	"cubeos-api/internal/config"
 	"cubeos-api/internal/database"
@@ -35,9 +34,6 @@ func main() {
 		log.Fatalf("Failed to open database: %v", err)
 	}
 	db := sqlx.NewDb(rawDB, "sqlite")
-	if err != nil {
-		log.Fatalf("Failed to connect to database: %v", err)
-	}
 	defer db.Close()
 
 	// Initialize database schema
