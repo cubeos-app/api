@@ -631,6 +631,110 @@ func (m *PortManager) SyncFromSystemEnhanced(composeManager *ComposeManager, db 
 	return nil
 }
 
+// SyncFromSSOutput parses ss -tulnp output and creates port allocations
+// This catches ports that docker doesn't expose (host networking, pihole-FTL, etc.)
+func (m *PortManager) SyncFromSSOutput(db *sql.DB) error {
+	listeningPorts, err := m.GetListeningPorts()
+	if err != nil {
+		return err
+	}
+
+	// Map process names to app names
+	processToApp := map[string]string{
+		"pihole-FTL":      "pihole",
+		"nginx":           "dashboard",
+		"chroma":          "chromadb",
+		"ttyd":            "terminal",
+		"ollama":          "ollama",
+		"docker-proxy":    "", // Docker proxy handles container ports, skip
+		"sshd":            "", // System service, skip
+		"smbd":            "", // System service (Samba), skip
+		"nmbd":            "", // System service (Samba), skip
+		"systemd-network": "", // System service, skip
+		"avahi-daemon":    "", // System service, skip
+		"containerd":      "", // System service, skip
+	}
+
+	for _, lp := range listeningPorts {
+		// Skip very low ports (system)
+		if lp.Port < 22 {
+			continue
+		}
+
+		// Skip if already in allocations
+		var count int
+		db.QueryRow("SELECT COUNT(*) FROM port_allocations WHERE port = ?", lp.Port).Scan(&count)
+		if count > 0 {
+			continue
+		}
+
+		// Try to map process to app
+		appName, found := processToApp[lp.Process]
+		if !found {
+			// Unknown process - check if it looks like a container
+			if strings.Contains(lp.Process, "cubeos") || strings.Contains(lp.Process, "mulecube") {
+				appName = strings.TrimPrefix(strings.TrimPrefix(lp.Process, "cubeos-"), "mulecube-")
+			}
+		}
+
+		if appName == "" {
+			// System port or docker-proxy, skip auto-allocation
+			continue
+		}
+
+		// Get app ID
+		var appID int64
+		err := db.QueryRow("SELECT id FROM apps WHERE name = ?", appName).Scan(&appID)
+		if err != nil {
+			continue
+		}
+
+		// Allocate
+		db.Exec(`
+			INSERT OR IGNORE INTO port_allocations (app_id, port, protocol, description)
+			VALUES (?, ?, ?, ?)
+		`, appID, lp.Port, lp.Protocol, fmt.Sprintf("Auto-synced from ss (%s)", lp.Process))
+	}
+
+	return nil
+}
+
+// SyncComprehensive runs all port sync methods to build complete port inventory
+func (m *PortManager) SyncComprehensive(composeManager *ComposeManager, db *sql.DB) error {
+	fmt.Println("Starting comprehensive port sync...")
+
+	// 1. Sync from compose files (defines intended ports)
+	fmt.Println("  - Syncing from compose files...")
+	if err := m.SyncFromSystem(composeManager); err != nil {
+		fmt.Printf("    Warning: compose sync error: %v\n", err)
+	}
+
+	// 2. Sync from docker ps (actual running container ports)
+	fmt.Println("  - Syncing from docker ps...")
+	if err := m.SyncFromDockerPS(db); err != nil {
+		fmt.Printf("    Warning: docker ps sync error: %v\n", err)
+	}
+
+	// 3. Sync from docker inspect (more reliable port detection)
+	fmt.Println("  - Syncing from docker inspect...")
+	if err := m.SyncFromDockerInspect(db); err != nil {
+		fmt.Printf("    Warning: docker inspect sync error: %v\n", err)
+	}
+
+	// 4. Sync from ss -tulnp (catches host networking, pihole-FTL, etc.)
+	fmt.Println("  - Syncing from ss -tulnp...")
+	if err := m.SyncFromSSOutput(db); err != nil {
+		fmt.Printf("    Warning: ss sync error: %v\n", err)
+	}
+
+	// Count final ports
+	var portCount int
+	db.QueryRow("SELECT COUNT(*) FROM port_allocations").Scan(&portCount)
+	fmt.Printf("  Port sync complete: %d ports allocated\n", portCount)
+
+	return nil
+}
+
 // GetPortStats returns statistics about port usage
 func (m *PortManager) GetPortStats() map[string]interface{} {
 	var totalAllocated, systemAllocated, userAllocated int

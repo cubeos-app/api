@@ -4,18 +4,19 @@ import "time"
 
 // App represents a registered application in CubeOS
 type App struct {
-	ID          int64     `db:"id" json:"id"`
-	Name        string    `db:"name" json:"name"`
-	DisplayName string    `db:"display_name" json:"display_name"`
-	Description string    `db:"description" json:"description"`
-	Type        string    `db:"type" json:"type"`     // "system" or "user"
-	Source      string    `db:"source" json:"source"` // "cubeos", "casaos", "custom"
-	IconURL     string    `db:"icon_url" json:"icon_url,omitempty"`
-	GithubRepo  string    `db:"github_repo" json:"github_repo,omitempty"`
-	ComposePath string    `db:"compose_path" json:"compose_path,omitempty"`
-	Enabled     bool      `db:"enabled" json:"enabled"`
-	CreatedAt   time.Time `db:"created_at" json:"created_at"`
-	UpdatedAt   time.Time `db:"updated_at" json:"updated_at"`
+	ID            int64     `db:"id" json:"id"`
+	Name          string    `db:"name" json:"name"`
+	DisplayName   string    `db:"display_name" json:"display_name"`
+	Description   string    `db:"description" json:"description"`
+	Type          string    `db:"type" json:"type"`     // "system" or "user"
+	Source        string    `db:"source" json:"source"` // "cubeos", "casaos", "custom"
+	IconURL       string    `db:"icon_url" json:"icon_url,omitempty"`
+	GithubRepo    string    `db:"github_repo" json:"github_repo,omitempty"`
+	ComposePath   string    `db:"compose_path" json:"compose_path,omitempty"`
+	ContainerName string    `db:"container_name" json:"container_name,omitempty"` // Actual Docker container name
+	Enabled       bool      `db:"enabled" json:"enabled"`
+	CreatedAt     time.Time `db:"created_at" json:"created_at"`
+	UpdatedAt     time.Time `db:"updated_at" json:"updated_at"`
 	// Joined data
 	Ports []PortAllocation `db:"-" json:"ports,omitempty"`
 	FQDNs []FQDN           `db:"-" json:"fqdns,omitempty"`
@@ -216,9 +217,12 @@ type CasaOSPreviewResponse struct {
 
 type AppStatusResponse struct {
 	Name          string `json:"name"`
-	Status        string `json:"status"` // "running", "stopped", "partial", "unknown"
+	Status        string `json:"status"`        // "running", "stopped", "exited", "not_deployed", "no_compose"
+	StatusReason  string `json:"status_reason"` // "auto", "manual", "error", "not_found"
 	ContainerName string `json:"container_name,omitempty"`
 	Running       bool   `json:"running"`
+	HasCompose    bool   `json:"has_compose"`   // Whether compose file exists
+	HasContainer  bool   `json:"has_container"` // Whether container exists (running or stopped)
 }
 
 // AppConfig represents compose and env file contents

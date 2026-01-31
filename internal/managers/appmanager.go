@@ -72,6 +72,7 @@ func (m *AppManager) InitSchema() error {
 		icon_url TEXT DEFAULT '',
 		github_repo TEXT DEFAULT '',
 		compose_path TEXT DEFAULT '',
+		container_name TEXT DEFAULT '',
 		enabled BOOLEAN DEFAULT TRUE,
 		created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
 		updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
@@ -123,43 +124,81 @@ func (m *AppManager) InitSchema() error {
 	);
 	`
 	_, err := m.db.Exec(schema)
-	return err
+	if err != nil {
+		return err
+	}
+
+	// Run migrations for existing databases
+	return m.runMigrations()
+}
+
+// runMigrations handles database schema migrations for existing databases
+func (m *AppManager) runMigrations() error {
+	// Migration 1: Add container_name column to apps table
+	_, err := m.db.Exec("ALTER TABLE apps ADD COLUMN container_name TEXT DEFAULT ''")
+	if err != nil {
+		// Column likely already exists, ignore error
+		if !strings.Contains(err.Error(), "duplicate column") {
+			// Log but don't fail - this is a migration
+			fmt.Printf("Migration note (container_name): %v\n", err)
+		}
+	}
+
+	return nil
 }
 
 // SeedSystemApps adds default system apps if they don't exist
 func (m *AppManager) SeedSystemApps() error {
-	systemApps := []models.App{
-		{Name: "pihole", DisplayName: "Pi-hole", Description: "Network-wide DNS and ad blocking", Type: "system", Source: "cubeos"},
-		{Name: "npm", DisplayName: "Nginx Proxy Manager", Description: "Reverse proxy management", Type: "system", Source: "cubeos"},
-		{Name: "dockge", DisplayName: "Dockge", Description: "Docker compose management", Type: "system", Source: "cubeos"},
-		{Name: "dozzle", DisplayName: "Dozzle", Description: "Real-time container log viewer", Type: "system", Source: "cubeos"},
-		{Name: "logs", DisplayName: "Logs", Description: "Log viewer service", Type: "system", Source: "cubeos"},
-		{Name: "homarr", DisplayName: "Homarr", Description: "Dashboard and app launcher", Type: "system", Source: "cubeos"},
-		{Name: "ollama", DisplayName: "Ollama", Description: "Local LLM inference server", Type: "system", Source: "cubeos"},
-		{Name: "chromadb", DisplayName: "ChromaDB", Description: "Vector database for AI", Type: "system", Source: "cubeos"},
-		{Name: "backup", DisplayName: "Backup Service", Description: "Automated backup management", Type: "system", Source: "cubeos"},
-		{Name: "terminal", DisplayName: "Web Terminal", Description: "Browser-based terminal access", Type: "system", Source: "cubeos"},
-		{Name: "watchdog", DisplayName: "Watchdog", Description: "Service health monitoring", Type: "system", Source: "cubeos"},
-		{Name: "orchestrator", DisplayName: "Orchestrator", Description: "Service orchestration", Type: "system", Source: "cubeos"},
+	// System apps with their actual Docker container names
+	// Only include apps that actually have containers deployed
+	type systemApp struct {
+		Name          string
+		DisplayName   string
+		Description   string
+		ContainerName string // Actual Docker container name
+	}
+
+	systemApps := []systemApp{
+		{Name: "pihole", DisplayName: "Pi-hole", Description: "Network-wide DNS and ad blocking", ContainerName: "cubeos-pihole"},
+		{Name: "npm", DisplayName: "Nginx Proxy Manager", Description: "Reverse proxy management", ContainerName: "cubeos-npm"},
+		{Name: "dockge", DisplayName: "Dockge", Description: "Docker compose management", ContainerName: "cubeos-dockge"},
+		{Name: "logs", DisplayName: "Logs", Description: "Real-time container log viewer", ContainerName: "cubeos-logs"},
+		{Name: "homarr", DisplayName: "Homarr", Description: "Dashboard and app launcher", ContainerName: "cubeos-homarr"},
+		{Name: "ollama", DisplayName: "Ollama", Description: "Local LLM inference server", ContainerName: "cubeos-ollama"},
+		{Name: "chromadb", DisplayName: "ChromaDB", Description: "Vector database for AI", ContainerName: "chromadb"},
+		{Name: "terminal", DisplayName: "Web Terminal", Description: "Browser-based terminal access", ContainerName: "cubeos-terminal"},
+		{Name: "watchdog", DisplayName: "Watchdog", Description: "Service health monitoring", ContainerName: "cubeos-watchdog"},
+		{Name: "api", DisplayName: "Api", Description: "CubeOS API service", ContainerName: "cubeos-api"},
+		{Name: "dashboard", DisplayName: "Dashboard", Description: "CubeOS web dashboard", ContainerName: "cubeos-dashboard"},
+		{Name: "docs-indexer", DisplayName: "Docs Indexer", Description: "Document indexing service", ContainerName: "cubeos-docs-indexer"},
 	}
 
 	for _, app := range systemApps {
 		// Get compose path - will auto-discover from /cubeos/coreapps/{name}/appconfig/docker-compose.yml
-		// We always set the path even if we can't verify the file exists (container may not have /cubeos mounted)
 		composePath := m.composeManager.GetComposePath(app.Name)
 
-		// Use UPSERT pattern to insert new apps or update existing ones with missing compose_path
+		// Use UPSERT pattern to insert new apps or update existing ones
 		_, err := m.db.Exec(`
-			INSERT INTO apps (name, display_name, description, type, source, compose_path, enabled)
-			VALUES (?, ?, ?, ?, ?, ?, TRUE)
+			INSERT INTO apps (name, display_name, description, type, source, compose_path, container_name, enabled)
+			VALUES (?, ?, ?, 'system', 'cubeos', ?, ?, TRUE)
 			ON CONFLICT(name) DO UPDATE SET 
+				display_name = excluded.display_name,
+				description = excluded.description,
 				compose_path = CASE WHEN compose_path = '' OR compose_path IS NULL THEN excluded.compose_path ELSE compose_path END,
+				container_name = excluded.container_name,
 				updated_at = CURRENT_TIMESTAMP
-		`, app.Name, app.DisplayName, app.Description, app.Type, app.Source, composePath)
+		`, app.Name, app.DisplayName, app.Description, composePath, app.ContainerName)
 		if err != nil {
 			return err
 		}
 	}
+
+	// Clean up phantom apps that were registered but have no containers
+	phantomApps := []string{"dozzle", "backup", "orchestrator", "diagnostics", "gpio", "nettools", "reset", "usb_monitor", "terminal_ro"}
+	for _, name := range phantomApps {
+		m.db.Exec("DELETE FROM apps WHERE name = ?", name)
+	}
+
 	return nil
 }
 
@@ -809,22 +848,39 @@ func (m *AppManager) RestartApp(name string) error {
 }
 
 // GetAppStatus returns the running status of an app's containers
+// Returns: "running", "stopped", "exited", "not_deployed"
 func (m *AppManager) GetAppStatus(name string) (string, error) {
-	// Try multiple container name patterns
-	containerNames := []string{
-		"cubeos-" + name,
-		"mulecube-" + name,
-		name,
+	// First, get the app from database to check container_name
+	var containerName string
+	var composePath string
+	err := m.db.QueryRow("SELECT COALESCE(container_name, ''), COALESCE(compose_path, '') FROM apps WHERE name = ?", name).Scan(&containerName, &composePath)
+	if err != nil {
+		// App not in database
+		return "not_deployed", nil
 	}
 
-	for _, containerName := range containerNames {
-		status, found := m.getContainerStatusByName(containerName)
+	// Build list of container names to try
+	containerNames := []string{}
+	if containerName != "" {
+		containerNames = append(containerNames, containerName)
+	}
+	// Add fallback patterns
+	containerNames = append(containerNames, "cubeos-"+name, "mulecube-"+name, name)
+
+	// Try each container name
+	for _, cn := range containerNames {
+		status, found := m.getContainerStatusByName(cn)
 		if found {
 			return status, nil
 		}
 	}
 
-	return "unknown", nil
+	// Container not found - check if we have a compose file
+	if composePath != "" {
+		return "stopped", nil // Has compose but container not running
+	}
+
+	return "not_deployed", nil
 }
 
 // getContainerStatusByName checks docker for a container by name using docker CLI
@@ -1752,22 +1808,13 @@ func (m *AppManager) RunMigration() (*models.MigrationResult, error) {
 	m.db.QueryRow("SELECT COUNT(*) FROM fqdns").Scan(&domainCount)
 	result.DomainsImported = domainCount
 
-	// 5. Sync ports from compose files
-	if err := m.SyncPortsFromSystem(); err != nil {
-		result.Errors = append(result.Errors, fmt.Sprintf("Failed to sync ports from compose: %v", err))
+	// 5. Comprehensive port sync: compose files + docker ps + docker inspect + ss -tulnp
+	fmt.Println("Starting comprehensive port sync...")
+	if err := m.portManager.SyncComprehensive(m.composeManager, m.db); err != nil {
+		result.Errors = append(result.Errors, fmt.Sprintf("Failed comprehensive port sync: %v", err))
 	}
 
-	// 6. Sync ports from running docker containers (docker ps)
-	if err := m.portManager.SyncFromDockerPS(m.db); err != nil {
-		result.Errors = append(result.Errors, fmt.Sprintf("Failed to sync ports from docker ps: %v", err))
-	}
-
-	// 6b. Sync ports using docker inspect (more reliable for some containers)
-	if err := m.portManager.SyncFromDockerInspect(m.db); err != nil {
-		result.Errors = append(result.Errors, fmt.Sprintf("Failed to sync ports from docker inspect: %v", err))
-	}
-
-	// 7. Update FQDN backend ports from port allocations (fallback when NPM auth fails)
+	// 6. Update FQDN backend ports from port allocations (fallback when NPM auth fails)
 	if err := m.UpdateFQDNPortsFromAllocations(); err != nil {
 		result.Errors = append(result.Errors, fmt.Sprintf("Failed to update FQDN ports: %v", err))
 	}
