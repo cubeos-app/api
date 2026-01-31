@@ -868,7 +868,7 @@ func (m *AppManager) GetAppStatus(name string) (string, error) {
 		containerNames = append(containerNames, containerName)
 	}
 	// Add fallback patterns
-	containerNames = append(containerNames, "cubeos-"+name, "mulecube-"+name, name)
+	containerNames = append(containerNames, "cubeos-"+name, name)
 
 	// Try each container name
 	for _, cn := range containerNames {

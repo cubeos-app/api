@@ -246,7 +246,7 @@ func (m *ComposeManager) getStatusByName(appName string) (map[string]interface{}
 	names := []string{
 		"cubeos-" + appName,
 		appName,
-		"mulecube-" + appName,
+		"cubeos-" + appName,
 	}
 
 	for _, name := range names {

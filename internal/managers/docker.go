@@ -391,7 +391,7 @@ func (m *DockerManager) GetAllContainerStatus(ctx context.Context) (map[string]m
 // formatDisplayName converts container name to display name
 func formatDisplayName(name string) string {
 	// Remove common prefixes
-	name = strings.TrimPrefix(name, "mulecube-")
+	name = strings.TrimPrefix(name, "cubeos-")
 	name = strings.TrimPrefix(name, "cubeos-")
 
 	// Replace dashes and underscores with spaces

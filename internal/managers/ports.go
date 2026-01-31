@@ -436,8 +436,8 @@ func (m *PortManager) SyncFromDockerPS(db *sql.DB) error {
 		appName := containerName
 		if strings.HasPrefix(containerName, "cubeos-") {
 			appName = strings.TrimPrefix(containerName, "cubeos-")
-		} else if strings.HasPrefix(containerName, "mulecube-") {
-			appName = strings.TrimPrefix(containerName, "mulecube-")
+		} else if strings.HasPrefix(containerName, "cubeos-") {
+			appName = strings.TrimPrefix(containerName, "cubeos-")
 		}
 
 		// Get app ID from database - try multiple strategies
@@ -448,7 +448,7 @@ func (m *PortManager) SyncFromDockerPS(db *sql.DB) error {
 			err = db.QueryRow("SELECT id FROM apps WHERE name = ?", containerName).Scan(&appID)
 			if err != nil {
 				// App not found - create it on the fly if it's a cubeos container
-				if strings.HasPrefix(containerName, "cubeos-") || strings.HasPrefix(containerName, "mulecube-") {
+				if strings.HasPrefix(containerName, "cubeos-") || strings.HasPrefix(containerName, "cubeos-") {
 					displayName := strings.ReplaceAll(appName, "-", " ")
 					// Capitalize first letter of each word
 					words := strings.Fields(displayName)
@@ -552,8 +552,8 @@ func (m *PortManager) SyncFromDockerInspect(db *sql.DB) error {
 		appName := containerName
 		if strings.HasPrefix(containerName, "cubeos-") {
 			appName = strings.TrimPrefix(containerName, "cubeos-")
-		} else if strings.HasPrefix(containerName, "mulecube-") {
-			appName = strings.TrimPrefix(containerName, "mulecube-")
+		} else if strings.HasPrefix(containerName, "cubeos-") {
+			appName = strings.TrimPrefix(containerName, "cubeos-")
 		}
 
 		// Get app ID
@@ -672,8 +672,8 @@ func (m *PortManager) SyncFromSSOutput(db *sql.DB) error {
 		appName, found := processToApp[lp.Process]
 		if !found {
 			// Unknown process - check if it looks like a container
-			if strings.Contains(lp.Process, "cubeos") || strings.Contains(lp.Process, "mulecube") {
-				appName = strings.TrimPrefix(strings.TrimPrefix(lp.Process, "cubeos-"), "mulecube-")
+			if strings.Contains(lp.Process, "cubeos") || strings.Contains(lp.Process, "cubeos") {
+				appName = strings.TrimPrefix(strings.TrimPrefix(lp.Process, "cubeos-"))
 			}
 		}
 

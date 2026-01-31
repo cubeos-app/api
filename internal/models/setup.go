@@ -26,8 +26,8 @@ type SetupConfig struct {
 	AccentColor string `json:"accent_color"` // hex color
 
 	// Step 6: Deployment Purpose
-	DeploymentPurpose string `json:"deployment_purpose"` // generic, offline, mulecube, expedition, marine
-	BrandingMode      string `json:"branding_mode"`      // cubeos, mulecube, custom
+	DeploymentPurpose string `json:"deployment_purpose"` // generic, offline, expedition, marine
+	BrandingMode      string `json:"branding_mode"`      // cubeos, custom
 
 	// Step 7: SSL/TLS Configuration
 	SSLMode    string `json:"ssl_mode"`    // none, self-signed, letsencrypt
@@ -249,12 +249,6 @@ var DeploymentPurposes = []DeploymentPurposeInfo{
 		RecommendedApps: []string{"kiwix", "calibre-web", "tileserver", "emergency-ref"},
 		Features:        []string{"Offline Wikipedia", "Offline Maps", "E-book Library"},
 	},
-	{
-		ID:              "mulecube",
-		Name:            "MuleCube Expedition",
-		Description:     "Rugged offline server for expeditions and emergencies",
-		Icon:            "Mountain",
-		RecommendedApps: []string{"kiwix", "tileserver", "meshtastic-web", "element", "cryptpad"},
 		Features:        []string{"Mesh Networking", "Offline Collaboration", "Emergency Reference"},
 	},
 	{

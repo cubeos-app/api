@@ -332,8 +332,8 @@ func (m *LogManager) GetContainerLogs(ctx context.Context, container string, lin
 	// Try to resolve the container name - Docker might need different formats
 	containerNames := []string{
 		container,                      // exact name: "syncthing"
-		"mulecube-" + container + "-1", // compose format: "mulecube-syncthing-1"
-		"mulecube-" + container,        // short compose: "mulecube-syncthing"
+		"cubeos-" + container + "-1", // compose format: "cubeos-syncthing-1"
+		"cubeos-" + container,        // short compose: "cubeos-syncthing"
 		container + "-1",               // simple suffix: "syncthing-1"
 	}
 
