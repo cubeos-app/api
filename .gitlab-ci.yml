@@ -89,7 +89,7 @@ package:
     - docker buildx inspect --bootstrap
   script:
     - |
-      docker buildx build \
+      docker buildx build --no-cache \
         --platform linux/amd64,linux/arm64 \
         --push \
         -t ${GHCR_IMAGE}:${CI_COMMIT_SHORT_SHA} \
