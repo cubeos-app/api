@@ -64,21 +64,21 @@ type Config struct {
 
 // CoreServices that cannot be toggled
 var CoreServices = map[string]bool{
-	"nginx-proxy":        true,
-	"pihole":             true,
-	"cubeos-api":         true,
-	"cubeos-dashboard":   true,
-	"cubeos-pihole":      true,
-	"cubeos-npm":         true,
-	"cubeos-watchdog":    true,
-	"cubeos-logs":        true,
-	"cubeos-dozzle":      true,
-	"cubeos-terminal":    true,
-	"cubeos-diagnostics": true,
+	"nginx-proxy":         true,
+	"pihole":              true,
+	"cubeos-api":          true,
+	"cubeos-dashboard":    true,
+	"cubeos-pihole":       true,
+	"cubeos-npm":          true,
+	"cubeos-watchdog":     true,
+	"cubeos-logs":         true,
+	"cubeos-dozzle":       true,
+	"cubeos-terminal":     true,
+	"cubeos-diagnostics":  true,
 	"cubeos-docs-indexer": true,
-	"uptime-kuma":        true,
-	"beszel":             true,
-	"beszel-agent":       true,
+	"uptime-kuma":         true,
+	"beszel":              true,
+	"beszel-agent":        true,
 }
 
 // CoreServicePatterns - containers matching these are also core
