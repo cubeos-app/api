@@ -262,7 +262,7 @@ func main() {
 				r.Post("/services/{service}/restart", h.RestartSystemdService)
 			})
 
-			// Network
+			// Network - all network routes consolidated here (including Sprint 3)
 			r.Route("/network", func(r chi.Router) {
 				r.Get("/interfaces", h.GetNetworkInterfaces)
 				r.Get("/interfaces/detailed", h.GetNetworkInterfacesDetailed)
@@ -280,16 +280,18 @@ func main() {
 				r.Post("/wifi/ap/clients/{mac}/kick", h.KickClient)
 				r.Post("/wifi/ap/clients/{mac}/block", h.BlockClient)
 
-				// Legacy AP routes
+				// Legacy AP routes (for backward compatibility)
 				r.Get("/ap/status", h.GetAPStatus)
 				r.Get("/ap/config", h.GetAPConfig)
 				r.Put("/ap/config", h.UpdateAPConfig)
 				r.Post("/ap/restart", h.RestartAP)
+				// FIX: Add /ap/clients route for Sprint 3 test compatibility
+				r.Get("/ap/clients", networkHandler.GetAPClients)
 
 				// DHCP
 				r.Get("/dhcp/leases", h.GetDHCPLeases)
 
-				// Sprint 3: Network mode switching
+				// Sprint 3: Network mode switching (via HAL)
 				r.Get("/status", networkHandler.GetNetworkStatus)
 				r.Post("/mode", networkHandler.SetNetworkMode)
 				r.Get("/wifi/scan", networkHandler.ScanWiFiNetworks)
@@ -467,8 +469,8 @@ func main() {
 			// Mounts API (Sprint 3)
 			r.Mount("/mounts", mountsHandler.Routes())
 
-			// Network API (Sprint 3) - Network mode, WiFi, AP clients
-			r.Mount("/network", networkHandler.Routes())
+			// NOTE: Network routes are already defined in /network block above.
+			// DO NOT add r.Mount("/network", ...) here - it causes duplicate route panic!
 		})
 
 		// Setup wizard routes (semi-public - accessible before full setup)
