@@ -763,6 +763,7 @@ func (o *Orchestrator) SetAppVPN(ctx context.Context, name string, enabled bool)
 // =============================================================================
 
 // ListProfiles returns all profiles and the currently active profile name.
+// FIX: Close rows before loading profile apps to avoid SQLite deadlock with MaxOpenConns(1)
 func (o *Orchestrator) ListProfiles(ctx context.Context) ([]models.Profile, string, error) {
 	rows, err := o.db.QueryContext(ctx, `
 		SELECT id, name, display_name, description, is_active, is_system, 
@@ -773,20 +774,16 @@ func (o *Orchestrator) ListProfiles(ctx context.Context) ([]models.Profile, stri
 	if err != nil {
 		return nil, "", err
 	}
-	defer rows.Close()
 
 	var profiles []models.Profile
 	var activeProfile string
 
+	// First pass: collect all profiles (keep rows open only for scanning)
 	for rows.Next() {
 		var p models.Profile
 		if err := rows.Scan(&p.ID, &p.Name, &p.DisplayName, &p.Description,
 			&p.IsActive, &p.IsSystem, &p.CreatedAt, &p.UpdatedAt); err != nil {
-			return nil, "", err
-		}
-
-		// Load apps for this profile
-		if err := o.loadProfileApps(ctx, &p); err != nil {
+			rows.Close()
 			return nil, "", err
 		}
 
@@ -797,7 +794,21 @@ func (o *Orchestrator) ListProfiles(ctx context.Context) ([]models.Profile, stri
 		profiles = append(profiles, p)
 	}
 
-	return profiles, activeProfile, rows.Err()
+	// Close rows BEFORE loading apps to free the connection
+	rows.Close()
+
+	if err := rows.Err(); err != nil {
+		return nil, "", err
+	}
+
+	// Second pass: load apps for each profile (connection is now free)
+	for i := range profiles {
+		if err := o.loadProfileApps(ctx, &profiles[i]); err != nil {
+			return nil, "", err
+		}
+	}
+
+	return profiles, activeProfile, nil
 }
 
 // GetProfile retrieves a single profile by name.
