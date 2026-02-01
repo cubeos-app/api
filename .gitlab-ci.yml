@@ -114,7 +114,8 @@ deploy:
     - docker tag ${GHCR_IMAGE}:${CI_COMMIT_SHORT_SHA} ${GHCR_IMAGE}:latest
     # Remove old stack if exists (only cubeos-api, not other services)
     - docker stack rm cubeos-api 2>/dev/null || true
-    - sleep 5
+    - echo "⏳ Waiting for old stack to drain..."
+    - sleep 10
     # Deploy as Swarm stack with ARM64 workaround
     - |
       cd /cubeos/coreapps/cubeos-api/appconfig
@@ -122,19 +123,22 @@ deploy:
         --compose-file docker-compose.yml \
         --resolve-image never \
         cubeos-api
-    # Wait for service to be healthy
+    # Wait for Swarm to schedule the task
+    - echo "⏳ Waiting for stack to schedule..."
+    - sleep 15
+    # Wait for service to be healthy (longer timeout for Swarm)
     - |
       echo "⏳ Waiting for API to be healthy..."
-      for i in $(seq 1 30); do
+      for i in $(seq 1 45); do
         if curl -sf http://127.0.0.1:6010/health > /dev/null 2>&1; then
           echo "✅ Health check passed!"
           docker service ls | grep cubeos-api || true
           exit 0
         fi
-        echo "  Attempt $i/30..."
-        sleep 2
+        echo "  Attempt $i/45..."
+        sleep 3
       done
-      echo "❌ Health check failed!"
+      echo "❌ Health check failed after 45 attempts"
       docker service logs cubeos-api_api --tail 50 2>/dev/null || true
       exit 1
   environment:
