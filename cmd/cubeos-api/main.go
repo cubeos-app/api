@@ -466,6 +466,9 @@ func main() {
 
 			// Mounts API (Sprint 3)
 			r.Mount("/mounts", mountsHandler.Routes())
+
+			// Network API (Sprint 3) - Network mode, WiFi, AP clients
+			r.Mount("/network", networkHandler.Routes())
 		})
 
 		// Setup wizard routes (semi-public - accessible before full setup)
