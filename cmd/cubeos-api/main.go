@@ -70,18 +70,9 @@ func main() {
 	dbMgr := managers.NewDatabaseManager(db.DB)
 	appStoreMgr := managers.NewAppStoreManager(cfg, dbMgr, cfg.DataDir)
 
-	// Create App Manager
-// SPRINT2_TEMP: 	appMgr := managers.NewAppManager(cfg, db.DB, cfg.DataDir)
-// SPRINT2_TEMP: 	if err := appMgr.InitSchema(); err != nil {
-// SPRINT2_TEMP: 		log.Printf("Warning: Failed to initialize AppManager schema: %v", err)
-// SPRINT2_TEMP: 	}
-// SPRINT2_TEMP: 	if err := appMgr.SeedSystemApps(); err != nil {
-// SPRINT2_TEMP: 		log.Printf("Warning: Failed to seed system apps: %v", err)
-// SPRINT2_TEMP: 	}
-// SPRINT2_TEMP: 	if err := appMgr.SeedDefaultProfiles(); err != nil {
-// SPRINT2_TEMP: 		log.Printf("Warning: Failed to seed default profiles: %v", err)
-// SPRINT2_TEMP: 	}
-// SPRINT2_TEMP: 
+	// NOTE: AppManager removed in Sprint 2 - replaced by Orchestrator (Sprint 3)
+	// The Orchestrator will be integrated in Sprint 3 to provide unified app management
+
 	// Create Setup manager (first boot wizard)
 	setupMgr := managers.NewSetupManager(cfg, db.DB)
 
@@ -97,8 +88,7 @@ func main() {
 	// Create Docs handler (Documentation viewer)
 	docsHandler := handlers.NewDocsHandler()
 
-	// Create App Manager handler
-// SPRINT2_TEMP: 	appManagerHandler := handlers.NewAppManagerHandler(appMgr)
+	// NOTE: AppManagerHandler removed in Sprint 2 - will be replaced by AppsHandler in Sprint 3
 
 	// Create WebSocket manager and handlers
 	wsManager := handlers.NewWSManager(systemMgr, networkMgr, monitoringMgr, docker)
@@ -406,8 +396,8 @@ func main() {
 			// Documentation (offline docs viewer)
 			r.Mount("/documentation", docsHandler.Routes())
 
-			// App Manager
-// SPRINT2_TEMP: 			r.Mount("/appmanager", appManagerHandler.Routes())
+			// NOTE: /appmanager endpoint removed in Sprint 2
+			// Will be replaced by /apps endpoint in Sprint 3 using Orchestrator
 		})
 
 		// Setup wizard routes (semi-public - accessible before full setup)
