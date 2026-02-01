@@ -28,12 +28,13 @@ type NetworkConfig struct {
 
 // NetworkStatus represents the current network status.
 type NetworkStatus struct {
-	Mode      NetworkMode   `json:"mode"`
-	Internet  bool          `json:"internet"`
-	AP        APStatus      `json:"ap"`
-	Upstream  *UpstreamInfo `json:"upstream,omitempty"`
-	Subnet    string        `json:"subnet"`
-	GatewayIP string        `json:"gateway_ip"`
+	Mode             NetworkMode   `json:"mode"`
+	Internet         bool          `json:"internet"`
+	AP               APStatus      `json:"ap"`
+	Upstream         *UpstreamInfo `json:"upstream,omitempty"`
+	Subnet           string        `json:"subnet"`
+	GatewayIP        string        `json:"gateway_ip"`
+	ClientInterfaces []string      `json:"client_interfaces,omitempty"` // Available WiFi client interfaces (for scanning/NAT)
 }
 
 // APStatus represents the access point status.
