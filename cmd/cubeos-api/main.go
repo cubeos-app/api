@@ -41,6 +41,15 @@ func main() {
 		log.Fatalf("Failed to initialize database: %v", err)
 	}
 
+	// Run database migrations (Sprint 2+)
+	log.Printf("Running database migrations...")
+	if err := database.MigrateAndSeed(db.DB); err != nil {
+		log.Printf("Warning: Migration failed: %v", err)
+		// Continue - migrations are not critical for basic operation
+	} else {
+		log.Printf("Database migrations completed successfully")
+	}
+
 	// Create Docker manager
 	docker, err := managers.NewDockerManager(cfg)
 	if err != nil {
