@@ -408,7 +408,7 @@ func (o *Orchestrator) GetApp(ctx context.Context, name string) (*models.App, er
 func (o *Orchestrator) ListApps(ctx context.Context, filter *models.AppFilter) ([]*models.App, error) {
 	totalStart := time.Now()
 	fmt.Printf("[DEBUG] ListApps: starting\n")
-	
+
 	query := `
 		SELECT id, name, display_name, description, type, category, source,
 			compose_path, data_path, enabled, deploy_mode, icon_url, version,
