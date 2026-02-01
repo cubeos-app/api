@@ -38,24 +38,41 @@ func NewNetworkManager(cfg *config.Config) *NetworkManager {
 func (m *NetworkManager) DetectClientWiFiInterfaces() []string {
 	var clients []string
 
+	// Try reading directly first (works on host or with host network mode)
 	entries, err := os.ReadDir("/sys/class/net")
+	if err == nil {
+		for _, entry := range entries {
+			name := entry.Name()
+			if name == APInterface {
+				continue
+			}
+			if strings.HasPrefix(name, "wlan") || strings.HasPrefix(name, "wlx") {
+				wirelessPath := filepath.Join("/sys/class/net", name, "wireless")
+				if _, err := os.Stat(wirelessPath); err == nil {
+					clients = append(clients, name)
+				}
+			}
+		}
+		if len(clients) > 0 {
+			return clients
+		}
+	}
+
+	// Fallback: use nsenter to list interfaces from host network namespace
+	cmd := exec.Command("nsenter", "--net=/proc/1/ns/net", "ls", "/sys/class/net")
+	output, err := cmd.Output()
 	if err != nil {
 		return clients
 	}
 
-	for _, entry := range entries {
-		name := entry.Name()
-
-		// Skip the AP interface (always wlan0)
+	for _, name := range strings.Fields(string(output)) {
 		if name == APInterface {
 			continue
 		}
-
-		// Check for wlan* (wlan1, wlan2, etc.) or wlx* (MAC-based USB dongle names)
 		if strings.HasPrefix(name, "wlan") || strings.HasPrefix(name, "wlx") {
-			// Verify it's actually a wireless interface
-			wirelessPath := filepath.Join("/sys/class/net", name, "wireless")
-			if _, err := os.Stat(wirelessPath); err == nil {
+			// Verify it's wireless via nsenter
+			checkCmd := exec.Command("nsenter", "--net=/proc/1/ns/net", "test", "-d", "/sys/class/net/"+name+"/wireless")
+			if checkCmd.Run() == nil {
 				clients = append(clients, name)
 			}
 		}
@@ -81,19 +98,36 @@ func (m *NetworkManager) GetPreferredClientInterface() string {
 }
 
 // bringInterfaceUp brings a network interface up.
+// Uses nsenter to access host network namespace when running in a container.
 func (m *NetworkManager) bringInterfaceUp(iface string) error {
+	// Try direct command first (works on host or with host network mode)
 	cmd := exec.Command("ip", "link", "set", iface, "up")
+	if err := cmd.Run(); err == nil {
+		return nil
+	}
+
+	// Fallback: use nsenter to access host network namespace (for containers)
+	cmd = exec.Command("nsenter", "--net=/proc/1/ns/net", "ip", "link", "set", iface, "up")
 	return cmd.Run()
 }
 
 // isInterfaceUp checks if a network interface is up.
 func (m *NetworkManager) isInterfaceUp(iface string) bool {
+	// Try reading directly first (works on host or with host network mode)
 	data, err := os.ReadFile(filepath.Join("/sys/class/net", iface, "operstate"))
+	if err == nil {
+		state := strings.TrimSpace(string(data))
+		return state == "up" || state == "unknown" // "unknown" can mean up for wireless
+	}
+
+	// Fallback: use nsenter to check in host network namespace (for containers with pid:host)
+	cmd := exec.Command("nsenter", "--net=/proc/1/ns/net", "cat", "/sys/class/net/"+iface+"/operstate")
+	output, err := cmd.Output()
 	if err != nil {
 		return false
 	}
-	state := strings.TrimSpace(string(data))
-	return state == "up" || state == "unknown" // "unknown" can mean up for wireless
+	state := strings.TrimSpace(string(output))
+	return state == "up" || state == "unknown"
 }
 
 // GetAPConfig reads the hostapd configuration
@@ -695,23 +729,31 @@ func (m *NetworkManager) ScanWiFiNetworks() ([]models.WiFiNetwork, error) {
 		time.Sleep(500 * time.Millisecond)
 	}
 
-	// Trigger scan
-	cmd := exec.Command("iw", clientIface, "scan")
-	output, err := cmd.Output()
+	// Try scanning - first with nsenter (for container with pid:host), then direct
+	var output []byte
+	var err error
+
+	// Try nsenter first (works in container with pid:host)
+	cmd := exec.Command("nsenter", "--net=/proc/1/ns/net", "iw", clientIface, "scan")
+	output, err = cmd.Output()
 	if err != nil {
-		// Interface might need sudo or might be busy, try with sudo
-		cmd = exec.Command("sudo", "iw", clientIface, "scan")
+		// Fallback: try direct iw command (works on host)
+		cmd = exec.Command("iw", clientIface, "scan")
 		output, err = cmd.Output()
-		if err != nil {
-			// Check if device is busy (already scanning)
-			if strings.Contains(err.Error(), "Device or resource busy") {
-				time.Sleep(2 * time.Second)
+	}
+	if err != nil {
+		// Device might be busy (already scanning), wait and retry
+		if strings.Contains(err.Error(), "Device or resource busy") {
+			time.Sleep(2 * time.Second)
+			cmd = exec.Command("nsenter", "--net=/proc/1/ns/net", "iw", clientIface, "scan")
+			output, err = cmd.Output()
+			if err != nil {
 				cmd = exec.Command("iw", clientIface, "scan")
 				output, err = cmd.Output()
 			}
-			if err != nil {
-				return nil, fmt.Errorf("failed to scan WiFi networks on %s: %w", clientIface, err)
-			}
+		}
+		if err != nil {
+			return nil, fmt.Errorf("failed to scan WiFi networks on %s: %w", clientIface, err)
 		}
 	}
 
