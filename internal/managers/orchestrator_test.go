@@ -63,7 +63,7 @@ func TestPortManagerWithDB(t *testing.T) {
 
 	pm := NewPortManager(db)
 
-	// Test allocation
+	// Test first allocation (should return 6100 when table is empty)
 	port, err := pm.AllocateUserPort()
 	if err != nil {
 		t.Fatalf("failed to allocate port: %v", err)
@@ -72,7 +72,15 @@ func TestPortManagerWithDB(t *testing.T) {
 		t.Errorf("expected first port %d, got %d", UserPortMin, port)
 	}
 
-	// Test second allocation
+	// Actually record the allocation in the database
+	// This simulates what Orchestrator.InstallApp() would do
+	_, err = db.Exec(`INSERT INTO port_allocations (app_id, port, protocol, description, is_primary) 
+		VALUES (1, ?, 'tcp', 'Test App', TRUE)`, port)
+	if err != nil {
+		t.Fatalf("failed to insert port allocation: %v", err)
+	}
+
+	// Test second allocation (should return 6101 now that 6100 is allocated)
 	port2, err := pm.AllocateUserPort()
 	if err != nil {
 		t.Fatalf("failed to allocate second port: %v", err)
