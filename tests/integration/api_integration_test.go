@@ -2,10 +2,12 @@
 // These tests require a running CubeOS API instance.
 //
 // Run with:
-//   CUBEOS_API_URL=http://10.42.24.1:6010 go test -v ./tests/integration/...
+//
+//	CUBEOS_API_URL=http://10.42.24.1:6010 go test -v ./tests/integration/...
 //
 // Or to run locally with mock server:
-//   go test -v ./tests/integration/... -short
+//
+//	go test -v ./tests/integration/... -short
 package integration
 
 import (
