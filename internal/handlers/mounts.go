@@ -8,6 +8,7 @@ import (
 	"github.com/go-chi/chi/v5"
 
 	"cubeos-api/internal/managers"
+	"cubeos-api/internal/models"
 )
 
 // MountsHandler handles mount-related HTTP requests
@@ -59,7 +60,7 @@ func (h *MountsHandler) GetMount(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	mount, err := h.mounts.GetMount(r.Context(), name)
+	mount, err := h.mounts.GetMountByName(r.Context(), name)
 	if err != nil {
 		mountsRespondError(w, http.StatusNotFound, "MOUNT_NOT_FOUND", err.Error())
 		return
@@ -71,14 +72,14 @@ func (h *MountsHandler) GetMount(w http.ResponseWriter, r *http.Request) {
 // AddMount creates a new mount configuration
 // POST /api/v1/mounts
 func (h *MountsHandler) AddMount(w http.ResponseWriter, r *http.Request) {
-	var req managers.MountRequest
+	var req managers.CreateMountRequest
 
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		mountsRespondError(w, http.StatusBadRequest, "INVALID_JSON", "Invalid request body")
 		return
 	}
 
-	mount, err := h.mounts.AddMount(r.Context(), &req)
+	mount, err := h.mounts.CreateMount(r.Context(), &req)
 	if err != nil {
 		mountsRespondError(w, http.StatusBadRequest, "MOUNT_ADD_ERROR", err.Error())
 		return
@@ -96,7 +97,14 @@ func (h *MountsHandler) DeleteMount(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if err := h.mounts.DeleteMount(r.Context(), name); err != nil {
+	// Look up mount by name to get ID
+	mount, err := h.mounts.GetMountByName(r.Context(), name)
+	if err != nil {
+		mountsRespondError(w, http.StatusNotFound, "MOUNT_NOT_FOUND", err.Error())
+		return
+	}
+
+	if err := h.mounts.DeleteMount(r.Context(), mount.ID); err != nil {
 		mountsRespondError(w, http.StatusInternalServerError, "MOUNT_DELETE_ERROR", err.Error())
 		return
 	}
@@ -116,17 +124,24 @@ func (h *MountsHandler) Mount(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if err := h.mounts.Mount(r.Context(), name); err != nil {
+	// Look up mount by name to get ID
+	mount, err := h.mounts.GetMountByName(r.Context(), name)
+	if err != nil {
+		mountsRespondError(w, http.StatusNotFound, "MOUNT_NOT_FOUND", err.Error())
+		return
+	}
+
+	if err := h.mounts.MountPath(r.Context(), mount.ID); err != nil {
 		mountsRespondError(w, http.StatusInternalServerError, "MOUNT_ERROR", err.Error())
 		return
 	}
 
-	// Get updated status
-	status, _ := h.mounts.GetMountStatus(r.Context(), name)
+	// Get updated mount info
+	updatedMount, _ := h.mounts.GetMount(r.Context(), mount.ID)
 	mountsRespondJSON(w, http.StatusOK, map[string]interface{}{
 		"status":  "mounted",
 		"name":    name,
-		"details": status,
+		"details": updatedMount,
 	})
 }
 
@@ -139,7 +154,14 @@ func (h *MountsHandler) Unmount(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if err := h.mounts.Unmount(r.Context(), name); err != nil {
+	// Look up mount by name to get ID
+	mount, err := h.mounts.GetMountByName(r.Context(), name)
+	if err != nil {
+		mountsRespondError(w, http.StatusNotFound, "MOUNT_NOT_FOUND", err.Error())
+		return
+	}
+
+	if err := h.mounts.UnmountPath(r.Context(), mount.ID); err != nil {
 		mountsRespondError(w, http.StatusInternalServerError, "UNMOUNT_ERROR", err.Error())
 		return
 	}
@@ -159,23 +181,30 @@ func (h *MountsHandler) GetMountStatus(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	status, err := h.mounts.GetMountStatus(r.Context(), name)
+	// Look up mount by name - this also checks actual mount status
+	mount, err := h.mounts.GetMountByName(r.Context(), name)
 	if err != nil {
 		mountsRespondError(w, http.StatusNotFound, "MOUNT_NOT_FOUND", err.Error())
 		return
 	}
 
-	mountsRespondJSON(w, http.StatusOK, status)
+	mountsRespondJSON(w, http.StatusOK, map[string]interface{}{
+		"name":       mount.Name,
+		"type":       mount.Type,
+		"local_path": mount.LocalPath,
+		"is_mounted": mount.IsMounted,
+		"auto_mount": mount.AutoMount,
+	})
 }
 
 // TestConnection tests connectivity to a remote share
 // POST /api/v1/mounts/test
 func (h *MountsHandler) TestConnection(w http.ResponseWriter, r *http.Request) {
 	var req struct {
-		Type       managers.MountType `json:"type"`
-		RemotePath string             `json:"remote_path"`
-		Username   string             `json:"username,omitempty"`
-		Password   string             `json:"password,omitempty"`
+		Type       models.MountType `json:"type"`
+		RemotePath string           `json:"remote_path"`
+		Username   string           `json:"username,omitempty"`
+		Password   string           `json:"password,omitempty"`
 	}
 
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
@@ -192,7 +221,7 @@ func (h *MountsHandler) TestConnection(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	err := h.mounts.TestConnection(r.Context(), req.Type, req.RemotePath, req.Username, req.Password)
+	err := h.mounts.TestConnection(r.Context(), string(req.Type), req.RemotePath, req.Username, req.Password)
 	if err != nil {
 		mountsRespondJSON(w, http.StatusOK, map[string]interface{}{
 			"success": false,

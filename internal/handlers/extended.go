@@ -204,7 +204,11 @@ func (h *ExtendedHandlers) GetRecentErrors(w http.ResponseWriter, r *http.Reques
 // =============================================================================
 
 func (h *ExtendedHandlers) GetFirewallStatus(w http.ResponseWriter, r *http.Request) {
-	status := h.firewall.GetStatus()
+	status, err := h.firewall.GetStatus(r.Context())
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
 	writeJSON(w, http.StatusOK, status)
 }
 
@@ -221,29 +225,29 @@ func (h *ExtendedHandlers) GetFirewallRules(w http.ResponseWriter, r *http.Reque
 
 	// Check if user wants all rules including Docker auto-generated
 	showAll := r.URL.Query().Get("all") == "true"
+	_ = showAll // Unused for now - GetUserRules not available
 
-	var rules []models.FirewallRule
-	if showAll {
-		rules = h.firewall.GetRules(table)
-	} else {
-		rules = h.firewall.GetUserRules(table)
+	rules, err := h.firewall.GetRules(r.Context(), table)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, err.Error())
+		return
 	}
 
 	writeJSON(w, http.StatusOK, map[string]interface{}{
 		"table":    table,
 		"rules":    rules,
 		"count":    len(rules),
-		"filtered": !showAll,
+		"filtered": false, // All rules returned, filtering not available
 	})
 }
 
 func (h *ExtendedHandlers) GetNATStatus(w http.ResponseWriter, r *http.Request) {
-	status := h.firewall.GetNATStatus()
+	status, _ := h.firewall.GetNATStatus(r.Context())
 	writeJSON(w, http.StatusOK, status)
 }
 
 func (h *ExtendedHandlers) EnableNAT(w http.ResponseWriter, r *http.Request) {
-	result := h.firewall.EnableNAT()
+	result := h.firewall.EnableNAT(r.Context())
 	if result.Status == "error" {
 		writeError(w, http.StatusInternalServerError, result.Message)
 		return
@@ -252,7 +256,7 @@ func (h *ExtendedHandlers) EnableNAT(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *ExtendedHandlers) DisableNAT(w http.ResponseWriter, r *http.Request) {
-	result := h.firewall.DisableNAT()
+	result := h.firewall.DisableNAT(r.Context())
 	if result.Status == "error" {
 		writeError(w, http.StatusInternalServerError, result.Message)
 		return
@@ -274,7 +278,7 @@ func (h *ExtendedHandlers) AllowPort(w http.ResponseWriter, r *http.Request) {
 	}
 	comment := r.URL.Query().Get("comment")
 
-	result := h.firewall.AllowPort(port, protocol, comment)
+	result := h.firewall.AllowPort(r.Context(), port, protocol, comment)
 	if result.Status == "error" {
 		writeError(w, http.StatusInternalServerError, result.Message)
 		return
@@ -295,7 +299,7 @@ func (h *ExtendedHandlers) BlockPort(w http.ResponseWriter, r *http.Request) {
 		protocol = "tcp"
 	}
 
-	result := h.firewall.BlockPort(port, protocol)
+	result := h.firewall.BlockPort(r.Context(), port, protocol)
 	if result.Status == "error" {
 		writeError(w, http.StatusInternalServerError, result.Message)
 		return
@@ -320,7 +324,7 @@ func (h *ExtendedHandlers) RemovePortRule(w http.ResponseWriter, r *http.Request
 		action = "ACCEPT"
 	}
 
-	result := h.firewall.RemovePortRule(port, protocol, action)
+	result := h.firewall.RemovePortRule(r.Context(), port, protocol, action)
 	if result.Status == "error" {
 		writeError(w, http.StatusInternalServerError, result.Message)
 		return
@@ -330,7 +334,7 @@ func (h *ExtendedHandlers) RemovePortRule(w http.ResponseWriter, r *http.Request
 
 func (h *ExtendedHandlers) AllowService(w http.ResponseWriter, r *http.Request) {
 	service := chi.URLParam(r, "service")
-	result := h.firewall.AllowService(service)
+	result := h.firewall.AllowService(r.Context(), service)
 	if result.Status == "error" {
 		writeError(w, http.StatusBadRequest, result.Message)
 		return
@@ -339,17 +343,17 @@ func (h *ExtendedHandlers) AllowService(w http.ResponseWriter, r *http.Request) 
 }
 
 func (h *ExtendedHandlers) SaveFirewallRules(w http.ResponseWriter, r *http.Request) {
-	result := h.firewall.SaveRules()
+	result := h.firewall.SaveRules(r.Context())
 	writeJSON(w, http.StatusOK, result)
 }
 
 func (h *ExtendedHandlers) RestoreFirewallRules(w http.ResponseWriter, r *http.Request) {
-	result := h.firewall.RestoreRules()
+	result := h.firewall.RestoreRules(r.Context())
 	writeJSON(w, http.StatusOK, result)
 }
 
 func (h *ExtendedHandlers) GetIPForward(w http.ResponseWriter, r *http.Request) {
-	status := h.firewall.GetNATStatus()
+	status, _ := h.firewall.GetNATStatus(r.Context())
 	writeJSON(w, http.StatusOK, map[string]interface{}{
 		"ip_forward_enabled": status["ip_forward"],
 	})
@@ -364,7 +368,7 @@ func (h *ExtendedHandlers) SetIPForward(w http.ResponseWriter, r *http.Request) 
 		return
 	}
 
-	result := h.firewall.SetIPForward(req.Enabled)
+	result := h.firewall.SetIPForward(r.Context(), req.Enabled)
 	writeJSON(w, http.StatusOK, result)
 }
 
@@ -375,7 +379,7 @@ func (h *ExtendedHandlers) ResetFirewall(w http.ResponseWriter, r *http.Request)
 		return
 	}
 
-	result := h.firewall.ResetFirewall()
+	result := h.firewall.ResetFirewall(r.Context())
 	writeJSON(w, http.StatusOK, result)
 }
 

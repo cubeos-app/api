@@ -129,6 +129,7 @@ type NetworkInterface struct {
 	IPv6Addresses []string `json:"ipv6_addresses"`
 	IsUp          bool     `json:"is_up"`
 	IsLoopback    bool     `json:"is_loopback"`
+	IsWireless    bool     `json:"is_wireless"`
 	SpeedMbps     *int     `json:"speed_mbps,omitempty"`
 	MTU           int      `json:"mtu"`
 	RxBytes       uint64   `json:"rx_bytes"`

@@ -10,6 +10,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"net/url"
 	"time"
 )
 
@@ -76,6 +77,24 @@ type ServiceStatus struct {
 	Name    string `json:"name"`
 	Active  bool   `json:"active"`
 	Enabled bool   `json:"enabled"`
+}
+
+// MountRequest represents a mount request
+type MountRequest struct {
+	Name       string `json:"name"`
+	Type       string `json:"type"`        // "smb" or "nfs"
+	RemotePath string `json:"remote_path"` // //server/share or server:/path
+	LocalPath  string `json:"local_path"`  // /cubeos/mounts/name
+	Username   string `json:"username,omitempty"`
+	Password   string `json:"password,omitempty"`
+	Options    string `json:"options,omitempty"`
+}
+
+// MountResponse represents a mount response
+type MountResponse struct {
+	Success   bool   `json:"success"`
+	MountPath string `json:"mount_path"`
+	Message   string `json:"message,omitempty"`
 }
 
 // =============================================================================
@@ -340,6 +359,95 @@ func (c *Client) OpenVPNUp(ctx context.Context, name string) error {
 func (c *Client) OpenVPNDown(ctx context.Context, name string) error {
 	_, err := c.doRequest(ctx, http.MethodPost, "/hal/vpn/openvpn/down/"+name, nil)
 	return err
+}
+
+// =============================================================================
+// Mount Operations (SMB/NFS)
+// =============================================================================
+
+// MountSMB mounts an SMB/CIFS share
+func (c *Client) MountSMB(ctx context.Context, req *MountRequest) (*MountResponse, error) {
+	req.Type = "smb"
+	body, err := c.doRequest(ctx, http.MethodPost, "/hal/mounts/smb", req)
+	if err != nil {
+		return nil, err
+	}
+
+	var resp MountResponse
+	if err := json.Unmarshal(body, &resp); err != nil {
+		return nil, fmt.Errorf("failed to parse response: %w", err)
+	}
+
+	return &resp, nil
+}
+
+// MountNFS mounts an NFS share
+func (c *Client) MountNFS(ctx context.Context, req *MountRequest) (*MountResponse, error) {
+	req.Type = "nfs"
+	body, err := c.doRequest(ctx, http.MethodPost, "/hal/mounts/nfs", req)
+	if err != nil {
+		return nil, err
+	}
+
+	var resp MountResponse
+	if err := json.Unmarshal(body, &resp); err != nil {
+		return nil, fmt.Errorf("failed to parse response: %w", err)
+	}
+
+	return &resp, nil
+}
+
+// UnmountPath unmounts a path
+func (c *Client) UnmountPath(ctx context.Context, path string) error {
+	req := map[string]string{"path": path}
+	_, err := c.doRequest(ctx, http.MethodPost, "/hal/mounts/unmount", req)
+	return err
+}
+
+// TestMountConnection tests connectivity to a remote share
+func (c *Client) TestMountConnection(ctx context.Context, mountType, remotePath, username, password string) error {
+	req := map[string]string{
+		"type":        mountType,
+		"remote_path": remotePath,
+		"username":    username,
+		"password":    password,
+	}
+	_, err := c.doRequest(ctx, http.MethodPost, "/hal/mounts/test", req)
+	return err
+}
+
+// ListMounts returns list of active mounts
+func (c *Client) ListMounts(ctx context.Context) ([]map[string]interface{}, error) {
+	body, err := c.doRequest(ctx, http.MethodGet, "/hal/mounts/list", nil)
+	if err != nil {
+		return nil, err
+	}
+
+	var resp struct {
+		Mounts []map[string]interface{} `json:"mounts"`
+	}
+	if err := json.Unmarshal(body, &resp); err != nil {
+		return nil, fmt.Errorf("failed to parse response: %w", err)
+	}
+
+	return resp.Mounts, nil
+}
+
+// IsMounted checks if a path is currently mounted
+func (c *Client) IsMounted(ctx context.Context, path string) (bool, error) {
+	body, err := c.doRequest(ctx, http.MethodGet, "/hal/mounts/check?path="+url.QueryEscape(path), nil)
+	if err != nil {
+		return false, err
+	}
+
+	var resp struct {
+		Mounted bool `json:"mounted"`
+	}
+	if err := json.Unmarshal(body, &resp); err != nil {
+		return false, fmt.Errorf("failed to parse response: %w", err)
+	}
+
+	return resp.Mounted, nil
 }
 
 // =============================================================================

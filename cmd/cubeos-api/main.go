@@ -14,6 +14,7 @@ import (
 
 	"cubeos-api/internal/config"
 	"cubeos-api/internal/database"
+	"cubeos-api/internal/hal"
 	"cubeos-api/internal/handlers"
 	"cubeos-api/internal/managers"
 	"cubeos-api/internal/middleware"
@@ -60,13 +61,18 @@ func main() {
 		defer docker.Close()
 	}
 
-	// Create core managers
+	// Create HAL client for hardware access (Sprint 3)
+	// HAL runs on host network at port 6005, accessible from container via host IP
+	halClient := hal.NewClient("http://10.42.24.1:6005")
+	log.Printf("HAL client initialized (endpoint: http://10.42.24.1:6005)")
+
+	// Create core managers (with HAL client for hardware access)
 	systemMgr := managers.NewSystemManager()
-	networkMgr := managers.NewNetworkManager(cfg)
+	networkMgr := managers.NewNetworkManager(cfg, halClient)
 
 	// Create extended managers
 	logMgr := managers.NewLogManager()
-	firewallMgr := managers.NewFirewallManager(cfg)
+	firewallMgr := managers.NewFirewallManager(cfg, halClient)
 	backupMgr := managers.NewBackupManager()
 	processMgr := managers.NewProcessManager()
 	monitoringMgr := managers.NewMonitoringManager(systemMgr, networkMgr)
@@ -96,19 +102,19 @@ func main() {
 		log.Printf("Orchestrator initialized successfully")
 	}
 
-	// Create VPN manager (Sprint 3)
-	vpnMgr := managers.NewVPNManager(cfg)
-	log.Printf("VPNManager initialized")
+	// Create VPN manager (Sprint 3 - with HAL client)
+	vpnMgr := managers.NewVPNManager(cfg, halClient)
+	log.Printf("VPNManager initialized (HAL-enabled)")
 
-	// Create Mounts manager (Sprint 3)
-	mountsMgr := managers.NewMountsManager(cfg)
-	log.Printf("MountsManager initialized")
+	// Create Mounts manager (Sprint 3 - with HAL client)
+	mountsMgr := managers.NewMountsManager(cfg, halClient)
+	log.Printf("MountsManager initialized (HAL-enabled)")
 
 	// Create Setup manager (first boot wizard)
 	setupMgr := managers.NewSetupManager(cfg, db.DB)
 
 	// Create handlers
-	h := handlers.NewHandlers(cfg, db, docker)
+	h := handlers.NewHandlers(cfg, db, docker, halClient)
 	ext := handlers.NewExtendedHandlers(logMgr, firewallMgr, backupMgr, processMgr, wizardMgr, monitoringMgr, prefMgr, powerMgr, storageMgr)
 	appStoreHandler := handlers.NewAppStoreHandler(appStoreMgr)
 	setupHandler := handlers.NewSetupHandler(setupMgr)
