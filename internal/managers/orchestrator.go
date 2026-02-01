@@ -1,0 +1,671 @@
+// Package managers provides the Orchestrator for unified app management.
+package managers
+
+import (
+	"context"
+	"database/sql"
+	"fmt"
+	"os"
+	"path/filepath"
+	"strings"
+
+	"cubeos-api/internal/config"
+	"cubeos-api/internal/models"
+)
+
+// Orchestrator coordinates all app operations through a unified interface.
+// It is the single point of control for app lifecycle management.
+type Orchestrator struct {
+	db     *sql.DB
+	cfg    *config.Config
+	swarm  *SwarmManager
+	docker *DockerManager
+	npm    *NPMManager
+	pihole *PiholeManager
+	ports  *PortManager
+	ctx    context.Context
+	cancel context.CancelFunc
+}
+
+// OrchestratorConfig holds configuration for the Orchestrator
+type OrchestratorConfig struct {
+	DB           *sql.DB
+	Config       *config.Config
+	CoreappsPath string
+	AppsPath     string
+	PiholePath   string
+	NPMConfigDir string
+}
+
+// NewOrchestrator creates a new Orchestrator instance
+func NewOrchestrator(cfg OrchestratorConfig) (*Orchestrator, error) {
+	if cfg.DB == nil {
+		return nil, fmt.Errorf("database connection required")
+	}
+	if cfg.Config == nil {
+		return nil, fmt.Errorf("config required")
+	}
+
+	ctx, cancel := context.WithCancel(context.Background())
+
+	o := &Orchestrator{
+		db:     cfg.DB,
+		cfg:    cfg.Config,
+		ctx:    ctx,
+		cancel: cancel,
+	}
+
+	// Initialize SwarmManager
+	var err error
+	o.swarm, err = NewSwarmManager()
+	if err != nil {
+		cancel()
+		return nil, fmt.Errorf("failed to create swarm manager: %w", err)
+	}
+
+	// Initialize DockerManager
+	o.docker, err = NewDockerManager(cfg.Config)
+	if err != nil {
+		cancel()
+		return nil, fmt.Errorf("failed to create docker manager: %w", err)
+	}
+
+	// Initialize NPMManager
+	npmConfigDir := cfg.NPMConfigDir
+	if npmConfigDir == "" {
+		npmConfigDir = "/cubeos/coreapps/npm/appdata"
+	}
+	o.npm = NewNPMManager(cfg.Config, npmConfigDir)
+
+	// Initialize PiholeManager
+	piholePath := cfg.PiholePath
+	if piholePath == "" {
+		piholePath = "/cubeos/coreapps/pihole/appdata"
+	}
+	o.pihole = NewPiholeManager(cfg.Config, piholePath)
+
+	// Initialize PortManager
+	o.ports = NewPortManager(cfg.DB)
+
+	return o, nil
+}
+
+// Close releases resources held by the Orchestrator
+func (o *Orchestrator) Close() error {
+	o.cancel()
+	if o.docker != nil {
+		o.docker.Close()
+	}
+	return nil
+}
+
+// =============================================================================
+// App Lifecycle Operations
+// =============================================================================
+
+// InstallApp installs a new application
+func (o *Orchestrator) InstallApp(ctx context.Context, req models.InstallAppRequest) (*models.App, error) {
+	// Validate app name
+	name := strings.ToLower(strings.TrimSpace(req.Name))
+	if name == "" {
+		return nil, fmt.Errorf("app name is required")
+	}
+	if !isValidAppName(name) {
+		return nil, fmt.Errorf("invalid app name: must be lowercase alphanumeric with hyphens")
+	}
+
+	// Check if app already exists
+	existing, _ := o.GetApp(ctx, name)
+	if existing != nil {
+		return nil, fmt.Errorf("app %s already exists", name)
+	}
+
+	// Determine paths based on app type
+	appType := models.AppTypeUser
+	basePath := "/cubeos/apps"
+	if req.Type != "" {
+		appType = req.Type
+	}
+	if appType == models.AppTypeSystem || appType == models.AppTypePlatform {
+		basePath = "/cubeos/coreapps"
+	}
+
+	composePath := filepath.Join(basePath, name, "appconfig", "docker-compose.yml")
+	dataPath := filepath.Join(basePath, name, "appdata")
+
+	// Determine deploy mode
+	deployMode := models.DeployModeStack
+	if req.DeployMode != "" {
+		deployMode = req.DeployMode
+	}
+	// Force compose mode for host network services
+	if name == "pihole" || name == "npm" {
+		deployMode = models.DeployModeCompose
+	}
+
+	// Allocate port
+	port, err := o.ports.AllocateUserPort()
+	if err != nil {
+		return nil, fmt.Errorf("failed to allocate port: %w", err)
+	}
+
+	// Create directories
+	if err := os.MkdirAll(filepath.Dir(composePath), 0755); err != nil {
+		return nil, fmt.Errorf("failed to create app directory: %w", err)
+	}
+	if err := os.MkdirAll(dataPath, 0755); err != nil {
+		return nil, fmt.Errorf("failed to create data directory: %w", err)
+	}
+
+	// Insert app into database
+	displayName := req.DisplayName
+	if displayName == "" {
+		displayName = strings.Title(strings.ReplaceAll(name, "-", " "))
+	}
+
+	result, err := o.db.ExecContext(ctx, `
+		INSERT INTO apps (name, display_name, description, type, category, source, 
+			compose_path, data_path, enabled, deploy_mode)
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+	`, name, displayName, req.Description, appType, req.Category, req.Source,
+		composePath, dataPath, true, deployMode)
+	if err != nil {
+		return nil, fmt.Errorf("failed to insert app: %w", err)
+	}
+
+	appID, _ := result.LastInsertId()
+
+	// Insert port allocation
+	_, err = o.db.ExecContext(ctx, `
+		INSERT INTO port_allocations (app_id, port, protocol, description, is_primary)
+		VALUES (?, ?, 'tcp', 'Web UI', TRUE)
+	`, appID, port)
+	if err != nil {
+		// Rollback app insert
+		o.db.ExecContext(ctx, "DELETE FROM apps WHERE id = ?", appID)
+		return nil, fmt.Errorf("failed to allocate port: %w", err)
+	}
+
+	// Generate FQDN
+	fqdn := fmt.Sprintf("%s.cubeos.cube", name)
+	_, err = o.db.ExecContext(ctx, `
+		INSERT INTO fqdns (app_id, fqdn, subdomain, backend_port)
+		VALUES (?, ?, ?, ?)
+	`, appID, fqdn, name, port)
+	if err != nil {
+		// Rollback
+		o.db.ExecContext(ctx, "DELETE FROM port_allocations WHERE app_id = ?", appID)
+		o.db.ExecContext(ctx, "DELETE FROM apps WHERE id = ?", appID)
+		return nil, fmt.Errorf("failed to register FQDN: %w", err)
+	}
+
+	// Deploy the app
+	if err := o.deployApp(ctx, name, composePath, deployMode); err != nil {
+		// Rollback database entries
+		o.db.ExecContext(ctx, "DELETE FROM fqdns WHERE app_id = ?", appID)
+		o.db.ExecContext(ctx, "DELETE FROM port_allocations WHERE app_id = ?", appID)
+		o.db.ExecContext(ctx, "DELETE FROM apps WHERE id = ?", appID)
+		return nil, fmt.Errorf("failed to deploy app: %w", err)
+	}
+
+	// Register DNS entry with Pi-hole
+	if err := o.pihole.AddEntry(fqdn, models.DefaultGatewayIP); err != nil {
+		// Log warning but don't fail - DNS can be fixed later
+		fmt.Printf("WARNING: Failed to add DNS entry for %s: %v\n", fqdn, err)
+	}
+
+	// Create NPM proxy host
+	proxyHost := &NPMProxyHostExtended{
+		DomainNames:           []string{fqdn},
+		ForwardScheme:         "http",
+		ForwardHost:           models.DefaultGatewayIP,
+		ForwardPort:           port,
+		BlockExploits:         true,
+		AllowWebsocketUpgrade: true,
+		AccessListID:          0,
+		CertificateID:         0,
+		AdvancedConfig:        "",
+		Meta:                  NPMMeta{},
+	}
+	if _, err := o.npm.CreateProxyHost(proxyHost); err != nil {
+		// Log warning but don't fail
+		fmt.Printf("WARNING: Failed to create NPM proxy for %s: %v\n", fqdn, err)
+	}
+
+	// Return the created app
+	return o.GetApp(ctx, name)
+}
+
+// UninstallApp removes an application
+func (o *Orchestrator) UninstallApp(ctx context.Context, name string, keepData bool) error {
+	app, err := o.GetApp(ctx, name)
+	if err != nil {
+		return fmt.Errorf("app not found: %w", err)
+	}
+
+	// Prevent uninstalling protected system apps
+	if app.IsProtected() {
+		return fmt.Errorf("cannot uninstall protected system app: %s", name)
+	}
+
+	// Stop the app first
+	if err := o.StopApp(ctx, name); err != nil {
+		fmt.Printf("WARNING: Failed to stop app %s: %v\n", name, err)
+	}
+
+	// Remove from Swarm/Docker
+	if app.UsesSwarm() {
+		if err := o.swarm.RemoveStack(name); err != nil {
+			fmt.Printf("WARNING: Failed to remove stack %s: %v\n", name, err)
+		}
+	} else {
+		// Stop and remove container
+		o.docker.StopContainer(ctx, "cubeos-"+name, 10)
+	}
+
+	// Remove NPM proxy host
+	if proxyHost, err := o.npm.FindProxyHostByDomain(app.GetPrimaryFQDN()); err == nil && proxyHost != nil {
+		if err := o.npm.DeleteProxyHost(proxyHost.ID); err != nil {
+			fmt.Printf("WARNING: Failed to delete NPM proxy: %v\n", err)
+		}
+	}
+
+	// Remove DNS entry
+	if fqdn := app.GetPrimaryFQDN(); fqdn != "" {
+		if err := o.pihole.RemoveEntry(fqdn); err != nil {
+			fmt.Printf("WARNING: Failed to remove DNS entry: %v\n", err)
+		}
+	}
+
+	// Delete from database (cascades to ports and fqdns)
+	_, err = o.db.ExecContext(ctx, "DELETE FROM apps WHERE id = ?", app.ID)
+	if err != nil {
+		return fmt.Errorf("failed to delete app from database: %w", err)
+	}
+
+	// Optionally remove data
+	if !keepData && app.DataPath != "" {
+		if err := os.RemoveAll(app.DataPath); err != nil {
+			fmt.Printf("WARNING: Failed to remove data directory: %v\n", err)
+		}
+	}
+
+	return nil
+}
+
+// StartApp starts an application
+func (o *Orchestrator) StartApp(ctx context.Context, name string) error {
+	app, err := o.GetApp(ctx, name)
+	if err != nil {
+		return fmt.Errorf("app not found: %w", err)
+	}
+
+	if app.UsesSwarm() {
+		// Deploy/update the stack
+		return o.swarm.DeployStack(name, app.ComposePath)
+	}
+
+	// Start container via docker compose
+	return o.docker.StartContainer(ctx, "cubeos-"+name)
+}
+
+// StopApp stops an application
+func (o *Orchestrator) StopApp(ctx context.Context, name string) error {
+	app, err := o.GetApp(ctx, name)
+	if err != nil {
+		return fmt.Errorf("app not found: %w", err)
+	}
+
+	if app.UsesSwarm() {
+		// Scale to 0 replicas instead of removing stack
+		return o.swarm.ScaleService(name+"_"+name, 0)
+	}
+
+	return o.docker.StopContainer(ctx, "cubeos-"+name, 10)
+}
+
+// RestartApp restarts an application
+func (o *Orchestrator) RestartApp(ctx context.Context, name string) error {
+	app, err := o.GetApp(ctx, name)
+	if err != nil {
+		return fmt.Errorf("app not found: %w", err)
+	}
+
+	if app.UsesSwarm() {
+		// Force service restart
+		return o.swarm.RestartService(name + "_" + name)
+	}
+
+	return o.docker.RestartContainer(ctx, "cubeos-"+name, 10)
+}
+
+// EnableApp marks an app to start on boot
+func (o *Orchestrator) EnableApp(ctx context.Context, name string) error {
+	_, err := o.db.ExecContext(ctx, `
+		UPDATE apps SET enabled = TRUE, updated_at = CURRENT_TIMESTAMP 
+		WHERE name = ?
+	`, name)
+	return err
+}
+
+// DisableApp marks an app to not start on boot
+func (o *Orchestrator) DisableApp(ctx context.Context, name string) error {
+	app, err := o.GetApp(ctx, name)
+	if err != nil {
+		return err
+	}
+
+	// Prevent disabling protected system apps
+	if app.IsProtected() {
+		return fmt.Errorf("cannot disable protected system app: %s", name)
+	}
+
+	_, err = o.db.ExecContext(ctx, `
+		UPDATE apps SET enabled = FALSE, updated_at = CURRENT_TIMESTAMP 
+		WHERE name = ?
+	`, name)
+	return err
+}
+
+// =============================================================================
+// Query Operations
+// =============================================================================
+
+// GetApp retrieves a single app by name with all related data
+func (o *Orchestrator) GetApp(ctx context.Context, name string) (*models.App, error) {
+	var app models.App
+	err := o.db.QueryRowContext(ctx, `
+		SELECT id, name, display_name, description, type, category, source,
+			compose_path, data_path, enabled, deploy_mode, icon_url, version,
+			created_at, updated_at
+		FROM apps WHERE name = ?
+	`, name).Scan(
+		&app.ID, &app.Name, &app.DisplayName, &app.Description, &app.Type,
+		&app.Category, &app.Source, &app.ComposePath, &app.DataPath,
+		&app.Enabled, &app.DeployMode, &app.IconURL, &app.Version,
+		&app.CreatedAt, &app.UpdatedAt,
+	)
+	if err == sql.ErrNoRows {
+		return nil, fmt.Errorf("app not found: %s", name)
+	}
+	if err != nil {
+		return nil, err
+	}
+
+	// Load related data
+	if err := o.loadAppRelations(ctx, &app); err != nil {
+		return nil, err
+	}
+
+	// Get runtime status
+	app.Status = o.getAppStatus(ctx, &app)
+
+	return &app, nil
+}
+
+// ListApps retrieves all apps with optional filtering
+func (o *Orchestrator) ListApps(ctx context.Context, filter *models.AppFilter) ([]*models.App, error) {
+	query := `
+		SELECT id, name, display_name, description, type, category, source,
+			compose_path, data_path, enabled, deploy_mode, icon_url, version,
+			created_at, updated_at
+		FROM apps WHERE 1=1
+	`
+	var args []interface{}
+
+	if filter != nil {
+		if filter.Type != "" {
+			query += " AND type = ?"
+			args = append(args, filter.Type)
+		}
+		if filter.Enabled != nil {
+			query += " AND enabled = ?"
+			args = append(args, *filter.Enabled)
+		}
+	}
+
+	query += " ORDER BY type, name"
+
+	rows, err := o.db.QueryContext(ctx, query, args...)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var apps []*models.App
+	for rows.Next() {
+		var app models.App
+		err := rows.Scan(
+			&app.ID, &app.Name, &app.DisplayName, &app.Description, &app.Type,
+			&app.Category, &app.Source, &app.ComposePath, &app.DataPath,
+			&app.Enabled, &app.DeployMode, &app.IconURL, &app.Version,
+			&app.CreatedAt, &app.UpdatedAt,
+		)
+		if err != nil {
+			return nil, err
+		}
+
+		// Load related data
+		if err := o.loadAppRelations(ctx, &app); err != nil {
+			return nil, err
+		}
+
+		// Get runtime status
+		app.Status = o.getAppStatus(ctx, &app)
+
+		apps = append(apps, &app)
+	}
+
+	return apps, rows.Err()
+}
+
+// =============================================================================
+// Reconciliation Operations
+// =============================================================================
+
+// ReconcileState ensures running state matches desired state
+// Called on boot to recover from power loss
+func (o *Orchestrator) ReconcileState(ctx context.Context) error {
+	apps, err := o.ListApps(ctx, &models.AppFilter{Enabled: boolPtr(true)})
+	if err != nil {
+		return fmt.Errorf("failed to list enabled apps: %w", err)
+	}
+
+	var errors []string
+	for _, app := range apps {
+		if app.Status == nil || !app.Status.Running {
+			fmt.Printf("Reconciling: starting %s\n", app.Name)
+			if err := o.StartApp(ctx, app.Name); err != nil {
+				errors = append(errors, fmt.Sprintf("%s: %v", app.Name, err))
+			}
+		}
+	}
+
+	if len(errors) > 0 {
+		return fmt.Errorf("reconciliation errors: %s", strings.Join(errors, "; "))
+	}
+
+	return nil
+}
+
+// SeedSystemApps creates database entries for core system apps
+// Called on first boot to populate the database
+func (o *Orchestrator) SeedSystemApps(ctx context.Context) error {
+	systemApps := []struct {
+		name        string
+		displayName string
+		appType     models.AppType
+		port        int
+		deployMode  models.DeployMode
+	}{
+		{"pihole", "Pi-hole", models.AppTypeSystem, 6001, models.DeployModeCompose},
+		{"npm", "Nginx Proxy Manager", models.AppTypeSystem, 6000, models.DeployModeCompose},
+		{"registry", "Docker Registry", models.AppTypeSystem, 5000, models.DeployModeStack},
+		{"cubeos-api", "CubeOS API", models.AppTypePlatform, 6010, models.DeployModeStack},
+		{"cubeos-dashboard", "CubeOS Dashboard", models.AppTypePlatform, 6011, models.DeployModeStack},
+		{"dozzle", "Dozzle", models.AppTypePlatform, 6012, models.DeployModeStack},
+		{"ollama", "Ollama", models.AppTypeAI, 6030, models.DeployModeStack},
+		{"chromadb", "ChromaDB", models.AppTypeAI, 6031, models.DeployModeStack},
+	}
+
+	for _, sa := range systemApps {
+		// Check if already exists
+		var count int
+		o.db.QueryRowContext(ctx, "SELECT COUNT(*) FROM apps WHERE name = ?", sa.name).Scan(&count)
+		if count > 0 {
+			continue
+		}
+
+		composePath := fmt.Sprintf("/cubeos/coreapps/%s/appconfig/docker-compose.yml", sa.name)
+		dataPath := fmt.Sprintf("/cubeos/coreapps/%s/appdata", sa.name)
+
+		result, err := o.db.ExecContext(ctx, `
+			INSERT INTO apps (name, display_name, type, compose_path, data_path, enabled, deploy_mode)
+			VALUES (?, ?, ?, ?, ?, TRUE, ?)
+		`, sa.name, sa.displayName, sa.appType, composePath, dataPath, sa.deployMode)
+		if err != nil {
+			return fmt.Errorf("failed to seed %s: %w", sa.name, err)
+		}
+
+		appID, _ := result.LastInsertId()
+
+		// Add port allocation
+		o.db.ExecContext(ctx, `
+			INSERT INTO port_allocations (app_id, port, protocol, description, is_primary)
+			VALUES (?, ?, 'tcp', 'Web UI', TRUE)
+		`, appID, sa.port)
+
+		// Add FQDN
+		fqdn := fmt.Sprintf("%s.cubeos.cube", sa.name)
+		o.db.ExecContext(ctx, `
+			INSERT INTO fqdns (app_id, fqdn, subdomain, backend_port)
+			VALUES (?, ?, ?, ?)
+		`, appID, fqdn, sa.name, sa.port)
+	}
+
+	return nil
+}
+
+// =============================================================================
+// Helper Functions
+// =============================================================================
+
+func (o *Orchestrator) deployApp(ctx context.Context, name, composePath string, mode models.DeployMode) error {
+	if mode == models.DeployModeStack {
+		return o.swarm.DeployStack(name, composePath)
+	}
+
+	// Compose mode - use docker compose
+	// The actual compose up is handled by the container management
+	return nil
+}
+
+func (o *Orchestrator) getAppStatus(ctx context.Context, app *models.App) *models.AppStatus {
+	status := &models.AppStatus{
+		Running: false,
+		Health:  "unknown",
+	}
+
+	if app.UsesSwarm() {
+		// Get status from Swarm
+		svcStatus, err := o.swarm.GetServiceStatus(app.Name + "_" + app.Name)
+		if err == nil && svcStatus != nil {
+			status.Running = svcStatus.Running
+			status.Replicas = svcStatus.Replicas
+			status.Health = svcStatus.Health
+			if !status.Running {
+				status.Health = "stopped"
+			}
+		}
+	} else {
+		// Get status from Docker
+		containerName := "cubeos-" + app.Name
+		containerStatus, err := o.docker.GetContainerStatus(ctx, containerName)
+		if err == nil {
+			status.Running = strings.Contains(strings.ToLower(containerStatus), "up")
+			if status.Running {
+				if strings.Contains(containerStatus, "healthy") {
+					status.Health = "healthy"
+				} else if strings.Contains(containerStatus, "unhealthy") {
+					status.Health = "unhealthy"
+				} else {
+					status.Health = "running"
+				}
+			} else {
+				status.Health = "stopped"
+			}
+			status.Replicas = "1/1"
+			if !status.Running {
+				status.Replicas = "0/1"
+			}
+		}
+	}
+
+	return status
+}
+
+func (o *Orchestrator) loadAppRelations(ctx context.Context, app *models.App) error {
+	// Load ports
+	rows, err := o.db.QueryContext(ctx, `
+		SELECT id, app_id, port, protocol, description, is_primary
+		FROM port_allocations WHERE app_id = ?
+	`, app.ID)
+	if err != nil {
+		return err
+	}
+	defer rows.Close()
+
+	for rows.Next() {
+		var port models.Port
+		if err := rows.Scan(&port.ID, &port.AppID, &port.Port, &port.Protocol,
+			&port.Description, &port.IsPrimary); err != nil {
+			return err
+		}
+		app.Ports = append(app.Ports, port)
+	}
+
+	// Load FQDNs
+	fqdnRows, err := o.db.QueryContext(ctx, `
+		SELECT id, app_id, fqdn, subdomain, backend_port, ssl_enabled
+		FROM fqdns WHERE app_id = ?
+	`, app.ID)
+	if err != nil {
+		return err
+	}
+	defer fqdnRows.Close()
+
+	for fqdnRows.Next() {
+		var fqdn models.FQDN
+		if err := fqdnRows.Scan(&fqdn.ID, &fqdn.AppID, &fqdn.FQDN, &fqdn.Subdomain,
+			&fqdn.BackendPort, &fqdn.SSLEnabled); err != nil {
+			return err
+		}
+		app.FQDNs = append(app.FQDNs, fqdn)
+	}
+
+	return nil
+}
+
+// isValidAppName checks if an app name is valid (lowercase alphanumeric with hyphens)
+func isValidAppName(name string) bool {
+	if len(name) == 0 || len(name) > 63 {
+		return false
+	}
+	for i, c := range name {
+		if c >= 'a' && c <= 'z' {
+			continue
+		}
+		if c >= '0' && c <= '9' {
+			continue
+		}
+		if c == '-' && i > 0 && i < len(name)-1 {
+			continue
+		}
+		return false
+	}
+	return true
+}
+
+func boolPtr(b bool) *bool {
+	return &b
+}
