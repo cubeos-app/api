@@ -85,9 +85,9 @@ func (h *VPNHandler) GetConfig(w http.ResponseWriter, r *http.Request) {
 // POST /api/v1/vpn/configs
 func (h *VPNHandler) AddConfig(w http.ResponseWriter, r *http.Request) {
 	var req struct {
-		Name   string              `json:"name"`
-		Type   managers.VPNType    `json:"type"`
-		Config string              `json:"config"` // Base64 encoded config file
+		Name   string           `json:"name"`
+		Type   managers.VPNType `json:"type"`
+		Config string           `json:"config"` // Base64 encoded config file
 	}
 
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
@@ -132,8 +132,8 @@ func (h *VPNHandler) DeleteConfig(w http.ResponseWriter, r *http.Request) {
 	}
 
 	vpnRespondJSON(w, http.StatusOK, map[string]string{
-		"status":  "deleted",
-		"name":    name,
+		"status": "deleted",
+		"name":   name,
 	})
 }
 
