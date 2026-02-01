@@ -610,7 +610,7 @@ func (o *Orchestrator) getAppStatus(ctx context.Context, app *models.App) *model
 		containerStatus, err := o.docker.GetContainerStatus(timeoutCtx, containerName)
 		fmt.Printf("[DEBUG] getAppStatus: %s (compose) completed in %v, err=%v, status=%s\n", app.Name, time.Since(start), err, containerStatus)
 		if err == nil {
-			status.Running = strings.Contains(strings.ToLower(containerStatus), "up")
+			status.Running = containerStatus == "running"
 			if status.Running {
 				if strings.Contains(containerStatus, "healthy") {
 					status.Health = "healthy"
