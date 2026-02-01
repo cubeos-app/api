@@ -440,32 +440,39 @@ func (o *Orchestrator) ListApps(ctx context.Context, filter *models.AppFilter) (
 
 	var apps []*models.App
 	appCount := 0
+	fmt.Printf("[DEBUG] ListApps: starting row iteration\n")
 	for rows.Next() {
+		fmt.Printf("[DEBUG] ListApps: rows.Next() returned true, appCount=%d\n", appCount)
 		var app models.App
+		scanStart := time.Now()
 		err := rows.Scan(
 			&app.ID, &app.Name, &app.DisplayName, &app.Description, &app.Type,
 			&app.Category, &app.Source, &app.ComposePath, &app.DataPath,
 			&app.Enabled, &app.DeployMode, &app.IconURL, &app.Version,
 			&app.CreatedAt, &app.UpdatedAt,
 		)
+		fmt.Printf("[DEBUG] ListApps: Scan for app %s took %v\n", app.Name, time.Since(scanStart))
 		if err != nil {
+			fmt.Printf("[DEBUG] ListApps: Scan error: %v\n", err)
 			return nil, err
 		}
 
-		// Load related data
-		relStart := time.Now()
-		if err := o.loadAppRelations(ctx, &app); err != nil {
-			return nil, err
-		}
-		fmt.Printf("[DEBUG] ListApps: loadAppRelations for %s took %v\n", app.Name, time.Since(relStart))
+		// Load related data - SKIP FOR NOW TO TEST
+		// relStart := time.Now()
+		// if err := o.loadAppRelations(ctx, &app); err != nil {
+		// 	return nil, err
+		// }
+		// fmt.Printf("[DEBUG] ListApps: loadAppRelations for %s took %v\n", app.Name, time.Since(relStart))
 
 		// Get runtime status
 		statusStart := time.Now()
+		fmt.Printf("[DEBUG] ListApps: calling getAppStatus for %s (deploy_mode=%s)\n", app.Name, app.DeployMode)
 		app.Status = o.getAppStatus(ctx, &app)
 		fmt.Printf("[DEBUG] ListApps: getAppStatus for %s took %v\n", app.Name, time.Since(statusStart))
 
 		apps = append(apps, &app)
 		appCount++
+		fmt.Printf("[DEBUG] ListApps: finished app %s, total so far: %d\n", app.Name, appCount)
 	}
 
 	fmt.Printf("[DEBUG] ListApps: processed %d apps in %v\n", appCount, time.Since(totalStart))
