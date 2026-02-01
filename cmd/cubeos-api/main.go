@@ -431,7 +431,6 @@ func main() {
 			}
 
 			// Network API (Sprint 3)
-			r.Mount("/network", networkHandler.Routes())
 		})
 
 		// Setup wizard routes (semi-public - accessible before full setup)
