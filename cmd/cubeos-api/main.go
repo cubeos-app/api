@@ -112,6 +112,7 @@ func main() {
 	}
 
 	// Create NetworkHandler for network mode management (Sprint 3)
+	networkHandler := handlers.NewNetworkHandler(networkMgr)
 
 	// Create WebSocket manager and handlers
 	wsManager := handlers.NewWSManager(systemMgr, networkMgr, monitoringMgr, docker)
@@ -262,6 +263,12 @@ func main() {
 
 				// WiFi QR
 				r.Get("/wifi/qr", h.GetWiFiQR)
+
+				// Sprint 3: Network mode switching
+				r.Get("/status", networkHandler.GetNetworkStatus)
+				r.Post("/mode", networkHandler.SetNetworkMode)
+				r.Get("/wifi/scan", networkHandler.ScanWiFiNetworks)
+				r.Post("/wifi/connect", networkHandler.ConnectToWiFi)
 			})
 
 			// Clients (WiFi)
@@ -428,8 +435,6 @@ func main() {
 			if profilesHandler != nil {
 				r.Mount("/profiles", profilesHandler.Routes())
 			}
-
-			// Network API (Sprint 3)
 		})
 
 		// Setup wizard routes (semi-public - accessible before full setup)
