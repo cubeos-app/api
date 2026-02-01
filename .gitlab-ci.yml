@@ -115,7 +115,7 @@ deploy:
     # Remove old stack if exists (only cubeos-api, not other services)
     - docker stack rm cubeos-api 2>/dev/null || true
     - echo "⏳ Waiting for old stack to drain..."
-    - sleep 10
+    - sleep 20
     # Deploy as Swarm stack with ARM64 workaround
     - |
       cd /cubeos/coreapps/cubeos-api/appconfig
