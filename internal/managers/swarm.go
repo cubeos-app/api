@@ -102,7 +102,10 @@ func (s *SwarmManager) Close() error {
 
 // IsSwarmActive checks if Docker Swarm is initialized and active.
 func (s *SwarmManager) IsSwarmActive() (bool, error) {
-	info, err := s.client.Info(s.ctx)
+	ctx, cancel := context.WithTimeout(s.ctx, 5*time.Second)
+	defer cancel()
+
+	info, err := s.client.Info(ctx)
 	if err != nil {
 		return false, fmt.Errorf("failed to get Docker info: %w", err)
 	}
@@ -134,6 +137,9 @@ func (s *SwarmManager) Init(cfg SwarmConfig) error {
 		cfg.TaskHistoryLimit = 1
 	}
 
+	ctx, cancel := context.WithTimeout(s.ctx, 30*time.Second)
+	defer cancel()
+
 	// Initialize Swarm
 	req := swarm.InitRequest{
 		ListenAddr:    cfg.ListenAddr,
@@ -145,7 +151,7 @@ func (s *SwarmManager) Init(cfg SwarmConfig) error {
 		},
 	}
 
-	_, err = s.client.SwarmInit(s.ctx, req)
+	_, err = s.client.SwarmInit(ctx, req)
 	if err != nil {
 		return fmt.Errorf("failed to initialize Swarm: %w", err)
 	}
@@ -162,14 +168,17 @@ func (s *SwarmManager) InitWithDefaults() error {
 // Setting this to 1 prevents memory bloat from task history on Pi.
 // IMPORTANT: Hardware watchdog max timeout is 15 seconds, so keep this low.
 func (s *SwarmManager) SetTaskHistoryLimit(limit int) error {
-	swarmInfo, err := s.client.SwarmInspect(s.ctx)
+	ctx, cancel := context.WithTimeout(s.ctx, 10*time.Second)
+	defer cancel()
+
+	swarmInfo, err := s.client.SwarmInspect(ctx)
 	if err != nil {
 		return fmt.Errorf("failed to inspect Swarm: %w", err)
 	}
 
 	swarmInfo.Spec.Orchestration.TaskHistoryRetentionLimit = intPtr(limit)
 
-	err = s.client.SwarmUpdate(s.ctx, swarmInfo.Version, swarmInfo.Spec, swarm.UpdateFlags{})
+	err = s.client.SwarmUpdate(ctx, swarmInfo.Version, swarmInfo.Spec, swarm.UpdateFlags{})
 	if err != nil {
 		return fmt.Errorf("failed to update Swarm settings: %w", err)
 	}
@@ -191,9 +200,12 @@ func (s *SwarmManager) DeployStack(name, composePath string) error {
 		return fmt.Errorf("compose path cannot be empty")
 	}
 
+	ctx, cancel := context.WithTimeout(s.ctx, 2*time.Minute)
+	defer cancel()
+
 	// Use docker stack deploy command
 	// --resolve-image=never is critical for ARM64 to avoid manifest resolution issues
-	cmd := exec.CommandContext(s.ctx, "docker", "stack", "deploy",
+	cmd := exec.CommandContext(ctx, "docker", "stack", "deploy",
 		"-c", composePath,
 		"--resolve-image=never",
 		name,
@@ -213,7 +225,10 @@ func (s *SwarmManager) RemoveStack(name string) error {
 		return fmt.Errorf("stack name cannot be empty")
 	}
 
-	cmd := exec.CommandContext(s.ctx, "docker", "stack", "rm", name)
+	ctx, cancel := context.WithTimeout(s.ctx, 30*time.Second)
+	defer cancel()
+
+	cmd := exec.CommandContext(ctx, "docker", "stack", "rm", name)
 	output, err := cmd.CombinedOutput()
 	if err != nil {
 		return fmt.Errorf("failed to remove stack %s: %w\nOutput: %s", name, err, string(output))
@@ -224,8 +239,11 @@ func (s *SwarmManager) RemoveStack(name string) error {
 
 // ListStacks returns all deployed Swarm stacks.
 func (s *SwarmManager) ListStacks() ([]Stack, error) {
+	ctx, cancel := context.WithTimeout(s.ctx, 10*time.Second)
+	defer cancel()
+
 	// Get all services with stack labels
-	services, err := s.client.ServiceList(s.ctx, types.ServiceListOptions{})
+	services, err := s.client.ServiceList(ctx, types.ServiceListOptions{})
 	if err != nil {
 		return nil, fmt.Errorf("failed to list services: %w", err)
 	}
@@ -272,11 +290,14 @@ func (s *SwarmManager) GetStackServices(stackName string) ([]StackService, error
 		return nil, fmt.Errorf("stack name cannot be empty")
 	}
 
+	ctx, cancel := context.WithTimeout(s.ctx, 10*time.Second)
+	defer cancel()
+
 	// Filter services by stack namespace
 	filterArgs := filters.NewArgs()
 	filterArgs.Add("label", fmt.Sprintf("com.docker.stack.namespace=%s", stackName))
 
-	services, err := s.client.ServiceList(s.ctx, types.ServiceListOptions{
+	services, err := s.client.ServiceList(ctx, types.ServiceListOptions{
 		Filters: filterArgs,
 	})
 	if err != nil {
@@ -286,7 +307,7 @@ func (s *SwarmManager) GetStackServices(stackName string) ([]StackService, error
 	result := make([]StackService, 0, len(services))
 	for _, svc := range services {
 		// Get replica status
-		replicas := s.getReplicaStatus(svc)
+		replicas := s.getReplicaStatusWithContext(ctx, svc)
 
 		// Get mode
 		mode := "replicated"
@@ -312,7 +333,16 @@ func (s *SwarmManager) GetStackServices(stackName string) ([]StackService, error
 
 // GetServiceStatus returns the current status of a service.
 // The serviceName can be the full name (stack_service) or just the service name.
+// FIXED: Now uses context with timeout to prevent blocking forever.
 func (s *SwarmManager) GetServiceStatus(serviceName string) (*ServiceStatus, error) {
+	// Use a 5-second timeout for status checks
+	ctx, cancel := context.WithTimeout(s.ctx, 5*time.Second)
+	defer cancel()
+	return s.GetServiceStatusWithContext(ctx, serviceName)
+}
+
+// GetServiceStatusWithContext returns service status using the provided context.
+func (s *SwarmManager) GetServiceStatusWithContext(ctx context.Context, serviceName string) (*ServiceStatus, error) {
 	if serviceName == "" {
 		return nil, fmt.Errorf("service name cannot be empty")
 	}
@@ -321,7 +351,7 @@ func (s *SwarmManager) GetServiceStatus(serviceName string) (*ServiceStatus, err
 	filterArgs := filters.NewArgs()
 	filterArgs.Add("name", serviceName)
 
-	services, err := s.client.ServiceList(s.ctx, types.ServiceListOptions{
+	services, err := s.client.ServiceList(ctx, types.ServiceListOptions{
 		Filters: filterArgs,
 	})
 	if err != nil {
@@ -345,8 +375,8 @@ func (s *SwarmManager) GetServiceStatus(serviceName string) (*ServiceStatus, err
 		svc = &services[0]
 	}
 
-	// Get replica status
-	replicas := s.getReplicaStatus(*svc)
+	// Get replica status with context
+	replicas := s.getReplicaStatusWithContext(ctx, *svc)
 	running, desired := parseReplicas(replicas)
 
 	// Determine health status
@@ -378,6 +408,9 @@ func (s *SwarmManager) GetServiceLogs(serviceName string, lines int) ([]string, 
 		lines = 100 // Default
 	}
 
+	ctx, cancel := context.WithTimeout(s.ctx, 30*time.Second)
+	defer cancel()
+
 	options := container.LogsOptions{
 		ShowStdout: true,
 		ShowStderr: true,
@@ -385,7 +418,7 @@ func (s *SwarmManager) GetServiceLogs(serviceName string, lines int) ([]string, 
 		Timestamps: true,
 	}
 
-	logs, err := s.client.ServiceLogs(s.ctx, serviceName, options)
+	logs, err := s.client.ServiceLogs(ctx, serviceName, options)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get service logs: %w", err)
 	}
@@ -438,8 +471,11 @@ func (s *SwarmManager) ScaleService(serviceName string, replicas uint64) error {
 		return fmt.Errorf("service name cannot be empty")
 	}
 
+	ctx, cancel := context.WithTimeout(s.ctx, 30*time.Second)
+	defer cancel()
+
 	// Get current service spec
-	svc, _, err := s.client.ServiceInspectWithRaw(s.ctx, serviceName, types.ServiceInspectOptions{})
+	svc, _, err := s.client.ServiceInspectWithRaw(ctx, serviceName, types.ServiceInspectOptions{})
 	if err != nil {
 		return fmt.Errorf("failed to inspect service: %w", err)
 	}
@@ -451,7 +487,7 @@ func (s *SwarmManager) ScaleService(serviceName string, replicas uint64) error {
 	svc.Spec.Mode.Replicated.Replicas = &replicas
 
 	// Apply update
-	_, err = s.client.ServiceUpdate(s.ctx, svc.ID, svc.Version, svc.Spec, types.ServiceUpdateOptions{})
+	_, err = s.client.ServiceUpdate(ctx, svc.ID, svc.Version, svc.Spec, types.ServiceUpdateOptions{})
 	if err != nil {
 		return fmt.Errorf("failed to scale service: %w", err)
 	}
@@ -465,8 +501,11 @@ func (s *SwarmManager) RestartService(serviceName string) error {
 		return fmt.Errorf("service name cannot be empty")
 	}
 
+	ctx, cancel := context.WithTimeout(s.ctx, 30*time.Second)
+	defer cancel()
+
 	// Get current service spec
-	svc, _, err := s.client.ServiceInspectWithRaw(s.ctx, serviceName, types.ServiceInspectOptions{})
+	svc, _, err := s.client.ServiceInspectWithRaw(ctx, serviceName, types.ServiceInspectOptions{})
 	if err != nil {
 		return fmt.Errorf("failed to inspect service: %w", err)
 	}
@@ -475,7 +514,7 @@ func (s *SwarmManager) RestartService(serviceName string) error {
 	svc.Spec.TaskTemplate.ForceUpdate++
 
 	// Apply update
-	_, err = s.client.ServiceUpdate(s.ctx, svc.ID, svc.Version, svc.Spec, types.ServiceUpdateOptions{})
+	_, err = s.client.ServiceUpdate(ctx, svc.ID, svc.Version, svc.Spec, types.ServiceUpdateOptions{})
 	if err != nil {
 		return fmt.Errorf("failed to restart service: %w", err)
 	}
@@ -507,7 +546,10 @@ func (s *SwarmManager) WaitForService(serviceName string, timeout time.Duration)
 
 // GetSwarmInfo returns information about the Swarm cluster.
 func (s *SwarmManager) GetSwarmInfo() (*swarm.Swarm, error) {
-	info, err := s.client.SwarmInspect(s.ctx)
+	ctx, cancel := context.WithTimeout(s.ctx, 5*time.Second)
+	defer cancel()
+
+	info, err := s.client.SwarmInspect(ctx)
 	if err != nil {
 		return nil, fmt.Errorf("failed to inspect Swarm: %w", err)
 	}
@@ -517,8 +559,11 @@ func (s *SwarmManager) GetSwarmInfo() (*swarm.Swarm, error) {
 // CreateOverlayNetwork creates an overlay network for Swarm services.
 // Uses exec to call docker network create for simplicity.
 func (s *SwarmManager) CreateOverlayNetwork(name, subnet string) error {
+	ctx, cancel := context.WithTimeout(s.ctx, 30*time.Second)
+	defer cancel()
+
 	// Check if network already exists
-	checkCmd := exec.CommandContext(s.ctx, "docker", "network", "inspect", name)
+	checkCmd := exec.CommandContext(ctx, "docker", "network", "inspect", name)
 	if err := checkCmd.Run(); err == nil {
 		return nil // Network already exists
 	}
@@ -530,7 +575,7 @@ func (s *SwarmManager) CreateOverlayNetwork(name, subnet string) error {
 	}
 	args = append(args, name)
 
-	cmd := exec.CommandContext(s.ctx, "docker", args...)
+	cmd := exec.CommandContext(ctx, "docker", args...)
 	output, err := cmd.CombinedOutput()
 	if err != nil {
 		return fmt.Errorf("failed to create network %s: %w\nOutput: %s", name, err, string(output))
@@ -541,13 +586,14 @@ func (s *SwarmManager) CreateOverlayNetwork(name, subnet string) error {
 
 // Helper functions
 
-func (s *SwarmManager) getReplicaStatus(svc swarm.Service) string {
+// getReplicaStatusWithContext gets replica status with a context for timeout
+func (s *SwarmManager) getReplicaStatusWithContext(ctx context.Context, svc swarm.Service) string {
 	// Get running tasks
 	filterArgs := filters.NewArgs()
 	filterArgs.Add("service", svc.ID)
 	filterArgs.Add("desired-state", "running")
 
-	tasks, err := s.client.TaskList(s.ctx, types.TaskListOptions{
+	tasks, err := s.client.TaskList(ctx, types.TaskListOptions{
 		Filters: filterArgs,
 	})
 	if err != nil {
@@ -568,6 +614,13 @@ func (s *SwarmManager) getReplicaStatus(svc swarm.Service) string {
 	}
 
 	return fmt.Sprintf("%d/%d", running, desired)
+}
+
+// getReplicaStatus is kept for backward compatibility but uses the context version
+func (s *SwarmManager) getReplicaStatus(svc swarm.Service) string {
+	ctx, cancel := context.WithTimeout(s.ctx, 5*time.Second)
+	defer cancel()
+	return s.getReplicaStatusWithContext(ctx, svc)
 }
 
 func (s *SwarmManager) formatPorts(ports []swarm.PortConfig) string {
