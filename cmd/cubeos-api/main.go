@@ -112,7 +112,6 @@ func main() {
 	}
 
 	// Create NetworkHandler for network mode management (Sprint 3)
-	networkHandler := handlers.NewNetworkHandler(networkMgr)
 
 	// Create WebSocket manager and handlers
 	wsManager := handlers.NewWSManager(systemMgr, networkMgr, monitoringMgr, docker)
