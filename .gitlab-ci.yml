@@ -101,7 +101,7 @@ package:
     - if: $CI_COMMIT_BRANCH == "main"
 
 # -----------------------------------------------------------------------------
-# DEPLOY - Pull image on Pi and restart
+# DEPLOY - Deploy as Swarm stack on Pi
 # -----------------------------------------------------------------------------
 deploy:
   stage: deploy
@@ -109,24 +109,33 @@ deploy:
   before_script:
     - echo "$GHCR_TOKEN" | docker login ghcr.io -u "$GHCR_USER" --password-stdin
   script:
-    - echo "🚀 Deploying CubeOS API..."
+    - echo "🚀 Deploying CubeOS API as Swarm stack..."
     - docker pull ${GHCR_IMAGE}:${CI_COMMIT_SHORT_SHA}
-    - docker tag ${GHCR_IMAGE}:${CI_COMMIT_SHORT_SHA} cubeos-api:latest
-    - docker rm -f cubeos-api 2>/dev/null || true
-    - cd /cubeos/coreapps/cubeos-api/appconfig
-    - docker compose down --remove-orphans || true
-    - docker compose up -d --force-recreate
+    - docker tag ${GHCR_IMAGE}:${CI_COMMIT_SHORT_SHA} ${GHCR_IMAGE}:latest
+    # Remove old stack if exists (only cubeos-api, not other services)
+    - docker stack rm cubeos-api 2>/dev/null || true
+    - sleep 5
+    # Deploy as Swarm stack with ARM64 workaround
+    - |
+      cd /cubeos/coreapps/cubeos-api/appconfig
+      docker stack deploy \
+        --compose-file docker-compose.yml \
+        --resolve-image never \
+        cubeos-api
+    # Wait for service to be healthy
     - |
       echo "⏳ Waiting for API to be healthy..."
       for i in $(seq 1 30); do
         if curl -sf http://127.0.0.1:6010/health > /dev/null 2>&1; then
           echo "✅ Health check passed!"
+          docker service ls | grep cubeos-api || true
           exit 0
         fi
         echo "  Attempt $i/30..."
         sleep 2
       done
       echo "❌ Health check failed!"
+      docker service logs cubeos-api_api --tail 50 2>/dev/null || true
       exit 1
   environment:
     name: production
