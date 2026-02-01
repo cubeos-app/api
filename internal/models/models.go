@@ -469,6 +469,24 @@ type WizardServicesResponse struct {
 	TotalServices int              `json:"total_services"`
 }
 
+// =============================================================================
+// Monitoring
+// =============================================================================
+
+type StatsSnapshot struct {
+	Timestamp     time.Time `json:"timestamp"`
+	CPUPercent    float64   `json:"cpu_percent"`
+	MemoryPercent float64   `json:"memory_percent"`
+	Temperature   float64   `json:"temperature"`
+}
+
+type Alert struct {
+	Type     string  `json:"type"`
+	Message  string  `json:"message"`
+	Severity string  `json:"severity"`
+	Value    float64 `json:"value,omitempty"`
+}
+
 type AlertsResponse struct {
 	Alerts     []Alert `json:"alerts"`
 	AlertCount int     `json:"alert_count"`
