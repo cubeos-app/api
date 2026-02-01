@@ -181,7 +181,7 @@ var migrations = []Migration{
 				"terminal-ro",
 				"usb-monitor",
 				"logs",
-				"api",      // Old name, replaced by cubeos-api
+				"api",       // Old name, replaced by cubeos-api
 				"dashboard", // Old name, replaced by cubeos-dashboard
 			}
 
