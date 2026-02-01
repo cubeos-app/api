@@ -87,6 +87,14 @@ func main() {
 		log.Printf("Orchestrator initialized successfully")
 	}
 
+	// Create VPN manager (Sprint 3)
+	vpnMgr := managers.NewVPNManager(cfg)
+	log.Printf("VPNManager initialized")
+
+	// Create Mounts manager (Sprint 3)
+	mountsMgr := managers.NewMountsManager(cfg)
+	log.Printf("MountsManager initialized")
+
 	// Create Setup manager (first boot wizard)
 	setupMgr := managers.NewSetupManager(cfg, db.DB)
 
@@ -113,6 +121,11 @@ func main() {
 
 	// Create NetworkHandler for network mode management (Sprint 3)
 	networkHandler := handlers.NewNetworkHandler(networkMgr)
+
+	// Create VPN and Mounts handlers (Sprint 3)
+	vpnHandler := handlers.NewVPNHandler(vpnMgr)
+	mountsHandler := handlers.NewMountsHandler(mountsMgr)
+	log.Printf("VPNHandler and MountsHandler initialized")
 
 	// Create WebSocket manager and handlers
 	wsManager := handlers.NewWSManager(systemMgr, networkMgr, monitoringMgr, docker)
@@ -259,10 +272,6 @@ func main() {
 
 				// DHCP
 				r.Get("/dhcp/leases", h.GetDHCPLeases)
-				r.Post("/dhcp/restart", h.RestartDHCP)
-
-				// WiFi QR
-				r.Get("/wifi/qr", h.GetWiFiQR)
 
 				// Sprint 3: Network mode switching
 				r.Get("/status", networkHandler.GetNetworkStatus)
@@ -435,6 +444,12 @@ func main() {
 			if profilesHandler != nil {
 				r.Mount("/profiles", profilesHandler.Routes())
 			}
+
+			// VPN API (Sprint 3)
+			r.Mount("/vpn", vpnHandler.Routes())
+
+			// Mounts API (Sprint 3)
+			r.Mount("/mounts", mountsHandler.Routes())
 		})
 
 		// Setup wizard routes (semi-public - accessible before full setup)

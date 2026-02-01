@@ -2,59 +2,50 @@ openapi: 3.0.3
 info:
   title: CubeOS API
   description: |
-    RESTful API for CubeOS - an open-source operating system for headless ARM64 servers.
-    
-    ## Authentication
-    All protected endpoints require a JWT token in the Authorization header:
-    ```
-    Authorization: Bearer <token>
-    ```
-    
-    Obtain a token via `/api/v1/auth/login`.
-    
-    ## Rate Limiting
-    No rate limiting is currently enforced.
-    
+    CubeOS unified API for managing Docker services, network configuration,
+    VPN connections, and storage mounts on Raspberry Pi.
   version: 2.0.0
   contact:
     name: CubeOS
-    url: https://github.com/cubeos-app
+    url: https://cubeos.app
   license:
     name: Apache 2.0
-    url: https://www.apache.org/licenses/LICENSE-2.0.html
+    url: https://www.apache.org/licenses/LICENSE-2.0
 
 servers:
-  - url: http://192.168.42.1:9009
-    description: Local CubeOS server
-  - url: http://localhost:9009
-    description: Development server
+  - url: http://api.cubeos.cube/api/v1
+    description: Internal CubeOS network
+  - url: http://10.42.24.1:6010/api/v1
+    description: Direct IP access
 
 tags:
   - name: Auth
     description: Authentication endpoints
-  - name: System
-    description: System information and controls
-  - name: Services
-    description: Docker container management
+  - name: Apps
+    description: Unified application management
+  - name: Profiles
+    description: Service profile management
   - name: Network
-    description: Network interfaces and WiFi AP
-  - name: Storage
-    description: Disk management, SMB shares, health monitoring
-  - name: Logs
-    description: System and container logs
-  - name: Firewall
-    description: iptables firewall management
-  - name: Power
-    description: UPS and battery monitoring
+    description: Network mode and WiFi management
+  - name: VPN
+    description: VPN client management (WireGuard, OpenVPN)
+  - name: Mounts
+    description: SMB/NFS mount management
+  - name: System
+    description: System information and control
+
+security:
+  - bearerAuth: []
 
 paths:
-  # =============================================================================
+  # ============================================================
   # Authentication
-  # =============================================================================
-  /api/v1/auth/login:
+  # ============================================================
+  /auth/login:
     post:
       tags: [Auth]
-      summary: Login and get JWT token
+      summary: Login
+      security: []
       requestBody:
         required: true
         content:
@@ -77,571 +68,162 @@ paths:
               schema:
                 type: object
                 properties:
-                  access_token:
+                  token:
                     type: string
-                  token_type:
+                  expires_at:
                     type: string
-                    example: bearer
-                  expires_in:
-                    type: integer
-                    example: 86400
+                    format: date-time
         '401':
-          description: Invalid credentials
+          $ref: '#/components/responses/Unauthorized'
 
-  /api/v1/auth/refresh:
-    post:
-      tags: [Auth]
-      summary: Refresh JWT token
-      security:
-        - bearerAuth: []
-      responses:
-        '200':
-          description: Token refreshed
-          content:
-            application/json:
-              schema:
-                type: object
-                properties:
-                  access_token:
-                    type: string
-                  token_type:
-                    type: string
-        '401':
-          description: Invalid or expired token
-
-  /api/v1/auth/logout:
-    post:
-      tags: [Auth]
-      summary: Logout (invalidate token)
-      security:
-        - bearerAuth: []
-      responses:
-        '200':
-          description: Logged out successfully
-
-  # =============================================================================
-  # System
-  # =============================================================================
-  /api/v1/system/info:
+  # ============================================================
+  # Apps (Unified)
+  # ============================================================
+  /apps:
     get:
-      tags: [System]
-      summary: Get system information
-      security:
-        - bearerAuth: []
-      responses:
-        '200':
-          description: System information
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/SystemInfo'
-
-  /api/v1/system/stats:
-    get:
-      tags: [System]
-      summary: Get current system statistics
-      security:
-        - bearerAuth: []
-      responses:
-        '200':
-          description: Current system stats
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/SystemStats'
-
-  /api/v1/system/reboot:
-    post:
-      tags: [System]
-      summary: Reboot the system
-      security:
-        - bearerAuth: []
+      tags: [Apps]
+      summary: List all apps
       parameters:
-        - name: delay
+        - name: type
           in: query
           schema:
-            type: integer
-            default: 0
-          description: Delay in seconds before reboot
-      responses:
-        '200':
-          description: Reboot initiated
-
-  /api/v1/system/shutdown:
-    post:
-      tags: [System]
-      summary: Shutdown the system
-      security:
-        - bearerAuth: []
-      responses:
-        '200':
-          description: Shutdown initiated
-
-  # =============================================================================
-  # Services (Docker)
-  # =============================================================================
-  /api/v1/services:
-    get:
-      tags: [Services]
-      summary: List all Docker containers
-      security:
-        - bearerAuth: []
-      responses:
-        '200':
-          description: List of services
-          content:
-            application/json:
-              schema:
-                type: object
-                properties:
-                  services:
-                    type: array
-                    items:
-                      $ref: '#/components/schemas/Service'
-                  total:
-                    type: integer
-                  running:
-                    type: integer
-
-  /api/v1/services/{name}:
-    get:
-      tags: [Services]
-      summary: Get service details
-      security:
-        - bearerAuth: []
-      parameters:
-        - name: name
-          in: path
-          required: true
-          schema:
             type: string
-      responses:
-        '200':
-          description: Service details
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/Service'
-        '404':
-          description: Service not found
-
-  /api/v1/services/{name}/start:
-    post:
-      tags: [Services]
-      summary: Start a service
-      security:
-        - bearerAuth: []
-      parameters:
-        - name: name
-          in: path
-          required: true
-          schema:
-            type: string
-      responses:
-        '200':
-          description: Service started
-
-  /api/v1/services/{name}/stop:
-    post:
-      tags: [Services]
-      summary: Stop a service
-      security:
-        - bearerAuth: []
-      parameters:
-        - name: name
-          in: path
-          required: true
-          schema:
-            type: string
-      responses:
-        '200':
-          description: Service stopped
-
-  /api/v1/services/{name}/restart:
-    post:
-      tags: [Services]
-      summary: Restart a service
-      security:
-        - bearerAuth: []
-      parameters:
-        - name: name
-          in: path
-          required: true
-          schema:
-            type: string
-      responses:
-        '200':
-          description: Service restarted
-
-  /api/v1/services/{name}/logs:
-    get:
-      tags: [Services]
-      summary: Get service logs
-      security:
-        - bearerAuth: []
-      parameters:
-        - name: name
-          in: path
-          required: true
-          schema:
-            type: string
-        - name: tail
+            enum: [system, platform, network, ai, user]
+        - name: status
           in: query
           schema:
-            type: integer
-            default: 100
-      responses:
-        '200':
-          description: Service logs
-          content:
-            application/json:
-              schema:
-                type: object
-                properties:
-                  service:
-                    type: string
-                  logs:
-                    type: array
-                    items:
-                      type: string
-                  tail:
-                    type: integer
-
-  /api/v1/services/{name}/stats:
-    get:
-      tags: [Services]
-      summary: Get service resource statistics
-      security:
-        - bearerAuth: []
-      parameters:
-        - name: name
-          in: path
-          required: true
-          schema:
             type: string
+            enum: [running, stopped]
+        - name: enabled
+          in: query
+          schema:
+            type: boolean
       responses:
         '200':
-          description: Service stats
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/ServiceStats'
-
-  # =============================================================================
-  # Network
-  # =============================================================================
-  /api/v1/network/interfaces:
-    get:
-      tags: [Network]
-      summary: List network interfaces
-      security:
-        - bearerAuth: []
-      responses:
-        '200':
-          description: Network interfaces
+          description: List of apps
           content:
             application/json:
               schema:
                 type: object
                 properties:
-                  interfaces:
+                  apps:
                     type: array
                     items:
-                      $ref: '#/components/schemas/NetworkInterface'
-
-  /api/v1/network/wifi/ap/status:
-    get:
-      tags: [Network]
-      summary: Get WiFi Access Point status
-      security:
-        - bearerAuth: []
-      responses:
-        '200':
-          description: AP status
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/WiFiAPStatus'
-
-  /api/v1/network/wifi/ap/config:
-    get:
-      tags: [Network]
-      summary: Get WiFi AP configuration
-      security:
-        - bearerAuth: []
-      responses:
-        '200':
-          description: AP configuration
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/WiFiAPConfig'
-    put:
-      tags: [Network]
-      summary: Update WiFi AP configuration
-      security:
-        - bearerAuth: []
+                      $ref: '#/components/schemas/App'
+    post:
+      tags: [Apps]
+      summary: Install app
       requestBody:
         required: true
         content:
           application/json:
             schema:
-              $ref: '#/components/schemas/WiFiAPConfig'
-      responses:
-        '200':
-          description: Configuration updated
-
-  /api/v1/network/wifi/ap/restart:
-    post:
-      tags: [Network]
-      summary: Restart WiFi Access Point
-      security:
-        - bearerAuth: []
-      responses:
-        '200':
-          description: AP restarted
-
-  /api/v1/network/wifi/ap/clients:
-    get:
-      tags: [Network]
-      summary: List connected WiFi clients
-      security:
-        - bearerAuth: []
-      responses:
-        '200':
-          description: Connected clients
-          content:
-            application/json:
-              schema:
-                type: object
-                properties:
-                  clients:
-                    type: array
-                    items:
-                      $ref: '#/components/schemas/WiFiClient'
-
-  /api/v1/network/wifi/ap/clients/{mac}/kick:
-    post:
-      tags: [Network]
-      summary: Disconnect a WiFi client
-      security:
-        - bearerAuth: []
-      parameters:
-        - name: mac
-          in: path
-          required: true
-          schema:
-            type: string
-      responses:
-        '200':
-          description: Client disconnected
-
-  /api/v1/network/internet:
-    get:
-      tags: [Network]
-      summary: Check internet connectivity
-      security:
-        - bearerAuth: []
-      responses:
-        '200':
-          description: Internet status
-          content:
-            application/json:
-              schema:
-                type: object
-                properties:
-                  connected:
-                    type: boolean
-                  rtt_ms:
-                    type: number
-                  target_name:
-                    type: string
-
-  # =============================================================================
-  # Storage
-  # =============================================================================
-  /api/v1/storage/overview:
-    get:
-      tags: [Storage]
-      summary: Get storage overview
-      security:
-        - bearerAuth: []
-      responses:
-        '200':
-          description: Storage overview
-
-  /api/v1/storage/health:
-    get:
-      tags: [Storage]
-      summary: Get disk S.M.A.R.T. health data
-      security:
-        - bearerAuth: []
-      responses:
-        '200':
-          description: Disk health information
-          content:
-            application/json:
-              schema:
-                type: object
-                properties:
-                  disks:
-                    type: array
-                    items:
-                      $ref: '#/components/schemas/DiskHealth'
-                  count:
-                    type: integer
-                  overall_health:
-                    type: string
-                    enum: [PASSED, FAILED, UNKNOWN]
-
-  /api/v1/storage/health/{device}:
-    get:
-      tags: [Storage]
-      summary: Get S.M.A.R.T. data for specific device
-      security:
-        - bearerAuth: []
-      parameters:
-        - name: device
-          in: path
-          required: true
-          schema:
-            type: string
-          example: sda
-      responses:
-        '200':
-          description: Disk health details
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/DiskHealth'
-
-  /api/v1/storage/smb/status:
-    get:
-      tags: [Storage]
-      summary: Get Samba server status
-      security:
-        - bearerAuth: []
-      responses:
-        '200':
-          description: SMB status
-          content:
-            application/json:
-              schema:
-                type: object
-                properties:
-                  installed:
-                    type: boolean
-                  running:
-                    type: boolean
-                  enabled:
-                    type: boolean
-                  version:
-                    type: string
-
-  /api/v1/storage/smb/shares:
-    get:
-      tags: [Storage]
-      summary: List SMB shares
-      security:
-        - bearerAuth: []
-      responses:
-        '200':
-          description: SMB shares
-          content:
-            application/json:
-              schema:
-                type: object
-                properties:
-                  shares:
-                    type: array
-                    items:
-                      $ref: '#/components/schemas/SMBShare'
-                  count:
-                    type: integer
-    post:
-      tags: [Storage]
-      summary: Create SMB share
-      security:
-        - bearerAuth: []
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema:
-              $ref: '#/components/schemas/SMBShare'
+              $ref: '#/components/schemas/InstallAppRequest'
       responses:
         '201':
-          description: Share created
-
-  /api/v1/storage/smb/shares/{name}:
-    get:
-      tags: [Storage]
-      summary: Get SMB share details
-      security:
-        - bearerAuth: []
-      parameters:
-        - name: name
-          in: path
-          required: true
-          schema:
-            type: string
-      responses:
-        '200':
-          description: Share details
+          description: App installed
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/SMBShare'
-    put:
-      tags: [Storage]
-      summary: Update SMB share
-      security:
-        - bearerAuth: []
-      parameters:
-        - name: name
-          in: path
-          required: true
-          schema:
-            type: string
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema:
-              $ref: '#/components/schemas/SMBShare'
-      responses:
-        '200':
-          description: Share updated
-    delete:
-      tags: [Storage]
-      summary: Delete SMB share
-      security:
-        - bearerAuth: []
-      parameters:
-        - name: name
-          in: path
-          required: true
-          schema:
-            type: string
-      responses:
-        '200':
-          description: Share deleted
+                $ref: '#/components/schemas/App'
+        '409':
+          $ref: '#/components/responses/Conflict'
 
-  # =============================================================================
-  # Logs
-  # =============================================================================
-  /api/v1/logs/container/{container}:
+  /apps/{name}:
     get:
-      tags: [Logs]
-      summary: Get container logs
-      security:
-        - bearerAuth: []
+      tags: [Apps]
+      summary: Get app details
       parameters:
-        - name: container
-          in: path
-          required: true
+        - $ref: '#/components/parameters/AppName'
+      responses:
+        '200':
+          description: App details
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/App'
+        '404':
+          $ref: '#/components/responses/NotFound'
+    delete:
+      tags: [Apps]
+      summary: Uninstall app
+      parameters:
+        - $ref: '#/components/parameters/AppName'
+        - name: keep_data
+          in: query
           schema:
-            type: string
+            type: boolean
+            default: false
+      responses:
+        '200':
+          description: App uninstalled
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+
+  /apps/{name}/start:
+    post:
+      tags: [Apps]
+      summary: Start app
+      parameters:
+        - $ref: '#/components/parameters/AppName'
+      responses:
+        '200':
+          description: App started
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+  /apps/{name}/stop:
+    post:
+      tags: [Apps]
+      summary: Stop app
+      parameters:
+        - $ref: '#/components/parameters/AppName'
+      responses:
+        '200':
+          description: App stopped
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+  /apps/{name}/restart:
+    post:
+      tags: [Apps]
+      summary: Restart app
+      parameters:
+        - $ref: '#/components/parameters/AppName'
+      responses:
+        '200':
+          description: App restarted
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+  /apps/{name}/enable:
+    post:
+      tags: [Apps]
+      summary: Enable app (start on boot)
+      parameters:
+        - $ref: '#/components/parameters/AppName'
+      responses:
+        '200':
+          description: App enabled
+
+  /apps/{name}/disable:
+    post:
+      tags: [Apps]
+      summary: Disable app (don't start on boot)
+      parameters:
+        - $ref: '#/components/parameters/AppName'
+      responses:
+        '200':
+          description: App disabled
+
+  /apps/{name}/logs:
+    get:
+      tags: [Apps]
+      summary: Get app logs
+      parameters:
+        - $ref: '#/components/parameters/AppName'
         - name: lines
           in: query
           schema:
@@ -651,187 +233,545 @@ paths:
           in: query
           schema:
             type: string
-        - name: timestamps
-          in: query
-          schema:
-            type: boolean
-            default: true
+            format: date-time
       responses:
         '200':
-          description: Container logs
+          description: App logs
           content:
             application/json:
               schema:
                 type: object
                 properties:
-                  container:
-                    type: string
-                  entries:
+                  logs:
                     type: array
                     items:
                       type: string
-                  count:
-                    type: integer
 
-  /api/v1/logs/kernel:
-    get:
-      tags: [Logs]
-      summary: Get kernel logs (dmesg)
-      security:
-        - bearerAuth: []
+  /apps/{name}/tor:
+    post:
+      tags: [Apps]
+      summary: Set Tor routing for app
       parameters:
-        - name: lines
-          in: query
-          schema:
-            type: integer
-            default: 200
+        - $ref: '#/components/parameters/AppName'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                enabled:
+                  type: boolean
       responses:
         '200':
-          description: Kernel logs
+          description: Tor routing updated
+
+  # ============================================================
+  # Profiles
+  # ============================================================
+  /profiles:
+    get:
+      tags: [Profiles]
+      summary: List profiles
+      responses:
+        '200':
+          description: List of profiles
           content:
             application/json:
               schema:
                 type: object
                 properties:
-                  entries:
+                  profiles:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/Profile'
+                  active_profile:
+                    type: string
+    post:
+      tags: [Profiles]
+      summary: Create custom profile
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateProfileRequest'
+      responses:
+        '201':
+          description: Profile created
+
+  /profiles/{name}:
+    get:
+      tags: [Profiles]
+      summary: Get profile details
+      parameters:
+        - name: name
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Profile details
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Profile'
+
+  /profiles/{name}/apply:
+    post:
+      tags: [Profiles]
+      summary: Apply profile
+      parameters:
+        - name: name
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Profile applied
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  profile:
+                    type: string
+                  started:
+                    type: array
+                    items:
+                      type: string
+                  stopped:
                     type: array
                     items:
                       type: string
 
-  /api/v1/logs/errors:
+  # ============================================================
+  # Network
+  # ============================================================
+  /network/status:
     get:
-      tags: [Logs]
-      summary: Get recent error logs
-      security:
-        - bearerAuth: []
+      tags: [Network]
+      summary: Get network status
       responses:
         '200':
-          description: Error logs
+          description: Network status
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/NetworkStatus'
 
-  # =============================================================================
-  # Firewall
-  # =============================================================================
-  /api/v1/firewall/status:
-    get:
-      tags: [Firewall]
-      summary: Get firewall status
-      security:
-        - bearerAuth: []
+  /network/mode:
+    post:
+      tags: [Network]
+      summary: Set network mode
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/SetNetworkModeRequest'
       responses:
         '200':
-          description: Firewall status
+          description: Network mode changed
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/NetworkStatus'
+        '500':
+          $ref: '#/components/responses/InternalError'
+
+  /network/wifi/scan:
+    get:
+      tags: [Network]
+      summary: Scan for WiFi networks
+      responses:
+        '200':
+          description: Available WiFi networks
           content:
             application/json:
               schema:
                 type: object
                 properties:
-                  enabled:
-                    type: boolean
-                  ip_forward:
-                    type: boolean
-                  filter_rules:
+                  networks:
                     type: array
                     items:
-                      type: object
+                      $ref: '#/components/schemas/WiFiNetwork'
 
-  /api/v1/firewall/nat:
-    get:
-      tags: [Firewall]
-      summary: Get NAT status
-      security:
-        - bearerAuth: []
+  /network/wifi/connect:
+    post:
+      tags: [Network]
+      summary: Connect to upstream WiFi
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [ssid, password]
+              properties:
+                ssid:
+                  type: string
+                password:
+                  type: string
       responses:
         '200':
-          description: NAT status
+          description: Connected to WiFi
+        '500':
+          $ref: '#/components/responses/InternalError'
+
+  # ============================================================
+  # VPN
+  # ============================================================
+  /vpn/status:
+    get:
+      tags: [VPN]
+      summary: Get VPN connection status
+      responses:
+        '200':
+          description: VPN status
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/VPNStatus'
+
+  /vpn/configs:
+    get:
+      tags: [VPN]
+      summary: List VPN configurations
+      responses:
+        '200':
+          description: List of VPN configs
           content:
             application/json:
               schema:
                 type: object
                 properties:
-                  enabled:
+                  configs:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/VPNConfig'
+    post:
+      tags: [VPN]
+      summary: Add VPN configuration
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/AddVPNConfigRequest'
+      responses:
+        '201':
+          description: VPN config added
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/VPNConfig'
+
+  /vpn/configs/{name}:
+    get:
+      tags: [VPN]
+      summary: Get VPN configuration
+      parameters:
+        - name: name
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: VPN config
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/VPNConfig'
+        '404':
+          $ref: '#/components/responses/NotFound'
+    delete:
+      tags: [VPN]
+      summary: Delete VPN configuration
+      parameters:
+        - name: name
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: VPN config deleted
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+  /vpn/configs/{name}/connect:
+    post:
+      tags: [VPN]
+      summary: Connect VPN
+      parameters:
+        - name: name
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: VPN connected
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  status:
+                    type: string
+                  details:
+                    $ref: '#/components/schemas/VPNStatus'
+        '500':
+          $ref: '#/components/responses/InternalError'
+
+  /vpn/configs/{name}/disconnect:
+    post:
+      tags: [VPN]
+      summary: Disconnect VPN
+      parameters:
+        - name: name
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: VPN disconnected
+
+  /vpn/configs/{name}/auto-connect:
+    put:
+      tags: [VPN]
+      summary: Set VPN auto-connect
+      parameters:
+        - name: name
+          in: path
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                enabled:
+                  type: boolean
+      responses:
+        '200':
+          description: Auto-connect updated
+
+  /vpn/public-ip:
+    get:
+      tags: [VPN]
+      summary: Get current public IP
+      responses:
+        '200':
+          description: Public IP
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  public_ip:
+                    type: string
+
+  # ============================================================
+  # Mounts
+  # ============================================================
+  /mounts:
+    get:
+      tags: [Mounts]
+      summary: List all mounts
+      responses:
+        '200':
+          description: List of mounts
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  mounts:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/Mount'
+    post:
+      tags: [Mounts]
+      summary: Add mount
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/AddMountRequest'
+      responses:
+        '201':
+          description: Mount added
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Mount'
+
+  /mounts/test:
+    post:
+      tags: [Mounts]
+      summary: Test mount connection
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [type, remote_path]
+              properties:
+                type:
+                  type: string
+                  enum: [smb, nfs]
+                remote_path:
+                  type: string
+                username:
+                  type: string
+                password:
+                  type: string
+      responses:
+        '200':
+          description: Connection test result
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success:
                     type: boolean
+                  error:
+                    type: string
 
-  /api/v1/firewall/nat/enable:
-    post:
-      tags: [Firewall]
-      summary: Enable NAT (internet sharing)
-      security:
-        - bearerAuth: []
-      responses:
-        '200':
-          description: NAT enabled
-
-  /api/v1/firewall/nat/disable:
-    post:
-      tags: [Firewall]
-      summary: Disable NAT
-      security:
-        - bearerAuth: []
-      responses:
-        '200':
-          description: NAT disabled
-
-  # =============================================================================
-  # Power (UPS)
-  # =============================================================================
-  /api/v1/power/status:
+  /mounts/{name}:
     get:
-      tags: [Power]
-      summary: Get UPS/battery status
-      security:
-        - bearerAuth: []
+      tags: [Mounts]
+      summary: Get mount details
+      parameters:
+        - name: name
+          in: path
+          required: true
+          schema:
+            type: string
       responses:
         '200':
-          description: Power status
+          description: Mount details
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/PowerStatus'
-
-  # =============================================================================
-  # Docker Management
-  # =============================================================================
-  /api/v1/docker/disk-usage:
-    get:
-      tags: [Services]
-      summary: Get Docker disk usage
-      security:
-        - bearerAuth: []
+                $ref: '#/components/schemas/Mount'
+        '404':
+          $ref: '#/components/responses/NotFound'
+    delete:
+      tags: [Mounts]
+      summary: Delete mount
+      parameters:
+        - name: name
+          in: path
+          required: true
+          schema:
+            type: string
       responses:
         '200':
-          description: Docker disk usage
+          description: Mount deleted
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+  /mounts/{name}/mount:
+    post:
+      tags: [Mounts]
+      summary: Mount share
+      parameters:
+        - name: name
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Share mounted
           content:
             application/json:
               schema:
                 type: object
                 properties:
-                  images_size:
-                    type: integer
-                  containers_size:
-                    type: integer
-                  volumes_size:
-                    type: integer
-                  build_cache_size:
-                    type: integer
-                  total_size:
-                    type: integer
+                  status:
+                    type: string
+                  details:
+                    $ref: '#/components/schemas/MountStatus'
 
-  /api/v1/docker/prune:
+  /mounts/{name}/unmount:
     post:
-      tags: [Services]
-      summary: Clean up unused Docker resources
-      security:
-        - bearerAuth: []
+      tags: [Mounts]
+      summary: Unmount share
+      parameters:
+        - name: name
+          in: path
+          required: true
+          schema:
+            type: string
       responses:
         '200':
-          description: Cleanup completed
+          description: Share unmounted
+
+  /mounts/{name}/status:
+    get:
+      tags: [Mounts]
+      summary: Get mount status
+      parameters:
+        - name: name
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Mount status
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/MountStatus'
+
+  # ============================================================
+  # System
+  # ============================================================
+  /system/info:
+    get:
+      tags: [System]
+      summary: Get system information
+      responses:
+        '200':
+          description: System information
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SystemInfo'
+
+  /health:
+    get:
+      tags: [System]
+      summary: Health check
+      security: []
+      responses:
+        '200':
+          description: API is healthy
           content:
             application/json:
               schema:
                 type: object
                 properties:
-                  space_reclaimed:
-                    type: integer
+                  status:
+                    type: string
+                    example: ok
+                  version:
+                    type: string
 
 components:
   securitySchemes:
@@ -840,7 +780,357 @@ components:
       scheme: bearer
       bearerFormat: JWT
 
+  parameters:
+    AppName:
+      name: name
+      in: path
+      required: true
+      schema:
+        type: string
+      description: App name (lowercase, no spaces)
+
+  responses:
+    Unauthorized:
+      description: Unauthorized
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+    Forbidden:
+      description: Forbidden - system app protected
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+    NotFound:
+      description: Resource not found
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+    Conflict:
+      description: Conflict - resource already exists
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+    InternalError:
+      description: Internal server error
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+
   schemas:
+    Error:
+      type: object
+      properties:
+        code:
+          type: string
+        message:
+          type: string
+
+    App:
+      type: object
+      properties:
+        id:
+          type: integer
+        name:
+          type: string
+        display_name:
+          type: string
+        description:
+          type: string
+        type:
+          type: string
+          enum: [system, platform, network, ai, user]
+        category:
+          type: string
+        enabled:
+          type: boolean
+        tor_enabled:
+          type: boolean
+        vpn_enabled:
+          type: boolean
+        ports:
+          type: array
+          items:
+            $ref: '#/components/schemas/Port'
+        fqdns:
+          type: array
+          items:
+            $ref: '#/components/schemas/FQDN'
+        status:
+          $ref: '#/components/schemas/AppStatus'
+
+    Port:
+      type: object
+      properties:
+        port:
+          type: integer
+        protocol:
+          type: string
+          enum: [tcp, udp]
+        description:
+          type: string
+        is_primary:
+          type: boolean
+
+    FQDN:
+      type: object
+      properties:
+        fqdn:
+          type: string
+        subdomain:
+          type: string
+
+    AppStatus:
+      type: object
+      properties:
+        running:
+          type: boolean
+        health:
+          type: string
+          enum: [healthy, unhealthy, starting, unknown]
+        replicas:
+          type: string
+          example: "1/1"
+
+    InstallAppRequest:
+      type: object
+      required: [name]
+      properties:
+        name:
+          type: string
+        display_name:
+          type: string
+        source:
+          type: string
+          enum: [cubeos, casaos, custom]
+        store_app_id:
+          type: string
+
+    Profile:
+      type: object
+      properties:
+        id:
+          type: integer
+        name:
+          type: string
+        display_name:
+          type: string
+        description:
+          type: string
+        is_active:
+          type: boolean
+        is_system:
+          type: boolean
+        apps:
+          type: array
+          items:
+            type: object
+            properties:
+              app_id:
+                type: integer
+              app_name:
+                type: string
+              enabled:
+                type: boolean
+
+    CreateProfileRequest:
+      type: object
+      required: [name, display_name]
+      properties:
+        name:
+          type: string
+        display_name:
+          type: string
+        apps:
+          type: array
+          items:
+            type: object
+            properties:
+              app_name:
+                type: string
+              enabled:
+                type: boolean
+
+    NetworkStatus:
+      type: object
+      properties:
+        mode:
+          type: string
+          enum: [offline, online_eth, online_wifi]
+        internet:
+          type: boolean
+        ap:
+          type: object
+          properties:
+            ssid:
+              type: string
+            interface:
+              type: string
+            clients:
+              type: integer
+        upstream:
+          type: object
+          properties:
+            interface:
+              type: string
+            ip:
+              type: string
+            gateway:
+              type: string
+        subnet:
+          type: string
+        gateway_ip:
+          type: string
+
+    SetNetworkModeRequest:
+      type: object
+      required: [mode]
+      properties:
+        mode:
+          type: string
+          enum: [offline, online_eth, online_wifi]
+        ssid:
+          type: string
+          description: Required for online_wifi mode
+        password:
+          type: string
+          description: Required for online_wifi mode
+
+    WiFiNetwork:
+      type: object
+      properties:
+        ssid:
+          type: string
+        bssid:
+          type: string
+        signal:
+          type: integer
+          description: Signal strength in dBm
+        security:
+          type: string
+        frequency:
+          type: integer
+
+    VPNStatus:
+      type: object
+      properties:
+        connected:
+          type: boolean
+        active_config:
+          type: string
+        type:
+          type: string
+          enum: [wireguard, openvpn]
+        public_ip:
+          type: string
+        connected_at:
+          type: string
+          format: date-time
+        bytes_sent:
+          type: integer
+        bytes_received:
+          type: integer
+
+    VPNConfig:
+      type: object
+      properties:
+        id:
+          type: integer
+        name:
+          type: string
+        type:
+          type: string
+          enum: [wireguard, openvpn]
+        is_active:
+          type: boolean
+        auto_connect:
+          type: boolean
+        created_at:
+          type: string
+          format: date-time
+
+    AddVPNConfigRequest:
+      type: object
+      required: [name, type, config]
+      properties:
+        name:
+          type: string
+        type:
+          type: string
+          enum: [wireguard, openvpn]
+        config:
+          type: string
+          description: Base64 encoded config file
+
+    Mount:
+      type: object
+      properties:
+        id:
+          type: integer
+        name:
+          type: string
+        type:
+          type: string
+          enum: [smb, nfs]
+        remote_path:
+          type: string
+        local_path:
+          type: string
+        username:
+          type: string
+        is_mounted:
+          type: boolean
+        auto_mount:
+          type: boolean
+        created_at:
+          type: string
+          format: date-time
+
+    AddMountRequest:
+      type: object
+      required: [name, type, remote_path]
+      properties:
+        name:
+          type: string
+        type:
+          type: string
+          enum: [smb, nfs]
+        remote_path:
+          type: string
+          description: "SMB: //server/share, NFS: server:/path"
+        username:
+          type: string
+        password:
+          type: string
+        options:
+          type: string
+        auto_mount:
+          type: boolean
+
+    MountStatus:
+      type: object
+      properties:
+        name:
+          type: string
+        is_mounted:
+          type: boolean
+        local_path:
+          type: string
+        remote_path:
+          type: string
+        type:
+          type: string
+        used_bytes:
+          type: integer
+        total_bytes:
+          type: integer
+        free_bytes:
+          type: integer
+
     SystemInfo:
       type: object
       properties:
@@ -852,288 +1142,9 @@ components:
           type: string
         architecture:
           type: string
-        hardware:
-          type: string
         cpu_model:
           type: string
-        cpu_cores:
-          type: integer
         memory_total:
           type: integer
-        api_version:
-          type: string
-
-    SystemStats:
-      type: object
-      properties:
-        cpu_percent:
-          type: number
-        memory_percent:
-          type: number
-        memory_used:
-          type: integer
-        memory_total:
-          type: integer
-        disk_percent:
-          type: number
-        disk_used:
-          type: integer
-        disk_total:
-          type: integer
-        disk_free:
-          type: integer
-        temperature:
-          type: number
         uptime:
-          type: integer
-        load_avg:
-          type: array
-          items:
-            type: number
-
-    Service:
-      type: object
-      properties:
-        id:
-          type: string
-        name:
-          type: string
-        display_name:
-          type: string
-        image:
-          type: string
-        state:
-          type: string
-          enum: [running, stopped, paused, restarting]
-        status:
-          type: string
-        health:
-          type: string
-        is_core:
-          type: boolean
-        category:
-          type: string
-        ports:
-          type: array
-          items:
-            type: object
-            properties:
-              public_port:
-                type: integer
-              private_port:
-                type: integer
-              protocol:
-                type: string
-        created:
-          type: string
-          format: date-time
-        started_at:
-          type: string
-          format: date-time
-
-    ServiceStats:
-      type: object
-      properties:
-        cpu_percent:
-          type: number
-        memory_usage:
-          type: integer
-        memory_limit:
-          type: integer
-        memory_percent:
-          type: number
-        network_rx:
-          type: integer
-        network_tx:
-          type: integer
-        block_read:
-          type: integer
-        block_write:
-          type: integer
-
-    NetworkInterface:
-      type: object
-      properties:
-        name:
-          type: string
-        type:
-          type: string
-          enum: [ethernet, wifi, loopback, bridge]
-        mac_address:
-          type: string
-        mtu:
-          type: integer
-        state:
-          type: string
-        ipv4_addresses:
-          type: array
-          items:
-            type: string
-        ipv6_addresses:
-          type: array
-          items:
-            type: string
-        rx_bytes:
-          type: integer
-        tx_bytes:
-          type: integer
-
-    WiFiAPStatus:
-      type: object
-      properties:
-        ssid:
-          type: string
-        password:
-          type: string
-        channel:
-          type: integer
-        frequency:
-          type: string
-        hidden:
-          type: boolean
-        enabled:
-          type: boolean
-        status:
-          type: string
-          enum: [up, down]
-        interface:
-          type: string
-
-    WiFiAPConfig:
-      type: object
-      properties:
-        ssid:
-          type: string
-          maxLength: 32
-        password:
-          type: string
-          minLength: 8
-          maxLength: 63
-        channel:
-          type: integer
-          minimum: 1
-          maximum: 13
-        hidden:
-          type: boolean
-        country_code:
-          type: string
-          example: NL
-        hw_mode:
-          type: string
-          enum: [g, a]
-
-    WiFiClient:
-      type: object
-      properties:
-        mac_address:
-          type: string
-        ip_address:
-          type: string
-        hostname:
-          type: string
-        vendor:
-          type: string
-        connected_time:
-          type: integer
-        rx_bytes:
-          type: integer
-        tx_bytes:
-          type: integer
-        signal_strength:
-          type: integer
-
-    DiskHealth:
-      type: object
-      properties:
-        device:
-          type: string
-        model:
-          type: string
-        serial:
-          type: string
-        firmware:
-          type: string
-        capacity:
-          type: string
-        capacity_bytes:
-          type: integer
-        type:
-          type: string
-          enum: [HDD, SSD, NVMe]
-        health:
-          type: string
-          enum: [PASSED, FAILED, UNKNOWN]
-        temperature:
-          type: integer
-        power_on_hours:
-          type: integer
-        power_cycles:
-          type: integer
-        smart_enabled:
-          type: boolean
-        warnings:
-          type: array
-          items:
-            type: string
-        attributes:
-          type: array
-          items:
-            type: object
-            properties:
-              id:
-                type: integer
-              name:
-                type: string
-              value:
-                type: integer
-              worst:
-                type: integer
-              threshold:
-                type: integer
-              raw_value:
-                type: string
-
-    SMBShare:
-      type: object
-      properties:
-        name:
-          type: string
-        path:
-          type: string
-        comment:
-          type: string
-        browseable:
-          type: boolean
-        read_only:
-          type: boolean
-        guest_ok:
-          type: boolean
-        valid_users:
-          type: array
-          items:
-            type: string
-
-    PowerStatus:
-      type: object
-      properties:
-        available:
-          type: boolean
-        battery_percent:
-          type: number
-        battery_voltage:
-          type: number
-        cell_count:
-          type: integer
-        is_charging:
-          type: boolean
-        on_battery:
-          type: boolean
-        power_good:
-          type: boolean
-        status:
-          type: string
-          enum: [charging, discharging, full, unknown]
-        time_remaining:
-          type: string
-        estimated_mins:
           type: integer
