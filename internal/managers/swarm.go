@@ -33,7 +33,7 @@ type SwarmManager struct {
 type ServiceStatus struct {
 	Name        string    `json:"name"`
 	Running     bool      `json:"running"`
-	Replicas    string    `json:"replicas"`    // e.g., "1/1"
+	Replicas    string    `json:"replicas"` // e.g., "1/1"
 	Image       string    `json:"image"`
 	Ports       []string  `json:"ports"`
 	Health      string    `json:"health"` // healthy, unhealthy, starting, stopped, unknown
@@ -59,9 +59,9 @@ type StackService struct {
 
 // SwarmConfig holds Swarm initialization configuration.
 type SwarmConfig struct {
-	AdvertiseAddr     string // e.g., "10.42.24.1"
-	TaskHistoryLimit  int    // Memory optimization, default 1
-	ListenAddr        string // default "0.0.0.0:2377"
+	AdvertiseAddr    string // e.g., "10.42.24.1"
+	TaskHistoryLimit int    // Memory optimization, default 1
+	ListenAddr       string // default "0.0.0.0:2377"
 }
 
 // DefaultSwarmConfig returns the default Swarm configuration for CubeOS.
