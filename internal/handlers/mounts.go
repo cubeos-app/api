@@ -246,7 +246,7 @@ func mountsRespondJSON(w http.ResponseWriter, status int, data interface{}) {
 
 func mountsRespondError(w http.ResponseWriter, status int, code, message string) {
 	mountsRespondJSON(w, status, map[string]string{
-		"code":    code,
+		"error":   code,
 		"message": message,
 	})
 }

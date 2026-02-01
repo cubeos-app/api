@@ -75,6 +75,7 @@ type SystemStats struct {
 
 type Temperature struct {
 	CPUTempC        float64 `json:"cpu_temp_c"`
+	Temperature     float64 `json:"temperature"` // Alias for cpu_temp_c for API compatibility
 	GPUTempC        float64 `json:"gpu_temp_c,omitempty"`
 	Throttled       bool    `json:"throttled"`
 	ThrottleFlags   string  `json:"throttle_flags"`

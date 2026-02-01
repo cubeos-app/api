@@ -233,7 +233,7 @@ func vpnRespondJSON(w http.ResponseWriter, status int, data interface{}) {
 
 func vpnRespondError(w http.ResponseWriter, status int, code, message string) {
 	vpnRespondJSON(w, status, map[string]string{
-		"code":    code,
+		"error":   code,
 		"message": message,
 	})
 }

@@ -260,6 +260,7 @@ func (m *SystemManager) GetTemperature() *models.Temperature {
 		if data, err := os.ReadFile(path); err == nil {
 			if temp, err := strconv.ParseInt(strings.TrimSpace(string(data)), 10, 64); err == nil {
 				result.CPUTempC = float64(temp) / 1000.0
+				result.Temperature = result.CPUTempC // Alias for API compatibility
 				break
 			}
 		}
