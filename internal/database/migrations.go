@@ -234,6 +234,26 @@ var migrations = []Migration{
 			return nil
 		},
 	},
+
+	// Version 8: Add is_primary column to port_allocations if missing
+	// This handles databases created before the column was added to schema.go
+	{
+		Version:     8,
+		Description: "Add is_primary column to port_allocations table",
+		Up: func(db *sql.DB) error {
+			_, err := db.Exec(`ALTER TABLE port_allocations ADD COLUMN is_primary BOOLEAN DEFAULT FALSE`)
+			if err != nil {
+				// Ignore if column already exists (manual fix or new install)
+				if isDuplicateColumnError(err) {
+					log.Debug().Msg("is_primary column already exists, skipping")
+					return nil
+				}
+				return fmt.Errorf("failed to add is_primary column: %w", err)
+			}
+			log.Info().Msg("Added is_primary column to port_allocations")
+			return nil
+		},
+	},
 }
 
 // isDuplicateColumnError checks if an error is a "duplicate column" error
