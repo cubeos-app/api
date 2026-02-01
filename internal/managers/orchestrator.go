@@ -406,6 +406,9 @@ func (o *Orchestrator) GetApp(ctx context.Context, name string) (*models.App, er
 
 // ListApps retrieves all apps with optional filtering
 func (o *Orchestrator) ListApps(ctx context.Context, filter *models.AppFilter) ([]*models.App, error) {
+	totalStart := time.Now()
+	fmt.Printf("[DEBUG] ListApps: starting\n")
+	
 	query := `
 		SELECT id, name, display_name, description, type, category, source,
 			compose_path, data_path, enabled, deploy_mode, icon_url, version,
@@ -427,13 +430,16 @@ func (o *Orchestrator) ListApps(ctx context.Context, filter *models.AppFilter) (
 
 	query += " ORDER BY type, name"
 
+	dbStart := time.Now()
 	rows, err := o.db.QueryContext(ctx, query, args...)
+	fmt.Printf("[DEBUG] ListApps: DB query took %v\n", time.Since(dbStart))
 	if err != nil {
 		return nil, err
 	}
 	defer rows.Close()
 
 	var apps []*models.App
+	appCount := 0
 	for rows.Next() {
 		var app models.App
 		err := rows.Scan(
@@ -447,16 +453,22 @@ func (o *Orchestrator) ListApps(ctx context.Context, filter *models.AppFilter) (
 		}
 
 		// Load related data
+		relStart := time.Now()
 		if err := o.loadAppRelations(ctx, &app); err != nil {
 			return nil, err
 		}
+		fmt.Printf("[DEBUG] ListApps: loadAppRelations for %s took %v\n", app.Name, time.Since(relStart))
 
 		// Get runtime status
+		statusStart := time.Now()
 		app.Status = o.getAppStatus(ctx, &app)
+		fmt.Printf("[DEBUG] ListApps: getAppStatus for %s took %v\n", app.Name, time.Since(statusStart))
 
 		apps = append(apps, &app)
+		appCount++
 	}
 
+	fmt.Printf("[DEBUG] ListApps: processed %d apps in %v\n", appCount, time.Since(totalStart))
 	return apps, rows.Err()
 }
 
@@ -562,14 +574,17 @@ func (o *Orchestrator) deployApp(ctx context.Context, name, composePath string, 
 }
 
 func (o *Orchestrator) getAppStatus(ctx context.Context, app *models.App) *models.AppStatus {
+	start := time.Now()
 	status := &models.AppStatus{
 		Running: false,
 		Health:  "unknown",
 	}
 
 	if app.UsesSwarm() {
-		// Get status from Swarm
+		// Get status from Swarm with timeout
+		fmt.Printf("[DEBUG] getAppStatus: %s (swarm) starting\n", app.Name)
 		svcStatus, err := o.swarm.GetServiceStatus(app.Name + "_" + app.Name)
+		fmt.Printf("[DEBUG] getAppStatus: %s (swarm) completed in %v, err=%v\n", app.Name, time.Since(start), err)
 		if err == nil && svcStatus != nil {
 			status.Running = svcStatus.Running
 			status.Replicas = svcStatus.Replicas
@@ -579,9 +594,14 @@ func (o *Orchestrator) getAppStatus(ctx context.Context, app *models.App) *model
 			}
 		}
 	} else {
-		// Get status from Docker
+		// Get status from Docker with timeout context
 		containerName := "cubeos-" + app.Name
-		containerStatus, err := o.docker.GetContainerStatus(ctx, containerName)
+		fmt.Printf("[DEBUG] getAppStatus: %s (compose) starting, container=%s\n", app.Name, containerName)
+		// Create a timeout context for compose apps too
+		timeoutCtx, cancel := context.WithTimeout(ctx, 5*time.Second)
+		defer cancel()
+		containerStatus, err := o.docker.GetContainerStatus(timeoutCtx, containerName)
+		fmt.Printf("[DEBUG] getAppStatus: %s (compose) completed in %v, err=%v, status=%s\n", app.Name, time.Since(start), err, containerStatus)
 		if err == nil {
 			status.Running = strings.Contains(strings.ToLower(containerStatus), "up")
 			if status.Running {
@@ -602,6 +622,7 @@ func (o *Orchestrator) getAppStatus(ctx context.Context, app *models.App) *model
 		}
 	}
 
+	fmt.Printf("[DEBUG] getAppStatus: %s TOTAL time: %v\n", app.Name, time.Since(start))
 	return status
 }
 
