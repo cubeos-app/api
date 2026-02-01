@@ -97,6 +97,23 @@ type MountResponse struct {
 	Message   string `json:"message,omitempty"`
 }
 
+// APClient represents a connected AP client
+type APClient struct {
+	MACAddress    string `json:"mac_address"`
+	IPAddress     string `json:"ip_address"`
+	Hostname      string `json:"hostname"`
+	ConnectedTime int64  `json:"connected_time"`
+	Signal        int    `json:"signal"`
+	TXBytes       int64  `json:"tx_bytes"`
+	RXBytes       int64  `json:"rx_bytes"`
+}
+
+// APClientsResponse is the response from GetAPClients
+type APClientsResponse struct {
+	Clients []APClient `json:"clients"`
+	Count   int        `json:"count"`
+}
+
 // =============================================================================
 // Helper methods
 // =============================================================================
@@ -247,6 +264,25 @@ func (c *Client) GetNetworkStatus(ctx context.Context) (map[string]interface{}, 
 	}
 
 	return resp, nil
+}
+
+// =============================================================================
+// AP Operations
+// =============================================================================
+
+// GetAPClients returns connected AP clients
+func (c *Client) GetAPClients(ctx context.Context) (*APClientsResponse, error) {
+	body, err := c.doRequest(ctx, http.MethodGet, "/hal/network/ap/clients", nil)
+	if err != nil {
+		return nil, err
+	}
+
+	var result APClientsResponse
+	if err := json.Unmarshal(body, &result); err != nil {
+		return nil, fmt.Errorf("failed to parse response: %w", err)
+	}
+
+	return &result, nil
 }
 
 // =============================================================================
