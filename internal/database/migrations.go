@@ -19,15 +19,244 @@ type Migration struct {
 // Add new migrations to the end of this slice.
 var migrations = []Migration{
 	// Version 1 is the initial schema, created by InitSchema()
-	// Future migrations go here:
-	// {
-	//     Version:     2,
-	//     Description: "Add new column to apps table",
-	//     Up: func(db *sql.DB) error {
-	//         _, err := db.Exec("ALTER TABLE apps ADD COLUMN new_field TEXT DEFAULT ''")
-	//         return err
-	//     },
-	// },
+
+	// Version 2: Add missing columns from Sprint 2 unified schema
+	{
+		Version:     2,
+		Description: "Add Sprint 2 unified schema columns to apps table",
+		Up: func(db *sql.DB) error {
+			// Add columns one by one, ignoring errors if they already exist
+			columns := []struct {
+				name         string
+				definition   string
+				defaultValue string
+			}{
+				{"category", "TEXT", "'other'"},
+				{"data_path", "TEXT", "''"},
+				{"store_id", "TEXT", "NULL"},
+				{"tor_enabled", "BOOLEAN", "FALSE"},
+				{"vpn_enabled", "BOOLEAN", "FALSE"},
+				{"version", "TEXT", "''"},
+				{"homepage", "TEXT", "''"},
+				{"deploy_mode", "TEXT", "'stack'"},
+			}
+
+			for _, col := range columns {
+				query := fmt.Sprintf("ALTER TABLE apps ADD COLUMN %s %s DEFAULT %s",
+					col.name, col.definition, col.defaultValue)
+				_, err := db.Exec(query)
+				if err != nil {
+					// Ignore "duplicate column name" errors
+					if !isDuplicateColumnError(err) {
+						return fmt.Errorf("failed to add column %s: %w", col.name, err)
+					}
+					log.Debug().Str("column", col.name).Msg("Column already exists, skipping")
+				}
+			}
+			return nil
+		},
+	},
+
+	// Version 3: Set correct deploy_mode for host-network services
+	{
+		Version:     3,
+		Description: "Set deploy_mode=compose for pihole and npm (host network)",
+		Up: func(db *sql.DB) error {
+			_, err := db.Exec(`
+				UPDATE apps SET deploy_mode = 'compose' 
+				WHERE name IN ('pihole', 'npm')
+			`)
+			return err
+		},
+	},
+
+	// Version 4: Rename api/dashboard to cubeos-api/cubeos-dashboard
+	{
+		Version:     4,
+		Description: "Rename api/dashboard to match Swarm stack names",
+		Up: func(db *sql.DB) error {
+			// Update api -> cubeos-api
+			_, err := db.Exec(`UPDATE apps SET name = 'cubeos-api' WHERE name = 'api'`)
+			if err != nil {
+				return err
+			}
+
+			// Update dashboard -> cubeos-dashboard
+			_, err = db.Exec(`UPDATE apps SET name = 'cubeos-dashboard' WHERE name = 'dashboard'`)
+			return err
+		},
+	},
+
+	// Version 5: Ensure core system apps exist with correct settings
+	{
+		Version:     5,
+		Description: "Seed/update core system apps",
+		Up: func(db *sql.DB) error {
+			systemApps := []struct {
+				name        string
+				displayName string
+				appType     string
+				category    string
+				port        int
+				deployMode  string
+				description string
+			}{
+				{"pihole", "Pi-hole", "system", "infrastructure", 6001, "compose", "DNS and DHCP server"},
+				{"npm", "Nginx Proxy Manager", "system", "infrastructure", 6000, "compose", "Reverse proxy manager"},
+				{"registry", "Docker Registry", "system", "infrastructure", 5000, "stack", "Local Docker registry"},
+				{"cubeos-api", "CubeOS API", "platform", "core", 6010, "stack", "CubeOS backend API"},
+				{"cubeos-dashboard", "CubeOS Dashboard", "platform", "core", 6011, "stack", "CubeOS web interface"},
+				{"dozzle", "Dozzle", "platform", "monitoring", 6012, "stack", "Container log viewer"},
+				{"ollama", "Ollama", "ai", "ai", 6030, "stack", "Local LLM server"},
+				{"chromadb", "ChromaDB", "ai", "ai", 6031, "stack", "Vector database"},
+			}
+
+			for _, sa := range systemApps {
+				composePath := fmt.Sprintf("/cubeos/coreapps/%s/appconfig/docker-compose.yml", sa.name)
+				dataPath := fmt.Sprintf("/cubeos/coreapps/%s/appdata", sa.name)
+
+				// Use INSERT OR REPLACE to handle both new installs and updates
+				_, err := db.Exec(`
+					INSERT INTO apps (name, display_name, description, type, category, 
+						compose_path, data_path, enabled, deploy_mode)
+					VALUES (?, ?, ?, ?, ?, ?, ?, TRUE, ?)
+					ON CONFLICT(name) DO UPDATE SET
+						display_name = excluded.display_name,
+						description = excluded.description,
+						type = excluded.type,
+						category = excluded.category,
+						compose_path = excluded.compose_path,
+						data_path = excluded.data_path,
+						deploy_mode = excluded.deploy_mode,
+						updated_at = CURRENT_TIMESTAMP
+				`, sa.name, sa.displayName, sa.description, sa.appType, sa.category,
+					composePath, dataPath, sa.deployMode)
+				if err != nil {
+					return fmt.Errorf("failed to upsert %s: %w", sa.name, err)
+				}
+
+				// Ensure port allocation exists
+				var appID int64
+				err = db.QueryRow("SELECT id FROM apps WHERE name = ?", sa.name).Scan(&appID)
+				if err != nil {
+					continue
+				}
+
+				_, err = db.Exec(`
+					INSERT INTO port_allocations (app_id, port, protocol, description, is_primary)
+					VALUES (?, ?, 'tcp', 'Web UI', TRUE)
+					ON CONFLICT DO NOTHING
+				`, appID, sa.port)
+				if err != nil {
+					log.Warn().Str("app", sa.name).Err(err).Msg("Failed to insert port allocation")
+				}
+
+				// Ensure FQDN exists
+				fqdn := fmt.Sprintf("%s.cubeos.cube", sa.name)
+				_, err = db.Exec(`
+					INSERT INTO fqdns (app_id, fqdn, subdomain, backend_port)
+					VALUES (?, ?, ?, ?)
+					ON CONFLICT DO NOTHING
+				`, appID, fqdn, sa.name, sa.port)
+				if err != nil {
+					log.Warn().Str("app", sa.name).Err(err).Msg("Failed to insert FQDN")
+				}
+			}
+
+			return nil
+		},
+	},
+
+	// Version 6: Clean up stale/removed apps
+	{
+		Version:     6,
+		Description: "Remove deprecated apps from database",
+		Up: func(db *sql.DB) error {
+			deprecatedApps := []string{
+				"dockge",
+				"terminal",
+				"watchdog",
+				"docs-indexer",
+				"homarr",
+				"terminal-ro",
+				"usb-monitor",
+				"logs",
+				"api",      // Old name, replaced by cubeos-api
+				"dashboard", // Old name, replaced by cubeos-dashboard
+			}
+
+			for _, name := range deprecatedApps {
+				// Delete related records first (in case cascade isn't working)
+				db.Exec("DELETE FROM fqdns WHERE app_id IN (SELECT id FROM apps WHERE name = ?)", name)
+				db.Exec("DELETE FROM port_allocations WHERE app_id IN (SELECT id FROM apps WHERE name = ?)", name)
+				db.Exec("DELETE FROM profile_apps WHERE app_id IN (SELECT id FROM apps WHERE name = ?)", name)
+				db.Exec("DELETE FROM apps WHERE name = ?", name)
+			}
+
+			return nil
+		},
+	},
+
+	// Version 7: Create default profiles if they don't exist
+	{
+		Version:     7,
+		Description: "Ensure default profiles exist",
+		Up: func(db *sql.DB) error {
+			profiles := []struct {
+				name        string
+				displayName string
+				description string
+				isSystem    bool
+			}{
+				{"full", "Full", "All services enabled", true},
+				{"minimal", "Minimal", "Only essential services (Pi-hole, NPM, API, Dashboard)", true},
+				{"offline", "Offline", "Optimized for offline/air-gapped operation", true},
+			}
+
+			for _, p := range profiles {
+				_, err := db.Exec(`
+					INSERT INTO profiles (name, display_name, description, is_system, is_active)
+					VALUES (?, ?, ?, ?, FALSE)
+					ON CONFLICT(name) DO NOTHING
+				`, p.name, p.displayName, p.description, p.isSystem)
+				if err != nil {
+					return fmt.Errorf("failed to insert profile %s: %w", p.name, err)
+				}
+			}
+
+			// Set 'full' as active if no profile is active
+			var activeCount int
+			db.QueryRow("SELECT COUNT(*) FROM profiles WHERE is_active = TRUE").Scan(&activeCount)
+			if activeCount == 0 {
+				db.Exec("UPDATE profiles SET is_active = TRUE WHERE name = 'full'")
+			}
+
+			return nil
+		},
+	},
+}
+
+// isDuplicateColumnError checks if an error is a "duplicate column" error
+func isDuplicateColumnError(err error) bool {
+	if err == nil {
+		return false
+	}
+	errStr := err.Error()
+	return contains(errStr, "duplicate column") || contains(errStr, "already exists")
+}
+
+// contains checks if a string contains a substring (case-insensitive)
+func contains(s, substr string) bool {
+	return len(s) >= len(substr) && (s == substr || len(s) > 0 && containsImpl(s, substr))
+}
+
+func containsImpl(s, substr string) bool {
+	for i := 0; i <= len(s)-len(substr); i++ {
+		if s[i:i+len(substr)] == substr {
+			return true
+		}
+	}
+	return false
 }
 
 // Migrate runs all pending database migrations.
@@ -39,7 +268,12 @@ func Migrate(db *sql.DB) error {
 		return fmt.Errorf("failed to get schema version: %w", err)
 	}
 
-	log.Info().Int("current_version", currentVersion).Int("target_version", CurrentSchemaVersion).Msg("Checking migrations")
+	targetVersion := CurrentSchemaVersion
+	if len(migrations) > 0 && migrations[len(migrations)-1].Version > targetVersion {
+		targetVersion = migrations[len(migrations)-1].Version
+	}
+
+	log.Info().Int("current_version", currentVersion).Int("target_version", targetVersion).Msg("Checking migrations")
 
 	// Run each migration that hasn't been applied
 	for _, m := range migrations {
