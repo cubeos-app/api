@@ -874,3 +874,306 @@ func (m *NetworkManager) GetTrafficHistory(iface string, minutes int) []TrafficS
 
 	return filtered
 }
+
+// =============================================================================
+// Network Mode Operations (Sprint 3)
+// =============================================================================
+
+// GetNetworkStatus returns the current network status including mode.
+func (m *NetworkManager) GetNetworkStatus() *models.NetworkStatus {
+	status := &models.NetworkStatus{
+		Mode:      models.NetworkModeOffline, // Default
+		Internet:  false,
+		Subnet:    models.DefaultSubnet,
+		GatewayIP: models.DefaultGatewayIP,
+	}
+
+	// Get AP status
+	apStatus := m.GetAPStatus()
+	if apStatus != nil {
+		status.AP = models.APStatus{
+			SSID:      apStatus.SSID,
+			Interface: apStatus.Interface,
+			Clients:   len(m.GetConnectedClients()),
+			Active:    apStatus.Enabled,
+		}
+	}
+
+	// Check internet connectivity
+	internetStatus := m.CheckInternet()
+	if internetStatus != nil && internetStatus.Connected {
+		status.Internet = true
+	}
+
+	// Determine mode based on upstream
+	interfaces := m.GetInterfaces()
+	for _, iface := range interfaces {
+		if iface.Name == "eth0" && iface.State == "up" && iface.IPv4 != "" {
+			status.Mode = models.NetworkModeOnlineETH
+			status.Upstream = &models.UpstreamInfo{
+				Interface: "eth0",
+				IP:        iface.IPv4,
+				Gateway:   "",
+			}
+			break
+		}
+		// Check for USB WiFi dongle in client mode
+		if (iface.Name == "wlan1" || strings.HasPrefix(iface.Name, "wlx")) && iface.State == "up" && iface.IPv4 != "" {
+			status.Mode = models.NetworkModeOnlineWiFi
+			status.Upstream = &models.UpstreamInfo{
+				Interface: iface.Name,
+				IP:        iface.IPv4,
+				Gateway:   "",
+			}
+			break
+		}
+	}
+
+	return status
+}
+
+// SetNetworkMode switches the network operating mode.
+func (m *NetworkManager) SetNetworkMode(mode models.NetworkMode, ssid, password string) error {
+	switch mode {
+	case models.NetworkModeOffline:
+		return m.setOfflineMode()
+	case models.NetworkModeOnlineETH:
+		return m.setOnlineEthMode()
+	case models.NetworkModeOnlineWiFi:
+		return m.setOnlineWiFiMode(ssid, password)
+	default:
+		return fmt.Errorf("unknown network mode: %s", mode)
+	}
+}
+
+// setOfflineMode configures the system for air-gapped operation.
+func (m *NetworkManager) setOfflineMode() error {
+	// Disable NAT forwarding
+	if err := m.disableNAT(); err != nil {
+		return fmt.Errorf("failed to disable NAT: %w", err)
+	}
+
+	// Disconnect WiFi client if connected
+	exec.Command("wpa_cli", "-i", "wlan1", "disconnect").Run()
+
+	return nil
+}
+
+// setOnlineEthMode configures NAT via Ethernet.
+func (m *NetworkManager) setOnlineEthMode() error {
+	// Enable IP forwarding
+	if err := os.WriteFile("/proc/sys/net/ipv4/ip_forward", []byte("1"), 0644); err != nil {
+		return fmt.Errorf("failed to enable IP forwarding: %w", err)
+	}
+
+	// Configure NAT via iptables
+	return m.enableNAT("eth0")
+}
+
+// setOnlineWiFiMode configures NAT via USB WiFi dongle.
+func (m *NetworkManager) setOnlineWiFiMode(ssid, password string) error {
+	if ssid == "" {
+		return fmt.Errorf("WiFi SSID is required")
+	}
+
+	// Find WiFi client interface (wlan1 or USB dongle)
+	clientIface := m.findWiFiClientInterface()
+	if clientIface == "" {
+		return fmt.Errorf("no WiFi client interface found (USB dongle required)")
+	}
+
+	// Connect to upstream WiFi
+	if err := m.connectToWiFi(clientIface, ssid, password); err != nil {
+		return fmt.Errorf("failed to connect to WiFi: %w", err)
+	}
+
+	// Enable IP forwarding
+	if err := os.WriteFile("/proc/sys/net/ipv4/ip_forward", []byte("1"), 0644); err != nil {
+		return fmt.Errorf("failed to enable IP forwarding: %w", err)
+	}
+
+	// Configure NAT
+	return m.enableNAT(clientIface)
+}
+
+// ScanWiFiNetworks scans for available WiFi networks.
+func (m *NetworkManager) ScanWiFiNetworks() ([]models.WiFiNetwork, error) {
+	// Find WiFi client interface
+	clientIface := m.findWiFiClientInterface()
+	if clientIface == "" {
+		return nil, fmt.Errorf("no WiFi client interface found")
+	}
+
+	// Trigger scan
+	cmd := exec.Command("iw", clientIface, "scan")
+	output, err := cmd.Output()
+	if err != nil {
+		// Try with sudo
+		cmd = exec.Command("sudo", "iw", clientIface, "scan")
+		output, err = cmd.Output()
+		if err != nil {
+			return nil, fmt.Errorf("failed to scan WiFi networks: %w", err)
+		}
+	}
+
+	return m.parseIWScan(string(output)), nil
+}
+
+// ConnectToWiFi connects to a WiFi network.
+func (m *NetworkManager) ConnectToWiFi(ssid, password string) error {
+	clientIface := m.findWiFiClientInterface()
+	if clientIface == "" {
+		return fmt.Errorf("no WiFi client interface found")
+	}
+	return m.connectToWiFi(clientIface, ssid, password)
+}
+
+// connectToWiFi connects to a WiFi network using wpa_supplicant.
+func (m *NetworkManager) connectToWiFi(iface, ssid, password string) error {
+	// Create wpa_supplicant config
+	configPath := fmt.Sprintf("/tmp/wpa_%s.conf", iface)
+	config := fmt.Sprintf(`ctrl_interface=/var/run/wpa_supplicant
+update_config=1
+
+network={
+    ssid="%s"
+    psk="%s"
+}
+`, ssid, password)
+
+	if err := os.WriteFile(configPath, []byte(config), 0600); err != nil {
+		return fmt.Errorf("failed to write wpa_supplicant config: %w", err)
+	}
+
+	// Kill any existing wpa_supplicant on this interface
+	exec.Command("pkill", "-f", fmt.Sprintf("wpa_supplicant.*%s", iface)).Run()
+	time.Sleep(500 * time.Millisecond)
+
+	// Start wpa_supplicant
+	cmd := exec.Command("wpa_supplicant", "-B", "-i", iface, "-c", configPath)
+	if err := cmd.Run(); err != nil {
+		return fmt.Errorf("failed to start wpa_supplicant: %w", err)
+	}
+
+	// Wait for connection
+	for i := 0; i < 30; i++ {
+		time.Sleep(time.Second)
+		output, _ := exec.Command("wpa_cli", "-i", iface, "status").Output()
+		if strings.Contains(string(output), "wpa_state=COMPLETED") {
+			// Request DHCP
+			exec.Command("dhclient", "-v", iface).Run()
+			return nil
+		}
+	}
+
+	return fmt.Errorf("WiFi connection timeout")
+}
+
+// enableNAT configures iptables for NAT.
+func (m *NetworkManager) enableNAT(upstreamIface string) error {
+	// Clear existing NAT rules
+	exec.Command("iptables", "-t", "nat", "-F", "POSTROUTING").Run()
+
+	// Enable masquerading
+	cmd := exec.Command("iptables", "-t", "nat", "-A", "POSTROUTING",
+		"-s", models.DefaultSubnet, "-o", upstreamIface, "-j", "MASQUERADE")
+	if err := cmd.Run(); err != nil {
+		return fmt.Errorf("failed to enable NAT: %w", err)
+	}
+
+	// Allow forwarding
+	cmd = exec.Command("iptables", "-A", "FORWARD",
+		"-i", "wlan0", "-o", upstreamIface, "-j", "ACCEPT")
+	cmd.Run()
+
+	cmd = exec.Command("iptables", "-A", "FORWARD",
+		"-i", upstreamIface, "-o", "wlan0", "-m", "state",
+		"--state", "RELATED,ESTABLISHED", "-j", "ACCEPT")
+	cmd.Run()
+
+	return nil
+}
+
+// disableNAT removes NAT configuration.
+func (m *NetworkManager) disableNAT() error {
+	// Flush NAT rules
+	exec.Command("iptables", "-t", "nat", "-F", "POSTROUTING").Run()
+
+	// Disable IP forwarding
+	return os.WriteFile("/proc/sys/net/ipv4/ip_forward", []byte("0"), 0644)
+}
+
+// findWiFiClientInterface finds a USB WiFi dongle interface.
+func (m *NetworkManager) findWiFiClientInterface() string {
+	// Check for wlan1 first (standard secondary WiFi)
+	if _, err := os.Stat("/sys/class/net/wlan1"); err == nil {
+		return "wlan1"
+	}
+
+	// Look for USB WiFi dongle (usually named wlx...)
+	entries, err := os.ReadDir("/sys/class/net")
+	if err != nil {
+		return ""
+	}
+
+	for _, entry := range entries {
+		name := entry.Name()
+		if strings.HasPrefix(name, "wlx") {
+			return name
+		}
+	}
+
+	return ""
+}
+
+// parseIWScan parses the output of 'iw scan'.
+func (m *NetworkManager) parseIWScan(output string) []models.WiFiNetwork {
+	var networks []models.WiFiNetwork
+	var current *models.WiFiNetwork
+
+	lines := strings.Split(output, "\n")
+	for _, line := range lines {
+		line = strings.TrimSpace(line)
+
+		if strings.HasPrefix(line, "BSS ") {
+			if current != nil && current.SSID != "" {
+				networks = append(networks, *current)
+			}
+			current = &models.WiFiNetwork{}
+			parts := strings.Split(line, " ")
+			if len(parts) >= 2 {
+				current.BSSID = strings.TrimSuffix(parts[1], "(")
+			}
+		} else if current != nil {
+			if strings.HasPrefix(line, "SSID:") {
+				current.SSID = strings.TrimPrefix(line, "SSID: ")
+			} else if strings.HasPrefix(line, "signal:") {
+				fmt.Sscanf(line, "signal: %d", &current.Signal)
+			} else if strings.HasPrefix(line, "freq:") {
+				fmt.Sscanf(line, "freq: %d", &current.Frequency)
+				current.Channel = m.frequencyToChannel(current.Frequency)
+			} else if strings.Contains(line, "WPA") || strings.Contains(line, "RSN") {
+				current.Security = "WPA2"
+			}
+		}
+	}
+
+	if current != nil && current.SSID != "" {
+		networks = append(networks, *current)
+	}
+
+	return networks
+}
+
+// frequencyToChannel converts WiFi frequency to channel number.
+func (m *NetworkManager) frequencyToChannel(freq int) int {
+	// 2.4 GHz band
+	if freq >= 2412 && freq <= 2484 {
+		return (freq-2412)/5 + 1
+	}
+	// 5 GHz band
+	if freq >= 5180 && freq <= 5825 {
+		return (freq-5180)/5 + 36
+	}
+	return 0
+}

@@ -70,8 +70,22 @@ func main() {
 	dbMgr := managers.NewDatabaseManager(db.DB)
 	appStoreMgr := managers.NewAppStoreManager(cfg, dbMgr, cfg.DataDir)
 
-	// NOTE: AppManager removed in Sprint 2 - replaced by Orchestrator (Sprint 3)
-	// The Orchestrator will be integrated in Sprint 3 to provide unified app management
+	// Create Orchestrator for unified app management (Sprint 3)
+	orchestrator, err := managers.NewOrchestrator(managers.OrchestratorConfig{
+		DB:           db.DB,
+		Config:       cfg,
+		CoreappsPath: "/cubeos/coreapps",
+		AppsPath:     "/cubeos/apps",
+		PiholePath:   "/cubeos/coreapps/pihole/appdata",
+		NPMConfigDir: "/cubeos/coreapps/npm/appdata",
+	})
+	if err != nil {
+		log.Printf("Warning: Failed to create Orchestrator: %v", err)
+		// Continue without orchestrator for backward compatibility
+	} else {
+		defer orchestrator.Close()
+		log.Printf("Orchestrator initialized successfully")
+	}
 
 	// Create Setup manager (first boot wizard)
 	setupMgr := managers.NewSetupManager(cfg, db.DB)
@@ -88,7 +102,17 @@ func main() {
 	// Create Docs handler (Documentation viewer)
 	docsHandler := handlers.NewDocsHandler()
 
-	// NOTE: AppManagerHandler removed in Sprint 2 - will be replaced by AppsHandler in Sprint 3
+	// Create unified API handlers (Sprint 3)
+	var appsHandler *handlers.AppsHandler
+	var profilesHandler *handlers.ProfilesHandler
+	if orchestrator != nil {
+		appsHandler = handlers.NewAppsHandler(orchestrator)
+		profilesHandler = handlers.NewProfilesHandler(orchestrator)
+		log.Printf("AppsHandler and ProfilesHandler initialized")
+	}
+
+	// Create NetworkHandler for network mode management (Sprint 3)
+	networkHandler := handlers.NewNetworkHandler(networkMgr)
 
 	// Create WebSocket manager and handlers
 	wsManager := handlers.NewWSManager(systemMgr, networkMgr, monitoringMgr, docker)
@@ -396,8 +420,18 @@ func main() {
 			// Documentation (offline docs viewer)
 			r.Mount("/documentation", docsHandler.Routes())
 
-			// NOTE: /appmanager endpoint removed in Sprint 2
-			// Will be replaced by /apps endpoint in Sprint 3 using Orchestrator
+			// Unified Apps API (Sprint 3)
+			if appsHandler != nil {
+				r.Mount("/apps", appsHandler.Routes())
+			}
+
+			// Profiles API (Sprint 3)
+			if profilesHandler != nil {
+				r.Mount("/profiles", profilesHandler.Routes())
+			}
+
+			// Network API (Sprint 3)
+			r.Mount("/network", networkHandler.Routes())
 		})
 
 		// Setup wizard routes (semi-public - accessible before full setup)

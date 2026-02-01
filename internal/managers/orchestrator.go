@@ -8,6 +8,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"time"
 
 	"cubeos-api/internal/config"
 	"cubeos-api/internal/models"
@@ -668,4 +669,293 @@ func isValidAppName(name string) bool {
 
 func boolPtr(b bool) *bool {
 	return &b
+}
+
+// =============================================================================
+// Logs Operations
+// =============================================================================
+
+// GetAppLogs retrieves logs for an application.
+func (o *Orchestrator) GetAppLogs(ctx context.Context, name string, lines int, since time.Time) ([]string, error) {
+	app, err := o.GetApp(ctx, name)
+	if err != nil {
+		return nil, err
+	}
+
+	if app.UsesSwarm() {
+		// Get logs from Swarm service
+		return o.swarm.GetServiceLogs(name+"_"+name, lines)
+	}
+
+	// Get logs from docker container
+	// Convert time.Time to RFC3339 string for docker API
+	sinceStr := ""
+	if !since.IsZero() {
+		sinceStr = since.Format(time.RFC3339)
+	}
+	logsStr, err := o.docker.GetContainerLogs(ctx, "cubeos-"+name, lines, sinceStr)
+	if err != nil {
+		return nil, err
+	}
+
+	// Split log string into lines
+	if logsStr == "" {
+		return []string{}, nil
+	}
+	return strings.Split(strings.TrimSuffix(logsStr, "\n"), "\n"), nil
+}
+
+// =============================================================================
+// Routing Operations (Tor/VPN)
+// =============================================================================
+
+// SetAppTor enables or disables Tor routing for an app.
+func (o *Orchestrator) SetAppTor(ctx context.Context, name string, enabled bool) error {
+	app, err := o.GetApp(ctx, name)
+	if err != nil {
+		return err
+	}
+
+	// Prevent modifying protected system apps
+	if app.IsProtected() {
+		return fmt.Errorf("cannot modify routing for protected system app: %s", name)
+	}
+
+	_, err = o.db.ExecContext(ctx, `
+		UPDATE apps SET tor_enabled = ?, updated_at = CURRENT_TIMESTAMP 
+		WHERE name = ?
+	`, enabled, name)
+	if err != nil {
+		return fmt.Errorf("failed to update tor setting: %w", err)
+	}
+
+	// TODO: Actually configure Tor proxy for this app's network
+	// This will be implemented when Tor coreapp is fully integrated
+
+	return nil
+}
+
+// SetAppVPN enables or disables VPN routing for an app.
+func (o *Orchestrator) SetAppVPN(ctx context.Context, name string, enabled bool) error {
+	app, err := o.GetApp(ctx, name)
+	if err != nil {
+		return err
+	}
+
+	// Prevent modifying protected system apps
+	if app.IsProtected() {
+		return fmt.Errorf("cannot modify routing for protected system app: %s", name)
+	}
+
+	_, err = o.db.ExecContext(ctx, `
+		UPDATE apps SET vpn_enabled = ?, updated_at = CURRENT_TIMESTAMP 
+		WHERE name = ?
+	`, enabled, name)
+	if err != nil {
+		return fmt.Errorf("failed to update vpn setting: %w", err)
+	}
+
+	// TODO: Actually configure VPN routing for this app's network
+	// This will be implemented when WireGuard/OpenVPN coreapps are fully integrated
+
+	return nil
+}
+
+// =============================================================================
+// Profile Operations
+// =============================================================================
+
+// ListProfiles returns all profiles and the currently active profile name.
+func (o *Orchestrator) ListProfiles(ctx context.Context) ([]models.Profile, string, error) {
+	rows, err := o.db.QueryContext(ctx, `
+		SELECT id, name, display_name, description, is_active, is_system, 
+			created_at, updated_at
+		FROM profiles
+		ORDER BY is_system DESC, name ASC
+	`)
+	if err != nil {
+		return nil, "", err
+	}
+	defer rows.Close()
+
+	var profiles []models.Profile
+	var activeProfile string
+
+	for rows.Next() {
+		var p models.Profile
+		if err := rows.Scan(&p.ID, &p.Name, &p.DisplayName, &p.Description,
+			&p.IsActive, &p.IsSystem, &p.CreatedAt, &p.UpdatedAt); err != nil {
+			return nil, "", err
+		}
+
+		// Load apps for this profile
+		if err := o.loadProfileApps(ctx, &p); err != nil {
+			return nil, "", err
+		}
+
+		if p.IsActive {
+			activeProfile = p.Name
+		}
+
+		profiles = append(profiles, p)
+	}
+
+	return profiles, activeProfile, rows.Err()
+}
+
+// GetProfile retrieves a single profile by name.
+func (o *Orchestrator) GetProfile(ctx context.Context, name string) (*models.Profile, error) {
+	var p models.Profile
+	err := o.db.QueryRowContext(ctx, `
+		SELECT id, name, display_name, description, is_active, is_system,
+			created_at, updated_at
+		FROM profiles WHERE name = ?
+	`, name).Scan(&p.ID, &p.Name, &p.DisplayName, &p.Description,
+		&p.IsActive, &p.IsSystem, &p.CreatedAt, &p.UpdatedAt)
+	if err != nil {
+		return nil, fmt.Errorf("profile not found: %s", name)
+	}
+
+	if err := o.loadProfileApps(ctx, &p); err != nil {
+		return nil, err
+	}
+
+	return &p, nil
+}
+
+// CreateProfile creates a new custom profile.
+func (o *Orchestrator) CreateProfile(ctx context.Context, req models.CreateProfileRequest) (*models.Profile, error) {
+	if req.Name == "" {
+		return nil, fmt.Errorf("profile name is required")
+	}
+
+	displayName := req.DisplayName
+	if displayName == "" {
+		displayName = req.Name
+	}
+
+	result, err := o.db.ExecContext(ctx, `
+		INSERT INTO profiles (name, display_name, description, is_active, is_system)
+		VALUES (?, ?, ?, FALSE, FALSE)
+	`, req.Name, displayName, req.Description)
+	if err != nil {
+		return nil, err
+	}
+
+	id, _ := result.LastInsertId()
+
+	return &models.Profile{
+		ID:          id,
+		Name:        req.Name,
+		DisplayName: displayName,
+		Description: req.Description,
+		IsActive:    false,
+		IsSystem:    false,
+	}, nil
+}
+
+// ApplyProfile makes a profile active, starting/stopping apps as needed.
+func (o *Orchestrator) ApplyProfile(ctx context.Context, name string) (*models.ApplyProfileResponse, error) {
+	profile, err := o.GetProfile(ctx, name)
+	if err != nil {
+		return nil, fmt.Errorf("profile not found: %s", name)
+	}
+
+	// Get currently active profile to determine what to stop
+	_, currentActive, err := o.ListProfiles(ctx)
+	if err != nil {
+		return nil, err
+	}
+
+	var started, stopped []string
+
+	// Get apps to enable from this profile
+	enabledApps := profile.GetEnabledApps()
+
+	// Get all apps
+	allApps, err := o.ListApps(ctx, nil)
+	if err != nil {
+		return nil, err
+	}
+
+	// Stop apps that should be disabled
+	for _, app := range allApps {
+		shouldBeEnabled := false
+		for _, enabledName := range enabledApps {
+			if app.Name == enabledName {
+				shouldBeEnabled = true
+				break
+			}
+		}
+
+		if !shouldBeEnabled && !app.IsProtected() && app.Status != nil && app.Status.Running {
+			if err := o.StopApp(ctx, app.Name); err != nil {
+				fmt.Printf("Warning: failed to stop app %s: %v\n", app.Name, err)
+			} else {
+				stopped = append(stopped, app.Name)
+			}
+		}
+	}
+
+	// Start apps that should be enabled
+	for _, appName := range enabledApps {
+		app, err := o.GetApp(ctx, appName)
+		if err != nil {
+			continue // App not installed
+		}
+		if app.Status == nil || !app.Status.Running {
+			if err := o.StartApp(ctx, appName); err != nil {
+				fmt.Printf("Warning: failed to start app %s: %v\n", appName, err)
+			} else {
+				started = append(started, appName)
+			}
+		}
+	}
+
+	// Update active profile in database
+	_, err = o.db.ExecContext(ctx, `UPDATE profiles SET is_active = FALSE`)
+	if err != nil {
+		return nil, err
+	}
+	_, err = o.db.ExecContext(ctx, `
+		UPDATE profiles SET is_active = TRUE, updated_at = CURRENT_TIMESTAMP 
+		WHERE name = ?
+	`, name)
+	if err != nil {
+		return nil, err
+	}
+
+	_ = currentActive // suppress unused warning
+
+	return &models.ApplyProfileResponse{
+		Profile: name,
+		Started: started,
+		Stopped: stopped,
+		Success: true,
+		Message: fmt.Sprintf("Profile '%s' applied successfully", name),
+	}, nil
+}
+
+// loadProfileApps loads the apps associated with a profile.
+func (o *Orchestrator) loadProfileApps(ctx context.Context, profile *models.Profile) error {
+	rows, err := o.db.QueryContext(ctx, `
+		SELECT pa.profile_id, pa.app_id, a.name, pa.enabled
+		FROM profile_apps pa
+		JOIN apps a ON pa.app_id = a.id
+		WHERE pa.profile_id = ?
+	`, profile.ID)
+	if err != nil {
+		return err
+	}
+	defer rows.Close()
+
+	for rows.Next() {
+		var pa models.ProfileApp
+		if err := rows.Scan(&pa.ProfileID, &pa.AppID, &pa.AppName, &pa.Enabled); err != nil {
+			return err
+		}
+		profile.Apps = append(profile.Apps, pa)
+	}
+
+	return rows.Err()
 }
