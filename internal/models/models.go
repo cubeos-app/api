@@ -469,38 +469,6 @@ type WizardServicesResponse struct {
 	TotalServices int              `json:"total_services"`
 }
 
-type ApplyProfileRequest struct {
-	ProfileID          string   `json:"profile_id"`
-	AdditionalServices []string `json:"additional_services,omitempty"`
-	ExcludedServices   []string `json:"excluded_services,omitempty"`
-}
-
-type ApplyProfileResponse struct {
-	Success          bool     `json:"success"`
-	EnabledServices  []string `json:"enabled_services"`
-	DisabledServices []string `json:"disabled_services"`
-	TotalRAM         int      `json:"total_ram_mb"`
-	Message          string   `json:"message"`
-}
-
-// =============================================================================
-// Monitoring
-// =============================================================================
-
-type StatsSnapshot struct {
-	Timestamp     time.Time `json:"timestamp"`
-	CPUPercent    float64   `json:"cpu_percent"`
-	MemoryPercent float64   `json:"memory_percent"`
-	Temperature   float64   `json:"temperature"`
-}
-
-type Alert struct {
-	Type     string  `json:"type"`
-	Message  string  `json:"message"`
-	Severity string  `json:"severity"`
-	Value    float64 `json:"value,omitempty"`
-}
-
 type AlertsResponse struct {
 	Alerts     []Alert `json:"alerts"`
 	AlertCount int     `json:"alert_count"`
