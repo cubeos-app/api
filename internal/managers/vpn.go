@@ -9,6 +9,8 @@ import (
 	"context"
 	"encoding/base64"
 	"fmt"
+	"io"
+	"net/http"
 	"os"
 	"path/filepath"
 	"strings"
@@ -268,10 +270,9 @@ func (m *VPNManager) SetAutoConnect(ctx context.Context, name string, autoConnec
 
 	// For WireGuard, use systemd service via HAL
 	if cfg.Type == VPNTypeWireGuard {
-		_ = fmt.Sprintf("wg-quick@%s", name) // serviceName - will be used when HAL has enable/disable
+		// HAL doesn't have enable/disable service yet - this would need to be added
+		// For now, we can use start/stop as a workaround
 		if autoConnect {
-			// HAL doesn't have enable/disable service yet - this would need to be added
-			// For now, we can use start/stop as a workaround
 			return fmt.Errorf("auto-connect via HAL not yet implemented")
 		}
 	}
@@ -279,11 +280,93 @@ func (m *VPNManager) SetAutoConnect(ctx context.Context, name string, autoConnec
 	return nil
 }
 
-// GetPublicIP returns the current public IP address
+// GetPublicIP returns the current public IP address by querying external services.
+// This works from inside the container since it only makes outbound HTTP requests.
 func (m *VPNManager) GetPublicIP(ctx context.Context) (string, error) {
-	// This can be done from the API container directly since it just makes HTTP requests
-	// No need for HAL here
-	return "", fmt.Errorf("public IP check not yet implemented")
+	// List of public IP services to try (in order of preference)
+	services := []string{
+		"https://api.ipify.org",
+		"https://ifconfig.me/ip",
+		"https://icanhazip.com",
+		"https://checkip.amazonaws.com",
+	}
+
+	client := &http.Client{Timeout: 10 * time.Second}
+
+	var lastErr error
+	for _, svc := range services {
+		req, err := http.NewRequestWithContext(ctx, http.MethodGet, svc, nil)
+		if err != nil {
+			lastErr = fmt.Errorf("failed to create request for %s: %w", svc, err)
+			continue
+		}
+
+		// Set a simple user agent
+		req.Header.Set("User-Agent", "CubeOS/1.0")
+
+		resp, err := client.Do(req)
+		if err != nil {
+			lastErr = fmt.Errorf("failed to reach %s: %w", svc, err)
+			continue
+		}
+
+		if resp.StatusCode != http.StatusOK {
+			resp.Body.Close()
+			lastErr = fmt.Errorf("%s returned status %d", svc, resp.StatusCode)
+			continue
+		}
+
+		body, err := io.ReadAll(resp.Body)
+		resp.Body.Close()
+		if err != nil {
+			lastErr = fmt.Errorf("failed to read response from %s: %w", svc, err)
+			continue
+		}
+
+		ip := strings.TrimSpace(string(body))
+		if ip == "" {
+			lastErr = fmt.Errorf("empty response from %s", svc)
+			continue
+		}
+
+		// Basic validation - should look like an IP address
+		if !isValidIP(ip) {
+			lastErr = fmt.Errorf("invalid IP format from %s: %s", svc, ip)
+			continue
+		}
+
+		return ip, nil
+	}
+
+	if lastErr != nil {
+		return "", fmt.Errorf("all public IP services failed: %w", lastErr)
+	}
+	return "", fmt.Errorf("no public IP services available")
+}
+
+// isValidIP performs basic validation that the string looks like an IPv4 or IPv6 address
+func isValidIP(ip string) bool {
+	// Simple validation - check for dots (IPv4) or colons (IPv6)
+	if strings.Count(ip, ".") == 3 {
+		// Looks like IPv4 - check each octet is numeric
+		parts := strings.Split(ip, ".")
+		for _, part := range parts {
+			if len(part) == 0 || len(part) > 3 {
+				return false
+			}
+			for _, c := range part {
+				if c < '0' || c > '9' {
+					return false
+				}
+			}
+		}
+		return true
+	}
+	if strings.Contains(ip, ":") {
+		// Looks like IPv6 - basic check
+		return len(ip) >= 2 && len(ip) <= 45
+	}
+	return false
 }
 
 // WireGuard-specific methods

@@ -109,6 +109,7 @@ func main() {
 	// Create Mounts manager (Sprint 3 - with HAL client)
 	mountsMgr := managers.NewMountsManager(cfg, halClient)
 	log.Printf("MountsManager initialized (HAL-enabled)")
+	mountsMgr.SetDB(db.DB) // FIX: Wire database connection
 
 	// Create Setup manager (first boot wizard)
 	setupMgr := managers.NewSetupManager(cfg, db.DB)
