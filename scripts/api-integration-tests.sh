@@ -1,15 +1,20 @@
 #!/bin/bash
 # CubeOS API Integration Tests
-# Version: 2.0
+# Version: 3.0 (with authentication)
 # Tests all Sprint 3 API endpoints
 #
-# Usage: ./api-integration-tests.sh [API_URL]
-# Default: http://10.42.24.1:6010
+# Usage: ./api-integration-tests.sh [API_URL] [HAL_URL] [USERNAME] [PASSWORD]
+# Default: http://10.42.24.1:6010 http://10.42.24.1:6005 admin admin
 
 set -euo pipefail
 
 API_URL="${1:-http://10.42.24.1:6010}"
 HAL_URL="${2:-http://10.42.24.1:6005}"
+AUTH_USER="${3:-admin}"
+AUTH_PASS="${4:-admin}"
+
+# JWT Token (populated after login)
+TOKEN=""
 
 # Colors
 RED='\033[0;31m'
@@ -52,8 +57,27 @@ log_section() {
     echo -e "${BLUE}═══════════════════════════════════════════════════════════════${NC}"
 }
 
-# Helper: Make request and capture response + status
+# Helper: Make authenticated request and capture response + status
 request() {
+    local method="$1"
+    local endpoint="$2"
+    local data="${3:-}"
+    
+    if [[ -n "$data" ]]; then
+        curl -s -w "\n%{http_code}" -X "$method" \
+            -H "Authorization: Bearer $TOKEN" \
+            -H "Content-Type: application/json" \
+            -d "$data" \
+            "${API_URL}${endpoint}"
+    else
+        curl -s -w "\n%{http_code}" -X "$method" \
+            -H "Authorization: Bearer $TOKEN" \
+            "${API_URL}${endpoint}"
+    fi
+}
+
+# Helper: Make unauthenticated request
+request_noauth() {
     local method="$1"
     local endpoint="$2"
     local data="${3:-}"
@@ -99,9 +123,9 @@ json_get() {
 test_prerequisites() {
     log_section "1. Prerequisites & Health Checks"
     
-    # 1.1 API Health
+    # 1.1 API Health (no auth required)
     local response
-    response=$(request GET "/health")
+    response=$(request_noauth GET "/health")
     local parsed
     parsed=$(parse_response "$response")
     local status="${parsed%%|*}"
@@ -125,6 +149,41 @@ test_prerequisites() {
         log_pass "1.2 HAL health check (${HAL_URL}/health)"
     else
         log_fail "1.2 HAL health check" "Status: $status (HAL required for network/VPN tests)"
+    fi
+    
+    # 1.3 Login and get JWT token
+    response=$(curl -s -w "\n%{http_code}" -X POST \
+        -H "Content-Type: application/json" \
+        -d "{\"username\":\"$AUTH_USER\",\"password\":\"$AUTH_PASS\"}" \
+        "${API_URL}/api/v1/auth/login")
+    parsed=$(parse_response "$response")
+    status="${parsed%%|*}"
+    body="${parsed#*|}"
+    
+    if [[ "$status" == "200" ]] && json_has "$body" ".access_token"; then
+        TOKEN=$(json_get "$body" '.access_token')
+        local token_len=${#TOKEN}
+        log_pass "1.3 Login successful (token length: $token_len)"
+    else
+        log_fail "1.3 Login" "Status: $status - Cannot continue without auth"
+        echo ""
+        echo -e "${RED}CRITICAL: Authentication failed. Check credentials.${NC}"
+        echo "  User: $AUTH_USER"
+        echo "  API: $API_URL"
+        echo "  Response: $body"
+        exit 1
+    fi
+    
+    # 1.4 Verify token works on protected endpoint
+    response=$(request GET "/api/v1/apps")
+    parsed=$(parse_response "$response")
+    status="${parsed%%|*}"
+    
+    if [[ "$status" == "200" ]]; then
+        log_pass "1.4 Authenticated request works"
+    else
+        log_fail "1.4 Authenticated request" "Status: $status - Token may be invalid"
+        exit 1
     fi
 }
 
@@ -213,13 +272,6 @@ test_apps_write() {
     # 3.1 POST /apps/{name}/restart (on dozzle - safe to restart)
     echo -e "${YELLOW}  Testing restart on dozzle (safe target)...${NC}"
     
-    # Get dozzle status before
-    local before_response
-    before_response=$(request GET "/api/v1/apps/dozzle")
-    local before_parsed
-    before_parsed=$(parse_response "$before_response")
-    local before_body="${before_parsed#*|}"
-    
     # Restart dozzle
     local response
     response=$(request POST "/api/v1/apps/dozzle/restart")
@@ -228,18 +280,12 @@ test_apps_write() {
     local status="${parsed%%|*}"
     
     if [[ "$status" == "200" ]]; then
-        # Wait a moment for restart
-        sleep 3
-        
-        # Verify via docker (if we can)
-        local docker_check
-        docker_check=$(curl -s "${HAL_URL}/hal/system/service/dozzle/status" 2>/dev/null || echo '{}')
         log_pass "3.1 POST /api/v1/apps/dozzle/restart (HTTP 200)"
     else
         log_fail "3.1 POST /api/v1/apps/dozzle/restart" "Status: $status"
     fi
     
-    # 3.2 POST /apps/{name}/stop - test on protected system app (should fail or work)
+    # 3.2 POST /apps/{name}/stop - test on pihole (protected system app)
     response=$(request POST "/api/v1/apps/pihole/stop")
     parsed=$(parse_response "$response")
     status="${parsed%%|*}"
@@ -255,31 +301,27 @@ test_apps_write() {
         log_fail "3.2 POST /api/v1/apps/pihole/stop" "Expected 200 or 403, got $status"
     fi
     
-    # 3.3 POST /apps (install) - skip actual install, just validate endpoint exists
-    response=$(request POST "/api/v1/apps" '{"name":""}')
+    # 3.3 POST /apps - install endpoint exists
+    response=$(request POST "/api/v1/apps" '{"name":"test-app"}')
     parsed=$(parse_response "$response")
     status="${parsed%%|*}"
     
-    # Should return 400 (bad request) for empty name, not 404 (endpoint missing)
-    if [[ "$status" == "400" ]] || [[ "$status" == "409" ]] || [[ "$status" == "500" ]]; then
-        log_pass "3.3 POST /api/v1/apps endpoint exists (rejects invalid: $status)"
-    elif [[ "$status" == "404" ]]; then
-        log_fail "3.3 POST /api/v1/apps" "Endpoint not found (404)"
-    else
+    # Any response other than 404 means the endpoint exists
+    if [[ "$status" != "404" ]]; then
         log_pass "3.3 POST /api/v1/apps endpoint exists (status: $status)"
+    else
+        log_fail "3.3 POST /api/v1/apps" "Endpoint not found (404)"
     fi
     
-    # 3.4 DELETE /apps/{name} - test on non-existent app
-    response=$(request DELETE "/api/v1/apps/nonexistent-test-app")
+    # 3.4 DELETE /apps/{name} - non-existent app
+    response=$(request DELETE "/api/v1/apps/nonexistent-app-xyz")
     parsed=$(parse_response "$response")
     status="${parsed%%|*}"
     
     if [[ "$status" == "404" ]]; then
         log_pass "3.4 DELETE /api/v1/apps/nonexistent (404 expected)"
-    elif [[ "$status" == "200" ]]; then
-        log_pass "3.4 DELETE /api/v1/apps/nonexistent (200 - idempotent)"
     else
-        log_fail "3.4 DELETE /api/v1/apps/nonexistent" "Status: $status"
+        log_fail "3.4 DELETE /api/v1/apps/nonexistent" "Expected 404, got $status"
     fi
 }
 
@@ -300,10 +342,10 @@ test_network() {
     if [[ "$status" == "200" ]]; then
         if json_has "$body" ".mode"; then
             local mode
-            mode=$(json_get "$body" '.mode // "unknown"')
+            mode=$(json_get "$body" '.mode')
             log_pass "4.1 GET /api/v1/network/status (mode: $mode)"
         else
-            log_pass "4.1 GET /api/v1/network/status (no mode field)"
+            log_pass "4.1 GET /api/v1/network/status"
         fi
     else
         log_fail "4.1 GET /api/v1/network/status" "Status: $status"
@@ -317,12 +359,15 @@ test_network() {
     
     if [[ "$status" == "200" ]]; then
         if json_has "$body" ".networks"; then
-            local network_count
-            network_count=$(json_get "$body" '.networks | length')
-            log_pass "4.2 GET /api/v1/network/wifi/scan ($network_count networks)"
+            local net_count
+            net_count=$(json_get "$body" '.networks | length')
+            log_pass "4.2 GET /api/v1/network/wifi/scan ($net_count networks)"
         else
-            log_pass "4.2 GET /api/v1/network/wifi/scan (response OK)"
+            log_pass "4.2 GET /api/v1/network/wifi/scan"
         fi
+    elif [[ "$status" == "500" ]]; then
+        # WiFi scan may fail if no interface available
+        log_skip "4.2 GET /api/v1/network/wifi/scan (may need WiFi interface)"
     else
         log_fail "4.2 GET /api/v1/network/wifi/scan" "Status: $status"
     fi
@@ -331,6 +376,7 @@ test_network() {
     response=$(request GET "/api/v1/network/ap/config")
     parsed=$(parse_response "$response")
     status="${parsed%%|*}"
+    body="${parsed#*|}"
     
     if [[ "$status" == "200" ]]; then
         log_pass "4.3 GET /api/v1/network/ap/config"
@@ -338,8 +384,8 @@ test_network() {
         log_fail "4.3 GET /api/v1/network/ap/config" "Status: $status"
     fi
     
-    # 4.4 POST /network/mode - invalid mode (should reject)
-    response=$(request POST "/api/v1/network/mode" '{"mode":"invalid_mode"}')
+    # 4.4 POST /network/mode - invalid mode (should fail validation)
+    response=$(request POST "/api/v1/network/mode" '{"mode":"invalid-mode"}')
     parsed=$(parse_response "$response")
     status="${parsed%%|*}"
     
@@ -380,15 +426,13 @@ test_vpn() {
         log_fail "5.2 GET /api/v1/vpn/status" "Status: $status"
     fi
     
-    # 5.3 POST /vpn/configs/{id}/connect - non-existent ID
+    # 5.3 POST /vpn/configs/{id}/connect - non-existent config
     response=$(request POST "/api/v1/vpn/configs/999/connect")
     parsed=$(parse_response "$response")
     status="${parsed%%|*}"
     
-    if [[ "$status" == "404" ]]; then
-        log_pass "5.3 POST /api/v1/vpn/configs/999/connect (404 expected)"
-    elif [[ "$status" == "400" ]] || [[ "$status" == "500" ]]; then
-        log_pass "5.3 POST /api/v1/vpn/configs/999/connect (rejected: $status)"
+    if [[ "$status" == "404" ]] || [[ "$status" == "400" ]]; then
+        log_pass "5.3 POST /api/v1/vpn/configs/999/connect (status: $status)"
     else
         log_fail "5.3 POST /api/v1/vpn/configs/999/connect" "Status: $status"
     fi
@@ -486,9 +530,16 @@ test_system() {
     local parsed
     parsed=$(parse_response "$response")
     local status="${parsed%%|*}"
+    local body="${parsed#*|}"
     
     if [[ "$status" == "200" ]]; then
-        log_pass "8.1 GET /api/v1/system/info"
+        if json_has "$body" ".hostname"; then
+            local hostname
+            hostname=$(json_get "$body" '.hostname')
+            log_pass "8.1 GET /api/v1/system/info (hostname: $hostname)"
+        else
+            log_pass "8.1 GET /api/v1/system/info"
+        fi
     else
         log_fail "8.1 GET /api/v1/system/info" "Status: $status"
     fi
@@ -522,9 +573,10 @@ test_system() {
 test_errors() {
     log_section "9. Error Handling & Edge Cases"
     
-    # 9.1 Invalid JSON
+    # 9.1 Invalid JSON (with auth)
     local response
     response=$(curl -s -w "\n%{http_code}" -X POST \
+        -H "Authorization: Bearer $TOKEN" \
         -H "Content-Type: application/json" \
         -d "not valid json" \
         "${API_URL}/api/v1/apps")
@@ -570,6 +622,17 @@ test_errors() {
     else
         log_fail "9.4 Error responses" "Missing 'error' field in response"
     fi
+    
+    # 9.5 Unauthenticated request rejected
+    response=$(request_noauth GET "/api/v1/apps")
+    parsed=$(parse_response "$response")
+    status="${parsed%%|*}"
+    
+    if [[ "$status" == "401" ]]; then
+        log_pass "9.5 Unauthenticated request rejected (401)"
+    else
+        log_fail "9.5 Unauthenticated request" "Expected 401, got $status"
+    fi
 }
 
 #==============================================================================
@@ -588,7 +651,13 @@ test_performance() {
     for endpoint in "${endpoints[@]}"; do
         local start_time
         start_time=$(date +%s%N)
-        curl -s "${API_URL}${endpoint}" > /dev/null
+        
+        if [[ "$endpoint" == "/health" ]]; then
+            curl -s "${API_URL}${endpoint}" > /dev/null
+        else
+            curl -s -H "Authorization: Bearer $TOKEN" "${API_URL}${endpoint}" > /dev/null
+        fi
+        
         local end_time
         end_time=$(date +%s%N)
         local duration_ms=$(( (end_time - start_time) / 1000000 ))
@@ -609,10 +678,11 @@ test_performance() {
 main() {
     echo ""
     echo -e "${BLUE}╔═══════════════════════════════════════════════════════════════╗${NC}"
-    echo -e "${BLUE}║          CubeOS API Integration Tests v2.0                    ║${NC}"
+    echo -e "${BLUE}║          CubeOS API Integration Tests v3.0                    ║${NC}"
     echo -e "${BLUE}╠═══════════════════════════════════════════════════════════════╣${NC}"
-    echo -e "${BLUE}║  API: ${API_URL}${NC}"
-    echo -e "${BLUE}║  HAL: ${HAL_URL}${NC}"
+    echo -e "${BLUE}║  API:  ${API_URL}${NC}"
+    echo -e "${BLUE}║  HAL:  ${HAL_URL}${NC}"
+    echo -e "${BLUE}║  User: ${AUTH_USER}${NC}"
     echo -e "${BLUE}║  Time: $(date)${NC}"
     echo -e "${BLUE}╚═══════════════════════════════════════════════════════════════╝${NC}"
     
