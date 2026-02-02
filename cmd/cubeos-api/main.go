@@ -68,7 +68,7 @@ func main() {
 
 	// Create core managers (with HAL client for hardware access)
 	systemMgr := managers.NewSystemManager()
-	networkMgr := managers.NewNetworkManager(cfg, halClient)
+	networkMgr := managers.NewNetworkManager(cfg, halClient, db)
 
 	// Create extended managers
 	logMgr := managers.NewLogManager()

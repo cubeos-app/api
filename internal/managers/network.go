@@ -6,7 +6,10 @@ package managers
 
 import (
 	"context"
+	"database/sql"
 	"fmt"
+	"log"
+	"net/http"
 	"os"
 	"strings"
 	"time"
@@ -14,6 +17,8 @@ import (
 	"cubeos-api/internal/config"
 	"cubeos-api/internal/hal"
 	"cubeos-api/internal/models"
+
+	"github.com/jmoiron/sqlx"
 )
 
 // NetworkMode represents the network operating mode
@@ -73,6 +78,7 @@ type UpstreamStatus struct {
 type NetworkManager struct {
 	cfg                 *config.Config
 	hal                 *hal.Client
+	db                  *sqlx.DB
 	currentMode         NetworkMode
 	apInterface         string
 	wanInterface        string
@@ -81,7 +87,7 @@ type NetworkManager struct {
 }
 
 // NewNetworkManager creates a new network manager
-func NewNetworkManager(cfg *config.Config, halClient *hal.Client) *NetworkManager {
+func NewNetworkManager(cfg *config.Config, halClient *hal.Client, db *sqlx.DB) *NetworkManager {
 	if halClient == nil {
 		halClient = hal.NewClient("")
 	}
@@ -92,14 +98,65 @@ func NewNetworkManager(cfg *config.Config, halClient *hal.Client) *NetworkManage
 	wifiClientIface := getEnvOrDefault("CUBEOS_WIFI_CLIENT_INTERFACE", DefaultWiFiClientInterface)
 	apSSID := getEnvOrDefault("CUBEOS_AP_SSID", "CubeOS")
 
+	// Load mode from database
+	mode := loadModeFromDB(db)
+	log.Printf("NetworkManager: loaded mode '%s' from database", mode)
+
 	return &NetworkManager{
 		cfg:                 cfg,
 		hal:                 halClient,
-		currentMode:         NetworkModeOffline,
+		db:                  db,
+		currentMode:         mode,
 		apInterface:         apIface,
 		wanInterface:        wanIface,
 		wifiClientInterface: wifiClientIface,
 		apSSID:              apSSID,
+	}
+}
+
+// loadModeFromDB loads the network mode from database
+func loadModeFromDB(db *sqlx.DB) NetworkMode {
+	if db == nil {
+		log.Printf("NetworkManager: no database connection, defaulting to offline")
+		return NetworkModeOffline
+	}
+
+	var mode string
+	err := db.Get(&mode, "SELECT mode FROM network_config WHERE id = 1")
+	if err != nil {
+		if err == sql.ErrNoRows {
+			log.Printf("NetworkManager: no network_config row, defaulting to offline")
+		} else {
+			log.Printf("NetworkManager: failed to load mode from database: %v", err)
+		}
+		return NetworkModeOffline
+	}
+
+	switch NetworkMode(mode) {
+	case NetworkModeOnlineETH:
+		return NetworkModeOnlineETH
+	case NetworkModeOnlineWiFi:
+		return NetworkModeOnlineWiFi
+	default:
+		return NetworkModeOffline
+	}
+}
+
+// saveModeToDBHelper persists the network mode to database
+func (m *NetworkManager) saveModeToDB(mode NetworkMode, wifiSSID string) {
+	if m.db == nil {
+		return
+	}
+
+	_, err := m.db.Exec(`
+		UPDATE network_config 
+		SET mode = ?, wifi_ssid = ?, updated_at = CURRENT_TIMESTAMP 
+		WHERE id = 1`,
+		string(mode), wifiSSID)
+	if err != nil {
+		log.Printf("NetworkManager: failed to persist mode to database: %v", err)
+	} else {
+		log.Printf("NetworkManager: persisted mode '%s' to database", mode)
 	}
 }
 
@@ -121,7 +178,9 @@ func (m *NetworkManager) GetStatus(ctx context.Context) (*NetworkStatus, error) 
 	// Get interface status from HAL
 	interfaces, err := m.hal.ListInterfaces(ctx)
 	if err != nil {
-		return status, nil // Return partial status on error
+		// Still check internet even if HAL fails
+		status.Internet = m.checkInternetConnectivity()
+		return status, nil
 	}
 
 	// Find AP interface (wlan0)
@@ -141,29 +200,75 @@ func (m *NetworkManager) GetStatus(ctx context.Context) (*NetworkStatus, error) 
 					IP:        iface.IPv4Addresses[0],
 					Type:      "ethernet",
 				}
-				status.Internet = iface.IsUp
+			}
+		}
+
+		if m.currentMode == NetworkModeOnlineWiFi && iface.Name == m.wifiClientInterface {
+			if len(iface.IPv4Addresses) > 0 {
+				status.Upstream = &UpstreamStatus{
+					Interface: iface.Name,
+					IP:        iface.IPv4Addresses[0],
+					Type:      "wifi",
+				}
 			}
 		}
 	}
 
+	// Actually check internet connectivity regardless of mode
+	status.Internet = m.checkInternetConnectivity()
+
 	return status, nil
+}
+
+// checkInternetConnectivity performs an actual connectivity check
+func (m *NetworkManager) checkInternetConnectivity() bool {
+	// Create a client with short timeout
+	client := &http.Client{
+		Timeout: 3 * time.Second,
+	}
+
+	// Try to reach a reliable endpoint (Google's connectivity check)
+	resp, err := client.Head("http://connectivitycheck.gstatic.com/generate_204")
+	if err != nil {
+		// Try alternate endpoint
+		resp, err = client.Head("http://www.gstatic.com/generate_204")
+		if err != nil {
+			return false
+		}
+	}
+	defer resp.Body.Close()
+
+	// 204 No Content is expected for connectivity checks
+	// 200 OK is also acceptable
+	return resp.StatusCode == 204 || resp.StatusCode == 200
 }
 
 // SetMode changes the network operating mode
 func (m *NetworkManager) SetMode(ctx context.Context, mode NetworkMode, wifiSSID, wifiPassword string) error {
+	var err error
+
 	switch mode {
 	case NetworkModeOffline:
-		return m.setOfflineMode(ctx)
+		err = m.setOfflineMode(ctx)
 	case NetworkModeOnlineETH:
-		return m.setOnlineETHMode(ctx)
+		err = m.setOnlineETHMode(ctx)
 	case NetworkModeOnlineWiFi:
 		if wifiSSID == "" {
 			return fmt.Errorf("wifi SSID required for ONLINE_WIFI mode")
 		}
-		return m.setOnlineWiFiMode(ctx, wifiSSID, wifiPassword)
+		err = m.setOnlineWiFiMode(ctx, wifiSSID, wifiPassword)
 	default:
 		return fmt.Errorf("unknown network mode: %s", mode)
 	}
+
+	if err != nil {
+		return err
+	}
+
+	// Persist to database
+	m.saveModeToDB(mode, wifiSSID)
+
+	return nil
 }
 
 // setOfflineMode configures offline (AP only) mode
@@ -368,11 +473,7 @@ func (m *NetworkManager) DetectWiFiClientInterface(ctx context.Context) (string,
 	return "", fmt.Errorf("no WiFi client interface found")
 }
 
-// CheckInternetConnectivity checks if internet is accessible
+// CheckInternetConnectivity checks if internet is accessible (public method)
 func (m *NetworkManager) CheckInternetConnectivity(ctx context.Context) bool {
-	status, err := m.GetStatus(ctx)
-	if err != nil {
-		return false
-	}
-	return status.Upstream != nil && status.Upstream.IP != ""
+	return m.checkInternetConnectivity()
 }

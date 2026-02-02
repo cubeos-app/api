@@ -36,7 +36,7 @@ func NewHandlers(cfg *config.Config, db *sqlx.DB, docker *managers.DockerManager
 		cfg:       cfg,
 		db:        db,
 		system:    managers.NewSystemManager(),
-		network:   managers.NewNetworkManager(cfg, halClient),
+		network:   managers.NewNetworkManager(cfg, halClient, db),
 		docker:    docker,
 		hal:       halClient,
 		startTime: time.Now(),
