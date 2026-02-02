@@ -1,0 +1,1054 @@
+openapi: 3.0.3
+info:
+  title: CubeOS API
+  description: |
+    CubeOS unified REST API for managing Docker applications, network configuration,
+    VPN connections, storage mounts, and system operations on Raspberry Pi.
+  version: 2.0.0
+  contact:
+    name: CubeOS
+    url: https://cubeos.app
+  license:
+    name: Apache 2.0
+    url: https://www.apache.org/licenses/LICENSE-2.0
+
+servers:
+  - url: http://api.cubeos.cube/api/v1
+    description: Internal FQDN
+  - url: http://10.42.24.1:6010/api/v1
+    description: Direct IP access
+
+tags:
+  - name: Health
+    description: Health check endpoints
+  - name: Apps
+    description: Application lifecycle management
+  - name: Network
+    description: Network mode and WiFi management
+  - name: VPN
+    description: VPN configuration and connections
+  - name: Mounts
+    description: SMB/NFS storage mounts
+  - name: Profiles
+    description: Service profile management
+  - name: System
+    description: System information and control
+
+paths:
+  /health:
+    get:
+      tags: [Health]
+      summary: Health check
+      description: Returns API health status
+      responses:
+        '200':
+          description: API is healthy
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HealthResponse'
+
+  /apps:
+    get:
+      tags: [Apps]
+      summary: List all apps
+      description: Returns all installed applications with their current status
+      parameters:
+        - name: type
+          in: query
+          schema:
+            type: string
+            enum: [system, platform, network, ai, user]
+          description: Filter by app type
+        - name: status
+          in: query
+          schema:
+            type: string
+            enum: [running, stopped]
+          description: Filter by running status
+        - name: enabled
+          in: query
+          schema:
+            type: boolean
+          description: Filter by boot-enabled state
+      responses:
+        '200':
+          description: List of apps
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AppListResponse'
+
+    post:
+      tags: [Apps]
+      summary: Install app
+      description: Install a new application from app store or custom compose
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/InstallAppRequest'
+      responses:
+        '201':
+          description: App installed
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/App'
+        '409':
+          description: App already exists or port conflict
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+  /apps/{name}:
+    get:
+      tags: [Apps]
+      summary: Get app details
+      parameters:
+        - $ref: '#/components/parameters/AppName'
+      responses:
+        '200':
+          description: App details
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/App'
+        '404':
+          description: App not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+    delete:
+      tags: [Apps]
+      summary: Uninstall app
+      parameters:
+        - $ref: '#/components/parameters/AppName'
+        - name: keep_data
+          in: query
+          schema:
+            type: boolean
+            default: false
+          description: Keep app data after uninstall
+      responses:
+        '200':
+          description: App uninstalled
+        '403':
+          description: System app protected
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '404':
+          description: App not found
+
+  /apps/{name}/start:
+    post:
+      tags: [Apps]
+      summary: Start app
+      parameters:
+        - $ref: '#/components/parameters/AppName'
+      responses:
+        '200':
+          description: App started
+        '404':
+          description: App not found
+
+  /apps/{name}/stop:
+    post:
+      tags: [Apps]
+      summary: Stop app
+      parameters:
+        - $ref: '#/components/parameters/AppName'
+      responses:
+        '200':
+          description: App stopped
+        '403':
+          description: System app protected
+        '404':
+          description: App not found
+
+  /apps/{name}/restart:
+    post:
+      tags: [Apps]
+      summary: Restart app
+      parameters:
+        - $ref: '#/components/parameters/AppName'
+      responses:
+        '200':
+          description: App restarted
+        '404':
+          description: App not found
+
+  /apps/{name}/enable:
+    post:
+      tags: [Apps]
+      summary: Enable app at boot
+      parameters:
+        - $ref: '#/components/parameters/AppName'
+      responses:
+        '200':
+          description: App enabled
+        '404':
+          description: App not found
+
+  /apps/{name}/disable:
+    post:
+      tags: [Apps]
+      summary: Disable app at boot
+      parameters:
+        - $ref: '#/components/parameters/AppName'
+      responses:
+        '200':
+          description: App disabled
+        '403':
+          description: System app protected
+        '404':
+          description: App not found
+
+  /apps/{name}/logs:
+    get:
+      tags: [Apps]
+      summary: Get app logs
+      parameters:
+        - $ref: '#/components/parameters/AppName'
+        - name: lines
+          in: query
+          schema:
+            type: integer
+            default: 100
+          description: Number of log lines
+        - name: since
+          in: query
+          schema:
+            type: string
+            format: date-time
+          description: Logs since timestamp
+      responses:
+        '200':
+          description: App logs
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/LogsResponse'
+        '404':
+          description: App not found
+
+  /apps/{name}/tor:
+    post:
+      tags: [Apps]
+      summary: Set Tor routing for app
+      parameters:
+        - $ref: '#/components/parameters/AppName'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                enabled:
+                  type: boolean
+              required: [enabled]
+      responses:
+        '200':
+          description: Tor routing updated
+        '404':
+          description: App not found
+
+  /network/status:
+    get:
+      tags: [Network]
+      summary: Get network status
+      description: Returns current network mode, interfaces, and connectivity
+      responses:
+        '200':
+          description: Network status
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/NetworkStatus'
+
+  /network/mode:
+    post:
+      tags: [Network]
+      summary: Set network mode
+      description: Switch between offline, online_eth, or online_wifi modes
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/NetworkModeRequest'
+      responses:
+        '200':
+          description: Network mode changed
+        '400':
+          description: Invalid mode or missing WiFi credentials
+        '500':
+          description: WiFi connection failed
+
+  /network/wifi/scan:
+    get:
+      tags: [Network]
+      summary: Scan WiFi networks
+      description: Scan for available WiFi networks using USB WiFi adapter
+      responses:
+        '200':
+          description: List of WiFi networks
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/WiFiScanResponse'
+
+  /network/wifi/connect:
+    post:
+      tags: [Network]
+      summary: Connect to WiFi network
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/WiFiConnectRequest'
+      responses:
+        '200':
+          description: Connected to WiFi
+        '500':
+          description: Connection failed
+
+  /network/ap/config:
+    get:
+      tags: [Network]
+      summary: Get AP configuration
+      responses:
+        '200':
+          description: AP configuration
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/APConfig'
+
+    put:
+      tags: [Network]
+      summary: Update AP configuration
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/APConfigRequest'
+      responses:
+        '200':
+          description: AP configuration updated
+        '400':
+          description: Invalid configuration
+
+  /vpn/configs:
+    get:
+      tags: [VPN]
+      summary: List VPN configurations
+      responses:
+        '200':
+          description: VPN configurations
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/VPNConfigListResponse'
+
+    post:
+      tags: [VPN]
+      summary: Add VPN configuration
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/VPNConfigRequest'
+      responses:
+        '201':
+          description: VPN configuration added
+        '400':
+          description: Invalid configuration
+
+  /vpn/configs/{id}:
+    delete:
+      tags: [VPN]
+      summary: Delete VPN configuration
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        '200':
+          description: VPN configuration deleted
+        '404':
+          description: Configuration not found
+
+  /vpn/configs/{id}/connect:
+    post:
+      tags: [VPN]
+      summary: Connect VPN
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        '200':
+          description: VPN connected
+        '404':
+          description: Configuration not found
+        '500':
+          description: Connection failed
+
+  /vpn/configs/{id}/disconnect:
+    post:
+      tags: [VPN]
+      summary: Disconnect VPN
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        '200':
+          description: VPN disconnected
+        '404':
+          description: Configuration not found
+
+  /vpn/status:
+    get:
+      tags: [VPN]
+      summary: Get VPN status
+      responses:
+        '200':
+          description: VPN status
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/VPNStatus'
+
+  /mounts:
+    get:
+      tags: [Mounts]
+      summary: List mounts
+      responses:
+        '200':
+          description: List of mounts
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/MountListResponse'
+
+    post:
+      tags: [Mounts]
+      summary: Add mount
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/MountRequest'
+      responses:
+        '201':
+          description: Mount added
+        '400':
+          description: Invalid mount configuration
+
+  /mounts/{id}:
+    delete:
+      tags: [Mounts]
+      summary: Delete mount
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        '200':
+          description: Mount deleted
+        '404':
+          description: Mount not found
+
+  /mounts/{id}/mount:
+    post:
+      tags: [Mounts]
+      summary: Mount filesystem
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        '200':
+          description: Mounted
+        '404':
+          description: Mount not found
+        '500':
+          description: Mount failed
+
+  /mounts/{id}/unmount:
+    post:
+      tags: [Mounts]
+      summary: Unmount filesystem
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        '200':
+          description: Unmounted
+        '404':
+          description: Mount not found
+
+  /profiles:
+    get:
+      tags: [Profiles]
+      summary: List profiles
+      responses:
+        '200':
+          description: List of profiles
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ProfileListResponse'
+
+    post:
+      tags: [Profiles]
+      summary: Create custom profile
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ProfileRequest'
+      responses:
+        '201':
+          description: Profile created
+        '409':
+          description: Profile already exists
+
+  /profiles/{name}/apply:
+    post:
+      tags: [Profiles]
+      summary: Apply profile
+      parameters:
+        - name: name
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Profile applied
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ProfileApplyResponse'
+        '404':
+          description: Profile not found
+
+  /system/info:
+    get:
+      tags: [System]
+      summary: Get system information
+      responses:
+        '200':
+          description: System information
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SystemInfo'
+
+  /system/stats:
+    get:
+      tags: [System]
+      summary: Get system stats
+      responses:
+        '200':
+          description: System stats
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SystemStats'
+
+  /system/temperature:
+    get:
+      tags: [System]
+      summary: Get temperature readings
+      responses:
+        '200':
+          description: Temperature readings
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TemperatureResponse'
+
+  /system/reboot:
+    post:
+      tags: [System]
+      summary: Reboot system
+      responses:
+        '200':
+          description: Reboot initiated
+
+  /system/shutdown:
+    post:
+      tags: [System]
+      summary: Shutdown system
+      responses:
+        '200':
+          description: Shutdown initiated
+
+components:
+  parameters:
+    AppName:
+      name: name
+      in: path
+      required: true
+      schema:
+        type: string
+      description: Application name (e.g., pihole, npm, dozzle)
+
+  schemas:
+    HealthResponse:
+      type: object
+      properties:
+        status:
+          type: string
+          example: ok
+        version:
+          type: string
+          example: 2.0.0
+        uptime:
+          type: string
+          example: 24h15m30s
+
+    ErrorResponse:
+      type: object
+      properties:
+        error:
+          type: string
+          example: APP_NOT_FOUND
+        message:
+          type: string
+          example: App 'xyz' not found
+      required: [error]
+
+    App:
+      type: object
+      properties:
+        id:
+          type: integer
+        name:
+          type: string
+        display_name:
+          type: string
+        description:
+          type: string
+        type:
+          type: string
+          enum: [system, platform, network, ai, user]
+        category:
+          type: string
+        enabled:
+          type: boolean
+        ports:
+          type: array
+          items:
+            $ref: '#/components/schemas/Port'
+        fqdns:
+          type: array
+          items:
+            $ref: '#/components/schemas/FQDN'
+        status:
+          $ref: '#/components/schemas/AppStatus'
+
+    Port:
+      type: object
+      properties:
+        port:
+          type: integer
+        protocol:
+          type: string
+          enum: [tcp, udp]
+        description:
+          type: string
+        is_primary:
+          type: boolean
+
+    FQDN:
+      type: object
+      properties:
+        fqdn:
+          type: string
+        subdomain:
+          type: string
+
+    AppStatus:
+      type: object
+      properties:
+        running:
+          type: boolean
+        health:
+          type: string
+          enum: [healthy, unhealthy, starting, unknown]
+        replicas:
+          type: string
+          example: "1/1"
+
+    AppListResponse:
+      type: object
+      properties:
+        apps:
+          type: array
+          items:
+            $ref: '#/components/schemas/App'
+
+    InstallAppRequest:
+      type: object
+      properties:
+        name:
+          type: string
+        display_name:
+          type: string
+        source:
+          type: string
+          enum: [cubeos, casaos, custom]
+        store_app_id:
+          type: string
+      required: [name]
+
+    LogsResponse:
+      type: object
+      properties:
+        app:
+          type: string
+        logs:
+          type: array
+          items:
+            type: string
+
+    NetworkStatus:
+      type: object
+      properties:
+        mode:
+          type: string
+          enum: [offline, online_eth, online_wifi]
+        internet:
+          type: boolean
+        ap:
+          type: object
+          properties:
+            ssid:
+              type: string
+            interface:
+              type: string
+            clients:
+              type: integer
+        upstream:
+          type: object
+          properties:
+            interface:
+              type: string
+            ip:
+              type: string
+            gateway:
+              type: string
+        subnet:
+          type: string
+        gateway_ip:
+          type: string
+
+    NetworkModeRequest:
+      type: object
+      properties:
+        mode:
+          type: string
+          enum: [offline, online_eth, online_wifi]
+        ssid:
+          type: string
+          description: Required for online_wifi mode
+        password:
+          type: string
+          description: Required for online_wifi mode
+      required: [mode]
+
+    WiFiNetwork:
+      type: object
+      properties:
+        ssid:
+          type: string
+        bssid:
+          type: string
+        signal:
+          type: integer
+        security:
+          type: string
+        frequency:
+          type: integer
+
+    WiFiScanResponse:
+      type: object
+      properties:
+        networks:
+          type: array
+          items:
+            $ref: '#/components/schemas/WiFiNetwork'
+
+    WiFiConnectRequest:
+      type: object
+      properties:
+        ssid:
+          type: string
+        password:
+          type: string
+      required: [ssid, password]
+
+    APConfig:
+      type: object
+      properties:
+        ssid:
+          type: string
+        channel:
+          type: integer
+        hidden:
+          type: boolean
+
+    APConfigRequest:
+      type: object
+      properties:
+        ssid:
+          type: string
+        password:
+          type: string
+        channel:
+          type: integer
+        hidden:
+          type: boolean
+
+    VPNConfig:
+      type: object
+      properties:
+        id:
+          type: integer
+        name:
+          type: string
+        type:
+          type: string
+          enum: [wireguard, openvpn]
+        is_active:
+          type: boolean
+        auto_connect:
+          type: boolean
+
+    VPNConfigListResponse:
+      type: object
+      properties:
+        configs:
+          type: array
+          items:
+            $ref: '#/components/schemas/VPNConfig'
+
+    VPNConfigRequest:
+      type: object
+      properties:
+        name:
+          type: string
+        type:
+          type: string
+          enum: [wireguard, openvpn]
+        config:
+          type: string
+          description: Base64-encoded config file
+      required: [name, type, config]
+
+    VPNStatus:
+      type: object
+      properties:
+        active_config:
+          type: string
+        type:
+          type: string
+        connected:
+          type: boolean
+        public_ip:
+          type: string
+        connected_since:
+          type: string
+          format: date-time
+
+    Mount:
+      type: object
+      properties:
+        id:
+          type: integer
+        name:
+          type: string
+        type:
+          type: string
+          enum: [smb, nfs]
+        remote_path:
+          type: string
+        local_path:
+          type: string
+        is_mounted:
+          type: boolean
+        auto_mount:
+          type: boolean
+
+    MountListResponse:
+      type: object
+      properties:
+        mounts:
+          type: array
+          items:
+            $ref: '#/components/schemas/Mount'
+
+    MountRequest:
+      type: object
+      properties:
+        name:
+          type: string
+        type:
+          type: string
+          enum: [smb, nfs]
+        remote_path:
+          type: string
+        username:
+          type: string
+        password:
+          type: string
+        options:
+          type: string
+        auto_mount:
+          type: boolean
+      required: [name, type, remote_path]
+
+    Profile:
+      type: object
+      properties:
+        id:
+          type: integer
+        name:
+          type: string
+        display_name:
+          type: string
+        description:
+          type: string
+        is_active:
+          type: boolean
+        is_system:
+          type: boolean
+        apps:
+          type: array
+          items:
+            type: object
+            properties:
+              app_id:
+                type: integer
+              app_name:
+                type: string
+              enabled:
+                type: boolean
+
+    ProfileListResponse:
+      type: object
+      properties:
+        profiles:
+          type: array
+          items:
+            $ref: '#/components/schemas/Profile'
+        active_profile:
+          type: string
+
+    ProfileRequest:
+      type: object
+      properties:
+        name:
+          type: string
+        display_name:
+          type: string
+        apps:
+          type: array
+          items:
+            type: object
+            properties:
+              app_name:
+                type: string
+              enabled:
+                type: boolean
+      required: [name]
+
+    ProfileApplyResponse:
+      type: object
+      properties:
+        profile:
+          type: string
+        started:
+          type: array
+          items:
+            type: string
+        stopped:
+          type: array
+          items:
+            type: string
+
+    SystemInfo:
+      type: object
+      properties:
+        hostname:
+          type: string
+        version:
+          type: string
+        uptime:
+          type: string
+        kernel:
+          type: string
+        arch:
+          type: string
+
+    SystemStats:
+      type: object
+      properties:
+        cpu_percent:
+          type: number
+        memory:
+          type: object
+          properties:
+            total:
+              type: integer
+            used:
+              type: integer
+            percent:
+              type: number
+        disk:
+          type: object
+          properties:
+            total:
+              type: integer
+            used:
+              type: integer
+            percent:
+              type: number
+
+    TemperatureResponse:
+      type: object
+      properties:
+        cpu:
+          type: number
+        gpu:
+          type: number
