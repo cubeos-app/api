@@ -94,7 +94,7 @@ func (h *FQDNsHandler) ListFQDNs(w http.ResponseWriter, r *http.Request) {
 
 	rows, err := h.db.Query(query)
 	if err != nil {
-		respondError(w, http.StatusInternalServerError, fmt.Sprintf("Failed to query FQDNs: %v", err))
+		fqdnRespondError(w, http.StatusInternalServerError, fmt.Sprintf("Failed to query FQDNs: %v", err))
 		return
 	}
 	defer rows.Close()
@@ -105,7 +105,7 @@ func (h *FQDNsHandler) ListFQDNs(w http.ResponseWriter, r *http.Request) {
 		err := rows.Scan(&f.ID, &f.AppID, &f.AppName, &f.FQDN, &f.Subdomain,
 			&f.BackendPort, &f.SSLEnabled, &f.CreatedAt)
 		if err != nil {
-			respondError(w, http.StatusInternalServerError, fmt.Sprintf("Failed to scan FQDN: %v", err))
+			fqdnRespondError(w, http.StatusInternalServerError, fmt.Sprintf("Failed to scan FQDN: %v", err))
 			return
 		}
 		fqdns = append(fqdns, f)
@@ -118,7 +118,7 @@ func (h *FQDNsHandler) ListFQDNs(w http.ResponseWriter, r *http.Request) {
 	var withSSL int
 	h.db.QueryRow("SELECT COUNT(*) FROM fqdns WHERE ssl_enabled = 1").Scan(&withSSL)
 
-	respondJSON(w, http.StatusOK, map[string]interface{}{
+	fqdnRespondJSON(w, http.StatusOK, map[string]interface{}{
 		"fqdns": fqdns,
 		"stats": map[string]interface{}{
 			"total":         total,
@@ -147,43 +147,43 @@ func (h *FQDNsHandler) GetFQDN(w http.ResponseWriter, r *http.Request) {
 		&f.BackendPort, &f.SSLEnabled, &f.CreatedAt)
 
 	if err == sql.ErrNoRows {
-		respondError(w, http.StatusNotFound, "FQDN not found")
+		fqdnRespondError(w, http.StatusNotFound, "FQDN not found")
 		return
 	}
 	if err != nil {
-		respondError(w, http.StatusInternalServerError, fmt.Sprintf("Failed to query FQDN: %v", err))
+		fqdnRespondError(w, http.StatusInternalServerError, fmt.Sprintf("Failed to query FQDN: %v", err))
 		return
 	}
 
-	respondJSON(w, http.StatusOK, f)
+	fqdnRespondJSON(w, http.StatusOK, f)
 }
 
 // CreateFQDN creates a new FQDN entry
 func (h *FQDNsHandler) CreateFQDN(w http.ResponseWriter, r *http.Request) {
 	var req CreateFQDNRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		respondError(w, http.StatusBadRequest, "Invalid JSON")
+		fqdnRespondError(w, http.StatusBadRequest, "Invalid JSON")
 		return
 	}
 
 	// Validate subdomain
 	req.Subdomain = strings.ToLower(strings.TrimSpace(req.Subdomain))
 	if req.Subdomain == "" {
-		respondError(w, http.StatusBadRequest, "Subdomain is required")
+		fqdnRespondError(w, http.StatusBadRequest, "Subdomain is required")
 		return
 	}
 
 	// Validate subdomain format (alphanumeric and hyphens only)
 	for _, c := range req.Subdomain {
 		if !((c >= 'a' && c <= 'z') || (c >= '0' && c <= '9') || c == '-') {
-			respondError(w, http.StatusBadRequest, "Subdomain can only contain lowercase letters, numbers, and hyphens")
+			fqdnRespondError(w, http.StatusBadRequest, "Subdomain can only contain lowercase letters, numbers, and hyphens")
 			return
 		}
 	}
 
 	// Validate backend port
 	if req.BackendPort < 1 || req.BackendPort > 65535 {
-		respondError(w, http.StatusBadRequest, "Backend port must be between 1 and 65535")
+		fqdnRespondError(w, http.StatusBadRequest, "Backend port must be between 1 and 65535")
 		return
 	}
 
@@ -192,7 +192,7 @@ func (h *FQDNsHandler) CreateFQDN(w http.ResponseWriter, r *http.Request) {
 		var exists int
 		err := h.db.QueryRow("SELECT COUNT(*) FROM apps WHERE id = ?", req.AppID).Scan(&exists)
 		if err != nil || exists == 0 {
-			respondError(w, http.StatusBadRequest, "App not found")
+			fqdnRespondError(w, http.StatusBadRequest, "App not found")
 			return
 		}
 	}
@@ -205,7 +205,7 @@ func (h *FQDNsHandler) CreateFQDN(w http.ResponseWriter, r *http.Request) {
 	h.db.QueryRow("SELECT COUNT(*) FROM fqdns WHERE fqdn = ? OR subdomain = ?",
 		fullFQDN, req.Subdomain).Scan(&count)
 	if count > 0 {
-		respondError(w, http.StatusConflict, fmt.Sprintf("FQDN %s already exists", fullFQDN))
+		fqdnRespondError(w, http.StatusConflict, fmt.Sprintf("FQDN %s already exists", fullFQDN))
 		return
 	}
 
@@ -216,7 +216,7 @@ func (h *FQDNsHandler) CreateFQDN(w http.ResponseWriter, r *http.Request) {
 	`, req.AppID, fullFQDN, req.Subdomain, req.BackendPort, req.SSLEnabled)
 
 	if err != nil {
-		respondError(w, http.StatusInternalServerError, fmt.Sprintf("Failed to create FQDN: %v", err))
+		fqdnRespondError(w, http.StatusInternalServerError, fmt.Sprintf("Failed to create FQDN: %v", err))
 		return
 	}
 
@@ -250,7 +250,7 @@ func (h *FQDNsHandler) CreateFQDN(w http.ResponseWriter, r *http.Request) {
 		CreatedAt:   time.Now(),
 	}
 
-	respondJSON(w, http.StatusCreated, fqdn)
+	fqdnRespondJSON(w, http.StatusCreated, fqdn)
 }
 
 // UpdateFQDN updates an existing FQDN
@@ -265,17 +265,17 @@ func (h *FQDNsHandler) UpdateFQDN(w http.ResponseWriter, r *http.Request) {
 		fqdnParam, fqdnParam).Scan(&id, &currentPort, &currentSSL)
 
 	if err == sql.ErrNoRows {
-		respondError(w, http.StatusNotFound, "FQDN not found")
+		fqdnRespondError(w, http.StatusNotFound, "FQDN not found")
 		return
 	}
 	if err != nil {
-		respondError(w, http.StatusInternalServerError, fmt.Sprintf("Failed to query FQDN: %v", err))
+		fqdnRespondError(w, http.StatusInternalServerError, fmt.Sprintf("Failed to query FQDN: %v", err))
 		return
 	}
 
 	var req UpdateFQDNRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		respondError(w, http.StatusBadRequest, "Invalid JSON")
+		fqdnRespondError(w, http.StatusBadRequest, "Invalid JSON")
 		return
 	}
 
@@ -285,7 +285,7 @@ func (h *FQDNsHandler) UpdateFQDN(w http.ResponseWriter, r *http.Request) {
 
 	if req.BackendPort != nil {
 		if *req.BackendPort < 1 || *req.BackendPort > 65535 {
-			respondError(w, http.StatusBadRequest, "Backend port must be between 1 and 65535")
+			fqdnRespondError(w, http.StatusBadRequest, "Backend port must be between 1 and 65535")
 			return
 		}
 		newPort = *req.BackendPort
@@ -299,7 +299,7 @@ func (h *FQDNsHandler) UpdateFQDN(w http.ResponseWriter, r *http.Request) {
 	_, err = h.db.Exec("UPDATE fqdns SET backend_port = ?, ssl_enabled = ? WHERE id = ?",
 		newPort, newSSL, id)
 	if err != nil {
-		respondError(w, http.StatusInternalServerError, fmt.Sprintf("Failed to update FQDN: %v", err))
+		fqdnRespondError(w, http.StatusInternalServerError, fmt.Sprintf("Failed to update FQDN: %v", err))
 		return
 	}
 
@@ -318,18 +318,18 @@ func (h *FQDNsHandler) DeleteFQDN(w http.ResponseWriter, r *http.Request) {
 		fqdnParam, fqdnParam).Scan(&id, &fullFQDN)
 
 	if err == sql.ErrNoRows {
-		respondError(w, http.StatusNotFound, "FQDN not found")
+		fqdnRespondError(w, http.StatusNotFound, "FQDN not found")
 		return
 	}
 	if err != nil {
-		respondError(w, http.StatusInternalServerError, fmt.Sprintf("Failed to query FQDN: %v", err))
+		fqdnRespondError(w, http.StatusInternalServerError, fmt.Sprintf("Failed to query FQDN: %v", err))
 		return
 	}
 
 	// Delete from database
 	_, err = h.db.Exec("DELETE FROM fqdns WHERE id = ?", id)
 	if err != nil {
-		respondError(w, http.StatusInternalServerError, fmt.Sprintf("Failed to delete FQDN: %v", err))
+		fqdnRespondError(w, http.StatusInternalServerError, fmt.Sprintf("Failed to delete FQDN: %v", err))
 		return
 	}
 
@@ -341,8 +341,25 @@ func (h *FQDNsHandler) DeleteFQDN(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	respondJSON(w, http.StatusOK, map[string]interface{}{
+	fqdnRespondJSON(w, http.StatusOK, map[string]interface{}{
 		"message": fmt.Sprintf("FQDN %s deleted", fullFQDN),
 		"fqdn":    fullFQDN,
+	})
+}
+
+// Helper functions for FQDN handler responses
+
+func fqdnRespondJSON(w http.ResponseWriter, status int, data interface{}) {
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(status)
+	json.NewEncoder(w).Encode(data)
+}
+
+func fqdnRespondError(w http.ResponseWriter, status int, message string) {
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(status)
+	json.NewEncoder(w).Encode(map[string]interface{}{
+		"error": message,
+		"code":  status,
 	})
 }
