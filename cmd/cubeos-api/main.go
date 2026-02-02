@@ -140,7 +140,11 @@ func main() {
 	}
 
 	// Create NetworkHandler for network mode management (Sprint 3)
-	networkHandler := handlers.NewNetworkHandler(networkMgr)
+	networkHandler := handlers.NewNetworkHandler(networkMgr, halClient)
+
+	// Create FirewallHandler for firewall management (Sprint 5C)
+	firewallHandler := handlers.NewFirewallHandler(firewallMgr, halClient)
+	log.Printf("FirewallHandler initialized")
 
 	// Create VPN and Mounts handlers (Sprint 3)
 	vpnHandler := handlers.NewVPNHandler(vpnMgr)
@@ -482,6 +486,9 @@ func main() {
 
 			// Mounts API (Sprint 3)
 			r.Mount("/mounts", mountsHandler.Routes())
+
+			// Firewall endpoints (Sprint 5C)
+			r.Mount("/firewall", firewallHandler.Routes())
 
 			// Ports API (Sprint 4)
 			r.Mount("/ports", portsHandler.Routes())

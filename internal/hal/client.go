@@ -576,3 +576,196 @@ func (c *Client) GetServiceStatus(ctx context.Context, name string) (*ServiceSta
 
 	return &status, nil
 }
+
+// =============================================================================
+// AP Client Management (Sprint 5C additions)
+// =============================================================================
+
+// KickAPClient disconnects a client from the AP by MAC address
+func (c *Client) KickAPClient(ctx context.Context, mac string) error {
+	_, err := c.doRequest(ctx, http.MethodPost, "/hal/network/wifi/ap/kick/"+mac, nil)
+	return err
+}
+
+// BlockAPClient blocks a MAC address from connecting to the AP
+func (c *Client) BlockAPClient(ctx context.Context, mac string) error {
+	_, err := c.doRequest(ctx, http.MethodPost, "/hal/network/wifi/ap/block/"+mac, nil)
+	return err
+}
+
+// UnblockAPClient removes a MAC address from the AP blocklist
+func (c *Client) UnblockAPClient(ctx context.Context, mac string) error {
+	_, err := c.doRequest(ctx, http.MethodPost, "/hal/network/wifi/ap/unblock/"+mac, nil)
+	return err
+}
+
+// =============================================================================
+// Traffic Statistics (Sprint 5C additions)
+// =============================================================================
+
+// TrafficStats represents traffic statistics for interfaces
+type TrafficStats struct {
+	Interfaces []InterfaceTraffic `json:"interfaces"`
+	Timestamp  int64              `json:"timestamp"`
+}
+
+// InterfaceTraffic represents traffic for a single interface
+type InterfaceTraffic struct {
+	Name      string `json:"name"`
+	RXBytes   int64  `json:"rx_bytes"`
+	TXBytes   int64  `json:"tx_bytes"`
+	RXPackets int64  `json:"rx_packets"`
+	TXPackets int64  `json:"tx_packets"`
+	RXErrors  int64  `json:"rx_errors"`
+	TXErrors  int64  `json:"tx_errors"`
+}
+
+// TrafficHistory represents historical traffic data
+type TrafficHistory struct {
+	Interface  string             `json:"interface"`
+	Duration   string             `json:"duration"`
+	DataPoints []TrafficDataPoint `json:"data_points"`
+}
+
+// TrafficDataPoint represents a single traffic measurement
+type TrafficDataPoint struct {
+	Timestamp int64 `json:"timestamp"`
+	RXBytes   int64 `json:"rx_bytes"`
+	TXBytes   int64 `json:"tx_bytes"`
+}
+
+// GetTrafficStats returns current traffic statistics for all interfaces
+func (c *Client) GetTrafficStats(ctx context.Context) (*TrafficStats, error) {
+	body, err := c.doRequest(ctx, http.MethodGet, "/hal/network/traffic", nil)
+	if err != nil {
+		return nil, err
+	}
+
+	var stats TrafficStats
+	if err := json.Unmarshal(body, &stats); err != nil {
+		return nil, fmt.Errorf("failed to parse response: %w", err)
+	}
+
+	return &stats, nil
+}
+
+// GetTrafficHistory returns historical traffic data for an interface
+func (c *Client) GetTrafficHistory(ctx context.Context, iface, duration string) (*TrafficHistory, error) {
+	path := "/hal/network/traffic/" + iface + "/history"
+	if duration != "" {
+		path += "?duration=" + duration
+	}
+
+	body, err := c.doRequest(ctx, http.MethodGet, path, nil)
+	if err != nil {
+		return nil, err
+	}
+
+	var history TrafficHistory
+	if err := json.Unmarshal(body, &history); err != nil {
+		return nil, fmt.Errorf("failed to parse response: %w", err)
+	}
+
+	return &history, nil
+}
+
+// =============================================================================
+// IP Forwarding Status (Sprint 5C additions)
+// =============================================================================
+
+// GetForwardingStatus returns whether IP forwarding is enabled
+func (c *Client) GetForwardingStatus(ctx context.Context) (bool, error) {
+	body, err := c.doRequest(ctx, http.MethodGet, "/hal/firewall/forwarding", nil)
+	if err != nil {
+		return false, err
+	}
+
+	var resp struct {
+		Enabled bool `json:"enabled"`
+	}
+	if err := json.Unmarshal(body, &resp); err != nil {
+		return false, fmt.Errorf("failed to parse response: %w", err)
+	}
+
+	return resp.Enabled, nil
+}
+
+// EnableForwarding enables IP forwarding (alias for EnableIPForward)
+func (c *Client) EnableForwarding(ctx context.Context) error {
+	return c.EnableIPForward(ctx)
+}
+
+// DisableForwarding disables IP forwarding (alias for DisableIPForward)
+func (c *Client) DisableForwarding(ctx context.Context) error {
+	return c.DisableIPForward(ctx)
+}
+
+// =============================================================================
+// VPN Control Methods (Sprint 5C - Full Fix)
+// =============================================================================
+
+// StartWireGuard starts a WireGuard interface
+func (c *Client) StartWireGuard(ctx context.Context, name string) error {
+	return c.WireGuardUp(ctx, name)
+}
+
+// StopWireGuard stops a WireGuard interface
+func (c *Client) StopWireGuard(ctx context.Context, name string) error {
+	return c.WireGuardDown(ctx, name)
+}
+
+// StartOpenVPN starts OpenVPN with a config
+func (c *Client) StartOpenVPN(ctx context.Context, name string) error {
+	return c.OpenVPNUp(ctx, name)
+}
+
+// StopOpenVPN stops OpenVPN
+func (c *Client) StopOpenVPN(ctx context.Context, name string) error {
+	return c.OpenVPNDown(ctx, name)
+}
+
+// StartTor starts the Tor service
+func (c *Client) StartTor(ctx context.Context) error {
+	return c.StartService(ctx, "tor")
+}
+
+// StopTor stops the Tor service
+func (c *Client) StopTor(ctx context.Context) error {
+	return c.StopService(ctx, "tor")
+}
+
+// =============================================================================
+// AP Control Methods (Sprint 5C - Full Fix)
+// =============================================================================
+
+// StartAP starts the WiFi access point (hostapd)
+func (c *Client) StartAP(ctx context.Context, iface string) error {
+	return c.StartService(ctx, "hostapd")
+}
+
+// StopAP stops the WiFi access point (hostapd)
+func (c *Client) StopAP(ctx context.Context, iface string) error {
+	return c.StopService(ctx, "hostapd")
+}
+
+// =============================================================================
+// DHCP and IP Configuration Methods
+// =============================================================================
+
+// RequestDHCP requests a DHCP lease on an interface
+func (c *Client) RequestDHCP(ctx context.Context, iface string) error {
+	req := map[string]string{"interface": iface}
+	_, err := c.doRequest(ctx, http.MethodPost, "/hal/network/dhcp/request", req)
+	return err
+}
+
+// SetStaticIP sets a static IP address on an interface
+func (c *Client) SetStaticIP(ctx context.Context, iface, ip, gateway string) error {
+	req := map[string]string{
+		"interface": iface,
+		"ip":        ip,
+		"gateway":   gateway,
+	}
+	_, err := c.doRequest(ctx, http.MethodPost, "/hal/network/ip/static", req)
+	return err
+}

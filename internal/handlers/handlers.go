@@ -364,7 +364,7 @@ func (h *Handlers) UpdateAPConfig(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *Handlers) RestartAP(w http.ResponseWriter, r *http.Request) {
-	if err := h.network.RestartAP(r.Context()); err != nil {
+	if err := h.hal.RestartService(r.Context(), "hostapd"); err != nil {
 		writeError(w, http.StatusInternalServerError, err.Error())
 		return
 	}
@@ -400,7 +400,7 @@ func (h *Handlers) RestartDHCP(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *Handlers) CheckInternet(w http.ResponseWriter, r *http.Request) {
-	connected := h.network.CheckInternetConnectivity(r.Context())
+	connected := h.network.HasInternet()
 	writeJSON(w, http.StatusOK, map[string]interface{}{
 		"connected": connected,
 		"timestamp": time.Now(),
@@ -417,7 +417,7 @@ func (h *Handlers) GetWiFiQR(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *Handlers) GetNetworkInterfacesDetailed(w http.ResponseWriter, r *http.Request) {
-	interfaces, err := h.network.GetInterfaces(r.Context())
+	interfaces, err := h.hal.ListInterfaces(r.Context())
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, err.Error())
 		return
@@ -431,7 +431,7 @@ func (h *Handlers) GetNetworkInterfacesDetailed(w http.ResponseWriter, r *http.R
 
 func (h *Handlers) GetTrafficStats(w http.ResponseWriter, r *http.Request) {
 	// Traffic stats from interfaces
-	interfaces, _ := h.network.GetInterfaces(r.Context())
+	interfaces, _ := h.hal.ListInterfaces(r.Context())
 	stats := make(map[string]interface{})
 	for _, iface := range interfaces {
 		stats[iface.Name] = map[string]interface{}{
