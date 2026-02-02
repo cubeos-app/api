@@ -149,25 +149,25 @@ type PreviewRequest struct {
 
 // PreviewResponse represents the parsed manifest preview
 type PreviewResponse struct {
-	Valid         bool                `json:"valid"`
-	AppName       string              `json:"app_name"`
-	Title         string              `json:"title"`
-	Description   string              `json:"description"`
-	Category      string              `json:"category"`
-	Author        string              `json:"author"`
-	Version       string              `json:"version"`
-	Icon          string              `json:"icon"`
-	MainService   string              `json:"main_service"`
-	Services      []ServicePreview    `json:"services"`
-	Ports         []PortPreview       `json:"ports"`
-	Volumes       []VolumePreview     `json:"volumes"`
-	EnvVars       []EnvVarPreview     `json:"env_vars"`
-	Architectures []string            `json:"architectures"`
-	Compatible    bool                `json:"compatible"`
-	WebUIPort     string              `json:"webui_port,omitempty"`
-	WebUIPath     string              `json:"webui_path,omitempty"`
-	Warnings      []string            `json:"warnings,omitempty"`
-	Errors        []string            `json:"errors,omitempty"`
+	Valid         bool                   `json:"valid"`
+	AppName       string                 `json:"app_name"`
+	Title         string                 `json:"title"`
+	Description   string                 `json:"description"`
+	Category      string                 `json:"category"`
+	Author        string                 `json:"author"`
+	Version       string                 `json:"version"`
+	Icon          string                 `json:"icon"`
+	MainService   string                 `json:"main_service"`
+	Services      []ServicePreview       `json:"services"`
+	Ports         []PortPreview          `json:"ports"`
+	Volumes       []VolumePreview        `json:"volumes"`
+	EnvVars       []EnvVarPreview        `json:"env_vars"`
+	Architectures []string               `json:"architectures"`
+	Compatible    bool                   `json:"compatible"`
+	WebUIPort     string                 `json:"webui_port,omitempty"`
+	WebUIPath     string                 `json:"webui_path,omitempty"`
+	Warnings      []string               `json:"warnings,omitempty"`
+	Errors        []string               `json:"errors,omitempty"`
 	RawManifest   *models.CasaOSManifest `json:"raw_manifest,omitempty"`
 }
 
@@ -294,7 +294,7 @@ func (h *CasaOSHandler) parseManifest(content string, suggestedName string) *Pre
 	// Check architecture compatibility
 	preview.Compatible = h.isCompatible(manifest.XCasaOS.Architectures)
 	if !preview.Compatible && len(manifest.XCasaOS.Architectures) > 0 {
-		preview.Warnings = append(preview.Warnings, 
+		preview.Warnings = append(preview.Warnings,
 			fmt.Sprintf("app may not be compatible with ARM64 (supports: %v)", manifest.XCasaOS.Architectures))
 	}
 
@@ -370,11 +370,11 @@ func (h *CasaOSHandler) parseManifest(content string, suggestedName string) *Pre
 	// Warnings for privileged/host network
 	for _, svc := range preview.Services {
 		if svc.Privileged {
-			preview.Warnings = append(preview.Warnings, 
+			preview.Warnings = append(preview.Warnings,
 				fmt.Sprintf("service '%s' requires privileged mode", svc.Name))
 		}
 		if svc.NetworkMode == "host" {
-			preview.Warnings = append(preview.Warnings, 
+			preview.Warnings = append(preview.Warnings,
 				fmt.Sprintf("service '%s' uses host network mode", svc.Name))
 		}
 	}
@@ -601,17 +601,17 @@ func (h *CasaOSHandler) processManifest(manifest string, appName string, envOver
 
 	// Variable substitutions
 	replacements := map[string]string{
-		"$PUID":                           puid,
-		"${PUID}":                         puid,
-		"$PGID":                           pgid,
-		"${PGID}":                         pgid,
-		"$TZ":                             tz,
-		"${TZ}":                           tz,
-		"$AppID":                          appName,
-		"${AppID}":                        appName,
-		"/DATA/AppData/$AppID":            dataDir,
-		"/DATA/AppData/${AppID}":          dataDir,
-		"/DATA/AppData":                   filepath.Join(h.appsPath, appName),
+		"$PUID":                  puid,
+		"${PUID}":                puid,
+		"$PGID":                  pgid,
+		"${PGID}":                pgid,
+		"$TZ":                    tz,
+		"${TZ}":                  tz,
+		"$AppID":                 appName,
+		"${AppID}":               appName,
+		"/DATA/AppData/$AppID":   dataDir,
+		"/DATA/AppData/${AppID}": dataDir,
+		"/DATA/AppData":          filepath.Join(h.appsPath, appName),
 	}
 
 	result := manifest
