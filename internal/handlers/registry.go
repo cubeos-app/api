@@ -22,9 +22,12 @@ type RegistryHandler struct {
 }
 
 // NewRegistryHandler creates a new RegistryHandler instance.
+// For Swarm containers, use 10.42.24.1:5000 (gateway IP) not localhost:5000
+// because containers in overlay network cannot reach localhost on the host.
 func NewRegistryHandler(registryURL, registryPath string) *RegistryHandler {
 	if registryURL == "" {
-		registryURL = "http://localhost:5000"
+		// Default to gateway IP - works from inside Swarm overlay network
+		registryURL = "http://10.42.24.1:5000"
 	}
 	if registryPath == "" {
 		registryPath = "/cubeos/data/registry"
@@ -33,7 +36,7 @@ func NewRegistryHandler(registryURL, registryPath string) *RegistryHandler {
 		registryURL:  registryURL,
 		registryPath: registryPath,
 		httpClient: &http.Client{
-			Timeout: 30 * time.Second,
+			Timeout: 10 * time.Second, // Reduced timeout for faster failure detection
 		},
 	}
 }
@@ -60,6 +63,7 @@ type RegistryStatus struct {
 	DiskUsage    int64  `json:"disk_usage_bytes"`
 	DiskUsageStr string `json:"disk_usage"`
 	ImageCount   int    `json:"image_count"`
+	Error        string `json:"error,omitempty"`
 }
 
 // GetStatus returns the registry health and status.
@@ -73,9 +77,14 @@ func (h *RegistryHandler) GetStatus(w http.ResponseWriter, r *http.Request) {
 	resp, err := h.httpClient.Get(h.registryURL + "/v2/")
 	if err != nil {
 		status.Online = false
+		status.Error = fmt.Sprintf("Cannot connect to registry: %v", err)
 	} else {
 		defer resp.Body.Close()
 		status.Online = (resp.StatusCode == http.StatusOK || resp.StatusCode == http.StatusUnauthorized)
+
+		if !status.Online {
+			status.Error = fmt.Sprintf("Registry returned HTTP %d", resp.StatusCode)
+		}
 
 		// Try to get version from headers
 		if version := resp.Header.Get("Docker-Distribution-Api-Version"); version != "" {
@@ -83,15 +92,19 @@ func (h *RegistryHandler) GetStatus(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	// Get image count
-	images, _ := h.getImageList()
-	status.ImageCount = len(images)
+	// Get image count (only if online to avoid additional errors)
+	if status.Online {
+		images, err := h.getImageList()
+		if err == nil {
+			status.ImageCount = len(images)
+		}
+	}
 
-	// Get disk usage
+	// Get disk usage (may fail if path not accessible from container)
 	status.DiskUsage = h.getDiskUsage()
-	status.DiskUsageStr = formatBytes(status.DiskUsage)
+	status.DiskUsageStr = registryFormatBytes(status.DiskUsage)
 
-	writeJSON(w, http.StatusOK, status)
+	registryWriteJSON(w, http.StatusOK, status)
 }
 
 // RegistryImage represents an image in the registry.
@@ -107,7 +120,7 @@ type RegistryImage struct {
 func (h *RegistryHandler) ListImages(w http.ResponseWriter, r *http.Request) {
 	images, err := h.getImageList()
 	if err != nil {
-		writeError(w, http.StatusInternalServerError, "Failed to get image list: "+err.Error())
+		registryWriteError(w, http.StatusServiceUnavailable, "Failed to get image list: "+err.Error())
 		return
 	}
 
@@ -118,21 +131,26 @@ func (h *RegistryHandler) ListImages(w http.ResponseWriter, r *http.Request) {
 	for _, name := range images {
 		img := RegistryImage{
 			Name:     name,
-			FullName: fmt.Sprintf("localhost:5000/%s", name),
+			FullName: fmt.Sprintf("%s/%s", strings.TrimPrefix(h.registryURL, "http://"), name),
 		}
 
 		if includeTags {
 			tags, _ := h.getImageTags(name)
 			img.Tags = tags
 			img.TagCount = len(tags)
+		} else {
+			// Just get count
+			tags, _ := h.getImageTags(name)
+			img.TagCount = len(tags)
 		}
 
 		result = append(result, img)
 	}
 
-	writeJSON(w, http.StatusOK, map[string]interface{}{
+	registryWriteJSON(w, http.StatusOK, map[string]interface{}{
 		"images": result,
 		"count":  len(result),
+		"url":    h.registryURL,
 	})
 }
 
@@ -152,11 +170,11 @@ func (h *RegistryHandler) GetImageTags(w http.ResponseWriter, r *http.Request) {
 
 	tags, err := h.getImageTags(name)
 	if err != nil {
-		writeError(w, http.StatusNotFound, "Image not found or failed to get tags: "+err.Error())
+		registryWriteError(w, http.StatusNotFound, "Image not found or failed to get tags: "+err.Error())
 		return
 	}
 
-	writeJSON(w, http.StatusOK, map[string]interface{}{
+	registryWriteJSON(w, http.StatusOK, map[string]interface{}{
 		"name": name,
 		"tags": tags,
 	})
@@ -174,7 +192,7 @@ func (h *RegistryHandler) DeleteImage(w http.ResponseWriter, r *http.Request) {
 	// Get manifest digest
 	digest, err := h.getManifestDigest(name, tag)
 	if err != nil {
-		writeError(w, http.StatusNotFound, "Image or tag not found: "+err.Error())
+		registryWriteError(w, http.StatusNotFound, "Image or tag not found: "+err.Error())
 		return
 	}
 
@@ -184,17 +202,17 @@ func (h *RegistryHandler) DeleteImage(w http.ResponseWriter, r *http.Request) {
 
 	resp, err := h.httpClient.Do(req)
 	if err != nil {
-		writeError(w, http.StatusInternalServerError, "Failed to delete image: "+err.Error())
+		registryWriteError(w, http.StatusInternalServerError, "Failed to delete image: "+err.Error())
 		return
 	}
 	defer resp.Body.Close()
 
 	if resp.StatusCode != http.StatusAccepted && resp.StatusCode != http.StatusOK {
-		writeError(w, http.StatusInternalServerError, fmt.Sprintf("Registry returned status %d", resp.StatusCode))
+		registryWriteError(w, http.StatusInternalServerError, fmt.Sprintf("Registry returned status %d", resp.StatusCode))
 		return
 	}
 
-	writeJSON(w, http.StatusOK, map[string]interface{}{
+	registryWriteJSON(w, http.StatusOK, map[string]interface{}{
 		"success": true,
 		"message": fmt.Sprintf("Deleted %s:%s", name, tag),
 	})
@@ -241,7 +259,7 @@ func (h *RegistryHandler) CleanupRegistry(w http.ResponseWriter, r *http.Request
 		}
 	}
 
-	writeJSON(w, http.StatusOK, map[string]interface{}{
+	registryWriteJSON(w, http.StatusOK, map[string]interface{}{
 		"success":        true,
 		"dry_run":        req.DryRun,
 		"deleted_count":  totalDeleted,
@@ -255,11 +273,18 @@ func (h *RegistryHandler) CleanupRegistry(w http.ResponseWriter, r *http.Request
 func (h *RegistryHandler) GetDiskUsage(w http.ResponseWriter, r *http.Request) {
 	totalBytes := h.getDiskUsage()
 
-	writeJSON(w, http.StatusOK, map[string]interface{}{
+	result := map[string]interface{}{
 		"bytes":    totalBytes,
-		"readable": formatBytes(totalBytes),
+		"readable": registryFormatBytes(totalBytes),
 		"path":     h.registryPath,
-	})
+	}
+
+	// Add warning if we couldn't get disk usage
+	if totalBytes == 0 {
+		result["warning"] = "Could not access registry storage path from container"
+	}
+
+	registryWriteJSON(w, http.StatusOK, result)
 }
 
 // Helper methods
@@ -267,7 +292,7 @@ func (h *RegistryHandler) GetDiskUsage(w http.ResponseWriter, r *http.Request) {
 func (h *RegistryHandler) getImageList() ([]string, error) {
 	resp, err := h.httpClient.Get(h.registryURL + "/v2/_catalog")
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("failed to connect to registry: %w", err)
 	}
 	defer resp.Body.Close()
 
@@ -279,7 +304,7 @@ func (h *RegistryHandler) getImageList() ([]string, error) {
 		Repositories []string `json:"repositories"`
 	}
 	if err := json.NewDecoder(resp.Body).Decode(&catalog); err != nil {
-		return nil, err
+		return nil, fmt.Errorf("failed to decode response: %w", err)
 	}
 
 	return catalog.Repositories, nil
@@ -340,19 +365,36 @@ func (h *RegistryHandler) getManifestDigest(name, tag string) (string, error) {
 
 func (h *RegistryHandler) getDiskUsage() int64 {
 	var size int64
-	filepath.Walk(h.registryPath, func(path string, info os.FileInfo, err error) error {
+	err := filepath.Walk(h.registryPath, func(path string, info os.FileInfo, err error) error {
 		if err != nil {
-			return nil
+			return nil // Continue walking even on errors
 		}
 		if !info.IsDir() {
 			size += info.Size()
 		}
 		return nil
 	})
+	if err != nil {
+		return 0
+	}
 	return size
 }
 
-func formatBytes(bytes int64) string {
+// Helper functions for JSON responses (local to avoid conflicts with other handlers)
+
+func registryWriteJSON(w http.ResponseWriter, status int, data interface{}) {
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(status)
+	json.NewEncoder(w).Encode(data)
+}
+
+func registryWriteError(w http.ResponseWriter, status int, message string) {
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(status)
+	json.NewEncoder(w).Encode(map[string]string{"error": message})
+}
+
+func registryFormatBytes(bytes int64) string {
 	const unit = 1024
 	if bytes < unit {
 		return fmt.Sprintf("%d B", bytes)

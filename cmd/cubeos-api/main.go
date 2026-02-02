@@ -150,7 +150,7 @@ func main() {
 	// Create Ports, FQDNs, and Registry handlers (Sprint 4)
 	portsHandler := handlers.NewPortsHandler(portMgr)
 	fqdnsHandler := handlers.NewFQDNsHandler(db.DB, nil, nil) // NPM/Pihole managers optional
-	registryHandler := handlers.NewRegistryHandler("http://localhost:5000", "/cubeos/data/registry")
+	registryHandler := handlers.NewRegistryHandler("http://10.42.24.1:5000", "/cubeos/data/registry")
 	log.Printf("PortsHandler, FQDNsHandler, and RegistryHandler initialized")
 
 	// Create WebSocket manager and handlers
