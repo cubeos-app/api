@@ -146,6 +146,12 @@ func (h *VPNHandler) Connect(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// Check if config exists first
+	if _, err := h.vpn.GetConfig(r.Context(), name); err != nil {
+		vpnRespondError(w, http.StatusNotFound, "VPN_NOT_FOUND", "VPN configuration not found: "+name)
+		return
+	}
+
 	if err := h.vpn.Connect(r.Context(), name); err != nil {
 		vpnRespondError(w, http.StatusInternalServerError, "VPN_CONNECT_ERROR", err.Error())
 		return

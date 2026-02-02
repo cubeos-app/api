@@ -92,6 +92,12 @@ func (h *ProfilesHandler) CreateProfile(w http.ResponseWriter, r *http.Request) 
 func (h *ProfilesHandler) ApplyProfile(w http.ResponseWriter, r *http.Request) {
 	name := chi.URLParam(r, "name")
 
+	// Check if profile exists first
+	if _, err := h.orchestrator.GetProfile(r.Context(), name); err != nil {
+		writeError(w, http.StatusNotFound, "Profile not found: "+name)
+		return
+	}
+
 	result, err := h.orchestrator.ApplyProfile(r.Context(), name)
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, err.Error())

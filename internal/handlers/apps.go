@@ -120,6 +120,12 @@ func (h *AppsHandler) UninstallApp(w http.ResponseWriter, r *http.Request) {
 	name := chi.URLParam(r, "name")
 	keepData := r.URL.Query().Get("keep_data") == "true"
 
+	// Check if app exists first
+	if _, err := h.orchestrator.GetApp(r.Context(), name); err != nil {
+		writeError(w, http.StatusNotFound, "App not found: "+name)
+		return
+	}
+
 	if err := h.orchestrator.UninstallApp(r.Context(), name, keepData); err != nil {
 		writeError(w, http.StatusInternalServerError, err.Error())
 		return
