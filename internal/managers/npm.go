@@ -2,12 +2,15 @@ package managers
 
 import (
 	"bytes"
+	"crypto/rand"
+	"encoding/hex"
 	"encoding/json"
 	"fmt"
 	"io"
 	"net/http"
 	"os"
 	"path/filepath"
+	"strings"
 	"sync"
 	"time"
 
@@ -15,15 +18,54 @@ import (
 )
 
 // NPMManager handles Nginx Proxy Manager API interactions
+// Uses service account pattern: api@cubeos.cube for API operations
+// Human admin account is separate and can change password freely
 type NPMManager struct {
-	baseURL    string
-	gatewayIP  string
-	token      string
-	tokenFile  string
-	email      string
-	password   string
-	httpClient *http.Client
-	mu         sync.RWMutex
+	baseURL     string
+	gatewayIP   string
+	token       string
+	tokenFile   string
+	secretsFile string
+	configDir   string
+	httpClient  *http.Client
+	mu          sync.RWMutex
+	initialized bool
+}
+
+// NPM credential constants
+const (
+	// Service account for API operations (hidden from UI users)
+	npmServiceEmail = "api@cubeos.cube"
+	npmServiceName  = "CubeOS API"
+
+	// Secrets.env keys
+	npmAPIPasswordKey = "NPM_API_PASSWORD"
+
+	// Bootstrap admin credentials (set via INITIAL_ADMIN_* env vars during image build)
+	// These are used ONLY for initial service account creation
+	npmBootstrapEmailKey    = "NPM_ADMIN_EMAIL"
+	npmBootstrapPasswordKey = "NPM_ADMIN_PASSWORD"
+)
+
+// FlexBool handles NPM API returning enabled as bool or int
+type FlexBool bool
+
+func (fb *FlexBool) UnmarshalJSON(data []byte) error {
+	var b bool
+	if err := json.Unmarshal(data, &b); err == nil {
+		*fb = FlexBool(b)
+		return nil
+	}
+	var i int
+	if err := json.Unmarshal(data, &i); err == nil {
+		*fb = FlexBool(i != 0)
+		return nil
+	}
+	return fmt.Errorf("cannot unmarshal %s into FlexBool", string(data))
+}
+
+func (fb FlexBool) MarshalJSON() ([]byte, error) {
+	return json.Marshal(bool(fb))
 }
 
 // NPMProxyHostExtended represents a proxy host in NPM with full API fields
@@ -46,7 +88,7 @@ type NPMProxyHostExtended struct {
 	AllowWebsocketUpgrade bool     `json:"allow_websocket_upgrade"`
 	AccessListID          int      `json:"access_list_id"`
 	AdvancedConfig        string   `json:"advanced_config"`
-	Enabled               int      `json:"enabled"`
+	Enabled               FlexBool `json:"enabled"`
 	Meta                  NPMMeta  `json:"meta"`
 	Locations             []any    `json:"locations"`
 }
@@ -57,66 +99,134 @@ type NPMMeta struct {
 	DNSChallenge     bool `json:"dns_challenge"`
 }
 
+// NPMUser represents a user in NPM
+type NPMUser struct {
+	ID         int      `json:"id,omitempty"`
+	CreatedOn  string   `json:"created_on,omitempty"`
+	ModifiedOn string   `json:"modified_on,omitempty"`
+	Name       string   `json:"name"`
+	Nickname   string   `json:"nickname"`
+	Email      string   `json:"email"`
+	Avatar     string   `json:"avatar,omitempty"`
+	IsDisabled int      `json:"is_disabled"`
+	Roles      []string `json:"roles"`
+}
+
+// NPMCreateUser is the request body for creating a user
+type NPMCreateUser struct {
+	Name       string   `json:"name"`
+	Nickname   string   `json:"nickname"`
+	Email      string   `json:"email"`
+	Roles      []string `json:"roles"`
+	IsDisabled int      `json:"is_disabled"`
+	Secret     string   `json:"secret,omitempty"`
+}
+
 // NewNPMManager creates a new NPM manager using centralized config
 func NewNPMManager(cfg *config.Config, configDir string) *NPMManager {
-	// Support configurable credentials via environment variables
-	email := os.Getenv("NPM_EMAIL")
-	if email == "" {
-		email = "admin@example.com"
-	}
-	password := os.Getenv("NPM_PASSWORD")
-	if password == "" {
-		password = "changeme"
-	}
-
 	return &NPMManager{
-		baseURL:   cfg.GetNPMURL(),
-		gatewayIP: cfg.GatewayIP,
-		tokenFile: filepath.Join(configDir, "npm_token"),
-		email:     email,
-		password:  password,
+		baseURL:     cfg.GetNPMURL(),
+		gatewayIP:   cfg.GatewayIP,
+		tokenFile:   filepath.Join(configDir, "npm_api_token"),
+		secretsFile: filepath.Join(configDir, "secrets.env"),
+		configDir:   configDir,
 		httpClient: &http.Client{
 			Timeout: 30 * time.Second,
 		},
 	}
 }
 
-// Init initializes the NPM manager, loading or generating token
+// Init initializes the NPM manager with proper credential handling
+// Priority order:
+// 1. Try existing token from file
+// 2. Try service account credentials from secrets.env
+// 3. Bootstrap: create service account using admin credentials
 func (m *NPMManager) Init() error {
-	// Try to load existing token
-	if data, err := os.ReadFile(m.tokenFile); err == nil && len(data) > 0 {
-		m.mu.Lock()
-		m.token = string(data)
-		m.mu.Unlock()
-		// Verify token is still valid
-		if m.verifyToken() {
+	// Step 1: Try existing token
+	if m.tryLoadToken() {
+		fmt.Println("NPM: Using existing API token")
+		m.initialized = true
+		return nil
+	}
+
+	// Step 2: Try service account credentials from secrets.env
+	if password := m.loadServiceAccountPassword(); password != "" {
+		if err := m.authenticateServiceAccount(password); err == nil {
+			fmt.Println("NPM: Authenticated with service account")
+			m.initialized = true
 			return nil
 		}
-		// Token invalid, clear it
-		m.mu.Lock()
-		m.token = ""
-		m.mu.Unlock()
+		fmt.Printf("NPM: Service account auth failed, will try bootstrap\n")
 	}
 
-	// Generate new token (only if we have credentials)
-	if m.email != "" && m.password != "" {
-		err := m.generateToken()
-		if err != nil {
-			// Log the error but don't fail - NPM integration is optional
-			fmt.Printf("Warning: Failed to get NPM token: %v\n", err)
-			fmt.Println("Hint: Set NPM_EMAIL and NPM_PASSWORD environment variables or provide a valid token file")
-			return err
-		}
+	// Step 3: Bootstrap - create service account using admin credentials
+	if err := m.bootstrapServiceAccount(); err != nil {
+		fmt.Printf("NPM Warning: Bootstrap failed: %v\n", err)
+		fmt.Println("NPM: Will operate in degraded mode (some features unavailable)")
+		// Don't return error - NPM integration is optional
+		return nil
 	}
 
+	m.initialized = true
 	return nil
 }
 
-// generateToken requests a new long-lived token from NPM
-func (m *NPMManager) generateToken() error {
+// tryLoadToken attempts to load and verify existing token
+func (m *NPMManager) tryLoadToken() bool {
+	data, err := os.ReadFile(m.tokenFile)
+	if err != nil || len(data) == 0 {
+		return false
+	}
+
+	token := strings.TrimSpace(string(data))
+	m.mu.Lock()
+	m.token = token
+	m.mu.Unlock()
+
+	if m.verifyToken() {
+		return true
+	}
+
+	// Token invalid, clear it
+	m.mu.Lock()
+	m.token = ""
+	m.mu.Unlock()
+	return false
+}
+
+// loadServiceAccountPassword reads the service account password from secrets.env
+func (m *NPMManager) loadServiceAccountPassword() string {
+	// First check environment variable (set from secrets.env by config loader)
+	if password := os.Getenv(npmAPIPasswordKey); password != "" {
+		return password
+	}
+
+	// Try to read directly from secrets.env file
+	data, err := os.ReadFile(m.secretsFile)
+	if err != nil {
+		return ""
+	}
+
+	for _, line := range strings.Split(string(data), "\n") {
+		line = strings.TrimSpace(line)
+		if strings.HasPrefix(line, npmAPIPasswordKey+"=") {
+			return strings.TrimPrefix(line, npmAPIPasswordKey+"=")
+		}
+	}
+
+	return ""
+}
+
+// authenticateServiceAccount logs in with the service account and saves token
+func (m *NPMManager) authenticateServiceAccount(password string) error {
+	return m.authenticate(npmServiceEmail, password)
+}
+
+// authenticate logs in with given credentials and saves token
+func (m *NPMManager) authenticate(email, password string) error {
 	payload := map[string]string{
-		"identity": m.email,
-		"secret":   m.password,
+		"identity": email,
+		"secret":   password,
 	}
 
 	body, err := json.Marshal(payload)
@@ -136,10 +246,9 @@ func (m *NPMManager) generateToken() error {
 
 	if resp.StatusCode != http.StatusOK {
 		respBody, _ := io.ReadAll(resp.Body)
-		return fmt.Errorf("token request failed: %s - %s", resp.Status, string(respBody))
+		return fmt.Errorf("authentication failed (%s): %s", resp.Status, string(respBody))
 	}
 
-	// Use NPMTokenResponse from appstore.go (same package, no import needed)
 	var tokenResp NPMTokenResponse
 	if err := json.NewDecoder(resp.Body).Decode(&tokenResp); err != nil {
 		return fmt.Errorf("failed to decode token response: %w", err)
@@ -150,14 +259,222 @@ func (m *NPMManager) generateToken() error {
 	m.mu.Unlock()
 
 	// Save token to file
-	if err := os.MkdirAll(filepath.Dir(m.tokenFile), 0755); err != nil {
-		return fmt.Errorf("failed to create config dir: %w", err)
-	}
-	if err := os.WriteFile(m.tokenFile, []byte(m.token), 0600); err != nil {
-		return fmt.Errorf("failed to save token: %w", err)
+	if err := m.saveToken(tokenResp.Token); err != nil {
+		fmt.Printf("NPM Warning: Failed to save token: %v\n", err)
 	}
 
 	return nil
+}
+
+// saveToken persists the token to file
+func (m *NPMManager) saveToken(token string) error {
+	if err := os.MkdirAll(filepath.Dir(m.tokenFile), 0755); err != nil {
+		return fmt.Errorf("failed to create config dir: %w", err)
+	}
+	return os.WriteFile(m.tokenFile, []byte(token), 0600)
+}
+
+// bootstrapServiceAccount creates the API service account using admin credentials
+// This is called on first boot or when service account doesn't exist
+func (m *NPMManager) bootstrapServiceAccount() error {
+	// Get bootstrap (admin) credentials from environment
+	adminEmail := os.Getenv(npmBootstrapEmailKey)
+	adminPassword := os.Getenv(npmBootstrapPasswordKey)
+
+	if adminEmail == "" || adminPassword == "" {
+		return fmt.Errorf("bootstrap credentials not configured (set %s and %s)", npmBootstrapEmailKey, npmBootstrapPasswordKey)
+	}
+
+	fmt.Println("NPM: Bootstrapping service account...")
+
+	// Step 1: Authenticate as admin
+	if err := m.authenticate(adminEmail, adminPassword); err != nil {
+		return fmt.Errorf("admin authentication failed: %w", err)
+	}
+
+	// Step 2: Check if service account already exists
+	users, err := m.listUsers()
+	if err != nil {
+		return fmt.Errorf("failed to list users: %w", err)
+	}
+
+	for _, user := range users {
+		if user.Email == npmServiceEmail {
+			fmt.Println("NPM: Service account already exists")
+			// Service account exists but we don't have the password
+			// Generate new password and update it
+			return m.resetServiceAccountPassword()
+		}
+	}
+
+	// Step 3: Generate random password for service account
+	password, err := generateSecurePassword(32)
+	if err != nil {
+		return fmt.Errorf("failed to generate password: %w", err)
+	}
+
+	// Step 4: Create service account
+	if err := m.createServiceAccount(password); err != nil {
+		return fmt.Errorf("failed to create service account: %w", err)
+	}
+
+	// Step 5: Save password to secrets.env
+	if err := m.saveServiceAccountPassword(password); err != nil {
+		return fmt.Errorf("failed to save service account password: %w", err)
+	}
+
+	// Step 6: Authenticate with service account
+	if err := m.authenticateServiceAccount(password); err != nil {
+		return fmt.Errorf("failed to authenticate service account: %w", err)
+	}
+
+	fmt.Println("NPM: Service account bootstrap complete")
+	return nil
+}
+
+// listUsers returns all NPM users (requires admin auth)
+func (m *NPMManager) listUsers() ([]NPMUser, error) {
+	resp, err := m.doRequest("GET", "/api/users", nil)
+	if err != nil {
+		return nil, err
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		body, _ := io.ReadAll(resp.Body)
+		return nil, fmt.Errorf("failed to list users: %s - %s", resp.Status, string(body))
+	}
+
+	var users []NPMUser
+	if err := json.NewDecoder(resp.Body).Decode(&users); err != nil {
+		return nil, fmt.Errorf("failed to decode users: %w", err)
+	}
+
+	return users, nil
+}
+
+// createServiceAccount creates the API service account
+func (m *NPMManager) createServiceAccount(password string) error {
+	user := NPMCreateUser{
+		Name:       npmServiceName,
+		Nickname:   "api",
+		Email:      npmServiceEmail,
+		Roles:      []string{"admin"},
+		IsDisabled: 0,
+		Secret:     password,
+	}
+
+	resp, err := m.doRequest("POST", "/api/users", user)
+	if err != nil {
+		return err
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK && resp.StatusCode != http.StatusCreated {
+		body, _ := io.ReadAll(resp.Body)
+		return fmt.Errorf("failed to create user: %s - %s", resp.Status, string(body))
+	}
+
+	return nil
+}
+
+// resetServiceAccountPassword generates new password and updates existing account
+func (m *NPMManager) resetServiceAccountPassword() error {
+	// Find the service account
+	users, err := m.listUsers()
+	if err != nil {
+		return err
+	}
+
+	var serviceUser *NPMUser
+	for _, u := range users {
+		if u.Email == npmServiceEmail {
+			serviceUser = &u
+			break
+		}
+	}
+
+	if serviceUser == nil {
+		return fmt.Errorf("service account not found")
+	}
+
+	// Generate new password
+	password, err := generateSecurePassword(32)
+	if err != nil {
+		return err
+	}
+
+	// Update password via API
+	update := map[string]interface{}{
+		"name":        serviceUser.Name,
+		"nickname":    serviceUser.Nickname,
+		"email":       serviceUser.Email,
+		"roles":       serviceUser.Roles,
+		"is_disabled": serviceUser.IsDisabled,
+		"secret":      password,
+	}
+
+	resp, err := m.doRequest("PUT", fmt.Sprintf("/api/users/%d", serviceUser.ID), update)
+	if err != nil {
+		return err
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		body, _ := io.ReadAll(resp.Body)
+		return fmt.Errorf("failed to update password: %s - %s", resp.Status, string(body))
+	}
+
+	// Save new password
+	if err := m.saveServiceAccountPassword(password); err != nil {
+		return err
+	}
+
+	// Re-authenticate with new password
+	return m.authenticateServiceAccount(password)
+}
+
+// saveServiceAccountPassword appends/updates the password in secrets.env
+func (m *NPMManager) saveServiceAccountPassword(password string) error {
+	// Ensure directory exists
+	if err := os.MkdirAll(filepath.Dir(m.secretsFile), 0755); err != nil {
+		return err
+	}
+
+	// Read existing content
+	var lines []string
+	if data, err := os.ReadFile(m.secretsFile); err == nil {
+		lines = strings.Split(string(data), "\n")
+	}
+
+	// Update or add the password line
+	found := false
+	for i, line := range lines {
+		if strings.HasPrefix(line, npmAPIPasswordKey+"=") {
+			lines[i] = fmt.Sprintf("%s=%s", npmAPIPasswordKey, password)
+			found = true
+			break
+		}
+	}
+	if !found {
+		lines = append(lines, fmt.Sprintf("%s=%s", npmAPIPasswordKey, password))
+	}
+
+	// Write back
+	content := strings.Join(lines, "\n")
+	if !strings.HasSuffix(content, "\n") {
+		content += "\n"
+	}
+	return os.WriteFile(m.secretsFile, []byte(content), 0600)
+}
+
+// generateSecurePassword generates a cryptographically secure password
+func generateSecurePassword(length int) (string, error) {
+	bytes := make([]byte, length)
+	if _, err := rand.Read(bytes); err != nil {
+		return "", err
+	}
+	return hex.EncodeToString(bytes)[:length], nil
 }
 
 // verifyToken checks if the current token is valid
@@ -165,6 +482,10 @@ func (m *NPMManager) verifyToken() bool {
 	m.mu.RLock()
 	token := m.token
 	m.mu.RUnlock()
+
+	if token == "" {
+		return false
+	}
 
 	req, err := http.NewRequest("GET", m.baseURL+"/api/users/me", nil)
 	if err != nil {
@@ -182,7 +503,34 @@ func (m *NPMManager) verifyToken() bool {
 }
 
 // doRequest makes an authenticated request to NPM API
+// If token is invalid, attempts to re-authenticate
 func (m *NPMManager) doRequest(method, endpoint string, body interface{}) (*http.Response, error) {
+	resp, err := m.doRequestOnce(method, endpoint, body)
+	if err != nil {
+		return nil, err
+	}
+
+	// If unauthorized, try to re-authenticate
+	if resp.StatusCode == http.StatusUnauthorized {
+		resp.Body.Close()
+
+		// Try to re-authenticate
+		if password := m.loadServiceAccountPassword(); password != "" {
+			if err := m.authenticateServiceAccount(password); err == nil {
+				// Retry the request
+				return m.doRequestOnce(method, endpoint, body)
+			}
+		}
+
+		// Re-authentication failed, return original 401
+		return m.doRequestOnce(method, endpoint, body)
+	}
+
+	return resp, nil
+}
+
+// doRequestOnce makes a single authenticated request
+func (m *NPMManager) doRequestOnce(method, endpoint string, body interface{}) (*http.Response, error) {
 	m.mu.RLock()
 	token := m.token
 	m.mu.RUnlock()
@@ -201,7 +549,9 @@ func (m *NPMManager) doRequest(method, endpoint string, body interface{}) (*http
 		return nil, fmt.Errorf("failed to create request: %w", err)
 	}
 
-	req.Header.Set("Authorization", "Bearer "+token)
+	if token != "" {
+		req.Header.Set("Authorization", "Bearer "+token)
+	}
 	req.Header.Set("Content-Type", "application/json")
 	req.Header.Set("Accept", "application/json")
 
@@ -261,7 +611,7 @@ func (m *NPMManager) CreateProxyHost(host *NPMProxyHostExtended) (*NPMProxyHostE
 	}
 	host.BlockExploits = true
 	host.AllowWebsocketUpgrade = true
-	host.Enabled = 1
+	host.Enabled = FlexBool(true)
 	host.Meta = NPMMeta{LetsencryptAgree: false, DNSChallenge: false}
 	host.Locations = []any{}
 
@@ -348,4 +698,17 @@ func (m *NPMManager) IsHealthy() bool {
 	defer resp.Body.Close()
 	// NPM returns 401 if running but not authenticated - that's fine
 	return resp.StatusCode == http.StatusOK || resp.StatusCode == http.StatusUnauthorized
+}
+
+// IsAuthenticated checks if we have valid credentials
+func (m *NPMManager) IsAuthenticated() bool {
+	m.mu.RLock()
+	token := m.token
+	m.mu.RUnlock()
+	return token != "" && m.verifyToken()
+}
+
+// GetBaseURL returns the NPM base URL (for status reporting)
+func (m *NPMManager) GetBaseURL() string {
+	return m.baseURL
 }

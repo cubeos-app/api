@@ -97,7 +97,7 @@ func (h *NPMHandler) ListHosts(w http.ResponseWriter, r *http.Request) {
 			ForwardPort:   host.ForwardPort,
 			ForwardScheme: host.ForwardScheme,
 			SSLForced:     host.SSLForced,
-			Enabled:       host.Enabled == 1,
+			Enabled:       bool(host.Enabled),
 			CreatedOn:     host.CreatedOn,
 			ModifiedOn:    host.ModifiedOn,
 		}
