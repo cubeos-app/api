@@ -111,6 +111,10 @@ func main() {
 	log.Printf("MountsManager initialized (HAL-enabled)")
 	mountsMgr.SetDB(db.DB) // FIX: Wire database connection
 
+	// Create PortManager for port allocation (Sprint 4)
+	portMgr := managers.NewPortManager(db.DB)
+	log.Printf("PortManager initialized")
+
 	// Create Setup manager (first boot wizard)
 	setupMgr := managers.NewSetupManager(cfg, db.DB)
 
@@ -142,6 +146,12 @@ func main() {
 	vpnHandler := handlers.NewVPNHandler(vpnMgr)
 	mountsHandler := handlers.NewMountsHandler(mountsMgr)
 	log.Printf("VPNHandler and MountsHandler initialized")
+
+	// Create Ports, FQDNs, and Registry handlers (Sprint 4)
+	portsHandler := handlers.NewPortsHandler(portMgr)
+	fqdnsHandler := handlers.NewFQDNsHandler(db.DB, nil, nil) // NPM/Pihole managers optional
+	registryHandler := handlers.NewRegistryHandler("http://localhost:5000", "/cubeos/data/registry")
+	log.Printf("PortsHandler, FQDNsHandler, and RegistryHandler initialized")
 
 	// Create WebSocket manager and handlers
 	wsManager := handlers.NewWSManager(systemMgr, networkMgr, monitoringMgr, docker)
@@ -468,6 +478,15 @@ func main() {
 
 			// Mounts API (Sprint 3)
 			r.Mount("/mounts", mountsHandler.Routes())
+
+			// Ports API (Sprint 4)
+			r.Mount("/ports", portsHandler.Routes())
+
+			// FQDNs API (Sprint 4)
+			r.Mount("/fqdns", fqdnsHandler.Routes())
+
+			// Registry API (Sprint 4)
+			r.Mount("/registry", registryHandler.Routes())
 
 			// NOTE: Network routes are already defined in /network block above.
 			// DO NOT add r.Mount("/network", ...) here - it causes duplicate route panic!
