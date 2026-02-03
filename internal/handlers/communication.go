@@ -81,8 +81,8 @@ func (h *CommunicationHandler) Routes() chi.Router {
 // @Accept json
 // @Produce json
 // @Success 200 {object} hal.GPSDevicesResponse
-// @Failure 500 {object} models.ErrorResponse "Failed to list GPS devices"
-// @Failure 503 {object} models.ErrorResponse "HAL unavailable"
+// @Failure 500 {object} ErrorResponse "Failed to list GPS devices"
+// @Failure 503 {object} ErrorResponse "HAL unavailable"
 // @Security BearerAuth
 // @Router /api/v1/communication/gps [get]
 func (h *CommunicationHandler) GetGPSDevices(w http.ResponseWriter, r *http.Request) {
@@ -110,9 +110,9 @@ func (h *CommunicationHandler) GetGPSDevices(w http.ResponseWriter, r *http.Requ
 // @Produce json
 // @Param port path string true "GPS device port" example(ttyUSB0)
 // @Success 200 {object} hal.GPSStatus
-// @Failure 400 {object} models.ErrorResponse "Port required"
-// @Failure 500 {object} models.ErrorResponse "Failed to get GPS status"
-// @Failure 503 {object} models.ErrorResponse "HAL unavailable"
+// @Failure 400 {object} ErrorResponse "Port required"
+// @Failure 500 {object} ErrorResponse "Failed to get GPS status"
+// @Failure 503 {object} ErrorResponse "HAL unavailable"
 // @Security BearerAuth
 // @Router /api/v1/communication/gps/{port}/status [get]
 func (h *CommunicationHandler) GetGPSStatus(w http.ResponseWriter, r *http.Request) {
@@ -147,9 +147,9 @@ func (h *CommunicationHandler) GetGPSStatus(w http.ResponseWriter, r *http.Reque
 // @Param port path string true "GPS device port" example(ttyUSB0)
 // @Param timeout query int false "Timeout in seconds" default(10)
 // @Success 200 {object} hal.GPSPosition
-// @Failure 400 {object} models.ErrorResponse "Port required"
-// @Failure 500 {object} models.ErrorResponse "Failed to get GPS position"
-// @Failure 503 {object} models.ErrorResponse "HAL unavailable"
+// @Failure 400 {object} ErrorResponse "Port required"
+// @Failure 500 {object} ErrorResponse "Failed to get GPS position"
+// @Failure 503 {object} ErrorResponse "HAL unavailable"
 // @Security BearerAuth
 // @Router /api/v1/communication/gps/{port}/position [get]
 func (h *CommunicationHandler) GetGPSPosition(w http.ResponseWriter, r *http.Request) {
@@ -193,8 +193,8 @@ func (h *CommunicationHandler) GetGPSPosition(w http.ResponseWriter, r *http.Req
 // @Accept json
 // @Produce json
 // @Success 200 {object} hal.CellularModemsResponse
-// @Failure 500 {object} models.ErrorResponse "Failed to list cellular modems"
-// @Failure 503 {object} models.ErrorResponse "HAL unavailable"
+// @Failure 500 {object} ErrorResponse "Failed to list cellular modems"
+// @Failure 503 {object} ErrorResponse "HAL unavailable"
 // @Security BearerAuth
 // @Router /api/v1/communication/cellular [get]
 func (h *CommunicationHandler) GetCellularModems(w http.ResponseWriter, r *http.Request) {
@@ -221,8 +221,8 @@ func (h *CommunicationHandler) GetCellularModems(w http.ResponseWriter, r *http.
 // @Accept json
 // @Produce json
 // @Success 200 {object} hal.CellularStatus
-// @Failure 500 {object} models.ErrorResponse "Failed to get cellular status"
-// @Failure 503 {object} models.ErrorResponse "HAL unavailable"
+// @Failure 500 {object} ErrorResponse "Failed to get cellular status"
+// @Failure 503 {object} ErrorResponse "HAL unavailable"
 // @Security BearerAuth
 // @Router /api/v1/communication/cellular/status [get]
 func (h *CommunicationHandler) GetCellularStatus(w http.ResponseWriter, r *http.Request) {
@@ -250,9 +250,9 @@ func (h *CommunicationHandler) GetCellularStatus(w http.ResponseWriter, r *http.
 // @Produce json
 // @Param modem path int true "Modem index" example(0)
 // @Success 200 {object} hal.CellularSignal
-// @Failure 400 {object} models.ErrorResponse "Invalid modem index"
-// @Failure 500 {object} models.ErrorResponse "Failed to get signal"
-// @Failure 503 {object} models.ErrorResponse "HAL unavailable"
+// @Failure 400 {object} ErrorResponse "Invalid modem index"
+// @Failure 500 {object} ErrorResponse "Failed to get signal"
+// @Failure 503 {object} ErrorResponse "HAL unavailable"
 // @Security BearerAuth
 // @Router /api/v1/communication/cellular/{modem}/signal [get]
 func (h *CommunicationHandler) GetCellularSignal(w http.ResponseWriter, r *http.Request) {
@@ -295,9 +295,9 @@ type CellularConnectRequest struct {
 // @Param modem path int true "Modem index" example(0)
 // @Param request body CellularConnectRequest true "APN settings"
 // @Success 200 {object} SuccessResponse
-// @Failure 400 {object} models.ErrorResponse "Invalid request"
-// @Failure 500 {object} models.ErrorResponse "Failed to connect"
-// @Failure 503 {object} models.ErrorResponse "HAL unavailable"
+// @Failure 400 {object} ErrorResponse "Invalid request"
+// @Failure 500 {object} ErrorResponse "Failed to connect"
+// @Failure 503 {object} ErrorResponse "HAL unavailable"
 // @Security BearerAuth
 // @Router /api/v1/communication/cellular/{modem}/connect [post]
 func (h *CommunicationHandler) ConnectCellular(w http.ResponseWriter, r *http.Request) {
@@ -345,9 +345,9 @@ func (h *CommunicationHandler) ConnectCellular(w http.ResponseWriter, r *http.Re
 // @Produce json
 // @Param modem path int true "Modem index" example(0)
 // @Success 200 {object} SuccessResponse
-// @Failure 400 {object} models.ErrorResponse "Invalid modem index"
-// @Failure 500 {object} models.ErrorResponse "Failed to disconnect"
-// @Failure 503 {object} models.ErrorResponse "HAL unavailable"
+// @Failure 400 {object} ErrorResponse "Invalid modem index"
+// @Failure 500 {object} ErrorResponse "Failed to disconnect"
+// @Failure 503 {object} ErrorResponse "HAL unavailable"
 // @Security BearerAuth
 // @Router /api/v1/communication/cellular/{modem}/disconnect [post]
 func (h *CommunicationHandler) DisconnectCellular(w http.ResponseWriter, r *http.Request) {
@@ -387,8 +387,8 @@ func (h *CommunicationHandler) DisconnectCellular(w http.ResponseWriter, r *http
 // @Accept json
 // @Produce json
 // @Success 200 {object} hal.AndroidTetheringStatus
-// @Failure 500 {object} models.ErrorResponse "Failed to get status"
-// @Failure 503 {object} models.ErrorResponse "HAL unavailable"
+// @Failure 500 {object} ErrorResponse "Failed to get status"
+// @Failure 503 {object} ErrorResponse "HAL unavailable"
 // @Security BearerAuth
 // @Router /api/v1/communication/cellular/android [get]
 func (h *CommunicationHandler) GetAndroidTetheringStatus(w http.ResponseWriter, r *http.Request) {
@@ -415,8 +415,8 @@ func (h *CommunicationHandler) GetAndroidTetheringStatus(w http.ResponseWriter, 
 // @Accept json
 // @Produce json
 // @Success 200 {object} SuccessResponse
-// @Failure 500 {object} models.ErrorResponse "Failed to enable tethering"
-// @Failure 503 {object} models.ErrorResponse "HAL unavailable"
+// @Failure 500 {object} ErrorResponse "Failed to enable tethering"
+// @Failure 503 {object} ErrorResponse "HAL unavailable"
 // @Security BearerAuth
 // @Router /api/v1/communication/cellular/android/enable [post]
 func (h *CommunicationHandler) EnableAndroidTethering(w http.ResponseWriter, r *http.Request) {
@@ -445,8 +445,8 @@ func (h *CommunicationHandler) EnableAndroidTethering(w http.ResponseWriter, r *
 // @Accept json
 // @Produce json
 // @Success 200 {object} SuccessResponse
-// @Failure 500 {object} models.ErrorResponse "Failed to disable tethering"
-// @Failure 503 {object} models.ErrorResponse "HAL unavailable"
+// @Failure 500 {object} ErrorResponse "Failed to disable tethering"
+// @Failure 503 {object} ErrorResponse "HAL unavailable"
 // @Security BearerAuth
 // @Router /api/v1/communication/cellular/android/disable [post]
 func (h *CommunicationHandler) DisableAndroidTethering(w http.ResponseWriter, r *http.Request) {
@@ -480,9 +480,9 @@ func (h *CommunicationHandler) DisableAndroidTethering(w http.ResponseWriter, r 
 // @Produce json
 // @Param port path string true "Meshtastic device port" example(ttyUSB0)
 // @Success 200 {object} hal.MeshtasticStatus
-// @Failure 400 {object} models.ErrorResponse "Port required"
-// @Failure 500 {object} models.ErrorResponse "Failed to get status"
-// @Failure 503 {object} models.ErrorResponse "HAL unavailable"
+// @Failure 400 {object} ErrorResponse "Port required"
+// @Failure 500 {object} ErrorResponse "Failed to get status"
+// @Failure 503 {object} ErrorResponse "HAL unavailable"
 // @Security BearerAuth
 // @Router /api/v1/communication/meshtastic/{port}/status [get]
 func (h *CommunicationHandler) GetMeshtasticStatus(w http.ResponseWriter, r *http.Request) {
@@ -516,9 +516,9 @@ func (h *CommunicationHandler) GetMeshtasticStatus(w http.ResponseWriter, r *htt
 // @Produce json
 // @Param port path string true "Meshtastic device port" example(ttyUSB0)
 // @Success 200 {object} hal.MeshtasticNodesResponse
-// @Failure 400 {object} models.ErrorResponse "Port required"
-// @Failure 500 {object} models.ErrorResponse "Failed to get nodes"
-// @Failure 503 {object} models.ErrorResponse "HAL unavailable"
+// @Failure 400 {object} ErrorResponse "Port required"
+// @Failure 500 {object} ErrorResponse "Failed to get nodes"
+// @Failure 503 {object} ErrorResponse "HAL unavailable"
 // @Security BearerAuth
 // @Router /api/v1/communication/meshtastic/{port}/nodes [get]
 func (h *CommunicationHandler) GetMeshtasticNodes(w http.ResponseWriter, r *http.Request) {
@@ -560,9 +560,9 @@ type MeshtasticMessageRequest struct {
 // @Param port path string true "Meshtastic device port" example(ttyUSB0)
 // @Param request body MeshtasticMessageRequest true "Message to send"
 // @Success 200 {object} SuccessResponse
-// @Failure 400 {object} models.ErrorResponse "Invalid request"
-// @Failure 500 {object} models.ErrorResponse "Failed to send message"
-// @Failure 503 {object} models.ErrorResponse "HAL unavailable"
+// @Failure 400 {object} ErrorResponse "Invalid request"
+// @Failure 500 {object} ErrorResponse "Failed to send message"
+// @Failure 503 {object} ErrorResponse "HAL unavailable"
 // @Security BearerAuth
 // @Router /api/v1/communication/meshtastic/{port}/message [post]
 func (h *CommunicationHandler) SendMeshtasticMessage(w http.ResponseWriter, r *http.Request) {
@@ -615,9 +615,9 @@ type MeshtasticChannelRequest struct {
 // @Param port path string true "Meshtastic device port" example(ttyUSB0)
 // @Param request body MeshtasticChannelRequest true "Channel number"
 // @Success 200 {object} SuccessResponse
-// @Failure 400 {object} models.ErrorResponse "Invalid request"
-// @Failure 500 {object} models.ErrorResponse "Failed to set channel"
-// @Failure 503 {object} models.ErrorResponse "HAL unavailable"
+// @Failure 400 {object} ErrorResponse "Invalid request"
+// @Failure 500 {object} ErrorResponse "Failed to set channel"
+// @Failure 503 {object} ErrorResponse "HAL unavailable"
 // @Security BearerAuth
 // @Router /api/v1/communication/meshtastic/{port}/channel [post]
 func (h *CommunicationHandler) SetMeshtasticChannel(w http.ResponseWriter, r *http.Request) {
@@ -663,9 +663,9 @@ func (h *CommunicationHandler) SetMeshtasticChannel(w http.ResponseWriter, r *ht
 // @Produce json
 // @Param port path string true "Iridium device port" example(ttyUSB0)
 // @Success 200 {object} hal.IridiumStatus
-// @Failure 400 {object} models.ErrorResponse "Port required"
-// @Failure 500 {object} models.ErrorResponse "Failed to get status"
-// @Failure 503 {object} models.ErrorResponse "HAL unavailable"
+// @Failure 400 {object} ErrorResponse "Port required"
+// @Failure 500 {object} ErrorResponse "Failed to get status"
+// @Failure 503 {object} ErrorResponse "HAL unavailable"
 // @Security BearerAuth
 // @Router /api/v1/communication/iridium/{port}/status [get]
 func (h *CommunicationHandler) GetIridiumStatus(w http.ResponseWriter, r *http.Request) {
@@ -699,9 +699,9 @@ func (h *CommunicationHandler) GetIridiumStatus(w http.ResponseWriter, r *http.R
 // @Produce json
 // @Param port path string true "Iridium device port" example(ttyUSB0)
 // @Success 200 {object} hal.IridiumSignal
-// @Failure 400 {object} models.ErrorResponse "Port required"
-// @Failure 500 {object} models.ErrorResponse "Failed to get signal"
-// @Failure 503 {object} models.ErrorResponse "HAL unavailable"
+// @Failure 400 {object} ErrorResponse "Port required"
+// @Failure 500 {object} ErrorResponse "Failed to get signal"
+// @Failure 503 {object} ErrorResponse "HAL unavailable"
 // @Security BearerAuth
 // @Router /api/v1/communication/iridium/{port}/signal [get]
 func (h *CommunicationHandler) GetIridiumSignal(w http.ResponseWriter, r *http.Request) {
@@ -741,9 +741,9 @@ type IridiumSBDRequest struct {
 // @Param port path string true "Iridium device port" example(ttyUSB0)
 // @Param request body IridiumSBDRequest true "SBD message (max 340 bytes)"
 // @Success 200 {object} SuccessResponse
-// @Failure 400 {object} models.ErrorResponse "Invalid request"
-// @Failure 500 {object} models.ErrorResponse "Failed to send SBD"
-// @Failure 503 {object} models.ErrorResponse "HAL unavailable"
+// @Failure 400 {object} ErrorResponse "Invalid request"
+// @Failure 500 {object} ErrorResponse "Failed to send SBD"
+// @Failure 503 {object} ErrorResponse "HAL unavailable"
 // @Security BearerAuth
 // @Router /api/v1/communication/iridium/{port}/send [post]
 func (h *CommunicationHandler) SendIridiumSBD(w http.ResponseWriter, r *http.Request) {
@@ -795,9 +795,9 @@ func (h *CommunicationHandler) SendIridiumSBD(w http.ResponseWriter, r *http.Req
 // @Produce json
 // @Param port path string true "Iridium device port" example(ttyUSB0)
 // @Success 200 {object} hal.IridiumMessagesResponse
-// @Failure 400 {object} models.ErrorResponse "Port required"
-// @Failure 500 {object} models.ErrorResponse "Failed to get messages"
-// @Failure 503 {object} models.ErrorResponse "HAL unavailable"
+// @Failure 400 {object} ErrorResponse "Port required"
+// @Failure 500 {object} ErrorResponse "Failed to get messages"
+// @Failure 503 {object} ErrorResponse "HAL unavailable"
 // @Security BearerAuth
 // @Router /api/v1/communication/iridium/{port}/messages [get]
 func (h *CommunicationHandler) GetIridiumMessages(w http.ResponseWriter, r *http.Request) {
@@ -831,9 +831,9 @@ func (h *CommunicationHandler) GetIridiumMessages(w http.ResponseWriter, r *http
 // @Produce json
 // @Param port path string true "Iridium device port" example(ttyUSB0)
 // @Success 200 {object} SuccessResponse
-// @Failure 400 {object} models.ErrorResponse "Port required"
-// @Failure 500 {object} models.ErrorResponse "Failed to check mailbox"
-// @Failure 503 {object} models.ErrorResponse "HAL unavailable"
+// @Failure 400 {object} ErrorResponse "Port required"
+// @Failure 500 {object} ErrorResponse "Failed to check mailbox"
+// @Failure 503 {object} ErrorResponse "HAL unavailable"
 // @Security BearerAuth
 // @Router /api/v1/communication/iridium/{port}/mailbox [post]
 func (h *CommunicationHandler) CheckIridiumMailbox(w http.ResponseWriter, r *http.Request) {
@@ -872,8 +872,8 @@ func (h *CommunicationHandler) CheckIridiumMailbox(w http.ResponseWriter, r *htt
 // @Accept json
 // @Produce json
 // @Success 200 {object} hal.BluetoothStatus
-// @Failure 500 {object} models.ErrorResponse "Failed to get Bluetooth status"
-// @Failure 503 {object} models.ErrorResponse "HAL unavailable"
+// @Failure 500 {object} ErrorResponse "Failed to get Bluetooth status"
+// @Failure 503 {object} ErrorResponse "HAL unavailable"
 // @Security BearerAuth
 // @Router /api/v1/communication/bluetooth [get]
 func (h *CommunicationHandler) GetBluetoothStatus(w http.ResponseWriter, r *http.Request) {
@@ -900,8 +900,8 @@ func (h *CommunicationHandler) GetBluetoothStatus(w http.ResponseWriter, r *http
 // @Accept json
 // @Produce json
 // @Success 200 {object} SuccessResponse
-// @Failure 500 {object} models.ErrorResponse "Failed to power on Bluetooth"
-// @Failure 503 {object} models.ErrorResponse "HAL unavailable"
+// @Failure 500 {object} ErrorResponse "Failed to power on Bluetooth"
+// @Failure 503 {object} ErrorResponse "HAL unavailable"
 // @Security BearerAuth
 // @Router /api/v1/communication/bluetooth/power/on [post]
 func (h *CommunicationHandler) PowerOnBluetooth(w http.ResponseWriter, r *http.Request) {
@@ -930,8 +930,8 @@ func (h *CommunicationHandler) PowerOnBluetooth(w http.ResponseWriter, r *http.R
 // @Accept json
 // @Produce json
 // @Success 200 {object} SuccessResponse
-// @Failure 500 {object} models.ErrorResponse "Failed to power off Bluetooth"
-// @Failure 503 {object} models.ErrorResponse "HAL unavailable"
+// @Failure 500 {object} ErrorResponse "Failed to power off Bluetooth"
+// @Failure 503 {object} ErrorResponse "HAL unavailable"
 // @Security BearerAuth
 // @Router /api/v1/communication/bluetooth/power/off [post]
 func (h *CommunicationHandler) PowerOffBluetooth(w http.ResponseWriter, r *http.Request) {
@@ -960,8 +960,8 @@ func (h *CommunicationHandler) PowerOffBluetooth(w http.ResponseWriter, r *http.
 // @Accept json
 // @Produce json
 // @Success 200 {object} hal.BluetoothDevicesResponse
-// @Failure 500 {object} models.ErrorResponse "Failed to list Bluetooth devices"
-// @Failure 503 {object} models.ErrorResponse "HAL unavailable"
+// @Failure 500 {object} ErrorResponse "Failed to list Bluetooth devices"
+// @Failure 503 {object} ErrorResponse "HAL unavailable"
 // @Security BearerAuth
 // @Router /api/v1/communication/bluetooth/devices [get]
 func (h *CommunicationHandler) GetBluetoothDevices(w http.ResponseWriter, r *http.Request) {
@@ -994,9 +994,9 @@ type BluetoothScanRequest struct {
 // @Produce json
 // @Param request body BluetoothScanRequest false "Scan parameters"
 // @Success 200 {object} SuccessResponse
-// @Failure 400 {object} models.ErrorResponse "Invalid request"
-// @Failure 500 {object} models.ErrorResponse "Failed to start scan"
-// @Failure 503 {object} models.ErrorResponse "HAL unavailable"
+// @Failure 400 {object} ErrorResponse "Invalid request"
+// @Failure 500 {object} ErrorResponse "Failed to start scan"
+// @Failure 503 {object} ErrorResponse "HAL unavailable"
 // @Security BearerAuth
 // @Router /api/v1/communication/bluetooth/scan [post]
 func (h *CommunicationHandler) ScanBluetoothDevices(w http.ResponseWriter, r *http.Request) {
@@ -1034,9 +1034,9 @@ func (h *CommunicationHandler) ScanBluetoothDevices(w http.ResponseWriter, r *ht
 // @Produce json
 // @Param address path string true "Bluetooth device address" example(AA:BB:CC:DD:EE:FF)
 // @Success 200 {object} SuccessResponse
-// @Failure 400 {object} models.ErrorResponse "Address required"
-// @Failure 500 {object} models.ErrorResponse "Failed to pair"
-// @Failure 503 {object} models.ErrorResponse "HAL unavailable"
+// @Failure 400 {object} ErrorResponse "Address required"
+// @Failure 500 {object} ErrorResponse "Failed to pair"
+// @Failure 503 {object} ErrorResponse "HAL unavailable"
 // @Security BearerAuth
 // @Router /api/v1/communication/bluetooth/pair/{address} [post]
 func (h *CommunicationHandler) PairBluetoothDevice(w http.ResponseWriter, r *http.Request) {
@@ -1072,9 +1072,9 @@ func (h *CommunicationHandler) PairBluetoothDevice(w http.ResponseWriter, r *htt
 // @Produce json
 // @Param address path string true "Bluetooth device address" example(AA:BB:CC:DD:EE:FF)
 // @Success 200 {object} SuccessResponse
-// @Failure 400 {object} models.ErrorResponse "Address required"
-// @Failure 500 {object} models.ErrorResponse "Failed to connect"
-// @Failure 503 {object} models.ErrorResponse "HAL unavailable"
+// @Failure 400 {object} ErrorResponse "Address required"
+// @Failure 500 {object} ErrorResponse "Failed to connect"
+// @Failure 503 {object} ErrorResponse "HAL unavailable"
 // @Security BearerAuth
 // @Router /api/v1/communication/bluetooth/connect/{address} [post]
 func (h *CommunicationHandler) ConnectBluetoothDevice(w http.ResponseWriter, r *http.Request) {
@@ -1110,9 +1110,9 @@ func (h *CommunicationHandler) ConnectBluetoothDevice(w http.ResponseWriter, r *
 // @Produce json
 // @Param address path string true "Bluetooth device address" example(AA:BB:CC:DD:EE:FF)
 // @Success 200 {object} SuccessResponse
-// @Failure 400 {object} models.ErrorResponse "Address required"
-// @Failure 500 {object} models.ErrorResponse "Failed to disconnect"
-// @Failure 503 {object} models.ErrorResponse "HAL unavailable"
+// @Failure 400 {object} ErrorResponse "Address required"
+// @Failure 500 {object} ErrorResponse "Failed to disconnect"
+// @Failure 503 {object} ErrorResponse "HAL unavailable"
 // @Security BearerAuth
 // @Router /api/v1/communication/bluetooth/disconnect/{address} [post]
 func (h *CommunicationHandler) DisconnectBluetoothDevice(w http.ResponseWriter, r *http.Request) {
@@ -1148,9 +1148,9 @@ func (h *CommunicationHandler) DisconnectBluetoothDevice(w http.ResponseWriter, 
 // @Produce json
 // @Param address path string true "Bluetooth device address" example(AA:BB:CC:DD:EE:FF)
 // @Success 200 {object} SuccessResponse
-// @Failure 400 {object} models.ErrorResponse "Address required"
-// @Failure 500 {object} models.ErrorResponse "Failed to remove"
-// @Failure 503 {object} models.ErrorResponse "HAL unavailable"
+// @Failure 400 {object} ErrorResponse "Address required"
+// @Failure 500 {object} ErrorResponse "Failed to remove"
+// @Failure 503 {object} ErrorResponse "HAL unavailable"
 // @Security BearerAuth
 // @Router /api/v1/communication/bluetooth/devices/{address} [delete]
 func (h *CommunicationHandler) RemoveBluetoothDevice(w http.ResponseWriter, r *http.Request) {

@@ -42,8 +42,8 @@ func (h *LogsHandler) Routes() chi.Router {
 // @Param lines query int false "Number of lines to return" default(100)
 // @Param level query string false "Filter by log level" Enums(emerg, alert, crit, err, warn, notice, info, debug)
 // @Success 200 {object} hal.LogsResponse
-// @Failure 500 {object} models.ErrorResponse "Failed to get kernel logs"
-// @Failure 503 {object} models.ErrorResponse "HAL unavailable"
+// @Failure 500 {object} ErrorResponse "Failed to get kernel logs"
+// @Failure 503 {object} ErrorResponse "HAL unavailable"
 // @Security BearerAuth
 // @Router /api/v1/logs/kernel [get]
 func (h *LogsHandler) GetKernelLogs(w http.ResponseWriter, r *http.Request) {
@@ -83,8 +83,8 @@ func (h *LogsHandler) GetKernelLogs(w http.ResponseWriter, r *http.Request) {
 // @Param since query string false "Show logs since time" example(1h)
 // @Param priority query int false "Filter by priority (0-7, lower is more severe)" default(6)
 // @Success 200 {object} hal.LogsResponse
-// @Failure 500 {object} models.ErrorResponse "Failed to get journal logs"
-// @Failure 503 {object} models.ErrorResponse "HAL unavailable"
+// @Failure 500 {object} ErrorResponse "Failed to get journal logs"
+// @Failure 503 {object} ErrorResponse "HAL unavailable"
 // @Security BearerAuth
 // @Router /api/v1/logs/journal [get]
 func (h *LogsHandler) GetJournalLogs(w http.ResponseWriter, r *http.Request) {
@@ -128,8 +128,8 @@ func (h *LogsHandler) GetJournalLogs(w http.ResponseWriter, r *http.Request) {
 // @Accept json
 // @Produce json
 // @Success 200 {object} hal.HardwareLogsResponse
-// @Failure 500 {object} models.ErrorResponse "Failed to get hardware logs"
-// @Failure 503 {object} models.ErrorResponse "HAL unavailable"
+// @Failure 500 {object} ErrorResponse "Failed to get hardware logs"
+// @Failure 503 {object} ErrorResponse "HAL unavailable"
 // @Security BearerAuth
 // @Router /api/v1/logs/hardware [get]
 func (h *LogsHandler) GetHardwareLogs(w http.ResponseWriter, r *http.Request) {
@@ -157,9 +157,9 @@ func (h *LogsHandler) GetHardwareLogs(w http.ResponseWriter, r *http.Request) {
 // @Produce json
 // @Param category path string true "Log category" Enums(usb, pci, gpio, i2c, spi, thermal, power, storage)
 // @Success 200 {object} hal.HardwareLogsResponse
-// @Failure 400 {object} models.ErrorResponse "Category required"
-// @Failure 500 {object} models.ErrorResponse "Failed to get hardware logs"
-// @Failure 503 {object} models.ErrorResponse "HAL unavailable"
+// @Failure 400 {object} ErrorResponse "Category required"
+// @Failure 500 {object} ErrorResponse "Failed to get hardware logs"
+// @Failure 503 {object} ErrorResponse "HAL unavailable"
 // @Security BearerAuth
 // @Router /api/v1/logs/hardware/{category} [get]
 func (h *LogsHandler) GetHardwareLogsByCategory(w http.ResponseWriter, r *http.Request) {

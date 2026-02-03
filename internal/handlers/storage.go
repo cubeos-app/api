@@ -67,8 +67,8 @@ func (h *StorageHandler) Routes() chi.Router {
 // @Accept json
 // @Produce json
 // @Success 200 {object} hal.StorageDevicesResponse
-// @Failure 500 {object} models.ErrorResponse "Failed to list storage devices"
-// @Failure 503 {object} models.ErrorResponse "HAL unavailable"
+// @Failure 500 {object} ErrorResponse "Failed to list storage devices"
+// @Failure 503 {object} ErrorResponse "HAL unavailable"
 // @Security BearerAuth
 // @Router /api/v1/storage/devices [get]
 func (h *StorageHandler) GetStorageDevices(w http.ResponseWriter, r *http.Request) {
@@ -96,9 +96,9 @@ func (h *StorageHandler) GetStorageDevices(w http.ResponseWriter, r *http.Reques
 // @Produce json
 // @Param device path string true "Device name (without /dev/)" example(sda)
 // @Success 200 {object} hal.StorageDevice
-// @Failure 400 {object} models.ErrorResponse "Device name required"
-// @Failure 500 {object} models.ErrorResponse "Failed to get storage device"
-// @Failure 503 {object} models.ErrorResponse "HAL unavailable"
+// @Failure 400 {object} ErrorResponse "Device name required"
+// @Failure 500 {object} ErrorResponse "Failed to get storage device"
+// @Failure 503 {object} ErrorResponse "HAL unavailable"
 // @Security BearerAuth
 // @Router /api/v1/storage/devices/{device} [get]
 func (h *StorageHandler) GetStorageDevice(w http.ResponseWriter, r *http.Request) {
@@ -132,9 +132,9 @@ func (h *StorageHandler) GetStorageDevice(w http.ResponseWriter, r *http.Request
 // @Produce json
 // @Param device path string true "Device name (without /dev/)" example(sda)
 // @Success 200 {object} hal.SMARTInfo
-// @Failure 400 {object} models.ErrorResponse "Device name required"
-// @Failure 500 {object} models.ErrorResponse "Failed to get SMART data"
-// @Failure 503 {object} models.ErrorResponse "HAL unavailable"
+// @Failure 400 {object} ErrorResponse "Device name required"
+// @Failure 500 {object} ErrorResponse "Failed to get SMART data"
+// @Failure 503 {object} ErrorResponse "HAL unavailable"
 // @Security BearerAuth
 // @Router /api/v1/storage/devices/{device}/smart [get]
 func (h *StorageHandler) GetSMARTInfo(w http.ResponseWriter, r *http.Request) {
@@ -167,8 +167,8 @@ func (h *StorageHandler) GetSMARTInfo(w http.ResponseWriter, r *http.Request) {
 // @Accept json
 // @Produce json
 // @Success 200 {object} hal.StorageUsageResponse
-// @Failure 500 {object} models.ErrorResponse "Failed to get storage usage"
-// @Failure 503 {object} models.ErrorResponse "HAL unavailable"
+// @Failure 500 {object} ErrorResponse "Failed to get storage usage"
+// @Failure 503 {object} ErrorResponse "HAL unavailable"
 // @Security BearerAuth
 // @Router /api/v1/storage/usage [get]
 func (h *StorageHandler) GetStorageUsage(w http.ResponseWriter, r *http.Request) {
@@ -199,8 +199,8 @@ func (h *StorageHandler) GetStorageUsage(w http.ResponseWriter, r *http.Request)
 // @Accept json
 // @Produce json
 // @Success 200 {object} USBStorageResponse
-// @Failure 500 {object} models.ErrorResponse "Failed to list USB storage"
-// @Failure 503 {object} models.ErrorResponse "HAL unavailable"
+// @Failure 500 {object} ErrorResponse "Failed to list USB storage"
+// @Failure 503 {object} ErrorResponse "HAL unavailable"
 // @Security BearerAuth
 // @Router /api/v1/storage/usb [get]
 func (h *StorageHandler) GetUSBStorageDevices(w http.ResponseWriter, r *http.Request) {
@@ -233,9 +233,9 @@ type USBStorageResponse struct {
 // @Produce json
 // @Param device path string true "Device name (without /dev/)" example(sdb1)
 // @Success 200 {object} MountResultResponse
-// @Failure 400 {object} models.ErrorResponse "Device name required"
-// @Failure 500 {object} models.ErrorResponse "Failed to mount USB storage"
-// @Failure 503 {object} models.ErrorResponse "HAL unavailable"
+// @Failure 400 {object} ErrorResponse "Device name required"
+// @Failure 500 {object} ErrorResponse "Failed to mount USB storage"
+// @Failure 503 {object} ErrorResponse "HAL unavailable"
 // @Security BearerAuth
 // @Router /api/v1/storage/usb/{device}/mount [post]
 func (h *StorageHandler) MountUSBStorage(w http.ResponseWriter, r *http.Request) {
@@ -280,9 +280,9 @@ type MountResultResponse struct {
 // @Produce json
 // @Param device path string true "Device name (without /dev/)" example(sdb1)
 // @Success 200 {object} SuccessResponse
-// @Failure 400 {object} models.ErrorResponse "Device name required"
-// @Failure 500 {object} models.ErrorResponse "Failed to unmount USB storage"
-// @Failure 503 {object} models.ErrorResponse "HAL unavailable"
+// @Failure 400 {object} ErrorResponse "Device name required"
+// @Failure 500 {object} ErrorResponse "Failed to unmount USB storage"
+// @Failure 503 {object} ErrorResponse "HAL unavailable"
 // @Security BearerAuth
 // @Router /api/v1/storage/usb/{device}/unmount [post]
 func (h *StorageHandler) UnmountUSBStorage(w http.ResponseWriter, r *http.Request) {
@@ -318,9 +318,9 @@ func (h *StorageHandler) UnmountUSBStorage(w http.ResponseWriter, r *http.Reques
 // @Produce json
 // @Param device path string true "Device name (without /dev/)" example(sdb)
 // @Success 200 {object} SuccessResponse
-// @Failure 400 {object} models.ErrorResponse "Device name required"
-// @Failure 500 {object} models.ErrorResponse "Failed to eject USB storage"
-// @Failure 503 {object} models.ErrorResponse "HAL unavailable"
+// @Failure 400 {object} ErrorResponse "Device name required"
+// @Failure 500 {object} ErrorResponse "Failed to eject USB storage"
+// @Failure 503 {object} ErrorResponse "HAL unavailable"
 // @Security BearerAuth
 // @Router /api/v1/storage/usb/{device}/eject [post]
 func (h *StorageHandler) EjectUSBStorage(w http.ResponseWriter, r *http.Request) {
@@ -359,8 +359,8 @@ func (h *StorageHandler) EjectUSBStorage(w http.ResponseWriter, r *http.Request)
 // @Accept json
 // @Produce json
 // @Success 200 {object} hal.USBDevicesResponse
-// @Failure 500 {object} models.ErrorResponse "Failed to list USB devices"
-// @Failure 503 {object} models.ErrorResponse "HAL unavailable"
+// @Failure 500 {object} ErrorResponse "Failed to list USB devices"
+// @Failure 503 {object} ErrorResponse "HAL unavailable"
 // @Security BearerAuth
 // @Router /api/v1/storage/usb/devices [get]
 func (h *StorageHandler) GetUSBDevices(w http.ResponseWriter, r *http.Request) {
@@ -387,8 +387,8 @@ func (h *StorageHandler) GetUSBDevices(w http.ResponseWriter, r *http.Request) {
 // @Accept json
 // @Produce json
 // @Success 200 {object} map[string]interface{}
-// @Failure 500 {object} models.ErrorResponse "Failed to get USB tree"
-// @Failure 503 {object} models.ErrorResponse "HAL unavailable"
+// @Failure 500 {object} ErrorResponse "Failed to get USB tree"
+// @Failure 503 {object} ErrorResponse "HAL unavailable"
 // @Security BearerAuth
 // @Router /api/v1/storage/usb/tree [get]
 func (h *StorageHandler) GetUSBTree(w http.ResponseWriter, r *http.Request) {
@@ -416,9 +416,9 @@ func (h *StorageHandler) GetUSBTree(w http.ResponseWriter, r *http.Request) {
 // @Produce json
 // @Param class path string true "USB device class" example(storage) Enums(storage, hub, hid, audio, video, wireless, serial, printer)
 // @Success 200 {object} USBDevicesByClassResponse
-// @Failure 400 {object} models.ErrorResponse "Class is required"
-// @Failure 500 {object} models.ErrorResponse "Failed to list USB devices"
-// @Failure 503 {object} models.ErrorResponse "HAL unavailable"
+// @Failure 400 {object} ErrorResponse "Class is required"
+// @Failure 500 {object} ErrorResponse "Failed to list USB devices"
+// @Failure 503 {object} ErrorResponse "HAL unavailable"
 // @Security BearerAuth
 // @Router /api/v1/storage/usb/class/{class} [get]
 func (h *StorageHandler) GetUSBDevicesByClass(w http.ResponseWriter, r *http.Request) {
@@ -460,8 +460,8 @@ type USBDevicesByClassResponse struct {
 // @Accept json
 // @Produce json
 // @Success 200 {object} SuccessResponse
-// @Failure 500 {object} models.ErrorResponse "Failed to rescan USB"
-// @Failure 503 {object} models.ErrorResponse "HAL unavailable"
+// @Failure 500 {object} ErrorResponse "Failed to rescan USB"
+// @Failure 503 {object} ErrorResponse "HAL unavailable"
 // @Security BearerAuth
 // @Router /api/v1/storage/usb/rescan [post]
 func (h *StorageHandler) RescanUSB(w http.ResponseWriter, r *http.Request) {
@@ -492,9 +492,9 @@ func (h *StorageHandler) RescanUSB(w http.ResponseWriter, r *http.Request) {
 // @Param bus path int true "USB bus number" example(1)
 // @Param device path int true "USB device number" example(4)
 // @Success 200 {object} SuccessResponse
-// @Failure 400 {object} models.ErrorResponse "Invalid bus or device number"
-// @Failure 500 {object} models.ErrorResponse "Failed to reset USB device"
-// @Failure 503 {object} models.ErrorResponse "HAL unavailable"
+// @Failure 400 {object} ErrorResponse "Invalid bus or device number"
+// @Failure 500 {object} ErrorResponse "Failed to reset USB device"
+// @Failure 503 {object} ErrorResponse "HAL unavailable"
 // @Security BearerAuth
 // @Router /api/v1/storage/usb/reset/{bus}/{device} [post]
 func (h *StorageHandler) ResetUSBDevice(w http.ResponseWriter, r *http.Request) {
@@ -541,8 +541,8 @@ func (h *StorageHandler) ResetUSBDevice(w http.ResponseWriter, r *http.Request) 
 // @Accept json
 // @Produce json
 // @Success 200 {object} hal.MountsResponse
-// @Failure 500 {object} models.ErrorResponse "Failed to list mounts"
-// @Failure 503 {object} models.ErrorResponse "HAL unavailable"
+// @Failure 500 {object} ErrorResponse "Failed to list mounts"
+// @Failure 503 {object} ErrorResponse "HAL unavailable"
 // @Security BearerAuth
 // @Router /api/v1/storage/network-mounts [get]
 func (h *StorageHandler) GetNetworkMounts(w http.ResponseWriter, r *http.Request) {
@@ -580,9 +580,9 @@ type SMBMountRequest struct {
 // @Produce json
 // @Param request body SMBMountRequest true "SMB mount parameters"
 // @Success 200 {object} hal.MountResponse
-// @Failure 400 {object} models.ErrorResponse "Invalid request"
-// @Failure 500 {object} models.ErrorResponse "Failed to mount SMB share"
-// @Failure 503 {object} models.ErrorResponse "HAL unavailable"
+// @Failure 400 {object} ErrorResponse "Invalid request"
+// @Failure 500 {object} ErrorResponse "Failed to mount SMB share"
+// @Failure 503 {object} ErrorResponse "HAL unavailable"
 // @Security BearerAuth
 // @Router /api/v1/storage/network-mounts/smb [post]
 func (h *StorageHandler) MountSMB(w http.ResponseWriter, r *http.Request) {
@@ -641,9 +641,9 @@ type NFSMountRequest struct {
 // @Produce json
 // @Param request body NFSMountRequest true "NFS mount parameters"
 // @Success 200 {object} hal.MountResponse
-// @Failure 400 {object} models.ErrorResponse "Invalid request"
-// @Failure 500 {object} models.ErrorResponse "Failed to mount NFS share"
-// @Failure 503 {object} models.ErrorResponse "HAL unavailable"
+// @Failure 400 {object} ErrorResponse "Invalid request"
+// @Failure 500 {object} ErrorResponse "Failed to mount NFS share"
+// @Failure 503 {object} ErrorResponse "HAL unavailable"
 // @Security BearerAuth
 // @Router /api/v1/storage/network-mounts/nfs [post]
 func (h *StorageHandler) MountNFS(w http.ResponseWriter, r *http.Request) {
@@ -701,9 +701,9 @@ type TestMountRequest struct {
 // @Produce json
 // @Param request body TestMountRequest true "Mount test parameters"
 // @Success 200 {object} SuccessResponse
-// @Failure 400 {object} models.ErrorResponse "Invalid request"
-// @Failure 500 {object} models.ErrorResponse "Connection test failed"
-// @Failure 503 {object} models.ErrorResponse "HAL unavailable"
+// @Failure 400 {object} ErrorResponse "Invalid request"
+// @Failure 500 {object} ErrorResponse "Connection test failed"
+// @Failure 503 {object} ErrorResponse "HAL unavailable"
 // @Security BearerAuth
 // @Router /api/v1/storage/network-mounts/test [post]
 func (h *StorageHandler) TestMountConnection(w http.ResponseWriter, r *http.Request) {
@@ -754,9 +754,9 @@ type UnmountNetworkRequest struct {
 // @Produce json
 // @Param request body UnmountNetworkRequest true "Unmount parameters"
 // @Success 200 {object} SuccessResponse
-// @Failure 400 {object} models.ErrorResponse "Path is required"
-// @Failure 500 {object} models.ErrorResponse "Failed to unmount"
-// @Failure 503 {object} models.ErrorResponse "HAL unavailable"
+// @Failure 400 {object} ErrorResponse "Path is required"
+// @Failure 500 {object} ErrorResponse "Failed to unmount"
+// @Failure 503 {object} ErrorResponse "HAL unavailable"
 // @Security BearerAuth
 // @Router /api/v1/storage/network-mounts [delete]
 func (h *StorageHandler) UnmountNetwork(w http.ResponseWriter, r *http.Request) {
@@ -797,9 +797,9 @@ func (h *StorageHandler) UnmountNetwork(w http.ResponseWriter, r *http.Request) 
 // @Produce json
 // @Param path query string true "Path to check" example(/mnt/share)
 // @Success 200 {object} MountCheckResponse
-// @Failure 400 {object} models.ErrorResponse "Path is required"
-// @Failure 500 {object} models.ErrorResponse "Failed to check mount"
-// @Failure 503 {object} models.ErrorResponse "HAL unavailable"
+// @Failure 400 {object} ErrorResponse "Path is required"
+// @Failure 500 {object} ErrorResponse "Failed to check mount"
+// @Failure 503 {object} ErrorResponse "HAL unavailable"
 // @Security BearerAuth
 // @Router /api/v1/storage/network-mounts/check [get]
 func (h *StorageHandler) IsMounted(w http.ResponseWriter, r *http.Request) {

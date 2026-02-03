@@ -57,8 +57,8 @@ func (h *MediaHandler) Routes() chi.Router {
 // @Accept json
 // @Produce json
 // @Success 200 {object} hal.CameraDevicesResponse
-// @Failure 500 {object} models.ErrorResponse "Failed to list cameras"
-// @Failure 503 {object} models.ErrorResponse "HAL unavailable"
+// @Failure 500 {object} ErrorResponse "Failed to list cameras"
+// @Failure 503 {object} ErrorResponse "HAL unavailable"
 // @Security BearerAuth
 // @Router /api/v1/media/cameras [get]
 func (h *MediaHandler) GetCameras(w http.ResponseWriter, r *http.Request) {
@@ -85,8 +85,8 @@ func (h *MediaHandler) GetCameras(w http.ResponseWriter, r *http.Request) {
 // @Accept json
 // @Produce json
 // @Success 200 {object} hal.CameraInfo
-// @Failure 500 {object} models.ErrorResponse "Failed to get camera info"
-// @Failure 503 {object} models.ErrorResponse "HAL unavailable"
+// @Failure 500 {object} ErrorResponse "Failed to get camera info"
+// @Failure 503 {object} ErrorResponse "HAL unavailable"
 // @Security BearerAuth
 // @Router /api/v1/media/cameras/info [get]
 func (h *MediaHandler) GetCameraInfo(w http.ResponseWriter, r *http.Request) {
@@ -123,9 +123,9 @@ type CaptureImageRequest struct {
 // @Produce json
 // @Param request body CaptureImageRequest false "Capture parameters"
 // @Success 200 {object} SuccessResponse
-// @Failure 400 {object} models.ErrorResponse "Invalid request"
-// @Failure 500 {object} models.ErrorResponse "Failed to capture image"
-// @Failure 503 {object} models.ErrorResponse "HAL unavailable"
+// @Failure 400 {object} ErrorResponse "Invalid request"
+// @Failure 500 {object} ErrorResponse "Failed to capture image"
+// @Failure 503 {object} ErrorResponse "HAL unavailable"
 // @Security BearerAuth
 // @Router /api/v1/media/cameras/capture [post]
 func (h *MediaHandler) CaptureImage(w http.ResponseWriter, r *http.Request) {
@@ -174,9 +174,9 @@ func (h *MediaHandler) CaptureImage(w http.ResponseWriter, r *http.Request) {
 // @Accept json
 // @Produce image/jpeg,image/png
 // @Success 200 {file} binary "Captured image"
-// @Failure 404 {object} models.ErrorResponse "No image captured"
-// @Failure 500 {object} models.ErrorResponse "Failed to get image"
-// @Failure 503 {object} models.ErrorResponse "HAL unavailable"
+// @Failure 404 {object} ErrorResponse "No image captured"
+// @Failure 500 {object} ErrorResponse "Failed to get image"
+// @Failure 503 {object} ErrorResponse "HAL unavailable"
 // @Security BearerAuth
 // @Router /api/v1/media/cameras/capture [get]
 func (h *MediaHandler) GetCapturedImage(w http.ResponseWriter, r *http.Request) {
@@ -217,8 +217,8 @@ func (h *MediaHandler) GetCapturedImage(w http.ResponseWriter, r *http.Request) 
 // @Accept json
 // @Produce json
 // @Success 200 {object} hal.StreamInfo
-// @Failure 500 {object} models.ErrorResponse "Failed to get stream info"
-// @Failure 503 {object} models.ErrorResponse "HAL unavailable"
+// @Failure 500 {object} ErrorResponse "Failed to get stream info"
+// @Failure 503 {object} ErrorResponse "HAL unavailable"
 // @Security BearerAuth
 // @Router /api/v1/media/cameras/stream [get]
 func (h *MediaHandler) GetStreamInfo(w http.ResponseWriter, r *http.Request) {
@@ -255,9 +255,9 @@ type StartStreamRequest struct {
 // @Produce json
 // @Param request body StartStreamRequest false "Stream parameters"
 // @Success 200 {object} StreamStartResponse
-// @Failure 400 {object} models.ErrorResponse "Invalid request"
-// @Failure 500 {object} models.ErrorResponse "Failed to start stream"
-// @Failure 503 {object} models.ErrorResponse "HAL unavailable"
+// @Failure 400 {object} ErrorResponse "Invalid request"
+// @Failure 500 {object} ErrorResponse "Failed to start stream"
+// @Failure 503 {object} ErrorResponse "HAL unavailable"
 // @Security BearerAuth
 // @Router /api/v1/media/cameras/stream/start [post]
 func (h *MediaHandler) StartStream(w http.ResponseWriter, r *http.Request) {
@@ -314,8 +314,8 @@ type StreamStartResponse struct {
 // @Accept json
 // @Produce json
 // @Success 200 {object} SuccessResponse
-// @Failure 500 {object} models.ErrorResponse "Failed to stop stream"
-// @Failure 503 {object} models.ErrorResponse "HAL unavailable"
+// @Failure 500 {object} ErrorResponse "Failed to stop stream"
+// @Failure 503 {object} ErrorResponse "HAL unavailable"
 // @Security BearerAuth
 // @Router /api/v1/media/cameras/stream/stop [post]
 func (h *MediaHandler) StopStream(w http.ResponseWriter, r *http.Request) {
@@ -348,8 +348,8 @@ func (h *MediaHandler) StopStream(w http.ResponseWriter, r *http.Request) {
 // @Accept json
 // @Produce json
 // @Success 200 {object} hal.AudioDevicesResponse
-// @Failure 500 {object} models.ErrorResponse "Failed to list audio devices"
-// @Failure 503 {object} models.ErrorResponse "HAL unavailable"
+// @Failure 500 {object} ErrorResponse "Failed to list audio devices"
+// @Failure 503 {object} ErrorResponse "HAL unavailable"
 // @Security BearerAuth
 // @Router /api/v1/media/audio [get]
 func (h *MediaHandler) GetAudioDevices(w http.ResponseWriter, r *http.Request) {
@@ -376,8 +376,8 @@ func (h *MediaHandler) GetAudioDevices(w http.ResponseWriter, r *http.Request) {
 // @Accept json
 // @Produce json
 // @Success 200 {object} AudioDevicesListResponse
-// @Failure 500 {object} models.ErrorResponse "Failed to list playback devices"
-// @Failure 503 {object} models.ErrorResponse "HAL unavailable"
+// @Failure 500 {object} ErrorResponse "Failed to list playback devices"
+// @Failure 503 {object} ErrorResponse "HAL unavailable"
 // @Security BearerAuth
 // @Router /api/v1/media/audio/playback [get]
 func (h *MediaHandler) GetPlaybackDevices(w http.ResponseWriter, r *http.Request) {
@@ -409,8 +409,8 @@ type AudioDevicesListResponse struct {
 // @Accept json
 // @Produce json
 // @Success 200 {object} AudioDevicesListResponse
-// @Failure 500 {object} models.ErrorResponse "Failed to list capture devices"
-// @Failure 503 {object} models.ErrorResponse "HAL unavailable"
+// @Failure 500 {object} ErrorResponse "Failed to list capture devices"
+// @Failure 503 {object} ErrorResponse "HAL unavailable"
 // @Security BearerAuth
 // @Router /api/v1/media/audio/capture [get]
 func (h *MediaHandler) GetCaptureDevices(w http.ResponseWriter, r *http.Request) {
@@ -437,8 +437,8 @@ func (h *MediaHandler) GetCaptureDevices(w http.ResponseWriter, r *http.Request)
 // @Accept json
 // @Produce json
 // @Success 200 {object} hal.VolumeInfo
-// @Failure 500 {object} models.ErrorResponse "Failed to get volume"
-// @Failure 503 {object} models.ErrorResponse "HAL unavailable"
+// @Failure 500 {object} ErrorResponse "Failed to get volume"
+// @Failure 503 {object} ErrorResponse "HAL unavailable"
 // @Security BearerAuth
 // @Router /api/v1/media/audio/volume [get]
 func (h *MediaHandler) GetVolume(w http.ResponseWriter, r *http.Request) {
@@ -471,9 +471,9 @@ type SetVolumeRequest struct {
 // @Produce json
 // @Param request body SetVolumeRequest true "Volume level"
 // @Success 200 {object} SuccessResponse
-// @Failure 400 {object} models.ErrorResponse "Invalid volume"
-// @Failure 500 {object} models.ErrorResponse "Failed to set volume"
-// @Failure 503 {object} models.ErrorResponse "HAL unavailable"
+// @Failure 400 {object} ErrorResponse "Invalid volume"
+// @Failure 500 {object} ErrorResponse "Failed to set volume"
+// @Failure 503 {object} ErrorResponse "HAL unavailable"
 // @Security BearerAuth
 // @Router /api/v1/media/audio/volume [post]
 func (h *MediaHandler) SetVolume(w http.ResponseWriter, r *http.Request) {
@@ -519,9 +519,9 @@ type SetMuteRequest struct {
 // @Produce json
 // @Param request body SetMuteRequest true "Mute state"
 // @Success 200 {object} SuccessResponse
-// @Failure 400 {object} models.ErrorResponse "Invalid request"
-// @Failure 500 {object} models.ErrorResponse "Failed to set mute"
-// @Failure 503 {object} models.ErrorResponse "HAL unavailable"
+// @Failure 400 {object} ErrorResponse "Invalid request"
+// @Failure 500 {object} ErrorResponse "Failed to set mute"
+// @Failure 503 {object} ErrorResponse "HAL unavailable"
 // @Security BearerAuth
 // @Router /api/v1/media/audio/mute [post]
 func (h *MediaHandler) SetMute(w http.ResponseWriter, r *http.Request) {

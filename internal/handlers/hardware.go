@@ -94,7 +94,7 @@ func (h *HardwareHandler) Routes() chi.Router {
 // @Accept json
 // @Produce json
 // @Success 200 {object} HardwareOverviewResponse
-// @Failure 503 {object} models.ErrorResponse "HAL unavailable"
+// @Failure 503 {object} ErrorResponse "HAL unavailable"
 // @Security BearerAuth
 // @Router /api/v1/hardware/overview [get]
 func (h *HardwareHandler) GetOverview(w http.ResponseWriter, r *http.Request) {
@@ -152,8 +152,8 @@ type HardwareOverviewResponse struct {
 // @Accept json
 // @Produce json
 // @Success 200 {object} hal.TemperatureResponse
-// @Failure 500 {object} models.ErrorResponse "Failed to read temperature"
-// @Failure 503 {object} models.ErrorResponse "HAL unavailable"
+// @Failure 500 {object} ErrorResponse "Failed to read temperature"
+// @Failure 503 {object} ErrorResponse "HAL unavailable"
 // @Security BearerAuth
 // @Router /api/v1/hardware/temperature [get]
 func (h *HardwareHandler) GetTemperature(w http.ResponseWriter, r *http.Request) {
@@ -180,8 +180,8 @@ func (h *HardwareHandler) GetTemperature(w http.ResponseWriter, r *http.Request)
 // @Accept json
 // @Produce json
 // @Success 200 {object} hal.ThrottleStatus
-// @Failure 500 {object} models.ErrorResponse "Failed to read throttle status"
-// @Failure 503 {object} models.ErrorResponse "HAL unavailable"
+// @Failure 500 {object} ErrorResponse "Failed to read throttle status"
+// @Failure 503 {object} ErrorResponse "HAL unavailable"
 // @Security BearerAuth
 // @Router /api/v1/hardware/throttle [get]
 func (h *HardwareHandler) GetThrottleStatus(w http.ResponseWriter, r *http.Request) {
@@ -208,8 +208,8 @@ func (h *HardwareHandler) GetThrottleStatus(w http.ResponseWriter, r *http.Reque
 // @Accept json
 // @Produce json
 // @Success 200 {object} hal.EEPROMInfo
-// @Failure 500 {object} models.ErrorResponse "Failed to read EEPROM"
-// @Failure 503 {object} models.ErrorResponse "HAL unavailable"
+// @Failure 500 {object} ErrorResponse "Failed to read EEPROM"
+// @Failure 503 {object} ErrorResponse "HAL unavailable"
 // @Security BearerAuth
 // @Router /api/v1/hardware/eeprom [get]
 func (h *HardwareHandler) GetEEPROMInfo(w http.ResponseWriter, r *http.Request) {
@@ -236,8 +236,8 @@ func (h *HardwareHandler) GetEEPROMInfo(w http.ResponseWriter, r *http.Request) 
 // @Accept json
 // @Produce json
 // @Success 200 {object} hal.BootConfig
-// @Failure 500 {object} models.ErrorResponse "Failed to read boot config"
-// @Failure 503 {object} models.ErrorResponse "HAL unavailable"
+// @Failure 500 {object} ErrorResponse "Failed to read boot config"
+// @Failure 503 {object} ErrorResponse "HAL unavailable"
 // @Security BearerAuth
 // @Router /api/v1/hardware/bootconfig [get]
 func (h *HardwareHandler) GetBootConfig(w http.ResponseWriter, r *http.Request) {
@@ -264,8 +264,8 @@ func (h *HardwareHandler) GetBootConfig(w http.ResponseWriter, r *http.Request) 
 // @Accept json
 // @Produce json
 // @Success 200 {object} hal.UptimeInfo
-// @Failure 500 {object} models.ErrorResponse "Failed to read uptime"
-// @Failure 503 {object} models.ErrorResponse "HAL unavailable"
+// @Failure 500 {object} ErrorResponse "Failed to read uptime"
+// @Failure 503 {object} ErrorResponse "HAL unavailable"
 // @Security BearerAuth
 // @Router /api/v1/hardware/uptime [get]
 func (h *HardwareHandler) GetUptime(w http.ResponseWriter, r *http.Request) {
@@ -296,8 +296,8 @@ func (h *HardwareHandler) GetUptime(w http.ResponseWriter, r *http.Request) {
 // @Accept json
 // @Produce json
 // @Success 200 {object} SuccessResponse
-// @Failure 500 {object} models.ErrorResponse "Failed to initiate reboot"
-// @Failure 503 {object} models.ErrorResponse "HAL unavailable"
+// @Failure 500 {object} ErrorResponse "Failed to initiate reboot"
+// @Failure 503 {object} ErrorResponse "HAL unavailable"
 // @Security BearerAuth
 // @Router /api/v1/hardware/reboot [post]
 func (h *HardwareHandler) Reboot(w http.ResponseWriter, r *http.Request) {
@@ -326,8 +326,8 @@ func (h *HardwareHandler) Reboot(w http.ResponseWriter, r *http.Request) {
 // @Accept json
 // @Produce json
 // @Success 200 {object} SuccessResponse
-// @Failure 500 {object} models.ErrorResponse "Failed to initiate shutdown"
-// @Failure 503 {object} models.ErrorResponse "HAL unavailable"
+// @Failure 500 {object} ErrorResponse "Failed to initiate shutdown"
+// @Failure 503 {object} ErrorResponse "HAL unavailable"
 // @Security BearerAuth
 // @Router /api/v1/hardware/shutdown [post]
 func (h *HardwareHandler) Shutdown(w http.ResponseWriter, r *http.Request) {
@@ -366,8 +366,8 @@ type SuccessResponse struct {
 // @Accept json
 // @Produce json
 // @Success 200 {object} hal.PowerStatus
-// @Failure 500 {object} models.ErrorResponse "Failed to read power status"
-// @Failure 503 {object} models.ErrorResponse "HAL unavailable"
+// @Failure 500 {object} ErrorResponse "Failed to read power status"
+// @Failure 503 {object} ErrorResponse "HAL unavailable"
 // @Security BearerAuth
 // @Router /api/v1/hardware/power [get]
 func (h *HardwareHandler) GetPowerStatus(w http.ResponseWriter, r *http.Request) {
@@ -394,8 +394,8 @@ func (h *HardwareHandler) GetPowerStatus(w http.ResponseWriter, r *http.Request)
 // @Accept json
 // @Produce json
 // @Success 200 {object} hal.BatteryStatus
-// @Failure 500 {object} models.ErrorResponse "Failed to read battery status"
-// @Failure 503 {object} models.ErrorResponse "HAL unavailable"
+// @Failure 500 {object} ErrorResponse "Failed to read battery status"
+// @Failure 503 {object} ErrorResponse "HAL unavailable"
 // @Security BearerAuth
 // @Router /api/v1/hardware/battery [get]
 func (h *HardwareHandler) GetBatteryStatus(w http.ResponseWriter, r *http.Request) {
@@ -422,8 +422,8 @@ func (h *HardwareHandler) GetBatteryStatus(w http.ResponseWriter, r *http.Reques
 // @Accept json
 // @Produce json
 // @Success 200 {object} hal.UPSInfo
-// @Failure 500 {object} models.ErrorResponse "Failed to read UPS info"
-// @Failure 503 {object} models.ErrorResponse "HAL unavailable"
+// @Failure 500 {object} ErrorResponse "Failed to read UPS info"
+// @Failure 503 {object} ErrorResponse "HAL unavailable"
 // @Security BearerAuth
 // @Router /api/v1/hardware/ups [get]
 func (h *HardwareHandler) GetUPSInfo(w http.ResponseWriter, r *http.Request) {
@@ -456,9 +456,9 @@ type ChargingRequest struct {
 // @Produce json
 // @Param request body ChargingRequest true "Charging control"
 // @Success 200 {object} SuccessResponse
-// @Failure 400 {object} models.ErrorResponse "Invalid request"
-// @Failure 500 {object} models.ErrorResponse "Failed to set charging"
-// @Failure 503 {object} models.ErrorResponse "HAL unavailable"
+// @Failure 400 {object} ErrorResponse "Invalid request"
+// @Failure 500 {object} ErrorResponse "Failed to set charging"
+// @Failure 503 {object} ErrorResponse "HAL unavailable"
 // @Security BearerAuth
 // @Router /api/v1/hardware/charging [post]
 func (h *HardwareHandler) SetChargingEnabled(w http.ResponseWriter, r *http.Request) {
@@ -498,8 +498,8 @@ func (h *HardwareHandler) SetChargingEnabled(w http.ResponseWriter, r *http.Requ
 // @Accept json
 // @Produce json
 // @Success 200 {object} SuccessResponse
-// @Failure 500 {object} models.ErrorResponse "Failed to quick start battery"
-// @Failure 503 {object} models.ErrorResponse "HAL unavailable"
+// @Failure 500 {object} ErrorResponse "Failed to quick start battery"
+// @Failure 503 {object} ErrorResponse "HAL unavailable"
 // @Security BearerAuth
 // @Router /api/v1/hardware/battery/quickstart [post]
 func (h *HardwareHandler) QuickStartBattery(w http.ResponseWriter, r *http.Request) {
@@ -532,8 +532,8 @@ func (h *HardwareHandler) QuickStartBattery(w http.ResponseWriter, r *http.Reque
 // @Accept json
 // @Produce json
 // @Success 200 {object} hal.RTCStatus
-// @Failure 500 {object} models.ErrorResponse "Failed to read RTC"
-// @Failure 503 {object} models.ErrorResponse "HAL unavailable"
+// @Failure 500 {object} ErrorResponse "Failed to read RTC"
+// @Failure 503 {object} ErrorResponse "HAL unavailable"
 // @Security BearerAuth
 // @Router /api/v1/hardware/rtc [get]
 func (h *HardwareHandler) GetRTCStatus(w http.ResponseWriter, r *http.Request) {
@@ -560,8 +560,8 @@ func (h *HardwareHandler) GetRTCStatus(w http.ResponseWriter, r *http.Request) {
 // @Accept json
 // @Produce json
 // @Success 200 {object} SuccessResponse
-// @Failure 500 {object} models.ErrorResponse "Failed to sync time"
-// @Failure 503 {object} models.ErrorResponse "HAL unavailable"
+// @Failure 500 {object} ErrorResponse "Failed to sync time"
+// @Failure 503 {object} ErrorResponse "HAL unavailable"
 // @Security BearerAuth
 // @Router /api/v1/hardware/rtc/sync [post]
 func (h *HardwareHandler) SyncRTCTime(w http.ResponseWriter, r *http.Request) {
@@ -596,9 +596,9 @@ type WakeAlarmRequest struct {
 // @Produce json
 // @Param request body WakeAlarmRequest true "Wake alarm time (ISO 8601)"
 // @Success 200 {object} SuccessResponse
-// @Failure 400 {object} models.ErrorResponse "Invalid time format"
-// @Failure 500 {object} models.ErrorResponse "Failed to set wake alarm"
-// @Failure 503 {object} models.ErrorResponse "HAL unavailable"
+// @Failure 400 {object} ErrorResponse "Invalid time format"
+// @Failure 500 {object} ErrorResponse "Failed to set wake alarm"
+// @Failure 503 {object} ErrorResponse "HAL unavailable"
 // @Security BearerAuth
 // @Router /api/v1/hardware/rtc/wake [post]
 func (h *HardwareHandler) SetWakeAlarm(w http.ResponseWriter, r *http.Request) {
@@ -639,8 +639,8 @@ func (h *HardwareHandler) SetWakeAlarm(w http.ResponseWriter, r *http.Request) {
 // @Accept json
 // @Produce json
 // @Success 200 {object} SuccessResponse
-// @Failure 500 {object} models.ErrorResponse "Failed to clear wake alarm"
-// @Failure 503 {object} models.ErrorResponse "HAL unavailable"
+// @Failure 500 {object} ErrorResponse "Failed to clear wake alarm"
+// @Failure 503 {object} ErrorResponse "HAL unavailable"
 // @Security BearerAuth
 // @Router /api/v1/hardware/rtc/wake [delete]
 func (h *HardwareHandler) ClearWakeAlarm(w http.ResponseWriter, r *http.Request) {
@@ -673,8 +673,8 @@ func (h *HardwareHandler) ClearWakeAlarm(w http.ResponseWriter, r *http.Request)
 // @Accept json
 // @Produce json
 // @Success 200 {object} hal.WatchdogInfo
-// @Failure 500 {object} models.ErrorResponse "Failed to read watchdog status"
-// @Failure 503 {object} models.ErrorResponse "HAL unavailable"
+// @Failure 500 {object} ErrorResponse "Failed to read watchdog status"
+// @Failure 503 {object} ErrorResponse "HAL unavailable"
 // @Security BearerAuth
 // @Router /api/v1/hardware/watchdog [get]
 func (h *HardwareHandler) GetWatchdogStatus(w http.ResponseWriter, r *http.Request) {
@@ -701,8 +701,8 @@ func (h *HardwareHandler) GetWatchdogStatus(w http.ResponseWriter, r *http.Reque
 // @Accept json
 // @Produce json
 // @Success 200 {object} SuccessResponse
-// @Failure 500 {object} models.ErrorResponse "Failed to pet watchdog"
-// @Failure 503 {object} models.ErrorResponse "HAL unavailable"
+// @Failure 500 {object} ErrorResponse "Failed to pet watchdog"
+// @Failure 503 {object} ErrorResponse "HAL unavailable"
 // @Security BearerAuth
 // @Router /api/v1/hardware/watchdog/pet [post]
 func (h *HardwareHandler) PetWatchdog(w http.ResponseWriter, r *http.Request) {
@@ -731,8 +731,8 @@ func (h *HardwareHandler) PetWatchdog(w http.ResponseWriter, r *http.Request) {
 // @Accept json
 // @Produce json
 // @Success 200 {object} SuccessResponse
-// @Failure 500 {object} models.ErrorResponse "Failed to enable watchdog"
-// @Failure 503 {object} models.ErrorResponse "HAL unavailable"
+// @Failure 500 {object} ErrorResponse "Failed to enable watchdog"
+// @Failure 503 {object} ErrorResponse "HAL unavailable"
 // @Security BearerAuth
 // @Router /api/v1/hardware/watchdog/enable [post]
 func (h *HardwareHandler) EnableWatchdog(w http.ResponseWriter, r *http.Request) {
@@ -766,9 +766,9 @@ func (h *HardwareHandler) EnableWatchdog(w http.ResponseWriter, r *http.Request)
 // @Produce json
 // @Param name path string true "Service name" example(hostapd)
 // @Success 200 {object} hal.ServiceStatus
-// @Failure 400 {object} models.ErrorResponse "Service name required"
-// @Failure 500 {object} models.ErrorResponse "Failed to get service status"
-// @Failure 503 {object} models.ErrorResponse "HAL unavailable"
+// @Failure 400 {object} ErrorResponse "Service name required"
+// @Failure 500 {object} ErrorResponse "Failed to get service status"
+// @Failure 503 {object} ErrorResponse "HAL unavailable"
 // @Security BearerAuth
 // @Router /api/v1/hardware/services/{name} [get]
 func (h *HardwareHandler) GetServiceStatus(w http.ResponseWriter, r *http.Request) {
@@ -802,9 +802,9 @@ func (h *HardwareHandler) GetServiceStatus(w http.ResponseWriter, r *http.Reques
 // @Produce json
 // @Param name path string true "Service name" example(hostapd)
 // @Success 200 {object} SuccessResponse
-// @Failure 400 {object} models.ErrorResponse "Service name required"
-// @Failure 500 {object} models.ErrorResponse "Failed to start service"
-// @Failure 503 {object} models.ErrorResponse "HAL unavailable"
+// @Failure 400 {object} ErrorResponse "Service name required"
+// @Failure 500 {object} ErrorResponse "Failed to start service"
+// @Failure 503 {object} ErrorResponse "HAL unavailable"
 // @Security BearerAuth
 // @Router /api/v1/hardware/services/{name}/start [post]
 func (h *HardwareHandler) StartService(w http.ResponseWriter, r *http.Request) {
@@ -840,9 +840,9 @@ func (h *HardwareHandler) StartService(w http.ResponseWriter, r *http.Request) {
 // @Produce json
 // @Param name path string true "Service name" example(hostapd)
 // @Success 200 {object} SuccessResponse
-// @Failure 400 {object} models.ErrorResponse "Service name required"
-// @Failure 500 {object} models.ErrorResponse "Failed to stop service"
-// @Failure 503 {object} models.ErrorResponse "HAL unavailable"
+// @Failure 400 {object} ErrorResponse "Service name required"
+// @Failure 500 {object} ErrorResponse "Failed to stop service"
+// @Failure 503 {object} ErrorResponse "HAL unavailable"
 // @Security BearerAuth
 // @Router /api/v1/hardware/services/{name}/stop [post]
 func (h *HardwareHandler) StopService(w http.ResponseWriter, r *http.Request) {
@@ -878,9 +878,9 @@ func (h *HardwareHandler) StopService(w http.ResponseWriter, r *http.Request) {
 // @Produce json
 // @Param name path string true "Service name" example(hostapd)
 // @Success 200 {object} SuccessResponse
-// @Failure 400 {object} models.ErrorResponse "Service name required"
-// @Failure 500 {object} models.ErrorResponse "Failed to restart service"
-// @Failure 503 {object} models.ErrorResponse "HAL unavailable"
+// @Failure 400 {object} ErrorResponse "Service name required"
+// @Failure 500 {object} ErrorResponse "Failed to restart service"
+// @Failure 503 {object} ErrorResponse "HAL unavailable"
 // @Security BearerAuth
 // @Router /api/v1/hardware/services/{name}/restart [post]
 func (h *HardwareHandler) RestartService(w http.ResponseWriter, r *http.Request) {
@@ -919,8 +919,8 @@ func (h *HardwareHandler) RestartService(w http.ResponseWriter, r *http.Request)
 // @Accept json
 // @Produce json
 // @Success 200 {object} GPIOPinsResponse
-// @Failure 500 {object} models.ErrorResponse "Failed to read GPIO"
-// @Failure 503 {object} models.ErrorResponse "HAL unavailable"
+// @Failure 500 {object} ErrorResponse "Failed to read GPIO"
+// @Failure 503 {object} ErrorResponse "HAL unavailable"
 // @Security BearerAuth
 // @Router /api/v1/hardware/gpio [get]
 func (h *HardwareHandler) GetGPIOPins(w http.ResponseWriter, r *http.Request) {
@@ -953,9 +953,9 @@ type GPIOPinsResponse struct {
 // @Produce json
 // @Param pin path int true "GPIO pin number" example(17)
 // @Success 200 {object} hal.GPIOPin
-// @Failure 400 {object} models.ErrorResponse "Invalid pin number"
-// @Failure 500 {object} models.ErrorResponse "Failed to read GPIO pin"
-// @Failure 503 {object} models.ErrorResponse "HAL unavailable"
+// @Failure 400 {object} ErrorResponse "Invalid pin number"
+// @Failure 500 {object} ErrorResponse "Failed to read GPIO pin"
+// @Failure 503 {object} ErrorResponse "HAL unavailable"
 // @Security BearerAuth
 // @Router /api/v1/hardware/gpio/{pin} [get]
 func (h *HardwareHandler) GetGPIOPin(w http.ResponseWriter, r *http.Request) {
@@ -996,9 +996,9 @@ type GPIOSetRequest struct {
 // @Param pin path int true "GPIO pin number" example(17)
 // @Param request body GPIOSetRequest true "Pin value"
 // @Success 200 {object} SuccessResponse
-// @Failure 400 {object} models.ErrorResponse "Invalid request"
-// @Failure 500 {object} models.ErrorResponse "Failed to set GPIO pin"
-// @Failure 503 {object} models.ErrorResponse "HAL unavailable"
+// @Failure 400 {object} ErrorResponse "Invalid request"
+// @Failure 500 {object} ErrorResponse "Failed to set GPIO pin"
+// @Failure 503 {object} ErrorResponse "HAL unavailable"
 // @Security BearerAuth
 // @Router /api/v1/hardware/gpio/{pin} [post]
 func (h *HardwareHandler) SetGPIOPin(w http.ResponseWriter, r *http.Request) {
@@ -1057,9 +1057,9 @@ type GPIOModeRequest struct {
 // @Param pin path int true "GPIO pin number" example(17)
 // @Param request body GPIOModeRequest true "Pin mode (input/output)"
 // @Success 200 {object} SuccessResponse
-// @Failure 400 {object} models.ErrorResponse "Invalid request"
-// @Failure 500 {object} models.ErrorResponse "Failed to set GPIO mode"
-// @Failure 503 {object} models.ErrorResponse "HAL unavailable"
+// @Failure 400 {object} ErrorResponse "Invalid request"
+// @Failure 500 {object} ErrorResponse "Failed to set GPIO mode"
+// @Failure 503 {object} ErrorResponse "HAL unavailable"
 // @Security BearerAuth
 // @Router /api/v1/hardware/gpio/{pin}/mode [post]
 func (h *HardwareHandler) SetGPIOMode(w http.ResponseWriter, r *http.Request) {
@@ -1110,8 +1110,8 @@ func (h *HardwareHandler) SetGPIOMode(w http.ResponseWriter, r *http.Request) {
 // @Accept json
 // @Produce json
 // @Success 200 {object} I2CBusesResponse
-// @Failure 500 {object} models.ErrorResponse "Failed to list I2C buses"
-// @Failure 503 {object} models.ErrorResponse "HAL unavailable"
+// @Failure 500 {object} ErrorResponse "Failed to list I2C buses"
+// @Failure 503 {object} ErrorResponse "HAL unavailable"
 // @Security BearerAuth
 // @Router /api/v1/hardware/i2c [get]
 func (h *HardwareHandler) ListI2CBuses(w http.ResponseWriter, r *http.Request) {
@@ -1144,9 +1144,9 @@ type I2CBusesResponse struct {
 // @Produce json
 // @Param bus path int true "I2C bus number" example(1)
 // @Success 200 {object} hal.I2CScanResult
-// @Failure 400 {object} models.ErrorResponse "Invalid bus number"
-// @Failure 500 {object} models.ErrorResponse "Failed to scan I2C bus"
-// @Failure 503 {object} models.ErrorResponse "HAL unavailable"
+// @Failure 400 {object} ErrorResponse "Invalid bus number"
+// @Failure 500 {object} ErrorResponse "Failed to scan I2C bus"
+// @Failure 503 {object} ErrorResponse "HAL unavailable"
 // @Security BearerAuth
 // @Router /api/v1/hardware/i2c/{bus}/scan [get]
 func (h *HardwareHandler) ScanI2CBus(w http.ResponseWriter, r *http.Request) {
@@ -1182,9 +1182,9 @@ func (h *HardwareHandler) ScanI2CBus(w http.ResponseWriter, r *http.Request) {
 // @Param bus path int true "I2C bus number" example(1)
 // @Param addr path string true "I2C device address (hex)" example(0x48)
 // @Success 200 {object} hal.I2CDevice
-// @Failure 400 {object} models.ErrorResponse "Invalid bus or address"
-// @Failure 500 {object} models.ErrorResponse "Failed to read I2C device"
-// @Failure 503 {object} models.ErrorResponse "HAL unavailable"
+// @Failure 400 {object} ErrorResponse "Invalid bus or address"
+// @Failure 500 {object} ErrorResponse "Failed to read I2C device"
+// @Failure 503 {object} ErrorResponse "HAL unavailable"
 // @Security BearerAuth
 // @Router /api/v1/hardware/i2c/{bus}/{addr} [get]
 func (h *HardwareHandler) GetI2CDevice(w http.ResponseWriter, r *http.Request) {
@@ -1230,8 +1230,8 @@ func (h *HardwareHandler) GetI2CDevice(w http.ResponseWriter, r *http.Request) {
 // @Accept json
 // @Produce json
 // @Success 200 {object} hal.AllSensorsResponse
-// @Failure 500 {object} models.ErrorResponse "Failed to read sensors"
-// @Failure 503 {object} models.ErrorResponse "HAL unavailable"
+// @Failure 500 {object} ErrorResponse "Failed to read sensors"
+// @Failure 503 {object} ErrorResponse "HAL unavailable"
 // @Security BearerAuth
 // @Router /api/v1/hardware/sensors [get]
 func (h *HardwareHandler) GetAllSensors(w http.ResponseWriter, r *http.Request) {
@@ -1258,8 +1258,8 @@ func (h *HardwareHandler) GetAllSensors(w http.ResponseWriter, r *http.Request) 
 // @Accept json
 // @Produce json
 // @Success 200 {object} OneWireDevicesResponse
-// @Failure 500 {object} models.ErrorResponse "Failed to list 1-Wire devices"
-// @Failure 503 {object} models.ErrorResponse "HAL unavailable"
+// @Failure 500 {object} ErrorResponse "Failed to list 1-Wire devices"
+// @Failure 503 {object} ErrorResponse "HAL unavailable"
 // @Security BearerAuth
 // @Router /api/v1/hardware/sensors/1wire [get]
 func (h *HardwareHandler) Get1WireDevices(w http.ResponseWriter, r *http.Request) {
@@ -1292,9 +1292,9 @@ type OneWireDevicesResponse struct {
 // @Produce json
 // @Param id path string true "1-Wire device ID" example(28-000005a3b3f1)
 // @Success 200 {object} hal.OneWireDevice
-// @Failure 400 {object} models.ErrorResponse "Device ID required"
-// @Failure 500 {object} models.ErrorResponse "Failed to read 1-Wire device"
-// @Failure 503 {object} models.ErrorResponse "HAL unavailable"
+// @Failure 400 {object} ErrorResponse "Device ID required"
+// @Failure 500 {object} ErrorResponse "Failed to read 1-Wire device"
+// @Failure 503 {object} ErrorResponse "HAL unavailable"
 // @Security BearerAuth
 // @Router /api/v1/hardware/sensors/1wire/{id} [get]
 func (h *HardwareHandler) Read1WireDevice(w http.ResponseWriter, r *http.Request) {
@@ -1327,8 +1327,8 @@ func (h *HardwareHandler) Read1WireDevice(w http.ResponseWriter, r *http.Request
 // @Accept json
 // @Produce json
 // @Success 200 {object} hal.BME280Reading
-// @Failure 500 {object} models.ErrorResponse "Failed to read BME280"
-// @Failure 503 {object} models.ErrorResponse "HAL unavailable"
+// @Failure 500 {object} ErrorResponse "Failed to read BME280"
+// @Failure 503 {object} ErrorResponse "HAL unavailable"
 // @Security BearerAuth
 // @Router /api/v1/hardware/sensors/bme280 [get]
 func (h *HardwareHandler) ReadBME280(w http.ResponseWriter, r *http.Request) {
