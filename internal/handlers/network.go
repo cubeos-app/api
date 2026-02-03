@@ -65,6 +65,13 @@ func (h *NetworkHandler) Routes() chi.Router {
 	r.Get("/traffic", h.GetTrafficStats)
 	r.Get("/traffic/{iface}/history", h.GetTrafficHistory)
 
+	// Network Modes V2 - Settings and VPN overlay
+	r.Get("/settings", h.GetNetworkSettings)
+	r.Put("/settings", h.UpdateNetworkSettings)
+	r.Get("/vpn/mode", h.GetVPNMode)
+	r.Post("/vpn/mode", h.SetVPNMode)
+	r.Post("/warning/dismiss", h.DismissServerModeWarning)
+
 	return r
 }
 
@@ -638,4 +645,138 @@ func isValidMAC(mac string) bool {
 		}
 	}
 	return true
+}
+
+// =============================================================================
+// Network Modes V2 - Settings and VPN Overlay
+// =============================================================================
+
+// GetNetworkSettings returns current network configuration
+// GET /api/v1/network/settings
+func (h *NetworkHandler) GetNetworkSettings(w http.ResponseWriter, r *http.Request) {
+	ctx := r.Context()
+	config, err := h.network.GetNetworkConfig(ctx)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+	writeJSON(w, http.StatusOK, config)
+}
+
+// UpdateNetworkSettings updates network configuration
+// PUT /api/v1/network/settings
+func (h *NetworkHandler) UpdateNetworkSettings(w http.ResponseWriter, r *http.Request) {
+	ctx := r.Context()
+
+	var req struct {
+		GatewayIP        string `json:"gateway_ip"`
+		Subnet           string `json:"subnet"`
+		DHCPRangeStart   string `json:"dhcp_range_start"`
+		DHCPRangeEnd     string `json:"dhcp_range_end"`
+		FallbackStaticIP string `json:"fallback_static_ip"`
+	}
+
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		writeError(w, http.StatusBadRequest, "invalid request body")
+		return
+	}
+
+	config, err := h.network.GetNetworkConfig(ctx)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+
+	// Update fields if provided
+	if req.GatewayIP != "" {
+		config.GatewayIP = req.GatewayIP
+	}
+	if req.Subnet != "" {
+		config.Subnet = req.Subnet
+	}
+	if req.DHCPRangeStart != "" {
+		config.DHCPRangeStart = req.DHCPRangeStart
+	}
+	if req.DHCPRangeEnd != "" {
+		config.DHCPRangeEnd = req.DHCPRangeEnd
+	}
+	if req.FallbackStaticIP != "" {
+		config.FallbackStaticIP = req.FallbackStaticIP
+	}
+
+	if err := h.network.UpdateNetworkConfig(ctx, config); err != nil {
+		writeError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+
+	writeJSON(w, http.StatusOK, config)
+}
+
+// GetVPNMode returns current VPN overlay mode
+// GET /api/v1/network/vpn/mode
+func (h *NetworkHandler) GetVPNMode(w http.ResponseWriter, r *http.Request) {
+	mode := h.network.GetCurrentVPNMode()
+	writeJSON(w, http.StatusOK, map[string]interface{}{
+		"vpn_mode": mode,
+	})
+}
+
+// SetVPNMode sets VPN overlay mode
+// POST /api/v1/network/vpn/mode
+func (h *NetworkHandler) SetVPNMode(w http.ResponseWriter, r *http.Request) {
+	ctx := r.Context()
+
+	var req struct {
+		Mode     string `json:"mode"`
+		ConfigID *int64 `json:"config_id,omitempty"`
+	}
+
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		writeError(w, http.StatusBadRequest, "invalid request body")
+		return
+	}
+
+	// Validate mode
+	validModes := map[string]bool{"none": true, "wireguard": true, "openvpn": true, "tor": true}
+	if !validModes[req.Mode] {
+		writeError(w, http.StatusBadRequest, "invalid VPN mode: must be none, wireguard, openvpn, or tor")
+		return
+	}
+
+	// WireGuard and OpenVPN require config_id
+	if (req.Mode == "wireguard" || req.Mode == "openvpn") && req.ConfigID == nil {
+		writeError(w, http.StatusBadRequest, "config_id required for wireguard/openvpn modes")
+		return
+	}
+
+	var configID int64
+	if req.ConfigID != nil {
+		configID = *req.ConfigID
+	}
+
+	if err := h.network.SetVPNMode(ctx, managers.VPNMode(req.Mode), req.ConfigID); err != nil {
+		writeError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+
+	writeJSON(w, http.StatusOK, map[string]interface{}{
+		"vpn_mode":  req.Mode,
+		"config_id": configID,
+		"message":   "VPN mode updated",
+	})
+}
+
+// DismissServerModeWarning dismisses the server mode warning
+// POST /api/v1/network/warning/dismiss
+func (h *NetworkHandler) DismissServerModeWarning(w http.ResponseWriter, r *http.Request) {
+	ctx := r.Context()
+
+	if err := h.network.DismissServerModeWarning(ctx); err != nil {
+		writeError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+
+	writeJSON(w, http.StatusOK, map[string]interface{}{
+		"message": "Server mode warning dismissed",
+	})
 }

@@ -889,3 +889,24 @@ func (m *NetworkManager) UpdateAPConfig(ctx context.Context, ssid, password stri
 	// For now, this is a stub that would need HAL support
 	return fmt.Errorf("AP configuration update not yet implemented")
 }
+
+// =============================================================================
+// Network Modes V2 - Server Mode Warning
+// ADD THIS CODE TO END OF internal/managers/network.go
+// =============================================================================
+
+// IsServerModeWarningDismissed checks if server mode warning has been dismissed
+func (m *NetworkManager) IsServerModeWarningDismissed(ctx context.Context) (bool, error) {
+	if m.db == nil {
+		return false, nil
+	}
+	var dismissed int
+	err := m.db.QueryRow(`SELECT COALESCE(server_mode_warning_dismissed, 0) FROM network_config WHERE id = 1`).Scan(&dismissed)
+	if err != nil {
+		if err == sql.ErrNoRows {
+			return false, nil
+		}
+		return false, err
+	}
+	return dismissed == 1, nil
+}
