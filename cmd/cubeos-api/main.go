@@ -385,23 +385,8 @@ func main() {
 				r.Get("/errors", ext.GetRecentErrors)
 			})
 
-			// Firewall
-			r.Route("/firewall", func(r chi.Router) {
-				r.Get("/status", ext.GetFirewallStatus)
-				r.Get("/rules", ext.GetFirewallRules)
-				r.Get("/nat", ext.GetNATStatus)
-				r.Post("/nat/enable", ext.EnableNAT)
-				r.Post("/nat/disable", ext.DisableNAT)
-				r.Post("/ports/allow", ext.AllowPort)
-				r.Post("/ports/block", ext.BlockPort)
-				r.Delete("/ports/{port}", ext.RemovePortRule)
-				r.Post("/services/{service}/allow", ext.AllowService)
-				r.Post("/save", ext.SaveFirewallRules)
-				r.Post("/restore", ext.RestoreFirewallRules)
-				r.Get("/ip-forward", ext.GetIPForward)
-				r.Post("/ip-forward", ext.SetIPForward)
-				r.Post("/reset", ext.ResetFirewall)
-			})
+			// Firewall (Sprint 5C - using dedicated FirewallHandler)
+			r.Mount("/firewall", firewallHandler.Routes())
 
 			// Backup
 			r.Route("/backup", func(r chi.Router) {
@@ -486,9 +471,6 @@ func main() {
 
 			// Mounts API (Sprint 3)
 			r.Mount("/mounts", mountsHandler.Routes())
-
-			// Firewall endpoints (Sprint 5C)
-			r.Mount("/firewall", firewallHandler.Routes())
 
 			// Ports API (Sprint 4)
 			r.Mount("/ports", portsHandler.Routes())
