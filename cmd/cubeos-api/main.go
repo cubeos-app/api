@@ -111,6 +111,15 @@ func main() {
 	log.Printf("MountsManager initialized (HAL-enabled)")
 	mountsMgr.SetDB(db.DB) // FIX: Wire database connection
 
+	// Create NPM manager for proxy host management (Sprint 4)
+	npmMgr := managers.NewNPMManager(cfg, "/cubeos/config")
+	// Initialize NPM authentication (creates service account if needed)
+	if err := npmMgr.Init(); err != nil {
+		log.Printf("Warning: NPM authentication failed: %v", err)
+	} else {
+		log.Printf("NPMManager initialized successfully")
+	}
+
 	// Create PortManager for port allocation (Sprint 4)
 	portMgr := managers.NewPortManager(db.DB)
 	log.Printf("PortManager initialized")
@@ -160,6 +169,10 @@ func main() {
 	// Create CasaOS Import handler (Sprint 4D)
 	casaosHandler := handlers.NewCasaOSHandler(appStoreMgr, cfg.GatewayIP, cfg.Domain)
 	log.Printf("CasaOSHandler initialized")
+
+	// Create NPM handler (Sprint 4E)
+	npmHandler := handlers.NewNPMHandler(npmMgr)
+	log.Printf("NPMHandler initialized")
 
 	// Create WebSocket manager and handlers
 	wsManager := handlers.NewWSManager(systemMgr, networkMgr, monitoringMgr, docker)
@@ -489,6 +502,9 @@ func main() {
 
 			// CasaOS Import API (Sprint 4D)
 			r.Mount("/casaos", casaosHandler.Routes())
+
+			// NPM API (Sprint 4E)
+			r.Mount("/npm", npmHandler.Routes())
 
 			// NOTE: Network routes are already defined in /network block above.
 			// DO NOT add r.Mount("/network", ...) here - it causes duplicate route panic!
