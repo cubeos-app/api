@@ -314,6 +314,12 @@ func main() {
 				r.Post("/mode", networkHandler.SetNetworkMode)
 				r.Get("/wifi/scan", networkHandler.ScanWiFiNetworks)
 				r.Post("/wifi/connect", networkHandler.ConnectToWiFi)
+				// Network Modes V2 - Settings and VPN overlay
+				r.Get("/settings", networkHandler.GetNetworkSettings)
+				r.Put("/settings", networkHandler.UpdateNetworkSettings)
+				r.Get("/vpn/mode", networkHandler.GetVPNMode)
+				r.Post("/vpn/mode", networkHandler.SetVPNMode)
+				r.Post("/warning/dismiss", networkHandler.DismissServerModeWarning)
 			})
 
 			// Clients (WiFi)
