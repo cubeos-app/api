@@ -52,7 +52,7 @@ test:
     - if: $CI_COMMIT_BRANCH == "main"
 
 # -----------------------------------------------------------------------------
-# BUILD - Compile binaries for both architectures
+# BUILD - Generate Swagger docs and compile binaries
 # -----------------------------------------------------------------------------
 build:
   stage: build
@@ -63,14 +63,32 @@ build:
     - cd /app
     - go clean -modcache
     - go mod download
+    # Install swag CLI for Swagger generation
+    - go install github.com/swaggo/swag/cmd/swag@latest
+    - export PATH=$PATH:$(go env GOPATH)/bin
+    # Generate Swagger documentation from annotations
+    - |
+      echo "📝 Generating Swagger documentation..."
+      swag init \
+        --generalInfo cmd/cubeos-api/main.go \
+        --dir ./ \
+        --output docs \
+        --parseDependency \
+        --parseInternal
+    - ls -la docs/
+    # Build binaries for both architectures
     - GOOS=linux GOARCH=arm64 CGO_ENABLED=0 go build -ldflags="-s -w -X main.Version=${CI_COMMIT_SHORT_SHA}" -o cubeos-api-arm64 ./cmd/cubeos-api/
     - GOOS=linux GOARCH=amd64 CGO_ENABLED=0 go build -ldflags="-s -w -X main.Version=${CI_COMMIT_SHORT_SHA}" -o cubeos-api-amd64 ./cmd/cubeos-api/
+    # Copy artifacts
     - cp cubeos-api-arm64 cubeos-api-amd64 ${CI_PROJECT_DIR}/
+    - cp -r docs ${CI_PROJECT_DIR}/
     - ls -lh ${CI_PROJECT_DIR}/cubeos-api-*
+    - echo "✅ Swagger docs generated and binaries built"
   artifacts:
     paths:
       - cubeos-api-arm64
       - cubeos-api-amd64
+      - docs/
     expire_in: 1 week
   rules:
     - if: $CI_COMMIT_BRANCH == "main"
@@ -132,6 +150,7 @@ deploy:
       for i in $(seq 1 45); do
         if curl -sf http://127.0.0.1:6010/health > /dev/null 2>&1; then
           echo "✅ Health check passed!"
+          echo "📚 Swagger UI: http://cubeos.cube:6010/api/v1/docs/index.html"
           docker service ls | grep cubeos-api || true
           exit 0
         fi

@@ -1,3 +1,55 @@
+// Package main CubeOS API
+//
+// CubeOS API provides REST endpoints for managing the CubeOS system,
+// including hardware control, Docker services, network configuration,
+// storage management, and communication devices.
+//
+//	@title						CubeOS API
+//	@version					1.0
+//	@description				REST API for CubeOS - Raspberry Pi server operating system
+//	@termsOfService				https://cubeos.io/terms/
+//
+//	@contact.name				CubeOS Support
+//	@contact.url				https://cubeos.io/support
+//	@contact.email				support@cubeos.io
+//
+//	@license.name				Apache 2.0
+//	@license.url				http://www.apache.org/licenses/LICENSE-2.0.html
+//
+//	@host						cubeos.cube:6010
+//	@BasePath					/api/v1
+//
+//	@securityDefinitions.apikey	BearerAuth
+//	@in							header
+//	@name						Authorization
+//	@description				JWT token for authentication. Format: "Bearer {token}"
+//
+//	@tag.name					Hardware
+//	@tag.description			Raspberry Pi hardware control (GPIO, I2C, sensors, power)
+//
+//	@tag.name					Storage
+//	@tag.description			Block devices, USB storage, network mounts
+//
+//	@tag.name					Communication
+//	@tag.description			GPS, Cellular, Meshtastic, Iridium, Bluetooth
+//
+//	@tag.name					Media
+//	@tag.description			Camera capture/streaming, audio devices
+//
+//	@tag.name					Logs
+//	@tag.description			System logs (kernel, journal, hardware)
+//
+//	@tag.name					System
+//	@tag.description			System information and control
+//
+//	@tag.name					Network
+//	@tag.description			Network interfaces, WiFi, AP management
+//
+//	@tag.name					Services
+//	@tag.description			Docker service management
+//
+//	@tag.name					Auth
+//	@tag.description			Authentication endpoints
 package main
 
 import (
@@ -10,6 +62,7 @@ import (
 	chimw "github.com/go-chi/chi/v5/middleware"
 	"github.com/go-chi/cors"
 	"github.com/jmoiron/sqlx"
+	httpSwagger "github.com/swaggo/http-swagger"
 	"golang.org/x/crypto/bcrypt"
 
 	"cubeos-api/internal/config"
@@ -18,6 +71,8 @@ import (
 	"cubeos-api/internal/handlers"
 	"cubeos-api/internal/managers"
 	"cubeos-api/internal/middleware"
+
+	_ "cubeos-api/docs" // Import generated swagger docs
 )
 
 func main() {
@@ -229,40 +284,13 @@ func main() {
 		http.Redirect(w, r, "/health", http.StatusTemporaryRedirect)
 	})
 
-	// OpenAPI spec endpoint
-	r.Get("/api/v1/openapi.yaml", func(w http.ResponseWriter, r *http.Request) {
-		w.Header().Set("Content-Type", "application/x-yaml")
-		http.ServeFile(w, r, "openapi.yaml")
-	})
-	r.Get("/api/v1/docs", func(w http.ResponseWriter, r *http.Request) {
-		// Serve Swagger UI HTML
-		html := `<!DOCTYPE html>
-<html lang="en">
-<head>
-  <meta charset="UTF-8">
-  <title>CubeOS API Documentation</title>
-  <link rel="stylesheet" href="https://unpkg.com/swagger-ui-dist@5.9.0/swagger-ui.css">
-  <style>
-    body { margin: 0; padding: 0; }
-    .swagger-ui .topbar { display: none; }
-  </style>
-</head>
-<body>
-  <div id="swagger-ui"></div>
-  <script src="https://unpkg.com/swagger-ui-dist@5.9.0/swagger-ui-bundle.js"></script>
-  <script>
-    SwaggerUIBundle({
-      url: '/api/v1/openapi.yaml',
-      dom_id: '#swagger-ui',
-      presets: [SwaggerUIBundle.presets.apis],
-      layout: "BaseLayout"
-    });
-  </script>
-</body>
-</html>`
-		w.Header().Set("Content-Type", "text/html")
-		w.Write([]byte(html))
-	})
+	// Swagger UI - auto-generated from swaggo annotations
+	r.Get("/api/v1/docs/*", httpSwagger.Handler(
+		httpSwagger.URL("/api/v1/docs/doc.json"),
+		httpSwagger.DeepLinking(true),
+		httpSwagger.DocExpansion("none"),
+		httpSwagger.DomID("swagger-ui"),
+	))
 
 	// WebSocket routes (no JWT for initial connection, but needs token in query)
 	r.Get("/ws/stats", wsHandlers.StatsWebSocket)
@@ -566,7 +594,7 @@ func main() {
 	// Start server
 	addr := fmt.Sprintf("%s:%d", cfg.Host, cfg.Port)
 	log.Printf("API listening on %s", addr)
-	log.Printf("Documentation: http://%s/api/v1/docs", addr)
+	log.Printf("Swagger UI: http://%s/api/v1/docs/index.html", addr)
 	log.Printf("HAL endpoints: /hardware, /hal/storage, /communication, /media, /hal/logs")
 
 	if err := http.ListenAndServe(addr, r); err != nil {
