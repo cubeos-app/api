@@ -174,6 +174,14 @@ func main() {
 	npmHandler := handlers.NewNPMHandler(npmMgr)
 	log.Printf("NPMHandler initialized")
 
+	// Create HAL-based handlers (Sprint 6)
+	hardwareHandler := handlers.NewHardwareHandler(halClient)
+	halStorageHandler := handlers.NewStorageHandler(halClient)
+	communicationHandler := handlers.NewCommunicationHandler(halClient)
+	mediaHandler := handlers.NewMediaHandler(halClient)
+	halLogsHandler := handlers.NewLogsHandler(halClient)
+	log.Printf("HAL handlers initialized (Hardware, Storage, Communication, Media, Logs)")
+
 	// Create WebSocket manager and handlers
 	wsManager := handlers.NewWSManager(systemMgr, networkMgr, monitoringMgr, docker)
 	wsHandlers := handlers.NewWSHandlers(wsManager)
@@ -346,7 +354,7 @@ func main() {
 				r.Post("/kick/{mac}", h.KickClient)
 			})
 
-			// Storage
+			// Storage (legacy - disk info and SMB)
 			r.Route("/storage", func(r chi.Router) {
 				r.Get("/disks", h.GetDisks)
 				r.Get("/overview", h.GetStorageOverview)
@@ -392,7 +400,7 @@ func main() {
 			// Extended APIs
 			// ===========================================================
 
-			// Logs
+			// Logs (legacy - system logs)
 			r.Route("/logs", func(r chi.Router) {
 				r.Get("/journal", ext.GetJournalLogs)
 				r.Get("/units", ext.GetLogUnits)
@@ -450,7 +458,7 @@ func main() {
 				r.Get("/alerts/current", ext.GetCurrentAlerts)
 			})
 
-			// Power/UPS
+			// Power/UPS (legacy)
 			r.Route("/power", func(r chi.Router) {
 				r.Get("/status", ext.GetPowerStatus)
 				r.Post("/charging", ext.SetCharging)
@@ -506,6 +514,30 @@ func main() {
 			// NPM API (Sprint 4E)
 			r.Mount("/npm", npmHandler.Routes())
 
+			// ===========================================================
+			// HAL-based Hardware APIs (Sprint 6)
+			// ===========================================================
+
+			// Hardware API - System info, power, RTC, watchdog, GPIO, I2C, sensors
+			// 35 endpoints for Pi-specific hardware access
+			r.Mount("/hardware", hardwareHandler.Routes())
+
+			// HAL Storage API - Block devices, USB storage, network mounts via HAL
+			// 19 endpoints (separate from legacy /storage which handles SMB shares)
+			r.Mount("/hal/storage", halStorageHandler.Routes())
+
+			// Communication API - GPS, Cellular, Meshtastic, Iridium, Bluetooth
+			// 29 endpoints for communication devices
+			r.Mount("/communication", communicationHandler.Routes())
+
+			// Media API - Camera capture/streaming, audio devices/volume
+			// 13 endpoints for media hardware
+			r.Mount("/media", mediaHandler.Routes())
+
+			// HAL Logs API - Kernel, journal, hardware logs via HAL
+			// 4 endpoints (separate from legacy /logs which has more options)
+			r.Mount("/hal/logs", halLogsHandler.Routes())
+
 			// NOTE: Network routes are already defined in /network block above.
 			// DO NOT add r.Mount("/network", ...) here - it causes duplicate route panic!
 		})
@@ -534,7 +566,8 @@ func main() {
 	// Start server
 	addr := fmt.Sprintf("%s:%d", cfg.Host, cfg.Port)
 	log.Printf("API listening on %s", addr)
-	log.Printf("Documentation: http://%s/health", addr)
+	log.Printf("Documentation: http://%s/api/v1/docs", addr)
+	log.Printf("HAL endpoints: /hardware, /hal/storage, /communication, /media, /hal/logs")
 
 	if err := http.ListenAndServe(addr, r); err != nil {
 		log.Fatalf("Server failed: %v", err)
