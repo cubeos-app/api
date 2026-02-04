@@ -199,7 +199,11 @@ func main() {
 
 	// Create HAL client for hardware access (Sprint 3)
 	// HAL runs on host network at port 6005, accessible from container via host IP
-	halClient := hal.NewClient("http://10.42.24.1:6005")
+	halURL := os.Getenv("HAL_URL")
+	if halURL == "" {
+		halURL = "http://10.42.24.1:6005"
+	}
+	halClient := hal.NewClient(halURL)
 	log.Printf("HAL client initialized (endpoint: http://10.42.24.1:6005)")
 
 	// Create core managers (with HAL client for hardware access)
