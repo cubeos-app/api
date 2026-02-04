@@ -96,7 +96,7 @@ func (h *HardwareHandler) Routes() chi.Router {
 // @Success 200 {object} HardwareOverviewResponse
 // @Failure 503 {object} ErrorResponse "HAL unavailable"
 // @Security BearerAuth
-// @Router /api/v1/hardware/overview [get]
+// @Router /hardware/overview [get]
 func (h *HardwareHandler) GetOverview(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
 
@@ -155,7 +155,7 @@ type HardwareOverviewResponse struct {
 // @Failure 500 {object} ErrorResponse "Failed to read temperature"
 // @Failure 503 {object} ErrorResponse "HAL unavailable"
 // @Security BearerAuth
-// @Router /api/v1/hardware/temperature [get]
+// @Router /hardware/temperature [get]
 func (h *HardwareHandler) GetTemperature(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
 
@@ -183,7 +183,7 @@ func (h *HardwareHandler) GetTemperature(w http.ResponseWriter, r *http.Request)
 // @Failure 500 {object} ErrorResponse "Failed to read throttle status"
 // @Failure 503 {object} ErrorResponse "HAL unavailable"
 // @Security BearerAuth
-// @Router /api/v1/hardware/throttle [get]
+// @Router /hardware/throttle [get]
 func (h *HardwareHandler) GetThrottleStatus(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
 
@@ -211,7 +211,7 @@ func (h *HardwareHandler) GetThrottleStatus(w http.ResponseWriter, r *http.Reque
 // @Failure 500 {object} ErrorResponse "Failed to read EEPROM"
 // @Failure 503 {object} ErrorResponse "HAL unavailable"
 // @Security BearerAuth
-// @Router /api/v1/hardware/eeprom [get]
+// @Router /hardware/eeprom [get]
 func (h *HardwareHandler) GetEEPROMInfo(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
 
@@ -239,7 +239,7 @@ func (h *HardwareHandler) GetEEPROMInfo(w http.ResponseWriter, r *http.Request) 
 // @Failure 500 {object} ErrorResponse "Failed to read boot config"
 // @Failure 503 {object} ErrorResponse "HAL unavailable"
 // @Security BearerAuth
-// @Router /api/v1/hardware/bootconfig [get]
+// @Router /hardware/bootconfig [get]
 func (h *HardwareHandler) GetBootConfig(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
 
@@ -267,7 +267,7 @@ func (h *HardwareHandler) GetBootConfig(w http.ResponseWriter, r *http.Request) 
 // @Failure 500 {object} ErrorResponse "Failed to read uptime"
 // @Failure 503 {object} ErrorResponse "HAL unavailable"
 // @Security BearerAuth
-// @Router /api/v1/hardware/uptime [get]
+// @Router /hardware/uptime [get]
 func (h *HardwareHandler) GetUptime(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
 
@@ -299,7 +299,7 @@ func (h *HardwareHandler) GetUptime(w http.ResponseWriter, r *http.Request) {
 // @Failure 500 {object} ErrorResponse "Failed to initiate reboot"
 // @Failure 503 {object} ErrorResponse "HAL unavailable"
 // @Security BearerAuth
-// @Router /api/v1/hardware/reboot [post]
+// @Router /hardware/reboot [post]
 func (h *HardwareHandler) Reboot(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
 
@@ -329,7 +329,7 @@ func (h *HardwareHandler) Reboot(w http.ResponseWriter, r *http.Request) {
 // @Failure 500 {object} ErrorResponse "Failed to initiate shutdown"
 // @Failure 503 {object} ErrorResponse "HAL unavailable"
 // @Security BearerAuth
-// @Router /api/v1/hardware/shutdown [post]
+// @Router /hardware/shutdown [post]
 func (h *HardwareHandler) Shutdown(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
 
@@ -369,7 +369,7 @@ type SuccessResponse struct {
 // @Failure 500 {object} ErrorResponse "Failed to read power status"
 // @Failure 503 {object} ErrorResponse "HAL unavailable"
 // @Security BearerAuth
-// @Router /api/v1/hardware/power [get]
+// @Router /hardware/power [get]
 func (h *HardwareHandler) GetPowerStatus(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
 
@@ -397,7 +397,7 @@ func (h *HardwareHandler) GetPowerStatus(w http.ResponseWriter, r *http.Request)
 // @Failure 500 {object} ErrorResponse "Failed to read battery status"
 // @Failure 503 {object} ErrorResponse "HAL unavailable"
 // @Security BearerAuth
-// @Router /api/v1/hardware/battery [get]
+// @Router /hardware/battery [get]
 func (h *HardwareHandler) GetBatteryStatus(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
 
@@ -425,7 +425,7 @@ func (h *HardwareHandler) GetBatteryStatus(w http.ResponseWriter, r *http.Reques
 // @Failure 500 {object} ErrorResponse "Failed to read UPS info"
 // @Failure 503 {object} ErrorResponse "HAL unavailable"
 // @Security BearerAuth
-// @Router /api/v1/hardware/ups [get]
+// @Router /hardware/ups [get]
 func (h *HardwareHandler) GetUPSInfo(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
 
@@ -460,7 +460,7 @@ type ChargingRequest struct {
 // @Failure 500 {object} ErrorResponse "Failed to set charging"
 // @Failure 503 {object} ErrorResponse "HAL unavailable"
 // @Security BearerAuth
-// @Router /api/v1/hardware/charging [post]
+// @Router /hardware/charging [post]
 func (h *HardwareHandler) SetChargingEnabled(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
 
@@ -501,7 +501,7 @@ func (h *HardwareHandler) SetChargingEnabled(w http.ResponseWriter, r *http.Requ
 // @Failure 500 {object} ErrorResponse "Failed to quick start battery"
 // @Failure 503 {object} ErrorResponse "HAL unavailable"
 // @Security BearerAuth
-// @Router /api/v1/hardware/battery/quickstart [post]
+// @Router /hardware/battery/quickstart [post]
 func (h *HardwareHandler) QuickStartBattery(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
 
@@ -535,7 +535,7 @@ func (h *HardwareHandler) QuickStartBattery(w http.ResponseWriter, r *http.Reque
 // @Failure 500 {object} ErrorResponse "Failed to read RTC"
 // @Failure 503 {object} ErrorResponse "HAL unavailable"
 // @Security BearerAuth
-// @Router /api/v1/hardware/rtc [get]
+// @Router /hardware/rtc [get]
 func (h *HardwareHandler) GetRTCStatus(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
 
@@ -563,7 +563,7 @@ func (h *HardwareHandler) GetRTCStatus(w http.ResponseWriter, r *http.Request) {
 // @Failure 500 {object} ErrorResponse "Failed to sync time"
 // @Failure 503 {object} ErrorResponse "HAL unavailable"
 // @Security BearerAuth
-// @Router /api/v1/hardware/rtc/sync [post]
+// @Router /hardware/rtc/sync [post]
 func (h *HardwareHandler) SyncRTCTime(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
 
@@ -600,7 +600,7 @@ type WakeAlarmRequest struct {
 // @Failure 500 {object} ErrorResponse "Failed to set wake alarm"
 // @Failure 503 {object} ErrorResponse "HAL unavailable"
 // @Security BearerAuth
-// @Router /api/v1/hardware/rtc/wake [post]
+// @Router /hardware/rtc/wake [post]
 func (h *HardwareHandler) SetWakeAlarm(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
 
@@ -642,7 +642,7 @@ func (h *HardwareHandler) SetWakeAlarm(w http.ResponseWriter, r *http.Request) {
 // @Failure 500 {object} ErrorResponse "Failed to clear wake alarm"
 // @Failure 503 {object} ErrorResponse "HAL unavailable"
 // @Security BearerAuth
-// @Router /api/v1/hardware/rtc/wake [delete]
+// @Router /hardware/rtc/wake [delete]
 func (h *HardwareHandler) ClearWakeAlarm(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
 
@@ -676,7 +676,7 @@ func (h *HardwareHandler) ClearWakeAlarm(w http.ResponseWriter, r *http.Request)
 // @Failure 500 {object} ErrorResponse "Failed to read watchdog status"
 // @Failure 503 {object} ErrorResponse "HAL unavailable"
 // @Security BearerAuth
-// @Router /api/v1/hardware/watchdog [get]
+// @Router /hardware/watchdog [get]
 func (h *HardwareHandler) GetWatchdogStatus(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
 
@@ -704,7 +704,7 @@ func (h *HardwareHandler) GetWatchdogStatus(w http.ResponseWriter, r *http.Reque
 // @Failure 500 {object} ErrorResponse "Failed to pet watchdog"
 // @Failure 503 {object} ErrorResponse "HAL unavailable"
 // @Security BearerAuth
-// @Router /api/v1/hardware/watchdog/pet [post]
+// @Router /hardware/watchdog/pet [post]
 func (h *HardwareHandler) PetWatchdog(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
 
@@ -734,7 +734,7 @@ func (h *HardwareHandler) PetWatchdog(w http.ResponseWriter, r *http.Request) {
 // @Failure 500 {object} ErrorResponse "Failed to enable watchdog"
 // @Failure 503 {object} ErrorResponse "HAL unavailable"
 // @Security BearerAuth
-// @Router /api/v1/hardware/watchdog/enable [post]
+// @Router /hardware/watchdog/enable [post]
 func (h *HardwareHandler) EnableWatchdog(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
 
@@ -770,7 +770,7 @@ func (h *HardwareHandler) EnableWatchdog(w http.ResponseWriter, r *http.Request)
 // @Failure 500 {object} ErrorResponse "Failed to get service status"
 // @Failure 503 {object} ErrorResponse "HAL unavailable"
 // @Security BearerAuth
-// @Router /api/v1/hardware/services/{name} [get]
+// @Router /hardware/services/{name} [get]
 func (h *HardwareHandler) GetServiceStatus(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
 	name := chi.URLParam(r, "name")
@@ -806,7 +806,7 @@ func (h *HardwareHandler) GetServiceStatus(w http.ResponseWriter, r *http.Reques
 // @Failure 500 {object} ErrorResponse "Failed to start service"
 // @Failure 503 {object} ErrorResponse "HAL unavailable"
 // @Security BearerAuth
-// @Router /api/v1/hardware/services/{name}/start [post]
+// @Router /hardware/services/{name}/start [post]
 func (h *HardwareHandler) StartService(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
 	name := chi.URLParam(r, "name")
@@ -844,7 +844,7 @@ func (h *HardwareHandler) StartService(w http.ResponseWriter, r *http.Request) {
 // @Failure 500 {object} ErrorResponse "Failed to stop service"
 // @Failure 503 {object} ErrorResponse "HAL unavailable"
 // @Security BearerAuth
-// @Router /api/v1/hardware/services/{name}/stop [post]
+// @Router /hardware/services/{name}/stop [post]
 func (h *HardwareHandler) StopService(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
 	name := chi.URLParam(r, "name")
@@ -882,7 +882,7 @@ func (h *HardwareHandler) StopService(w http.ResponseWriter, r *http.Request) {
 // @Failure 500 {object} ErrorResponse "Failed to restart service"
 // @Failure 503 {object} ErrorResponse "HAL unavailable"
 // @Security BearerAuth
-// @Router /api/v1/hardware/services/{name}/restart [post]
+// @Router /hardware/services/{name}/restart [post]
 func (h *HardwareHandler) RestartService(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
 	name := chi.URLParam(r, "name")
@@ -922,7 +922,7 @@ func (h *HardwareHandler) RestartService(w http.ResponseWriter, r *http.Request)
 // @Failure 500 {object} ErrorResponse "Failed to read GPIO"
 // @Failure 503 {object} ErrorResponse "HAL unavailable"
 // @Security BearerAuth
-// @Router /api/v1/hardware/gpio [get]
+// @Router /hardware/gpio [get]
 func (h *HardwareHandler) GetGPIOPins(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
 
@@ -957,7 +957,7 @@ type GPIOPinsResponse struct {
 // @Failure 500 {object} ErrorResponse "Failed to read GPIO pin"
 // @Failure 503 {object} ErrorResponse "HAL unavailable"
 // @Security BearerAuth
-// @Router /api/v1/hardware/gpio/{pin} [get]
+// @Router /hardware/gpio/{pin} [get]
 func (h *HardwareHandler) GetGPIOPin(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
 	pinStr := chi.URLParam(r, "pin")
@@ -1000,7 +1000,7 @@ type GPIOSetRequest struct {
 // @Failure 500 {object} ErrorResponse "Failed to set GPIO pin"
 // @Failure 503 {object} ErrorResponse "HAL unavailable"
 // @Security BearerAuth
-// @Router /api/v1/hardware/gpio/{pin} [post]
+// @Router /hardware/gpio/{pin} [post]
 func (h *HardwareHandler) SetGPIOPin(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
 	pinStr := chi.URLParam(r, "pin")
@@ -1061,7 +1061,7 @@ type GPIOModeRequest struct {
 // @Failure 500 {object} ErrorResponse "Failed to set GPIO mode"
 // @Failure 503 {object} ErrorResponse "HAL unavailable"
 // @Security BearerAuth
-// @Router /api/v1/hardware/gpio/{pin}/mode [post]
+// @Router /hardware/gpio/{pin}/mode [post]
 func (h *HardwareHandler) SetGPIOMode(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
 	pinStr := chi.URLParam(r, "pin")
@@ -1113,7 +1113,7 @@ func (h *HardwareHandler) SetGPIOMode(w http.ResponseWriter, r *http.Request) {
 // @Failure 500 {object} ErrorResponse "Failed to list I2C buses"
 // @Failure 503 {object} ErrorResponse "HAL unavailable"
 // @Security BearerAuth
-// @Router /api/v1/hardware/i2c [get]
+// @Router /hardware/i2c [get]
 func (h *HardwareHandler) ListI2CBuses(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
 
@@ -1148,7 +1148,7 @@ type I2CBusesResponse struct {
 // @Failure 500 {object} ErrorResponse "Failed to scan I2C bus"
 // @Failure 503 {object} ErrorResponse "HAL unavailable"
 // @Security BearerAuth
-// @Router /api/v1/hardware/i2c/{bus}/scan [get]
+// @Router /hardware/i2c/{bus}/scan [get]
 func (h *HardwareHandler) ScanI2CBus(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
 	busStr := chi.URLParam(r, "bus")
@@ -1186,7 +1186,7 @@ func (h *HardwareHandler) ScanI2CBus(w http.ResponseWriter, r *http.Request) {
 // @Failure 500 {object} ErrorResponse "Failed to read I2C device"
 // @Failure 503 {object} ErrorResponse "HAL unavailable"
 // @Security BearerAuth
-// @Router /api/v1/hardware/i2c/{bus}/{addr} [get]
+// @Router /hardware/i2c/{bus}/{addr} [get]
 func (h *HardwareHandler) GetI2CDevice(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
 	busStr := chi.URLParam(r, "bus")
@@ -1233,7 +1233,7 @@ func (h *HardwareHandler) GetI2CDevice(w http.ResponseWriter, r *http.Request) {
 // @Failure 500 {object} ErrorResponse "Failed to read sensors"
 // @Failure 503 {object} ErrorResponse "HAL unavailable"
 // @Security BearerAuth
-// @Router /api/v1/hardware/sensors [get]
+// @Router /hardware/sensors [get]
 func (h *HardwareHandler) GetAllSensors(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
 
@@ -1261,7 +1261,7 @@ func (h *HardwareHandler) GetAllSensors(w http.ResponseWriter, r *http.Request) 
 // @Failure 500 {object} ErrorResponse "Failed to list 1-Wire devices"
 // @Failure 503 {object} ErrorResponse "HAL unavailable"
 // @Security BearerAuth
-// @Router /api/v1/hardware/sensors/1wire [get]
+// @Router /hardware/sensors/1wire [get]
 func (h *HardwareHandler) Get1WireDevices(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
 
@@ -1296,7 +1296,7 @@ type OneWireDevicesResponse struct {
 // @Failure 500 {object} ErrorResponse "Failed to read 1-Wire device"
 // @Failure 503 {object} ErrorResponse "HAL unavailable"
 // @Security BearerAuth
-// @Router /api/v1/hardware/sensors/1wire/{id} [get]
+// @Router /hardware/sensors/1wire/{id} [get]
 func (h *HardwareHandler) Read1WireDevice(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
 	id := chi.URLParam(r, "id")
@@ -1330,7 +1330,7 @@ func (h *HardwareHandler) Read1WireDevice(w http.ResponseWriter, r *http.Request
 // @Failure 500 {object} ErrorResponse "Failed to read BME280"
 // @Failure 503 {object} ErrorResponse "HAL unavailable"
 // @Security BearerAuth
-// @Router /api/v1/hardware/sensors/bme280 [get]
+// @Router /hardware/sensors/bme280 [get]
 func (h *HardwareHandler) ReadBME280(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
 

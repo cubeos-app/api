@@ -60,7 +60,7 @@ func (h *MediaHandler) Routes() chi.Router {
 // @Failure 500 {object} ErrorResponse "Failed to list cameras"
 // @Failure 503 {object} ErrorResponse "HAL unavailable"
 // @Security BearerAuth
-// @Router /api/v1/media/cameras [get]
+// @Router /media/cameras [get]
 func (h *MediaHandler) GetCameras(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
 
@@ -88,7 +88,7 @@ func (h *MediaHandler) GetCameras(w http.ResponseWriter, r *http.Request) {
 // @Failure 500 {object} ErrorResponse "Failed to get camera info"
 // @Failure 503 {object} ErrorResponse "HAL unavailable"
 // @Security BearerAuth
-// @Router /api/v1/media/cameras/info [get]
+// @Router /media/cameras/info [get]
 func (h *MediaHandler) GetCameraInfo(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
 
@@ -127,7 +127,7 @@ type CaptureImageRequest struct {
 // @Failure 500 {object} ErrorResponse "Failed to capture image"
 // @Failure 503 {object} ErrorResponse "HAL unavailable"
 // @Security BearerAuth
-// @Router /api/v1/media/cameras/capture [post]
+// @Router /media/cameras/capture [post]
 func (h *MediaHandler) CaptureImage(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
 
@@ -178,7 +178,7 @@ func (h *MediaHandler) CaptureImage(w http.ResponseWriter, r *http.Request) {
 // @Failure 500 {object} ErrorResponse "Failed to get image"
 // @Failure 503 {object} ErrorResponse "HAL unavailable"
 // @Security BearerAuth
-// @Router /api/v1/media/cameras/capture [get]
+// @Router /media/cameras/capture [get]
 func (h *MediaHandler) GetCapturedImage(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
 
@@ -220,7 +220,7 @@ func (h *MediaHandler) GetCapturedImage(w http.ResponseWriter, r *http.Request) 
 // @Failure 500 {object} ErrorResponse "Failed to get stream info"
 // @Failure 503 {object} ErrorResponse "HAL unavailable"
 // @Security BearerAuth
-// @Router /api/v1/media/cameras/stream [get]
+// @Router /media/cameras/stream [get]
 func (h *MediaHandler) GetStreamInfo(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
 
@@ -259,7 +259,7 @@ type StartStreamRequest struct {
 // @Failure 500 {object} ErrorResponse "Failed to start stream"
 // @Failure 503 {object} ErrorResponse "HAL unavailable"
 // @Security BearerAuth
-// @Router /api/v1/media/cameras/stream/start [post]
+// @Router /media/cameras/stream/start [post]
 func (h *MediaHandler) StartStream(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
 
@@ -317,7 +317,7 @@ type StreamStartResponse struct {
 // @Failure 500 {object} ErrorResponse "Failed to stop stream"
 // @Failure 503 {object} ErrorResponse "HAL unavailable"
 // @Security BearerAuth
-// @Router /api/v1/media/cameras/stream/stop [post]
+// @Router /media/cameras/stream/stop [post]
 func (h *MediaHandler) StopStream(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
 
@@ -351,7 +351,7 @@ func (h *MediaHandler) StopStream(w http.ResponseWriter, r *http.Request) {
 // @Failure 500 {object} ErrorResponse "Failed to list audio devices"
 // @Failure 503 {object} ErrorResponse "HAL unavailable"
 // @Security BearerAuth
-// @Router /api/v1/media/audio [get]
+// @Router /media/audio [get]
 func (h *MediaHandler) GetAudioDevices(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
 
@@ -379,7 +379,7 @@ func (h *MediaHandler) GetAudioDevices(w http.ResponseWriter, r *http.Request) {
 // @Failure 500 {object} ErrorResponse "Failed to list playback devices"
 // @Failure 503 {object} ErrorResponse "HAL unavailable"
 // @Security BearerAuth
-// @Router /api/v1/media/audio/playback [get]
+// @Router /media/audio/playback [get]
 func (h *MediaHandler) GetPlaybackDevices(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
 
@@ -412,7 +412,7 @@ type AudioDevicesListResponse struct {
 // @Failure 500 {object} ErrorResponse "Failed to list capture devices"
 // @Failure 503 {object} ErrorResponse "HAL unavailable"
 // @Security BearerAuth
-// @Router /api/v1/media/audio/capture [get]
+// @Router /media/audio/capture [get]
 func (h *MediaHandler) GetCaptureDevices(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
 
@@ -440,7 +440,7 @@ func (h *MediaHandler) GetCaptureDevices(w http.ResponseWriter, r *http.Request)
 // @Failure 500 {object} ErrorResponse "Failed to get volume"
 // @Failure 503 {object} ErrorResponse "HAL unavailable"
 // @Security BearerAuth
-// @Router /api/v1/media/audio/volume [get]
+// @Router /media/audio/volume [get]
 func (h *MediaHandler) GetVolume(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
 
@@ -475,7 +475,7 @@ type SetVolumeRequest struct {
 // @Failure 500 {object} ErrorResponse "Failed to set volume"
 // @Failure 503 {object} ErrorResponse "HAL unavailable"
 // @Security BearerAuth
-// @Router /api/v1/media/audio/volume [post]
+// @Router /media/audio/volume [post]
 func (h *MediaHandler) SetVolume(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
 
@@ -523,7 +523,7 @@ type SetMuteRequest struct {
 // @Failure 500 {object} ErrorResponse "Failed to set mute"
 // @Failure 503 {object} ErrorResponse "HAL unavailable"
 // @Security BearerAuth
-// @Router /api/v1/media/audio/mute [post]
+// @Router /media/audio/mute [post]
 func (h *MediaHandler) SetMute(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
 

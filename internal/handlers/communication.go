@@ -84,7 +84,7 @@ func (h *CommunicationHandler) Routes() chi.Router {
 // @Failure 500 {object} ErrorResponse "Failed to list GPS devices"
 // @Failure 503 {object} ErrorResponse "HAL unavailable"
 // @Security BearerAuth
-// @Router /api/v1/communication/gps [get]
+// @Router /communication/gps [get]
 func (h *CommunicationHandler) GetGPSDevices(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
 
@@ -114,7 +114,7 @@ func (h *CommunicationHandler) GetGPSDevices(w http.ResponseWriter, r *http.Requ
 // @Failure 500 {object} ErrorResponse "Failed to get GPS status"
 // @Failure 503 {object} ErrorResponse "HAL unavailable"
 // @Security BearerAuth
-// @Router /api/v1/communication/gps/{port}/status [get]
+// @Router /communication/gps/{port}/status [get]
 func (h *CommunicationHandler) GetGPSStatus(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
 	port := chi.URLParam(r, "port")
@@ -151,7 +151,7 @@ func (h *CommunicationHandler) GetGPSStatus(w http.ResponseWriter, r *http.Reque
 // @Failure 500 {object} ErrorResponse "Failed to get GPS position"
 // @Failure 503 {object} ErrorResponse "HAL unavailable"
 // @Security BearerAuth
-// @Router /api/v1/communication/gps/{port}/position [get]
+// @Router /communication/gps/{port}/position [get]
 func (h *CommunicationHandler) GetGPSPosition(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
 	port := chi.URLParam(r, "port")
@@ -196,7 +196,7 @@ func (h *CommunicationHandler) GetGPSPosition(w http.ResponseWriter, r *http.Req
 // @Failure 500 {object} ErrorResponse "Failed to list cellular modems"
 // @Failure 503 {object} ErrorResponse "HAL unavailable"
 // @Security BearerAuth
-// @Router /api/v1/communication/cellular [get]
+// @Router /communication/cellular [get]
 func (h *CommunicationHandler) GetCellularModems(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
 
@@ -224,7 +224,7 @@ func (h *CommunicationHandler) GetCellularModems(w http.ResponseWriter, r *http.
 // @Failure 500 {object} ErrorResponse "Failed to get cellular status"
 // @Failure 503 {object} ErrorResponse "HAL unavailable"
 // @Security BearerAuth
-// @Router /api/v1/communication/cellular/status [get]
+// @Router /communication/cellular/status [get]
 func (h *CommunicationHandler) GetCellularStatus(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
 
@@ -254,7 +254,7 @@ func (h *CommunicationHandler) GetCellularStatus(w http.ResponseWriter, r *http.
 // @Failure 500 {object} ErrorResponse "Failed to get signal"
 // @Failure 503 {object} ErrorResponse "HAL unavailable"
 // @Security BearerAuth
-// @Router /api/v1/communication/cellular/{modem}/signal [get]
+// @Router /communication/cellular/{modem}/signal [get]
 func (h *CommunicationHandler) GetCellularSignal(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
 	modemStr := chi.URLParam(r, "modem")
@@ -299,7 +299,7 @@ type CellularConnectRequest struct {
 // @Failure 500 {object} ErrorResponse "Failed to connect"
 // @Failure 503 {object} ErrorResponse "HAL unavailable"
 // @Security BearerAuth
-// @Router /api/v1/communication/cellular/{modem}/connect [post]
+// @Router /communication/cellular/{modem}/connect [post]
 func (h *CommunicationHandler) ConnectCellular(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
 	modemStr := chi.URLParam(r, "modem")
@@ -349,7 +349,7 @@ func (h *CommunicationHandler) ConnectCellular(w http.ResponseWriter, r *http.Re
 // @Failure 500 {object} ErrorResponse "Failed to disconnect"
 // @Failure 503 {object} ErrorResponse "HAL unavailable"
 // @Security BearerAuth
-// @Router /api/v1/communication/cellular/{modem}/disconnect [post]
+// @Router /communication/cellular/{modem}/disconnect [post]
 func (h *CommunicationHandler) DisconnectCellular(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
 	modemStr := chi.URLParam(r, "modem")
@@ -390,7 +390,7 @@ func (h *CommunicationHandler) DisconnectCellular(w http.ResponseWriter, r *http
 // @Failure 500 {object} ErrorResponse "Failed to get status"
 // @Failure 503 {object} ErrorResponse "HAL unavailable"
 // @Security BearerAuth
-// @Router /api/v1/communication/cellular/android [get]
+// @Router /communication/cellular/android [get]
 func (h *CommunicationHandler) GetAndroidTetheringStatus(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
 
@@ -418,7 +418,7 @@ func (h *CommunicationHandler) GetAndroidTetheringStatus(w http.ResponseWriter, 
 // @Failure 500 {object} ErrorResponse "Failed to enable tethering"
 // @Failure 503 {object} ErrorResponse "HAL unavailable"
 // @Security BearerAuth
-// @Router /api/v1/communication/cellular/android/enable [post]
+// @Router /communication/cellular/android/enable [post]
 func (h *CommunicationHandler) EnableAndroidTethering(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
 
@@ -448,7 +448,7 @@ func (h *CommunicationHandler) EnableAndroidTethering(w http.ResponseWriter, r *
 // @Failure 500 {object} ErrorResponse "Failed to disable tethering"
 // @Failure 503 {object} ErrorResponse "HAL unavailable"
 // @Security BearerAuth
-// @Router /api/v1/communication/cellular/android/disable [post]
+// @Router /communication/cellular/android/disable [post]
 func (h *CommunicationHandler) DisableAndroidTethering(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
 
@@ -484,7 +484,7 @@ func (h *CommunicationHandler) DisableAndroidTethering(w http.ResponseWriter, r 
 // @Failure 500 {object} ErrorResponse "Failed to get status"
 // @Failure 503 {object} ErrorResponse "HAL unavailable"
 // @Security BearerAuth
-// @Router /api/v1/communication/meshtastic/{port}/status [get]
+// @Router /communication/meshtastic/{port}/status [get]
 func (h *CommunicationHandler) GetMeshtasticStatus(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
 	port := chi.URLParam(r, "port")
@@ -520,7 +520,7 @@ func (h *CommunicationHandler) GetMeshtasticStatus(w http.ResponseWriter, r *htt
 // @Failure 500 {object} ErrorResponse "Failed to get nodes"
 // @Failure 503 {object} ErrorResponse "HAL unavailable"
 // @Security BearerAuth
-// @Router /api/v1/communication/meshtastic/{port}/nodes [get]
+// @Router /communication/meshtastic/{port}/nodes [get]
 func (h *CommunicationHandler) GetMeshtasticNodes(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
 	port := chi.URLParam(r, "port")
@@ -564,7 +564,7 @@ type MeshtasticMessageRequest struct {
 // @Failure 500 {object} ErrorResponse "Failed to send message"
 // @Failure 503 {object} ErrorResponse "HAL unavailable"
 // @Security BearerAuth
-// @Router /api/v1/communication/meshtastic/{port}/message [post]
+// @Router /communication/meshtastic/{port}/message [post]
 func (h *CommunicationHandler) SendMeshtasticMessage(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
 	port := chi.URLParam(r, "port")
@@ -619,7 +619,7 @@ type MeshtasticChannelRequest struct {
 // @Failure 500 {object} ErrorResponse "Failed to set channel"
 // @Failure 503 {object} ErrorResponse "HAL unavailable"
 // @Security BearerAuth
-// @Router /api/v1/communication/meshtastic/{port}/channel [post]
+// @Router /communication/meshtastic/{port}/channel [post]
 func (h *CommunicationHandler) SetMeshtasticChannel(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
 	port := chi.URLParam(r, "port")
@@ -667,7 +667,7 @@ func (h *CommunicationHandler) SetMeshtasticChannel(w http.ResponseWriter, r *ht
 // @Failure 500 {object} ErrorResponse "Failed to get status"
 // @Failure 503 {object} ErrorResponse "HAL unavailable"
 // @Security BearerAuth
-// @Router /api/v1/communication/iridium/{port}/status [get]
+// @Router /communication/iridium/{port}/status [get]
 func (h *CommunicationHandler) GetIridiumStatus(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
 	port := chi.URLParam(r, "port")
@@ -703,7 +703,7 @@ func (h *CommunicationHandler) GetIridiumStatus(w http.ResponseWriter, r *http.R
 // @Failure 500 {object} ErrorResponse "Failed to get signal"
 // @Failure 503 {object} ErrorResponse "HAL unavailable"
 // @Security BearerAuth
-// @Router /api/v1/communication/iridium/{port}/signal [get]
+// @Router /communication/iridium/{port}/signal [get]
 func (h *CommunicationHandler) GetIridiumSignal(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
 	port := chi.URLParam(r, "port")
@@ -745,7 +745,7 @@ type IridiumSBDRequest struct {
 // @Failure 500 {object} ErrorResponse "Failed to send SBD"
 // @Failure 503 {object} ErrorResponse "HAL unavailable"
 // @Security BearerAuth
-// @Router /api/v1/communication/iridium/{port}/send [post]
+// @Router /communication/iridium/{port}/send [post]
 func (h *CommunicationHandler) SendIridiumSBD(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
 	port := chi.URLParam(r, "port")
@@ -799,7 +799,7 @@ func (h *CommunicationHandler) SendIridiumSBD(w http.ResponseWriter, r *http.Req
 // @Failure 500 {object} ErrorResponse "Failed to get messages"
 // @Failure 503 {object} ErrorResponse "HAL unavailable"
 // @Security BearerAuth
-// @Router /api/v1/communication/iridium/{port}/messages [get]
+// @Router /communication/iridium/{port}/messages [get]
 func (h *CommunicationHandler) GetIridiumMessages(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
 	port := chi.URLParam(r, "port")
@@ -835,7 +835,7 @@ func (h *CommunicationHandler) GetIridiumMessages(w http.ResponseWriter, r *http
 // @Failure 500 {object} ErrorResponse "Failed to check mailbox"
 // @Failure 503 {object} ErrorResponse "HAL unavailable"
 // @Security BearerAuth
-// @Router /api/v1/communication/iridium/{port}/mailbox [post]
+// @Router /communication/iridium/{port}/mailbox [post]
 func (h *CommunicationHandler) CheckIridiumMailbox(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
 	port := chi.URLParam(r, "port")
@@ -875,7 +875,7 @@ func (h *CommunicationHandler) CheckIridiumMailbox(w http.ResponseWriter, r *htt
 // @Failure 500 {object} ErrorResponse "Failed to get Bluetooth status"
 // @Failure 503 {object} ErrorResponse "HAL unavailable"
 // @Security BearerAuth
-// @Router /api/v1/communication/bluetooth [get]
+// @Router /communication/bluetooth [get]
 func (h *CommunicationHandler) GetBluetoothStatus(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
 
@@ -903,7 +903,7 @@ func (h *CommunicationHandler) GetBluetoothStatus(w http.ResponseWriter, r *http
 // @Failure 500 {object} ErrorResponse "Failed to power on Bluetooth"
 // @Failure 503 {object} ErrorResponse "HAL unavailable"
 // @Security BearerAuth
-// @Router /api/v1/communication/bluetooth/power/on [post]
+// @Router /communication/bluetooth/power/on [post]
 func (h *CommunicationHandler) PowerOnBluetooth(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
 
@@ -933,7 +933,7 @@ func (h *CommunicationHandler) PowerOnBluetooth(w http.ResponseWriter, r *http.R
 // @Failure 500 {object} ErrorResponse "Failed to power off Bluetooth"
 // @Failure 503 {object} ErrorResponse "HAL unavailable"
 // @Security BearerAuth
-// @Router /api/v1/communication/bluetooth/power/off [post]
+// @Router /communication/bluetooth/power/off [post]
 func (h *CommunicationHandler) PowerOffBluetooth(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
 
@@ -963,7 +963,7 @@ func (h *CommunicationHandler) PowerOffBluetooth(w http.ResponseWriter, r *http.
 // @Failure 500 {object} ErrorResponse "Failed to list Bluetooth devices"
 // @Failure 503 {object} ErrorResponse "HAL unavailable"
 // @Security BearerAuth
-// @Router /api/v1/communication/bluetooth/devices [get]
+// @Router /communication/bluetooth/devices [get]
 func (h *CommunicationHandler) GetBluetoothDevices(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
 
@@ -998,7 +998,7 @@ type BluetoothScanRequest struct {
 // @Failure 500 {object} ErrorResponse "Failed to start scan"
 // @Failure 503 {object} ErrorResponse "HAL unavailable"
 // @Security BearerAuth
-// @Router /api/v1/communication/bluetooth/scan [post]
+// @Router /communication/bluetooth/scan [post]
 func (h *CommunicationHandler) ScanBluetoothDevices(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
 
@@ -1038,7 +1038,7 @@ func (h *CommunicationHandler) ScanBluetoothDevices(w http.ResponseWriter, r *ht
 // @Failure 500 {object} ErrorResponse "Failed to pair"
 // @Failure 503 {object} ErrorResponse "HAL unavailable"
 // @Security BearerAuth
-// @Router /api/v1/communication/bluetooth/pair/{address} [post]
+// @Router /communication/bluetooth/pair/{address} [post]
 func (h *CommunicationHandler) PairBluetoothDevice(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
 	address := chi.URLParam(r, "address")
@@ -1076,7 +1076,7 @@ func (h *CommunicationHandler) PairBluetoothDevice(w http.ResponseWriter, r *htt
 // @Failure 500 {object} ErrorResponse "Failed to connect"
 // @Failure 503 {object} ErrorResponse "HAL unavailable"
 // @Security BearerAuth
-// @Router /api/v1/communication/bluetooth/connect/{address} [post]
+// @Router /communication/bluetooth/connect/{address} [post]
 func (h *CommunicationHandler) ConnectBluetoothDevice(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
 	address := chi.URLParam(r, "address")
@@ -1114,7 +1114,7 @@ func (h *CommunicationHandler) ConnectBluetoothDevice(w http.ResponseWriter, r *
 // @Failure 500 {object} ErrorResponse "Failed to disconnect"
 // @Failure 503 {object} ErrorResponse "HAL unavailable"
 // @Security BearerAuth
-// @Router /api/v1/communication/bluetooth/disconnect/{address} [post]
+// @Router /communication/bluetooth/disconnect/{address} [post]
 func (h *CommunicationHandler) DisconnectBluetoothDevice(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
 	address := chi.URLParam(r, "address")
@@ -1152,7 +1152,7 @@ func (h *CommunicationHandler) DisconnectBluetoothDevice(w http.ResponseWriter, 
 // @Failure 500 {object} ErrorResponse "Failed to remove"
 // @Failure 503 {object} ErrorResponse "HAL unavailable"
 // @Security BearerAuth
-// @Router /api/v1/communication/bluetooth/devices/{address} [delete]
+// @Router /communication/bluetooth/devices/{address} [delete]
 func (h *CommunicationHandler) RemoveBluetoothDevice(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
 	address := chi.URLParam(r, "address")

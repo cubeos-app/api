@@ -70,7 +70,7 @@ func (h *StorageHandler) Routes() chi.Router {
 // @Failure 500 {object} ErrorResponse "Failed to list storage devices"
 // @Failure 503 {object} ErrorResponse "HAL unavailable"
 // @Security BearerAuth
-// @Router /api/v1/hal/storage/devices [get]
+// @Router /hal/storage/devices [get]
 func (h *StorageHandler) GetStorageDevices(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
 
@@ -100,7 +100,7 @@ func (h *StorageHandler) GetStorageDevices(w http.ResponseWriter, r *http.Reques
 // @Failure 500 {object} ErrorResponse "Failed to get storage device"
 // @Failure 503 {object} ErrorResponse "HAL unavailable"
 // @Security BearerAuth
-// @Router /api/v1/hal/storage/devices/{device} [get]
+// @Router /hal/storage/devices/{device} [get]
 func (h *StorageHandler) GetStorageDevice(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
 	device := chi.URLParam(r, "device")
@@ -136,7 +136,7 @@ func (h *StorageHandler) GetStorageDevice(w http.ResponseWriter, r *http.Request
 // @Failure 500 {object} ErrorResponse "Failed to get SMART data"
 // @Failure 503 {object} ErrorResponse "HAL unavailable"
 // @Security BearerAuth
-// @Router /api/v1/hal/storage/devices/{device}/smart [get]
+// @Router /hal/storage/devices/{device}/smart [get]
 func (h *StorageHandler) GetSMARTInfo(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
 	device := chi.URLParam(r, "device")
@@ -170,7 +170,7 @@ func (h *StorageHandler) GetSMARTInfo(w http.ResponseWriter, r *http.Request) {
 // @Failure 500 {object} ErrorResponse "Failed to get storage usage"
 // @Failure 503 {object} ErrorResponse "HAL unavailable"
 // @Security BearerAuth
-// @Router /api/v1/hal/storage/usage [get]
+// @Router /hal/storage/usage [get]
 func (h *StorageHandler) GetStorageUsage(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
 
@@ -202,7 +202,7 @@ func (h *StorageHandler) GetStorageUsage(w http.ResponseWriter, r *http.Request)
 // @Failure 500 {object} ErrorResponse "Failed to list USB storage"
 // @Failure 503 {object} ErrorResponse "HAL unavailable"
 // @Security BearerAuth
-// @Router /api/v1/hal/storage/usb [get]
+// @Router /hal/storage/usb [get]
 func (h *StorageHandler) GetUSBStorageDevices(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
 
@@ -237,7 +237,7 @@ type USBStorageResponse struct {
 // @Failure 500 {object} ErrorResponse "Failed to mount USB storage"
 // @Failure 503 {object} ErrorResponse "HAL unavailable"
 // @Security BearerAuth
-// @Router /api/v1/hal/storage/usb/{device}/mount [post]
+// @Router /hal/storage/usb/{device}/mount [post]
 func (h *StorageHandler) MountUSBStorage(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
 	device := chi.URLParam(r, "device")
@@ -284,7 +284,7 @@ type MountResultResponse struct {
 // @Failure 500 {object} ErrorResponse "Failed to unmount USB storage"
 // @Failure 503 {object} ErrorResponse "HAL unavailable"
 // @Security BearerAuth
-// @Router /api/v1/hal/storage/usb/{device}/unmount [post]
+// @Router /hal/storage/usb/{device}/unmount [post]
 func (h *StorageHandler) UnmountUSBStorage(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
 	device := chi.URLParam(r, "device")
@@ -322,7 +322,7 @@ func (h *StorageHandler) UnmountUSBStorage(w http.ResponseWriter, r *http.Reques
 // @Failure 500 {object} ErrorResponse "Failed to eject USB storage"
 // @Failure 503 {object} ErrorResponse "HAL unavailable"
 // @Security BearerAuth
-// @Router /api/v1/hal/storage/usb/{device}/eject [post]
+// @Router /hal/storage/usb/{device}/eject [post]
 func (h *StorageHandler) EjectUSBStorage(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
 	device := chi.URLParam(r, "device")
@@ -362,7 +362,7 @@ func (h *StorageHandler) EjectUSBStorage(w http.ResponseWriter, r *http.Request)
 // @Failure 500 {object} ErrorResponse "Failed to list USB devices"
 // @Failure 503 {object} ErrorResponse "HAL unavailable"
 // @Security BearerAuth
-// @Router /api/v1/hal/storage/usb/devices [get]
+// @Router /hal/storage/usb/devices [get]
 func (h *StorageHandler) GetUSBDevices(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
 
@@ -390,7 +390,7 @@ func (h *StorageHandler) GetUSBDevices(w http.ResponseWriter, r *http.Request) {
 // @Failure 500 {object} ErrorResponse "Failed to get USB tree"
 // @Failure 503 {object} ErrorResponse "HAL unavailable"
 // @Security BearerAuth
-// @Router /api/v1/hal/storage/usb/tree [get]
+// @Router /hal/storage/usb/tree [get]
 func (h *StorageHandler) GetUSBTree(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
 
@@ -420,7 +420,7 @@ func (h *StorageHandler) GetUSBTree(w http.ResponseWriter, r *http.Request) {
 // @Failure 500 {object} ErrorResponse "Failed to list USB devices"
 // @Failure 503 {object} ErrorResponse "HAL unavailable"
 // @Security BearerAuth
-// @Router /api/v1/hal/storage/usb/class/{class} [get]
+// @Router /hal/storage/usb/class/{class} [get]
 func (h *StorageHandler) GetUSBDevicesByClass(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
 	class := chi.URLParam(r, "class")
@@ -463,7 +463,7 @@ type USBDevicesByClassResponse struct {
 // @Failure 500 {object} ErrorResponse "Failed to rescan USB"
 // @Failure 503 {object} ErrorResponse "HAL unavailable"
 // @Security BearerAuth
-// @Router /api/v1/hal/storage/usb/rescan [post]
+// @Router /hal/storage/usb/rescan [post]
 func (h *StorageHandler) RescanUSB(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
 
@@ -496,7 +496,7 @@ func (h *StorageHandler) RescanUSB(w http.ResponseWriter, r *http.Request) {
 // @Failure 500 {object} ErrorResponse "Failed to reset USB device"
 // @Failure 503 {object} ErrorResponse "HAL unavailable"
 // @Security BearerAuth
-// @Router /api/v1/hal/storage/usb/reset/{bus}/{device} [post]
+// @Router /hal/storage/usb/reset/{bus}/{device} [post]
 func (h *StorageHandler) ResetUSBDevice(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
 	busStr := chi.URLParam(r, "bus")
@@ -544,7 +544,7 @@ func (h *StorageHandler) ResetUSBDevice(w http.ResponseWriter, r *http.Request) 
 // @Failure 500 {object} ErrorResponse "Failed to list mounts"
 // @Failure 503 {object} ErrorResponse "HAL unavailable"
 // @Security BearerAuth
-// @Router /api/v1/hal/storage/network-mounts [get]
+// @Router /hal/storage/network-mounts [get]
 func (h *StorageHandler) GetNetworkMounts(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
 
@@ -584,7 +584,7 @@ type SMBMountRequest struct {
 // @Failure 500 {object} ErrorResponse "Failed to mount SMB share"
 // @Failure 503 {object} ErrorResponse "HAL unavailable"
 // @Security BearerAuth
-// @Router /api/v1/hal/storage/network-mounts/smb [post]
+// @Router /hal/storage/network-mounts/smb [post]
 func (h *StorageHandler) MountSMB(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
 
@@ -645,7 +645,7 @@ type NFSMountRequest struct {
 // @Failure 500 {object} ErrorResponse "Failed to mount NFS share"
 // @Failure 503 {object} ErrorResponse "HAL unavailable"
 // @Security BearerAuth
-// @Router /api/v1/hal/storage/network-mounts/nfs [post]
+// @Router /hal/storage/network-mounts/nfs [post]
 func (h *StorageHandler) MountNFS(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
 
@@ -705,7 +705,7 @@ type TestMountRequest struct {
 // @Failure 500 {object} ErrorResponse "Connection test failed"
 // @Failure 503 {object} ErrorResponse "HAL unavailable"
 // @Security BearerAuth
-// @Router /api/v1/hal/storage/network-mounts/test [post]
+// @Router /hal/storage/network-mounts/test [post]
 func (h *StorageHandler) TestMountConnection(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
 
@@ -758,7 +758,7 @@ type UnmountNetworkRequest struct {
 // @Failure 500 {object} ErrorResponse "Failed to unmount"
 // @Failure 503 {object} ErrorResponse "HAL unavailable"
 // @Security BearerAuth
-// @Router /api/v1/hal/storage/network-mounts [delete]
+// @Router /hal/storage/network-mounts [delete]
 func (h *StorageHandler) UnmountNetwork(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
 
@@ -801,7 +801,7 @@ func (h *StorageHandler) UnmountNetwork(w http.ResponseWriter, r *http.Request) 
 // @Failure 500 {object} ErrorResponse "Failed to check mount"
 // @Failure 503 {object} ErrorResponse "HAL unavailable"
 // @Security BearerAuth
-// @Router /api/v1/hal/storage/network-mounts/check [get]
+// @Router /hal/storage/network-mounts/check [get]
 func (h *StorageHandler) IsMounted(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
 	path := r.URL.Query().Get("path")

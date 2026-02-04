@@ -100,7 +100,7 @@ func (h *NetworkHandler) Routes() chi.Router {
 // @Security BearerAuth
 // @Success 200 {object} managers.NetworkStatus "Network status"
 // @Failure 500 {object} ErrorResponse "Failed to get status"
-// @Router /api/v1/network/status [get]
+// @Router /network/status [get]
 func (h *NetworkHandler) GetNetworkStatus(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
 	status, err := h.network.GetStatus(ctx)
@@ -118,7 +118,7 @@ func (h *NetworkHandler) GetNetworkStatus(w http.ResponseWriter, r *http.Request
 // @Produce json
 // @Security BearerAuth
 // @Success 200 {object} map[string]interface{} "Current network mode"
-// @Router /api/v1/network/mode [get]
+// @Router /network/mode [get]
 func (h *NetworkHandler) GetNetworkMode(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
 	status, err := h.network.GetStatus(ctx)
@@ -143,7 +143,7 @@ func (h *NetworkHandler) GetNetworkMode(w http.ResponseWriter, r *http.Request) 
 // @Success 200 {object} map[string]interface{} "Mode changed with status"
 // @Failure 400 {object} ErrorResponse "Invalid mode or missing parameters"
 // @Failure 500 {object} ErrorResponse "Failed to change mode"
-// @Router /api/v1/network/mode [post]
+// @Router /network/mode [post]
 func (h *NetworkHandler) SetNetworkMode(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
 
@@ -215,7 +215,7 @@ func (h *NetworkHandler) SetNetworkMode(w http.ResponseWriter, r *http.Request) 
 // @Produce json
 // @Security BearerAuth
 // @Success 200 {object} map[string]interface{} "Available modes"
-// @Router /api/v1/network/modes [get]
+// @Router /network/modes [get]
 func (h *NetworkHandler) GetAvailableModes(w http.ResponseWriter, r *http.Request) {
 	modes := []map[string]interface{}{
 		{"id": "offline", "name": "Offline (AP Only)", "description": "Air-gapped access point mode"},
@@ -242,7 +242,7 @@ func (h *NetworkHandler) GetAvailableModes(w http.ResponseWriter, r *http.Reques
 // @Security BearerAuth
 // @Success 200 {object} map[string]interface{} "Available WiFi networks"
 // @Failure 500 {object} ErrorResponse "Failed to scan networks"
-// @Router /api/v1/network/wifi/scan [get]
+// @Router /network/wifi/scan [get]
 func (h *NetworkHandler) ScanWiFi(w http.ResponseWriter, r *http.Request) {
 	h.ScanWiFiNetworks(w, r)
 }
@@ -256,7 +256,7 @@ func (h *NetworkHandler) ScanWiFi(w http.ResponseWriter, r *http.Request) {
 // @Param interface query string false "WiFi interface to use for scanning"
 // @Success 200 {object} map[string]interface{} "Available WiFi networks"
 // @Failure 500 {object} ErrorResponse "Failed to scan networks"
-// @Router /api/v1/network/wifi/scan [get]
+// @Router /network/wifi/scan [get]
 func (h *NetworkHandler) ScanWiFiNetworks(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
 	networks, err := h.network.ScanWiFiNetworks(ctx)
@@ -277,7 +277,7 @@ func (h *NetworkHandler) ScanWiFiNetworks(w http.ResponseWriter, r *http.Request
 // @Produce json
 // @Security BearerAuth
 // @Success 200 {object} map[string]interface{} "WiFi status"
-// @Router /api/v1/network/wifi/status [get]
+// @Router /network/wifi/status [get]
 func (h *NetworkHandler) GetWiFiStatus(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
 	status, err := h.network.GetWiFiStatus(ctx)
@@ -299,7 +299,7 @@ func (h *NetworkHandler) GetWiFiStatus(w http.ResponseWriter, r *http.Request) {
 // @Success 200 {object} map[string]interface{} "Connection successful"
 // @Failure 400 {object} ErrorResponse "Invalid request or missing SSID"
 // @Failure 500 {object} ErrorResponse "Failed to connect"
-// @Router /api/v1/network/wifi/connect [post]
+// @Router /network/wifi/connect [post]
 func (h *NetworkHandler) ConnectWiFi(w http.ResponseWriter, r *http.Request) {
 	h.ConnectToWiFi(w, r)
 }
@@ -315,7 +315,7 @@ func (h *NetworkHandler) ConnectWiFi(w http.ResponseWriter, r *http.Request) {
 // @Success 200 {object} map[string]interface{} "Connection successful"
 // @Failure 400 {object} ErrorResponse "Invalid request or missing SSID"
 // @Failure 500 {object} ErrorResponse "Failed to connect"
-// @Router /api/v1/network/wifi/connect [post]
+// @Router /network/wifi/connect [post]
 func (h *NetworkHandler) ConnectToWiFi(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
 
@@ -354,7 +354,7 @@ func (h *NetworkHandler) ConnectToWiFi(w http.ResponseWriter, r *http.Request) {
 // @Security BearerAuth
 // @Success 200 {object} map[string]interface{} "Disconnected"
 // @Failure 500 {object} ErrorResponse "Failed to disconnect"
-// @Router /api/v1/network/wifi/disconnect [post]
+// @Router /network/wifi/disconnect [post]
 func (h *NetworkHandler) DisconnectWiFi(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
 	if err := h.network.DisconnectWiFi(ctx); err != nil {
@@ -374,7 +374,7 @@ func (h *NetworkHandler) DisconnectWiFi(w http.ResponseWriter, r *http.Request) 
 // @Produce json
 // @Security BearerAuth
 // @Success 200 {object} map[string]interface{} "Saved networks"
-// @Router /api/v1/network/wifi/saved [get]
+// @Router /network/wifi/saved [get]
 func (h *NetworkHandler) GetSavedNetworks(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
 	networks, err := h.network.GetSavedNetworks(ctx)
@@ -397,7 +397,7 @@ func (h *NetworkHandler) GetSavedNetworks(w http.ResponseWriter, r *http.Request
 // @Param ssid path string true "Network SSID"
 // @Success 200 {object} map[string]interface{} "Network forgotten"
 // @Failure 500 {object} ErrorResponse "Failed to forget network"
-// @Router /api/v1/network/wifi/saved/{ssid} [delete]
+// @Router /network/wifi/saved/{ssid} [delete]
 func (h *NetworkHandler) ForgetNetwork(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
 	ssid := chi.URLParam(r, "ssid")
@@ -423,7 +423,7 @@ func (h *NetworkHandler) ForgetNetwork(w http.ResponseWriter, r *http.Request) {
 // @Security BearerAuth
 // @Success 200 {object} map[string]interface{} "AP status"
 // @Failure 500 {object} ErrorResponse "Failed to get AP status"
-// @Router /api/v1/network/wifi/ap/status [get]
+// @Router /network/wifi/ap/status [get]
 func (h *NetworkHandler) GetAPStatus(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
 	config, err := h.network.GetAPConfig(ctx)
@@ -460,7 +460,7 @@ func (h *NetworkHandler) GetAPStatus(w http.ResponseWriter, r *http.Request) {
 // @Security BearerAuth
 // @Success 200 {object} map[string]interface{} "AP started"
 // @Failure 500 {object} ErrorResponse "Failed to start AP"
-// @Router /api/v1/network/ap/start [post]
+// @Router /network/ap/start [post]
 func (h *NetworkHandler) StartAP(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
 	if h.halClient == nil {
@@ -485,7 +485,7 @@ func (h *NetworkHandler) StartAP(w http.ResponseWriter, r *http.Request) {
 // @Security BearerAuth
 // @Success 200 {object} map[string]interface{} "AP stopped"
 // @Failure 500 {object} ErrorResponse "Failed to stop AP"
-// @Router /api/v1/network/ap/stop [post]
+// @Router /network/ap/stop [post]
 func (h *NetworkHandler) StopAP(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
 	if h.halClient == nil {
@@ -513,7 +513,7 @@ func (h *NetworkHandler) StopAP(w http.ResponseWriter, r *http.Request) {
 // @Success 200 {object} map[string]interface{} "AP configured"
 // @Failure 400 {object} ErrorResponse "Invalid configuration"
 // @Failure 500 {object} ErrorResponse "Failed to configure AP"
-// @Router /api/v1/network/ap/config [put]
+// @Router /network/ap/config [put]
 func (h *NetworkHandler) ConfigureAP(w http.ResponseWriter, r *http.Request) {
 	h.UpdateAPConfig(w, r)
 }
@@ -527,7 +527,7 @@ func (h *NetworkHandler) ConfigureAP(w http.ResponseWriter, r *http.Request) {
 // @Success 200 {object} map[string]interface{} "AP restarted"
 // @Failure 500 {object} ErrorResponse "Failed to restart AP"
 // @Failure 503 {object} ErrorResponse "HAL service unavailable"
-// @Router /api/v1/network/wifi/ap/restart [post]
+// @Router /network/wifi/ap/restart [post]
 func (h *NetworkHandler) RestartAP(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
 	if h.halClient == nil {
@@ -552,7 +552,7 @@ func (h *NetworkHandler) RestartAP(w http.ResponseWriter, r *http.Request) {
 // @Security BearerAuth
 // @Success 200 {object} map[string]interface{} "Connected clients"
 // @Failure 500 {object} ErrorResponse "Failed to get clients"
-// @Router /api/v1/network/wifi/ap/clients [get]
+// @Router /network/wifi/ap/clients [get]
 func (h *NetworkHandler) GetAPClients(w http.ResponseWriter, r *http.Request) {
 	clients, err := h.network.GetConnectedClients()
 	if err != nil {
@@ -575,7 +575,7 @@ func (h *NetworkHandler) GetAPClients(w http.ResponseWriter, r *http.Request) {
 // @Success 200 {object} map[string]interface{} "Client disconnected"
 // @Failure 400 {object} ErrorResponse "Invalid MAC address"
 // @Failure 500 {object} ErrorResponse "Failed to kick client"
-// @Router /api/v1/network/wifi/ap/clients/{mac}/kick [post]
+// @Router /network/wifi/ap/clients/{mac}/kick [post]
 func (h *NetworkHandler) KickAPClient(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
 	mac := chi.URLParam(r, "mac")
@@ -607,7 +607,7 @@ func (h *NetworkHandler) KickAPClient(w http.ResponseWriter, r *http.Request) {
 // @Success 200 {object} map[string]interface{} "Client blocked"
 // @Failure 400 {object} ErrorResponse "Invalid MAC address"
 // @Failure 500 {object} ErrorResponse "Failed to block client"
-// @Router /api/v1/network/wifi/ap/clients/{mac}/block [post]
+// @Router /network/wifi/ap/clients/{mac}/block [post]
 func (h *NetworkHandler) BlockAPClient(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
 	mac := chi.URLParam(r, "mac")
@@ -641,7 +641,7 @@ func (h *NetworkHandler) BlockAPClient(w http.ResponseWriter, r *http.Request) {
 // @Security BearerAuth
 // @Success 200 {object} managers.APConfig "AP configuration"
 // @Failure 500 {object} ErrorResponse "Failed to get config"
-// @Router /api/v1/network/ap/config [get]
+// @Router /network/ap/config [get]
 func (h *NetworkHandler) GetAPConfig(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
 	config, err := h.network.GetAPConfig(ctx)
@@ -663,7 +663,7 @@ func (h *NetworkHandler) GetAPConfig(w http.ResponseWriter, r *http.Request) {
 // @Success 200 {object} map[string]interface{} "Configuration updated"
 // @Failure 400 {object} ErrorResponse "Invalid configuration"
 // @Failure 500 {object} ErrorResponse "Failed to update config"
-// @Router /api/v1/network/ap/config [put]
+// @Router /network/ap/config [put]
 func (h *NetworkHandler) UpdateAPConfig(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
 
@@ -712,7 +712,7 @@ func (h *NetworkHandler) UpdateAPConfig(w http.ResponseWriter, r *http.Request) 
 // @Security BearerAuth
 // @Success 200 {object} map[string]interface{} "Network interfaces"
 // @Failure 503 {object} ErrorResponse "HAL service unavailable"
-// @Router /api/v1/network/interfaces [get]
+// @Router /network/interfaces [get]
 func (h *NetworkHandler) GetInterfaces(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
 	if h.halClient == nil {
@@ -737,7 +737,7 @@ func (h *NetworkHandler) GetInterfaces(w http.ResponseWriter, r *http.Request) {
 // @Security BearerAuth
 // @Success 200 {object} map[string]interface{} "Detailed network interfaces"
 // @Failure 503 {object} ErrorResponse "HAL service unavailable"
-// @Router /api/v1/network/interfaces/detailed [get]
+// @Router /network/interfaces/detailed [get]
 func (h *NetworkHandler) GetInterfacesDetailed(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
 	if h.halClient == nil {
@@ -819,7 +819,7 @@ func (h *NetworkHandler) GetInterfacesDetailed(w http.ResponseWriter, r *http.Re
 // @Produce json
 // @Security BearerAuth
 // @Success 200 {object} map[string]interface{} "Connectivity status"
-// @Router /api/v1/network/internet [get]
+// @Router /network/internet [get]
 func (h *NetworkHandler) GetInternetStatus(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
 	if h.halClient != nil {
@@ -854,7 +854,7 @@ func (h *NetworkHandler) GetInternetStatus(w http.ResponseWriter, r *http.Reques
 // @Produce json
 // @Security BearerAuth
 // @Success 200 {object} map[string]interface{} "Connectivity status"
-// @Router /api/v1/network/connectivity [get]
+// @Router /network/connectivity [get]
 func (h *NetworkHandler) CheckConnectivity(w http.ResponseWriter, r *http.Request) {
 	h.GetInternetStatus(w, r)
 }
@@ -871,7 +871,7 @@ func (h *NetworkHandler) CheckConnectivity(w http.ResponseWriter, r *http.Reques
 // @Security BearerAuth
 // @Success 200 {object} map[string]interface{} "Traffic statistics"
 // @Failure 503 {object} ErrorResponse "HAL service unavailable"
-// @Router /api/v1/network/traffic [get]
+// @Router /network/traffic [get]
 func (h *NetworkHandler) GetTrafficStats(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
 	if h.halClient == nil {
@@ -898,7 +898,7 @@ func (h *NetworkHandler) GetTrafficStats(w http.ResponseWriter, r *http.Request)
 // @Param duration query string false "History duration" default(1h)
 // @Success 200 {object} map[string]interface{} "Traffic history"
 // @Failure 503 {object} ErrorResponse "HAL service unavailable"
-// @Router /api/v1/network/traffic/{iface}/history [get]
+// @Router /network/traffic/{iface}/history [get]
 func (h *NetworkHandler) GetTrafficHistory(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
 	iface := chi.URLParam(r, "iface")
@@ -937,7 +937,7 @@ func (h *NetworkHandler) GetTrafficHistory(w http.ResponseWriter, r *http.Reques
 // @Produce json
 // @Security BearerAuth
 // @Success 200 {object} managers.NetworkConfig "Network configuration"
-// @Router /api/v1/network/settings [get]
+// @Router /network/settings [get]
 func (h *NetworkHandler) GetNetworkSettings(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
 	config, err := h.network.GetNetworkConfig(ctx)
@@ -959,7 +959,7 @@ func (h *NetworkHandler) GetNetworkSettings(w http.ResponseWriter, r *http.Reque
 // @Success 200 {object} managers.NetworkConfig "Updated configuration"
 // @Failure 400 {object} ErrorResponse "Invalid request body"
 // @Failure 500 {object} ErrorResponse "Failed to update settings"
-// @Router /api/v1/network/settings [put]
+// @Router /network/settings [put]
 func (h *NetworkHandler) UpdateNetworkSettings(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
 
@@ -1013,7 +1013,7 @@ func (h *NetworkHandler) UpdateNetworkSettings(w http.ResponseWriter, r *http.Re
 // @Produce json
 // @Security BearerAuth
 // @Success 200 {object} map[string]interface{} "Current VPN mode"
-// @Router /api/v1/network/vpn/mode [get]
+// @Router /network/vpn/mode [get]
 func (h *NetworkHandler) GetVPNMode(w http.ResponseWriter, r *http.Request) {
 	mode := h.network.GetCurrentVPNMode()
 	writeJSON(w, http.StatusOK, map[string]interface{}{
@@ -1032,7 +1032,7 @@ func (h *NetworkHandler) GetVPNMode(w http.ResponseWriter, r *http.Request) {
 // @Success 200 {object} map[string]interface{} "VPN mode updated"
 // @Failure 400 {object} ErrorResponse "Invalid mode"
 // @Failure 500 {object} ErrorResponse "Failed to set VPN mode"
-// @Router /api/v1/network/vpn/mode [post]
+// @Router /network/vpn/mode [post]
 func (h *NetworkHandler) SetVPNMode(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
 
@@ -1081,7 +1081,7 @@ func (h *NetworkHandler) SetVPNMode(w http.ResponseWriter, r *http.Request) {
 // @Produce json
 // @Security BearerAuth
 // @Success 200 {object} map[string]interface{} "Warning dismissed"
-// @Router /api/v1/network/warning/dismiss [post]
+// @Router /network/warning/dismiss [post]
 func (h *NetworkHandler) DismissServerModeWarning(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
 	if err := h.network.DismissServerModeWarning(ctx); err != nil {

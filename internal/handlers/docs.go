@@ -62,7 +62,7 @@ type DocContent struct {
 // @Security BearerAuth
 // @Success 200 {array} DocFile "Array of documentation files"
 // @Failure 500 {object} ErrorResponse "Failed to list docs"
-// @Router /api/v1/documentation [get]
+// @Router /documentation [get]
 func (h *DocsHandler) ListDocs(w http.ResponseWriter, r *http.Request) {
 	var docs []DocFile
 
@@ -121,7 +121,7 @@ func (h *DocsHandler) ListDocs(w http.ResponseWriter, r *http.Request) {
 // @Produce json
 // @Security BearerAuth
 // @Success 200 {array} DocFile "Tree of documentation files with nested children"
-// @Router /api/v1/documentation/tree [get]
+// @Router /documentation/tree [get]
 func (h *DocsHandler) GetDocsTree(w http.ResponseWriter, r *http.Request) {
 	tree := buildDocTree(h.docsPath, h.docsPath)
 
@@ -195,7 +195,7 @@ func buildDocTree(basePath, currentPath string) []DocFile {
 // @Failure 400 {object} ErrorResponse "Invalid path (directory traversal attempt)"
 // @Failure 404 {object} ErrorResponse "Document not found"
 // @Failure 500 {object} ErrorResponse "Failed to read document"
-// @Router /api/v1/documentation/{path} [get]
+// @Router /documentation/{path} [get]
 func (h *DocsHandler) GetDoc(w http.ResponseWriter, r *http.Request) {
 	// Get the path from URL (everything after /api/v1/docs/)
 	docPath := chi.URLParam(r, "*")
@@ -251,7 +251,7 @@ func (h *DocsHandler) GetDoc(w http.ResponseWriter, r *http.Request) {
 // @Param q query string true "Search query"
 // @Success 200 {array} DocFile "Array of matching documentation files"
 // @Failure 400 {object} ErrorResponse "Query parameter 'q' required"
-// @Router /api/v1/documentation/search [get]
+// @Router /documentation/search [get]
 func (h *DocsHandler) SearchDocs(w http.ResponseWriter, r *http.Request) {
 	query := strings.ToLower(r.URL.Query().Get("q"))
 	if query == "" {
