@@ -48,13 +48,25 @@ func (h *SetupHandler) Routes() chi.Router {
 	return r
 }
 
-// GetSetupStatus returns current setup progress
+// GetSetupStatus godoc
+// @Summary Get setup wizard status
+// @Description Returns current setup progress including completion status, current step, and configured components
+// @Tags Setup
+// @Produce json
+// @Success 200 {object} models.SetupStatus "Setup status with completed flag, current step, and progress"
+// @Router /setup/status [get]
 func (h *SetupHandler) GetSetupStatus(w http.ResponseWriter, r *http.Request) {
 	status := h.manager.GetSetupStatus()
 	json.NewEncoder(w).Encode(status)
 }
 
-// GetWizardSteps returns all wizard step definitions
+// GetWizardSteps godoc
+// @Summary Get wizard step definitions
+// @Description Returns all setup wizard steps with their order, titles, descriptions, and required fields
+// @Tags Setup
+// @Produce json
+// @Success 200 {object} map[string]interface{} "steps: array of step definitions, total: step count"
+// @Router /setup/steps [get]
 func (h *SetupHandler) GetWizardSteps(w http.ResponseWriter, r *http.Request) {
 	steps := h.manager.GetWizardSteps()
 	json.NewEncoder(w).Encode(map[string]interface{}{
@@ -63,19 +75,37 @@ func (h *SetupHandler) GetWizardSteps(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
-// GetDefaultConfig returns default configuration values
+// GetDefaultConfig godoc
+// @Summary Get default configuration
+// @Description Returns default configuration values for the setup wizard based on detected hardware and environment
+// @Tags Setup
+// @Produce json
+// @Success 200 {object} models.SetupConfig "Default configuration values"
+// @Router /setup/defaults [get]
 func (h *SetupHandler) GetDefaultConfig(w http.ResponseWriter, r *http.Request) {
 	defaults := h.manager.GenerateDefaultConfig()
 	json.NewEncoder(w).Encode(defaults)
 }
 
-// GetSystemRequirements returns device capabilities
+// GetSystemRequirements godoc
+// @Summary Get system requirements
+// @Description Returns device capabilities and system requirements including available memory, storage, and detected hardware
+// @Tags Setup
+// @Produce json
+// @Success 200 {object} models.SystemRequirements "System requirements and capabilities"
+// @Router /setup/requirements [get]
 func (h *SetupHandler) GetSystemRequirements(w http.ResponseWriter, r *http.Request) {
 	req := h.manager.GetSystemRequirements()
 	json.NewEncoder(w).Encode(req)
 }
 
-// GetTimezones returns available timezones
+// GetTimezones godoc
+// @Summary Get available timezones
+// @Description Returns all available timezones grouped by region for timezone selection during setup
+// @Tags Setup
+// @Produce json
+// @Success 200 {object} map[string]interface{} "timezones: flat list, by_region: grouped by region, total: count"
+// @Router /setup/timezones [get]
 func (h *SetupHandler) GetTimezones(w http.ResponseWriter, r *http.Request) {
 	timezones := h.manager.GetTimezones()
 
@@ -92,7 +122,13 @@ func (h *SetupHandler) GetTimezones(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
-// GetDeploymentPurposes returns available deployment purposes
+// GetDeploymentPurposes godoc
+// @Summary Get deployment purposes
+// @Description Returns available deployment purpose options (e.g., home server, expedition, emergency) with recommended configurations
+// @Tags Setup
+// @Produce json
+// @Success 200 {object} map[string]interface{} "purposes: array of purpose definitions, total: count"
+// @Router /setup/purposes [get]
 func (h *SetupHandler) GetDeploymentPurposes(w http.ResponseWriter, r *http.Request) {
 	purposes := h.manager.GetDeploymentPurposes()
 	json.NewEncoder(w).Encode(map[string]interface{}{
@@ -101,7 +137,13 @@ func (h *SetupHandler) GetDeploymentPurposes(w http.ResponseWriter, r *http.Requ
 	})
 }
 
-// GetDNSProviders returns available DNS providers for Let's Encrypt
+// GetDNSProviders godoc
+// @Summary Get DNS providers for Let's Encrypt
+// @Description Returns available DNS providers for Let's Encrypt DNS-01 challenge with required configuration fields
+// @Tags Setup
+// @Produce json
+// @Success 200 {object} map[string]interface{} "providers: array of DNS provider definitions, total: count"
+// @Router /setup/dns-providers [get]
 func (h *SetupHandler) GetDNSProviders(w http.ResponseWriter, r *http.Request) {
 	providers := h.manager.GetDNSProviders()
 	json.NewEncoder(w).Encode(map[string]interface{}{
@@ -110,7 +152,16 @@ func (h *SetupHandler) GetDNSProviders(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
-// ValidateConfig validates a setup configuration
+// ValidateConfig godoc
+// @Summary Validate setup configuration
+// @Description Validates a setup configuration without applying it. Returns validation errors and warnings.
+// @Tags Setup
+// @Accept json
+// @Produce json
+// @Param request body models.SetupConfig true "Setup configuration to validate"
+// @Success 200 {object} models.ValidationResult "Validation result with valid flag, errors, and warnings"
+// @Failure 400 {object} ErrorResponse "Invalid request body"
+// @Router /setup/validate [post]
 func (h *SetupHandler) ValidateConfig(w http.ResponseWriter, r *http.Request) {
 	var cfg models.SetupConfig
 	if err := json.NewDecoder(r.Body).Decode(&cfg); err != nil {
@@ -122,7 +173,17 @@ func (h *SetupHandler) ValidateConfig(w http.ResponseWriter, r *http.Request) {
 	json.NewEncoder(w).Encode(result)
 }
 
-// ApplyConfig applies the complete setup configuration
+// ApplyConfig godoc
+// @Summary Apply setup configuration
+// @Description Applies the complete setup configuration, configuring all system components. This is the main setup completion endpoint.
+// @Tags Setup
+// @Accept json
+// @Produce json
+// @Param request body models.SetupConfig true "Setup configuration to apply"
+// @Success 200 {object} map[string]interface{} "success: true, message, status: updated setup status"
+// @Failure 400 {object} ErrorResponse "Invalid request body"
+// @Failure 500 {object} ErrorResponse "Failed to apply configuration"
+// @Router /setup/apply [post]
 func (h *SetupHandler) ApplyConfig(w http.ResponseWriter, r *http.Request) {
 	var cfg models.SetupConfig
 	if err := json.NewDecoder(r.Body).Decode(&cfg); err != nil {
@@ -142,7 +203,15 @@ func (h *SetupHandler) ApplyConfig(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
-// ResetSetup resets the setup wizard (admin only)
+// ResetSetup godoc
+// @Summary Reset setup wizard
+// @Description Resets the setup wizard to initial state, allowing reconfiguration. Admin only in production.
+// @Tags Setup
+// @Produce json
+// @Security BearerAuth
+// @Success 200 {object} map[string]interface{} "success: true, message"
+// @Failure 500 {object} ErrorResponse "Failed to reset setup"
+// @Router /setup/reset [post]
 func (h *SetupHandler) ResetSetup(w http.ResponseWriter, r *http.Request) {
 	// This should be protected by admin auth in production
 	if err := h.manager.ResetSetup(); err != nil {
@@ -156,7 +225,14 @@ func (h *SetupHandler) ResetSetup(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
-// SkipSetup skips the wizard and marks setup as complete with defaults
+// SkipSetup godoc
+// @Summary Skip setup wizard
+// @Description Skips the setup wizard and marks setup as complete using default configuration values
+// @Tags Setup
+// @Produce json
+// @Success 200 {object} map[string]interface{} "success: true, message, skipped: true"
+// @Failure 500 {object} ErrorResponse "Failed to skip setup"
+// @Router /setup/skip [post]
 func (h *SetupHandler) SkipSetup(w http.ResponseWriter, r *http.Request) {
 	// Apply default config to mark setup complete
 	defaults := h.manager.GenerateDefaultConfig()

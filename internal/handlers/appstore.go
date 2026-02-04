@@ -73,7 +73,18 @@ func (h *AppStoreHandler) Routes() chi.Router {
 	return r
 }
 
-// GetStores returns all registered stores
+// ============================================================================
+// Store Management Handlers
+// ============================================================================
+
+// GetStores godoc
+// @Summary List all app stores
+// @Description Returns all registered app stores including CasaOS-compatible stores
+// @Tags AppStore - Stores
+// @Produce json
+// @Security BearerAuth
+// @Success 200 {object} map[string]interface{} "stores: array of store objects"
+// @Router /appstore/stores [get]
 func (h *AppStoreHandler) GetStores(w http.ResponseWriter, r *http.Request) {
 	stores := h.manager.GetStores()
 	json.NewEncoder(w).Encode(map[string]interface{}{
@@ -81,7 +92,18 @@ func (h *AppStoreHandler) GetStores(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
-// RegisterStore registers a new app store
+// RegisterStore godoc
+// @Summary Register a new app store
+// @Description Registers a new app store URL and initiates background sync. Supports CasaOS-compatible store format.
+// @Tags AppStore - Stores
+// @Accept json
+// @Produce json
+// @Security BearerAuth
+// @Param request body object true "Store registration" SchemaExample({"url": "https://github.com/IceWhaleTech/CasaOS-AppStore", "name": "CasaOS Official", "description": "Official CasaOS app store"})
+// @Success 201 {object} models.AppStore "Created store object"
+// @Failure 400 {object} ErrorResponse "Invalid request or missing URL"
+// @Failure 500 {object} ErrorResponse "Failed to register store"
+// @Router /appstore/stores [post]
 func (h *AppStoreHandler) RegisterStore(w http.ResponseWriter, r *http.Request) {
 	var req struct {
 		URL         string `json:"url"`
@@ -112,7 +134,16 @@ func (h *AppStoreHandler) RegisterStore(w http.ResponseWriter, r *http.Request) 
 	json.NewEncoder(w).Encode(store)
 }
 
-// GetStore returns a specific store
+// GetStore godoc
+// @Summary Get a specific app store
+// @Description Returns details of a specific app store by ID
+// @Tags AppStore - Stores
+// @Produce json
+// @Security BearerAuth
+// @Param storeID path string true "Store ID"
+// @Success 200 {object} models.AppStore "Store details"
+// @Failure 404 {object} ErrorResponse "Store not found"
+// @Router /appstore/stores/{storeID} [get]
 func (h *AppStoreHandler) GetStore(w http.ResponseWriter, r *http.Request) {
 	storeID := chi.URLParam(r, "storeID")
 	store := h.manager.GetStore(storeID)
@@ -123,7 +154,15 @@ func (h *AppStoreHandler) GetStore(w http.ResponseWriter, r *http.Request) {
 	json.NewEncoder(w).Encode(store)
 }
 
-// RemoveStore removes an app store
+// RemoveStore godoc
+// @Summary Remove an app store
+// @Description Removes an app store from the registry. Does not affect already installed apps.
+// @Tags AppStore - Stores
+// @Security BearerAuth
+// @Param storeID path string true "Store ID"
+// @Success 204 "Store removed successfully"
+// @Failure 500 {object} ErrorResponse "Failed to remove store"
+// @Router /appstore/stores/{storeID} [delete]
 func (h *AppStoreHandler) RemoveStore(w http.ResponseWriter, r *http.Request) {
 	storeID := chi.URLParam(r, "storeID")
 	if err := h.manager.RemoveStore(storeID); err != nil {
@@ -133,7 +172,16 @@ func (h *AppStoreHandler) RemoveStore(w http.ResponseWriter, r *http.Request) {
 	w.WriteHeader(http.StatusNoContent)
 }
 
-// SyncStore syncs a specific store
+// SyncStore godoc
+// @Summary Sync a specific app store
+// @Description Fetches latest app catalog from the specified store
+// @Tags AppStore - Stores
+// @Produce json
+// @Security BearerAuth
+// @Param storeID path string true "Store ID"
+// @Success 200 {object} map[string]interface{} "success, app_count, last_sync"
+// @Failure 500 {object} ErrorResponse "Sync failed"
+// @Router /appstore/stores/{storeID}/sync [post]
 func (h *AppStoreHandler) SyncStore(w http.ResponseWriter, r *http.Request) {
 	storeID := chi.URLParam(r, "storeID")
 	if err := h.manager.SyncStore(storeID); err != nil {
@@ -149,7 +197,15 @@ func (h *AppStoreHandler) SyncStore(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
-// SyncAllStores syncs all enabled stores
+// SyncAllStores godoc
+// @Summary Sync all app stores
+// @Description Fetches latest app catalogs from all enabled stores
+// @Tags AppStore - Stores
+// @Produce json
+// @Security BearerAuth
+// @Success 200 {object} map[string]interface{} "success, store_count, total_apps"
+// @Failure 500 {object} ErrorResponse "Sync failed"
+// @Router /appstore/stores/sync [post]
 func (h *AppStoreHandler) SyncAllStores(w http.ResponseWriter, r *http.Request) {
 	if err := h.manager.SyncAllStores(); err != nil {
 		http.Error(w, `{"error":"`+err.Error()+`"}`, http.StatusInternalServerError)
@@ -169,7 +225,21 @@ func (h *AppStoreHandler) SyncAllStores(w http.ResponseWriter, r *http.Request) 
 	})
 }
 
-// GetApps returns apps from the catalog
+// ============================================================================
+// App Catalog Handlers
+// ============================================================================
+
+// GetApps godoc
+// @Summary List apps from catalog
+// @Description Returns apps from all stores with optional filtering by category, search term, or store
+// @Tags AppStore - Catalog
+// @Produce json
+// @Security BearerAuth
+// @Param category query string false "Filter by category"
+// @Param search query string false "Search term for app name/description"
+// @Param store_id query string false "Filter by specific store ID"
+// @Success 200 {object} map[string]interface{} "apps: array of catalog apps, count: total"
+// @Router /appstore/apps [get]
 func (h *AppStoreHandler) GetApps(w http.ResponseWriter, r *http.Request) {
 	category := r.URL.Query().Get("category")
 	search := r.URL.Query().Get("search")
@@ -182,7 +252,14 @@ func (h *AppStoreHandler) GetApps(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
-// GetCategories returns all categories
+// GetCategories godoc
+// @Summary List app categories
+// @Description Returns all available app categories across all stores
+// @Tags AppStore - Catalog
+// @Produce json
+// @Security BearerAuth
+// @Success 200 {object} map[string]interface{} "categories: array of category names"
+// @Router /appstore/categories [get]
 func (h *AppStoreHandler) GetCategories(w http.ResponseWriter, r *http.Request) {
 	categories := h.manager.GetCategories()
 	json.NewEncoder(w).Encode(map[string]interface{}{
@@ -190,7 +267,17 @@ func (h *AppStoreHandler) GetCategories(w http.ResponseWriter, r *http.Request) 
 	})
 }
 
-// GetApp returns a specific app from the catalog
+// GetApp godoc
+// @Summary Get app details from catalog
+// @Description Returns detailed information about a specific app in the catalog
+// @Tags AppStore - Catalog
+// @Produce json
+// @Security BearerAuth
+// @Param storeID path string true "Store ID"
+// @Param appName path string true "App name"
+// @Success 200 {object} models.CatalogApp "App details"
+// @Failure 404 {object} ErrorResponse "App not found"
+// @Router /appstore/stores/{storeID}/apps/{appName} [get]
 func (h *AppStoreHandler) GetApp(w http.ResponseWriter, r *http.Request) {
 	storeID := chi.URLParam(r, "storeID")
 	appName := chi.URLParam(r, "appName")
@@ -203,7 +290,18 @@ func (h *AppStoreHandler) GetApp(w http.ResponseWriter, r *http.Request) {
 	json.NewEncoder(w).Encode(app)
 }
 
-// GetAppManifest returns the raw manifest for an app
+// GetAppManifest godoc
+// @Summary Get app manifest
+// @Description Returns the raw manifest (docker-compose) for an app. Supports YAML (default) or JSON format.
+// @Tags AppStore - Catalog
+// @Produce application/x-yaml,application/json
+// @Security BearerAuth
+// @Param storeID path string true "Store ID"
+// @Param appName path string true "App name"
+// @Param format query string false "Output format: yaml (default) or json"
+// @Success 200 {object} models.CasaOSManifest "App manifest"
+// @Failure 404 {object} ErrorResponse "Manifest not found"
+// @Router /appstore/stores/{storeID}/apps/{appName}/manifest [get]
 func (h *AppStoreHandler) GetAppManifest(w http.ResponseWriter, r *http.Request) {
 	storeID := chi.URLParam(r, "storeID")
 	appName := chi.URLParam(r, "appName")
@@ -229,7 +327,17 @@ func (h *AppStoreHandler) GetAppManifest(w http.ResponseWriter, r *http.Request)
 	w.Write(manifest)
 }
 
-// GetAppIcon returns the icon for an app
+// GetAppIcon godoc
+// @Summary Get app icon
+// @Description Returns the PNG icon for an app. Response is cached for 24 hours.
+// @Tags AppStore - Catalog
+// @Produce image/png
+// @Security BearerAuth
+// @Param storeID path string true "Store ID"
+// @Param appName path string true "App name"
+// @Success 200 {file} binary "PNG icon image"
+// @Failure 404 {string} string "Icon not found"
+// @Router /appstore/stores/{storeID}/apps/{appName}/icon [get]
 func (h *AppStoreHandler) GetAppIcon(w http.ResponseWriter, r *http.Request) {
 	storeID := chi.URLParam(r, "storeID")
 	appName := chi.URLParam(r, "appName")
@@ -251,7 +359,19 @@ func (h *AppStoreHandler) GetAppIcon(w http.ResponseWriter, r *http.Request) {
 	w.Write(data)
 }
 
-// GetAppScreenshot returns a screenshot for an app
+// GetAppScreenshot godoc
+// @Summary Get app screenshot
+// @Description Returns a screenshot for an app by index (1-based). Response is cached for 24 hours.
+// @Tags AppStore - Catalog
+// @Produce image/png
+// @Security BearerAuth
+// @Param storeID path string true "Store ID"
+// @Param appName path string true "App name"
+// @Param index path integer true "Screenshot index (1-based)"
+// @Success 200 {file} binary "PNG screenshot image"
+// @Failure 400 {string} string "Invalid index"
+// @Failure 404 {string} string "Screenshot not found"
+// @Router /appstore/stores/{storeID}/apps/{appName}/screenshot/{index} [get]
 func (h *AppStoreHandler) GetAppScreenshot(w http.ResponseWriter, r *http.Request) {
 	storeID := chi.URLParam(r, "storeID")
 	appName := chi.URLParam(r, "appName")
@@ -280,7 +400,18 @@ func (h *AppStoreHandler) GetAppScreenshot(w http.ResponseWriter, r *http.Reques
 	w.Write(data)
 }
 
-// GetInstalledApps returns all installed apps
+// ============================================================================
+// Installed Apps Handlers
+// ============================================================================
+
+// GetInstalledApps godoc
+// @Summary List installed apps
+// @Description Returns all apps installed from the app store
+// @Tags AppStore - Installed
+// @Produce json
+// @Security BearerAuth
+// @Success 200 {object} map[string]interface{} "apps: array of installed apps, count: total"
+// @Router /appstore/installed [get]
 func (h *AppStoreHandler) GetInstalledApps(w http.ResponseWriter, r *http.Request) {
 	apps := h.manager.GetInstalledApps()
 	json.NewEncoder(w).Encode(map[string]interface{}{
@@ -289,7 +420,18 @@ func (h *AppStoreHandler) GetInstalledApps(w http.ResponseWriter, r *http.Reques
 	})
 }
 
-// InstallApp installs an app from the store
+// InstallApp godoc
+// @Summary Install an app from store
+// @Description Installs an app from the catalog. Downloads manifest, creates Docker stack, and starts the app.
+// @Tags AppStore - Installed
+// @Accept json
+// @Produce json
+// @Security BearerAuth
+// @Param request body models.AppInstallRequest true "Installation request"
+// @Success 201 {object} models.InstalledApp "Installed app details"
+// @Failure 400 {object} ErrorResponse "Invalid request, missing fields, or invalid app name"
+// @Failure 500 {object} ErrorResponse "Installation failed"
+// @Router /appstore/installed [post]
 func (h *AppStoreHandler) InstallApp(w http.ResponseWriter, r *http.Request) {
 	var req models.AppInstallRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
@@ -317,7 +459,16 @@ func (h *AppStoreHandler) InstallApp(w http.ResponseWriter, r *http.Request) {
 	json.NewEncoder(w).Encode(app)
 }
 
-// GetInstalledApp returns a specific installed app
+// GetInstalledApp godoc
+// @Summary Get installed app details
+// @Description Returns details of a specific installed app including status and configuration
+// @Tags AppStore - Installed
+// @Produce json
+// @Security BearerAuth
+// @Param appID path string true "App ID"
+// @Success 200 {object} models.InstalledApp "Installed app details"
+// @Failure 404 {object} ErrorResponse "App not found"
+// @Router /appstore/installed/{appID} [get]
 func (h *AppStoreHandler) GetInstalledApp(w http.ResponseWriter, r *http.Request) {
 	appID := chi.URLParam(r, "appID")
 	app := h.manager.GetInstalledApp(appID)
@@ -328,7 +479,16 @@ func (h *AppStoreHandler) GetInstalledApp(w http.ResponseWriter, r *http.Request
 	json.NewEncoder(w).Encode(app)
 }
 
-// RemoveApp removes an installed app
+// RemoveApp godoc
+// @Summary Uninstall an app
+// @Description Removes an installed app. Optionally deletes app data volumes.
+// @Tags AppStore - Installed
+// @Security BearerAuth
+// @Param appID path string true "App ID"
+// @Param delete_data query boolean false "Also delete app data volumes"
+// @Success 204 "App removed successfully"
+// @Failure 500 {object} ErrorResponse "Removal failed"
+// @Router /appstore/installed/{appID} [delete]
 func (h *AppStoreHandler) RemoveApp(w http.ResponseWriter, r *http.Request) {
 	appID := chi.URLParam(r, "appID")
 	deleteData := r.URL.Query().Get("delete_data") == "true"
@@ -341,7 +501,16 @@ func (h *AppStoreHandler) RemoveApp(w http.ResponseWriter, r *http.Request) {
 	w.WriteHeader(http.StatusNoContent)
 }
 
-// StartApp starts an installed app
+// StartApp godoc
+// @Summary Start an installed app
+// @Description Starts a stopped app's Docker containers
+// @Tags AppStore - Installed
+// @Produce json
+// @Security BearerAuth
+// @Param appID path string true "App ID"
+// @Success 200 {object} map[string]bool "success: true"
+// @Failure 500 {object} ErrorResponse "Start failed"
+// @Router /appstore/installed/{appID}/start [post]
 func (h *AppStoreHandler) StartApp(w http.ResponseWriter, r *http.Request) {
 	appID := chi.URLParam(r, "appID")
 	if err := h.manager.StartApp(appID); err != nil {
@@ -351,7 +520,16 @@ func (h *AppStoreHandler) StartApp(w http.ResponseWriter, r *http.Request) {
 	json.NewEncoder(w).Encode(map[string]interface{}{"success": true})
 }
 
-// StopApp stops an installed app
+// StopApp godoc
+// @Summary Stop an installed app
+// @Description Stops a running app's Docker containers
+// @Tags AppStore - Installed
+// @Produce json
+// @Security BearerAuth
+// @Param appID path string true "App ID"
+// @Success 200 {object} map[string]bool "success: true"
+// @Failure 500 {object} ErrorResponse "Stop failed"
+// @Router /appstore/installed/{appID}/stop [post]
 func (h *AppStoreHandler) StopApp(w http.ResponseWriter, r *http.Request) {
 	appID := chi.URLParam(r, "appID")
 	if err := h.manager.StopApp(appID); err != nil {
@@ -361,7 +539,16 @@ func (h *AppStoreHandler) StopApp(w http.ResponseWriter, r *http.Request) {
 	json.NewEncoder(w).Encode(map[string]interface{}{"success": true})
 }
 
-// RestartApp restarts an installed app
+// RestartApp godoc
+// @Summary Restart an installed app
+// @Description Restarts an app's Docker containers
+// @Tags AppStore - Installed
+// @Produce json
+// @Security BearerAuth
+// @Param appID path string true "App ID"
+// @Success 200 {object} map[string]bool "success: true"
+// @Failure 500 {object} ErrorResponse "Restart failed"
+// @Router /appstore/installed/{appID}/restart [post]
 func (h *AppStoreHandler) RestartApp(w http.ResponseWriter, r *http.Request) {
 	appID := chi.URLParam(r, "appID")
 	if err := h.manager.RestartApp(appID); err != nil {
@@ -371,7 +558,19 @@ func (h *AppStoreHandler) RestartApp(w http.ResponseWriter, r *http.Request) {
 	json.NewEncoder(w).Encode(map[string]interface{}{"success": true})
 }
 
-// AppAction performs an action on an installed app
+// AppAction godoc
+// @Summary Perform action on app
+// @Description Performs a lifecycle action on an installed app (start, stop, restart, remove)
+// @Tags AppStore - Installed
+// @Accept json
+// @Produce json
+// @Security BearerAuth
+// @Param appID path string true "App ID"
+// @Param request body models.AppActionRequest true "Action request"
+// @Success 200 {object} map[string]bool "success: true"
+// @Failure 400 {object} ErrorResponse "Invalid request or action"
+// @Failure 500 {object} ErrorResponse "Action failed"
+// @Router /appstore/installed/{appID}/action [post]
 func (h *AppStoreHandler) AppAction(w http.ResponseWriter, r *http.Request) {
 	appID := chi.URLParam(r, "appID")
 
@@ -408,7 +607,16 @@ func (h *AppStoreHandler) AppAction(w http.ResponseWriter, r *http.Request) {
 // Config Editor Handlers - User Apps (/cubeos/apps/)
 // ============================================================================
 
-// GetAppConfig returns the config files for an installed app
+// GetAppConfig godoc
+// @Summary Get app configuration
+// @Description Returns the docker-compose.yml and .env files for an installed user app
+// @Tags AppStore - Config (User Apps)
+// @Produce json
+// @Security BearerAuth
+// @Param appID path string true "App ID"
+// @Success 200 {object} models.AppConfig "App configuration files"
+// @Failure 404 {object} ErrorResponse "App not found"
+// @Router /appstore/installed/{appID}/config [get]
 func (h *AppStoreHandler) GetAppConfig(w http.ResponseWriter, r *http.Request) {
 	appID := chi.URLParam(r, "appID")
 
@@ -421,7 +629,19 @@ func (h *AppStoreHandler) GetAppConfig(w http.ResponseWriter, r *http.Request) {
 	json.NewEncoder(w).Encode(config)
 }
 
-// UpdateAppConfig updates the config files for an installed app
+// UpdateAppConfig godoc
+// @Summary Update app configuration
+// @Description Updates the docker-compose.yml and/or .env files for a user app. Changes are saved but not applied until /config/apply is called.
+// @Tags AppStore - Config (User Apps)
+// @Accept json
+// @Produce json
+// @Security BearerAuth
+// @Param appID path string true "App ID"
+// @Param request body object true "Config update" SchemaExample({"compose_yaml": "version: '3'...", "env_content": "KEY=value"})
+// @Success 200 {object} map[string]interface{} "success, message"
+// @Failure 400 {object} ErrorResponse "Invalid request"
+// @Failure 500 {object} ErrorResponse "Update failed"
+// @Router /appstore/installed/{appID}/config [put]
 func (h *AppStoreHandler) UpdateAppConfig(w http.ResponseWriter, r *http.Request) {
 	appID := chi.URLParam(r, "appID")
 
@@ -446,7 +666,16 @@ func (h *AppStoreHandler) UpdateAppConfig(w http.ResponseWriter, r *http.Request
 	})
 }
 
-// ApplyAppConfig applies config changes by restarting the app
+// ApplyAppConfig godoc
+// @Summary Apply app configuration changes
+// @Description Restarts the app with the updated configuration files
+// @Tags AppStore - Config (User Apps)
+// @Produce json
+// @Security BearerAuth
+// @Param appID path string true "App ID"
+// @Success 200 {object} map[string]interface{} "success, message"
+// @Failure 500 {object} ErrorResponse "Apply failed"
+// @Router /appstore/installed/{appID}/config/apply [post]
 func (h *AppStoreHandler) ApplyAppConfig(w http.ResponseWriter, r *http.Request) {
 	appID := chi.URLParam(r, "appID")
 
@@ -461,7 +690,16 @@ func (h *AppStoreHandler) ApplyAppConfig(w http.ResponseWriter, r *http.Request)
 	})
 }
 
-// GetConfigBackups returns available config backups for an app
+// GetConfigBackups godoc
+// @Summary List config backups
+// @Description Returns available configuration backups for a user app
+// @Tags AppStore - Config (User Apps)
+// @Produce json
+// @Security BearerAuth
+// @Param appID path string true "App ID"
+// @Success 200 {object} map[string]interface{} "backups: array of backup info"
+// @Failure 500 {object} ErrorResponse "Failed to list backups"
+// @Router /appstore/installed/{appID}/config/backups [get]
 func (h *AppStoreHandler) GetConfigBackups(w http.ResponseWriter, r *http.Request) {
 	appID := chi.URLParam(r, "appID")
 
@@ -476,7 +714,17 @@ func (h *AppStoreHandler) GetConfigBackups(w http.ResponseWriter, r *http.Reques
 	})
 }
 
-// RestoreConfigBackup restores a config backup
+// RestoreConfigBackup godoc
+// @Summary Restore config backup
+// @Description Restores a configuration backup. Use /config/apply to restart with restored config.
+// @Tags AppStore - Config (User Apps)
+// @Produce json
+// @Security BearerAuth
+// @Param appID path string true "App ID"
+// @Param backup path string true "Backup filename/identifier"
+// @Success 200 {object} map[string]interface{} "success, message"
+// @Failure 500 {object} ErrorResponse "Restore failed"
+// @Router /appstore/installed/{appID}/config/restore/{backup} [post]
 func (h *AppStoreHandler) RestoreConfigBackup(w http.ResponseWriter, r *http.Request) {
 	appID := chi.URLParam(r, "appID")
 	backup := chi.URLParam(r, "backup")
@@ -496,7 +744,15 @@ func (h *AppStoreHandler) RestoreConfigBackup(w http.ResponseWriter, r *http.Req
 // Config Editor Handlers - Core Apps (/cubeos/coreapps/)
 // ============================================================================
 
-// ListCoreApps returns all core apps
+// ListCoreApps godoc
+// @Summary List core system apps
+// @Description Returns all core system apps (pihole, npm, api, etc). WARNING: Modifying core apps may break your system.
+// @Tags AppStore - Config (Core Apps)
+// @Produce json
+// @Security BearerAuth
+// @Success 200 {object} map[string]interface{} "apps: array of core apps, warning: safety message"
+// @Failure 500 {object} ErrorResponse "Failed to list core apps"
+// @Router /appstore/coreapps [get]
 func (h *AppStoreHandler) ListCoreApps(w http.ResponseWriter, r *http.Request) {
 	apps, err := h.manager.ListCoreApps()
 	if err != nil {
@@ -510,7 +766,16 @@ func (h *AppStoreHandler) ListCoreApps(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
-// GetCoreAppConfig returns the config files for a core app
+// GetCoreAppConfig godoc
+// @Summary Get core app configuration
+// @Description Returns the docker-compose.yml and .env files for a core system app. WARNING: Core apps are system-critical.
+// @Tags AppStore - Config (Core Apps)
+// @Produce json
+// @Security BearerAuth
+// @Param appID path string true "Core app ID (e.g., pihole, npm, api)"
+// @Success 200 {object} map[string]interface{} "config: app config, warning: safety message"
+// @Failure 404 {object} ErrorResponse "Core app not found"
+// @Router /appstore/coreapps/{appID}/config [get]
 func (h *AppStoreHandler) GetCoreAppConfig(w http.ResponseWriter, r *http.Request) {
 	appID := chi.URLParam(r, "appID")
 
@@ -526,7 +791,19 @@ func (h *AppStoreHandler) GetCoreAppConfig(w http.ResponseWriter, r *http.Reques
 	})
 }
 
-// UpdateCoreAppConfig updates the config files for a core app
+// UpdateCoreAppConfig godoc
+// @Summary Update core app configuration
+// @Description Updates configuration for a core system app. Requires confirm_dangerous=true. WARNING: May break system!
+// @Tags AppStore - Config (Core Apps)
+// @Accept json
+// @Produce json
+// @Security BearerAuth
+// @Param appID path string true "Core app ID"
+// @Param request body object true "Config update with confirmation" SchemaExample({"compose_yaml": "...", "env_content": "...", "confirm_dangerous": true})
+// @Success 200 {object} map[string]interface{} "success, message, warning"
+// @Failure 400 {object} ErrorResponse "Missing confirm_dangerous or invalid request"
+// @Failure 500 {object} ErrorResponse "Update failed"
+// @Router /appstore/coreapps/{appID}/config [put]
 func (h *AppStoreHandler) UpdateCoreAppConfig(w http.ResponseWriter, r *http.Request) {
 	appID := chi.URLParam(r, "appID")
 
@@ -558,7 +835,19 @@ func (h *AppStoreHandler) UpdateCoreAppConfig(w http.ResponseWriter, r *http.Req
 	})
 }
 
-// ApplyCoreAppConfig applies config changes by restarting a core app
+// ApplyCoreAppConfig godoc
+// @Summary Apply core app configuration changes
+// @Description Restarts a core system app with updated configuration. Requires confirm_dangerous=true.
+// @Tags AppStore - Config (Core Apps)
+// @Accept json
+// @Produce json
+// @Security BearerAuth
+// @Param appID path string true "Core app ID"
+// @Param request body object false "Confirmation" SchemaExample({"confirm_dangerous": true})
+// @Success 200 {object} map[string]interface{} "success, message"
+// @Failure 400 {object} ErrorResponse "Missing confirm_dangerous"
+// @Failure 500 {object} ErrorResponse "Apply failed"
+// @Router /appstore/coreapps/{appID}/config/apply [post]
 func (h *AppStoreHandler) ApplyCoreAppConfig(w http.ResponseWriter, r *http.Request) {
 	appID := chi.URLParam(r, "appID")
 
@@ -584,7 +873,16 @@ func (h *AppStoreHandler) ApplyCoreAppConfig(w http.ResponseWriter, r *http.Requ
 	})
 }
 
-// GetCoreConfigBackups returns available config backups for a core app
+// GetCoreConfigBackups godoc
+// @Summary List core app config backups
+// @Description Returns available configuration backups for a core system app
+// @Tags AppStore - Config (Core Apps)
+// @Produce json
+// @Security BearerAuth
+// @Param appID path string true "Core app ID"
+// @Success 200 {object} map[string]interface{} "backups: array of backup info"
+// @Failure 500 {object} ErrorResponse "Failed to list backups"
+// @Router /appstore/coreapps/{appID}/config/backups [get]
 func (h *AppStoreHandler) GetCoreConfigBackups(w http.ResponseWriter, r *http.Request) {
 	appID := chi.URLParam(r, "appID")
 
@@ -599,7 +897,17 @@ func (h *AppStoreHandler) GetCoreConfigBackups(w http.ResponseWriter, r *http.Re
 	})
 }
 
-// RestoreCoreConfigBackup restores a config backup for a core app
+// RestoreCoreConfigBackup godoc
+// @Summary Restore core app config backup
+// @Description Restores a configuration backup for a core app. Use /config/apply to restart with restored config.
+// @Tags AppStore - Config (Core Apps)
+// @Produce json
+// @Security BearerAuth
+// @Param appID path string true "Core app ID"
+// @Param backup path string true "Backup filename/identifier"
+// @Success 200 {object} map[string]interface{} "success, message"
+// @Failure 500 {object} ErrorResponse "Restore failed"
+// @Router /appstore/coreapps/{appID}/config/restore/{backup} [post]
 func (h *AppStoreHandler) RestoreCoreConfigBackup(w http.ResponseWriter, r *http.Request) {
 	appID := chi.URLParam(r, "appID")
 	backup := chi.URLParam(r, "backup")
@@ -619,7 +927,15 @@ func (h *AppStoreHandler) RestoreCoreConfigBackup(w http.ResponseWriter, r *http
 // NPM Proxy Hosts
 // ============================================================================
 
-// GetProxyHosts returns all NPM proxy hosts
+// GetProxyHosts godoc
+// @Summary List NPM proxy hosts
+// @Description Returns all Nginx Proxy Manager proxy host configurations for installed apps
+// @Tags AppStore - NPM
+// @Produce json
+// @Security BearerAuth
+// @Success 200 {object} map[string]interface{} "hosts: array of proxy host configs"
+// @Failure 500 {object} ErrorResponse "Failed to fetch proxy hosts"
+// @Router /appstore/proxy-hosts [get]
 func (h *AppStoreHandler) GetProxyHosts(w http.ResponseWriter, r *http.Request) {
 	hosts, err := h.manager.GetNPMProxyHosts()
 	if err != nil {

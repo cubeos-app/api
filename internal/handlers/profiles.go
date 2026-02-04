@@ -35,8 +35,15 @@ func (h *ProfilesHandler) Routes() chi.Router {
 	return r
 }
 
-// ListProfiles returns all profiles.
-// GET /api/v1/profiles
+// ListProfiles godoc
+// @Summary List all profiles
+// @Description Returns all available profiles (built-in and custom) along with the currently active profile name
+// @Tags Profiles
+// @Produce json
+// @Security BearerAuth
+// @Success 200 {object} map[string]interface{} "profiles: array of profile objects, active_profile: current profile name"
+// @Failure 500 {object} ErrorResponse "Failed to list profiles"
+// @Router /profiles [get]
 func (h *ProfilesHandler) ListProfiles(w http.ResponseWriter, r *http.Request) {
 	profiles, activeProfile, err := h.orchestrator.ListProfiles(r.Context())
 	if err != nil {
@@ -50,8 +57,16 @@ func (h *ProfilesHandler) ListProfiles(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
-// GetProfile returns a single profile by name.
-// GET /api/v1/profiles/{name}
+// GetProfile godoc
+// @Summary Get a profile by name
+// @Description Returns a single profile by name including its app configuration and resource limits
+// @Tags Profiles
+// @Produce json
+// @Security BearerAuth
+// @Param name path string true "Profile name"
+// @Success 200 {object} models.Profile "Profile details"
+// @Failure 404 {object} ErrorResponse "Profile not found"
+// @Router /profiles/{name} [get]
 func (h *ProfilesHandler) GetProfile(w http.ResponseWriter, r *http.Request) {
 	name := chi.URLParam(r, "name")
 
@@ -64,8 +79,18 @@ func (h *ProfilesHandler) GetProfile(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, profile)
 }
 
-// CreateProfile creates a new custom profile.
-// POST /api/v1/profiles
+// CreateProfile godoc
+// @Summary Create a custom profile
+// @Description Creates a new custom profile with specified apps and configuration. Built-in profiles (minimal, standard, full) cannot be overwritten.
+// @Tags Profiles
+// @Accept json
+// @Produce json
+// @Security BearerAuth
+// @Param request body models.CreateProfileRequest true "Profile creation request"
+// @Success 201 {object} models.Profile "Created profile"
+// @Failure 400 {object} ErrorResponse "Invalid request body or missing profile name"
+// @Failure 500 {object} ErrorResponse "Failed to create profile"
+// @Router /profiles [post]
 func (h *ProfilesHandler) CreateProfile(w http.ResponseWriter, r *http.Request) {
 	var req models.CreateProfileRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
@@ -87,8 +112,17 @@ func (h *ProfilesHandler) CreateProfile(w http.ResponseWriter, r *http.Request) 
 	writeJSON(w, http.StatusCreated, profile)
 }
 
-// ApplyProfile applies a profile, starting/stopping apps as needed.
-// POST /api/v1/profiles/{name}/apply
+// ApplyProfile godoc
+// @Summary Apply a profile
+// @Description Applies a profile by starting apps defined in the profile and stopping apps not in the profile. Returns the list of started and stopped apps.
+// @Tags Profiles
+// @Produce json
+// @Security BearerAuth
+// @Param name path string true "Profile name to apply"
+// @Success 200 {object} map[string]interface{} "started: apps started, stopped: apps stopped, profile: applied profile name"
+// @Failure 404 {object} ErrorResponse "Profile not found"
+// @Failure 500 {object} ErrorResponse "Failed to apply profile"
+// @Router /profiles/{name}/apply [post]
 func (h *ProfilesHandler) ApplyProfile(w http.ResponseWriter, r *http.Request) {
 	name := chi.URLParam(r, "name")
 

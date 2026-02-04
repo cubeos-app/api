@@ -297,7 +297,19 @@ func (h *ChatHandler) buildSystemPrompt(query string) (string, []string) {
 	return fmt.Sprintf(systemPromptTemplate, context), sources
 }
 
-// HandleChat handles non-streaming chat requests with RAG
+// HandleChat godoc
+// @Summary Send chat message
+// @Description Sends a message to the CubeOS AI assistant with RAG support. Uses Ollama with Qwen2.5 model and retrieves relevant documentation from ChromaDB for context-aware responses.
+// @Tags Chat
+// @Accept json
+// @Produce json
+// @Security BearerAuth
+// @Param request body ChatRequest true "Chat message with optional conversation history"
+// @Success 200 {object} ChatResponse "AI response with optional documentation sources"
+// @Failure 400 {object} ErrorResponse "Invalid request or missing message"
+// @Failure 500 {object} ErrorResponse "Failed to parse AI response"
+// @Failure 503 {object} ErrorResponse "AI service unavailable (Ollama not running)"
+// @Router /chat [post]
 func (h *ChatHandler) HandleChat(w http.ResponseWriter, r *http.Request) {
 	var req ChatRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
@@ -379,7 +391,18 @@ func (h *ChatHandler) HandleChat(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
-// HandleChatStream handles streaming chat requests via SSE with RAG
+// HandleChatStream godoc
+// @Summary Send chat message with streaming
+// @Description Sends a message to the CubeOS AI assistant with Server-Sent Events (SSE) streaming. Sources are sent first, followed by incremental response tokens.
+// @Tags Chat
+// @Accept json
+// @Produce text/event-stream
+// @Security BearerAuth
+// @Param request body ChatRequest true "Chat message with optional conversation history"
+// @Success 200 {object} string "SSE stream with content chunks and done flag"
+// @Failure 400 {object} ErrorResponse "Invalid request or missing message"
+// @Failure 500 {object} ErrorResponse "Streaming not supported"
+// @Router /chat/stream [post]
 func (h *ChatHandler) HandleChatStream(w http.ResponseWriter, r *http.Request) {
 	var req ChatRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
@@ -500,7 +523,14 @@ func (h *ChatHandler) HandleChatStream(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
-// HandleChatStatus checks if Ollama and RAG are available
+// HandleChatStatus godoc
+// @Summary Get chat service status
+// @Description Returns the status of the AI chat service including Ollama availability, model readiness, and RAG (ChromaDB) status with document count.
+// @Tags Chat
+// @Produce json
+// @Security BearerAuth
+// @Success 200 {object} ChatStatusResponse "Chat service status"
+// @Router /chat/status [get]
 func (h *ChatHandler) HandleChatStatus(w http.ResponseWriter, r *http.Request) {
 	status := ChatStatusResponse{
 		Available:  false,
@@ -549,7 +579,15 @@ func (h *ChatHandler) HandleChatStatus(w http.ResponseWriter, r *http.Request) {
 	json.NewEncoder(w).Encode(status)
 }
 
-// HandlePullModel triggers model download
+// HandlePullModel godoc
+// @Summary Pull AI model
+// @Description Triggers download of the configured Ollama model (default: qwen2.5:0.5b). This is a long-running operation.
+// @Tags Chat
+// @Produce json
+// @Security BearerAuth
+// @Success 200 {object} map[string]string "status: pulling, model: model name"
+// @Failure 503 {object} ErrorResponse "Failed to pull model (Ollama unavailable)"
+// @Router /chat/pull-model [post]
 func (h *ChatHandler) HandlePullModel(w http.ResponseWriter, r *http.Request) {
 	pullReq := map[string]interface{}{
 		"name":   h.ollamaModel,

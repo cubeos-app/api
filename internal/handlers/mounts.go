@@ -37,8 +37,15 @@ func (h *MountsHandler) Routes() chi.Router {
 	return r
 }
 
-// ListMounts returns all configured mounts
-// GET /api/v1/mounts
+// ListMounts godoc
+// @Summary List all configured mounts
+// @Description Returns all configured SMB and NFS network mounts with their current status
+// @Tags Mounts
+// @Produce json
+// @Security BearerAuth
+// @Success 200 {object} map[string]interface{} "mounts: array of mount configurations"
+// @Failure 500 {object} ErrorResponse "MOUNTS_LIST_ERROR"
+// @Router /mounts [get]
 func (h *MountsHandler) ListMounts(w http.ResponseWriter, r *http.Request) {
 	mounts, err := h.mounts.ListMounts(r.Context())
 	if err != nil {
@@ -51,8 +58,17 @@ func (h *MountsHandler) ListMounts(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
-// GetMount returns a specific mount by name
-// GET /api/v1/mounts/{name}
+// GetMount godoc
+// @Summary Get a specific mount configuration
+// @Description Returns details of a specific mount configuration by name
+// @Tags Mounts
+// @Produce json
+// @Security BearerAuth
+// @Param name path string true "Mount name"
+// @Success 200 {object} models.Mount "Mount configuration details"
+// @Failure 400 {object} ErrorResponse "INVALID_NAME - Mount name is required"
+// @Failure 404 {object} ErrorResponse "MOUNT_NOT_FOUND - Mount not found"
+// @Router /mounts/{name} [get]
 func (h *MountsHandler) GetMount(w http.ResponseWriter, r *http.Request) {
 	name := chi.URLParam(r, "name")
 	if name == "" {
@@ -69,8 +85,17 @@ func (h *MountsHandler) GetMount(w http.ResponseWriter, r *http.Request) {
 	mountsRespondJSON(w, http.StatusOK, mount)
 }
 
-// AddMount creates a new mount configuration
-// POST /api/v1/mounts
+// AddMount godoc
+// @Summary Add a new mount configuration
+// @Description Creates a new SMB or NFS mount configuration. Does not mount automatically unless auto_mount is set.
+// @Tags Mounts
+// @Accept json
+// @Produce json
+// @Security BearerAuth
+// @Param request body managers.CreateMountRequest true "Mount configuration"
+// @Success 201 {object} models.Mount "Created mount configuration"
+// @Failure 400 {object} ErrorResponse "INVALID_JSON or MOUNT_ADD_ERROR"
+// @Router /mounts [post]
 func (h *MountsHandler) AddMount(w http.ResponseWriter, r *http.Request) {
 	var req managers.CreateMountRequest
 
@@ -88,8 +113,18 @@ func (h *MountsHandler) AddMount(w http.ResponseWriter, r *http.Request) {
 	mountsRespondJSON(w, http.StatusCreated, mount)
 }
 
-// DeleteMount removes a mount configuration
-// DELETE /api/v1/mounts/{name}
+// DeleteMount godoc
+// @Summary Delete a mount configuration
+// @Description Removes a mount configuration by name. Unmounts first if currently mounted.
+// @Tags Mounts
+// @Produce json
+// @Security BearerAuth
+// @Param name path string true "Mount name"
+// @Success 200 {object} map[string]string "status: deleted, name: mount name"
+// @Failure 400 {object} ErrorResponse "INVALID_NAME - Mount name is required"
+// @Failure 404 {object} ErrorResponse "MOUNT_NOT_FOUND - Mount not found"
+// @Failure 500 {object} ErrorResponse "MOUNT_DELETE_ERROR"
+// @Router /mounts/{name} [delete]
 func (h *MountsHandler) DeleteMount(w http.ResponseWriter, r *http.Request) {
 	name := chi.URLParam(r, "name")
 	if name == "" {
@@ -115,8 +150,18 @@ func (h *MountsHandler) DeleteMount(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
-// Mount mounts a configured share
-// POST /api/v1/mounts/{name}/mount
+// Mount godoc
+// @Summary Mount a configured share
+// @Description Mounts a previously configured SMB or NFS share to its local path
+// @Tags Mounts
+// @Produce json
+// @Security BearerAuth
+// @Param name path string true "Mount name"
+// @Success 200 {object} map[string]interface{} "status: mounted, name, details"
+// @Failure 400 {object} ErrorResponse "INVALID_NAME - Mount name is required"
+// @Failure 404 {object} ErrorResponse "MOUNT_NOT_FOUND - Mount not found"
+// @Failure 500 {object} ErrorResponse "MOUNT_ERROR - Failed to mount"
+// @Router /mounts/{name}/mount [post]
 func (h *MountsHandler) Mount(w http.ResponseWriter, r *http.Request) {
 	name := chi.URLParam(r, "name")
 	if name == "" {
@@ -145,8 +190,18 @@ func (h *MountsHandler) Mount(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
-// Unmount unmounts a share
-// POST /api/v1/mounts/{name}/unmount
+// Unmount godoc
+// @Summary Unmount a share
+// @Description Unmounts a currently mounted SMB or NFS share
+// @Tags Mounts
+// @Produce json
+// @Security BearerAuth
+// @Param name path string true "Mount name"
+// @Success 200 {object} map[string]string "status: unmounted, name"
+// @Failure 400 {object} ErrorResponse "INVALID_NAME - Mount name is required"
+// @Failure 404 {object} ErrorResponse "MOUNT_NOT_FOUND - Mount not found"
+// @Failure 500 {object} ErrorResponse "UNMOUNT_ERROR - Failed to unmount"
+// @Router /mounts/{name}/unmount [post]
 func (h *MountsHandler) Unmount(w http.ResponseWriter, r *http.Request) {
 	name := chi.URLParam(r, "name")
 	if name == "" {
@@ -172,8 +227,17 @@ func (h *MountsHandler) Unmount(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
-// GetMountStatus returns detailed status of a mount
-// GET /api/v1/mounts/{name}/status
+// GetMountStatus godoc
+// @Summary Get mount status
+// @Description Returns detailed status of a specific mount including whether it is currently mounted
+// @Tags Mounts
+// @Produce json
+// @Security BearerAuth
+// @Param name path string true "Mount name"
+// @Success 200 {object} map[string]interface{} "name, type, local_path, is_mounted, auto_mount"
+// @Failure 400 {object} ErrorResponse "INVALID_NAME - Mount name is required"
+// @Failure 404 {object} ErrorResponse "MOUNT_NOT_FOUND - Mount not found"
+// @Router /mounts/{name}/status [get]
 func (h *MountsHandler) GetMountStatus(w http.ResponseWriter, r *http.Request) {
 	name := chi.URLParam(r, "name")
 	if name == "" {
@@ -197,8 +261,17 @@ func (h *MountsHandler) GetMountStatus(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
-// TestConnection tests connectivity to a remote share
-// POST /api/v1/mounts/test
+// TestConnection godoc
+// @Summary Test connection to remote share
+// @Description Tests connectivity to a remote SMB or NFS share without creating a mount configuration
+// @Tags Mounts
+// @Accept json
+// @Produce json
+// @Security BearerAuth
+// @Param request body object true "Connection test parameters" SchemaExample({"type": "smb", "remote_path": "//192.168.1.100/share", "username": "user", "password": "pass"})
+// @Success 200 {object} map[string]interface{} "success: boolean, message or error"
+// @Failure 400 {object} ErrorResponse "INVALID_JSON, MISSING_TYPE, or MISSING_PATH"
+// @Router /mounts/test [post]
 func (h *MountsHandler) TestConnection(w http.ResponseWriter, r *http.Request) {
 	var req struct {
 		Type       models.MountType `json:"type"`

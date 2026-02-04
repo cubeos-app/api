@@ -24,42 +24,71 @@ func NewHandler(jwtService *JWTService, userService *UserService) *Handler {
 }
 
 // LoginRequest is the request body for the login endpoint.
+// @Description Login credentials
 type LoginRequest struct {
-	Username string `json:"username"`
-	Password string `json:"password"`
+	Username string `json:"username" example:"admin"`
+	Password string `json:"password" example:"cubeos"`
 }
 
 // TokenResponse is the response body containing JWT tokens.
+// @Description JWT token response
 type TokenResponse struct {
-	AccessToken  string    `json:"access_token"`
-	RefreshToken string    `json:"refresh_token"`
-	TokenType    string    `json:"token_type"`
-	ExpiresIn    int       `json:"expires_in"`
-	ExpiresAt    time.Time `json:"expires_at"`
+	AccessToken  string    `json:"access_token" example:"eyJhbGciOiJIUzI1NiIs..."`
+	RefreshToken string    `json:"refresh_token" example:"eyJhbGciOiJIUzI1NiIs..."`
+	TokenType    string    `json:"token_type" example:"Bearer"`
+	ExpiresIn    int       `json:"expires_in" example:"3600"`
+	ExpiresAt    time.Time `json:"expires_at" example:"2025-02-04T12:00:00Z"`
 }
 
 // UserResponse is the response body for user info.
+// @Description User information
 type UserResponse struct {
-	ID          int64      `json:"id"`
-	Username    string     `json:"username"`
-	Email       string     `json:"email,omitempty"`
-	IsAdmin     bool       `json:"is_admin"`
-	CreatedAt   time.Time  `json:"created_at"`
-	LastLoginAt *time.Time `json:"last_login_at,omitempty"`
+	ID          int64      `json:"id" example:"1"`
+	Username    string     `json:"username" example:"admin"`
+	Email       string     `json:"email,omitempty" example:"admin@cubeos.cube"`
+	IsAdmin     bool       `json:"is_admin" example:"true"`
+	CreatedAt   time.Time  `json:"created_at" example:"2025-01-01T00:00:00Z"`
+	LastLoginAt *time.Time `json:"last_login_at,omitempty" example:"2025-02-04T10:30:00Z"`
 }
 
 // RefreshRequest is the request body for token refresh.
+// @Description Token refresh request
 type RefreshRequest struct {
-	RefreshToken string `json:"refresh_token"`
+	RefreshToken string `json:"refresh_token" example:"eyJhbGciOiJIUzI1NiIs..."`
 }
 
 // ChangePasswordRequest is the request body for changing password.
+// @Description Password change request
 type ChangePasswordRequest struct {
-	CurrentPassword string `json:"current_password"`
-	NewPassword     string `json:"new_password"`
+	CurrentPassword string `json:"current_password" example:"oldpassword"`
+	NewPassword     string `json:"new_password" example:"newpassword123"`
 }
 
-// Login handles POST /api/v1/auth/login
+// MessageResponse is a simple message response.
+// @Description Simple message response
+type MessageResponse struct {
+	Message string `json:"message" example:"operation successful"`
+}
+
+// ErrorResponse represents an authentication error.
+// @Description Authentication error response
+type ErrorResponse struct {
+	Error   string `json:"error" example:"bad_request"`
+	Message string `json:"message" example:"invalid request body"`
+}
+
+// Login godoc
+// @Summary User login
+// @Description Authenticates a user and returns JWT access and refresh tokens
+// @Tags Auth
+// @Accept json
+// @Produce json
+// @Param request body LoginRequest true "Login credentials"
+// @Success 200 {object} TokenResponse "Successfully authenticated"
+// @Failure 400 {object} ErrorResponse "Invalid request body or missing credentials"
+// @Failure 401 {object} ErrorResponse "Invalid username or password"
+// @Failure 500 {object} ErrorResponse "Internal server error"
+// @Router /api/v1/auth/login [post]
 func (h *Handler) Login(w http.ResponseWriter, r *http.Request) {
 	var req LoginRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
@@ -114,7 +143,18 @@ func (h *Handler) Login(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
-// Refresh handles POST /api/v1/auth/refresh
+// Refresh godoc
+// @Summary Refresh access token
+// @Description Refreshes an expired access token using a valid refresh token
+// @Tags Auth
+// @Accept json
+// @Produce json
+// @Param request body RefreshRequest true "Refresh token"
+// @Success 200 {object} TokenResponse "New access token"
+// @Failure 400 {object} ErrorResponse "Invalid request body or missing refresh token"
+// @Failure 401 {object} ErrorResponse "Invalid or expired refresh token"
+// @Failure 500 {object} ErrorResponse "Internal server error"
+// @Router /api/v1/auth/refresh [post]
 func (h *Handler) Refresh(w http.ResponseWriter, r *http.Request) {
 	var req RefreshRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
@@ -165,7 +205,16 @@ func (h *Handler) Refresh(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
-// Me handles GET /api/v1/auth/me
+// Me godoc
+// @Summary Get current user
+// @Description Returns information about the currently authenticated user
+// @Tags Auth
+// @Accept json
+// @Produce json
+// @Security BearerAuth
+// @Success 200 {object} UserResponse "Current user information"
+// @Failure 401 {object} ErrorResponse "Authentication required"
+// @Router /api/v1/auth/me [get]
 func (h *Handler) Me(w http.ResponseWriter, r *http.Request) {
 	user := GetUserFromContext(r.Context())
 	if user == nil {
@@ -183,7 +232,19 @@ func (h *Handler) Me(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
-// ChangePassword handles POST /api/v1/auth/password
+// ChangePassword godoc
+// @Summary Change password
+// @Description Changes the password for the currently authenticated user
+// @Tags Auth
+// @Accept json
+// @Produce json
+// @Security BearerAuth
+// @Param request body ChangePasswordRequest true "Password change request"
+// @Success 200 {object} MessageResponse "Password updated successfully"
+// @Failure 400 {object} ErrorResponse "Invalid request or password requirements not met"
+// @Failure 401 {object} ErrorResponse "Authentication required or current password incorrect"
+// @Failure 500 {object} ErrorResponse "Internal server error"
+// @Router /api/v1/auth/password [post]
 func (h *Handler) ChangePassword(w http.ResponseWriter, r *http.Request) {
 	user := GetUserFromContext(r.Context())
 	if user == nil {
@@ -227,7 +288,15 @@ func (h *Handler) ChangePassword(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
-// Logout handles POST /api/v1/auth/logout
+// Logout godoc
+// @Summary User logout
+// @Description Logs out the current user. With stateless JWTs, this is primarily for client-side token cleanup.
+// @Tags Auth
+// @Accept json
+// @Produce json
+// @Security BearerAuth
+// @Success 200 {object} MessageResponse "Logged out successfully"
+// @Router /api/v1/auth/logout [post]
 // Note: With stateless JWTs, we can't really invalidate tokens server-side without a blacklist.
 // This endpoint exists for clients to "logout" by discarding their tokens.
 func (h *Handler) Logout(w http.ResponseWriter, r *http.Request) {
@@ -251,11 +320,18 @@ func jsonResponse(w http.ResponseWriter, status int, data interface{}) {
 func badRequest(w http.ResponseWriter, message string) {
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusBadRequest)
-	w.Write([]byte(`{"error": "bad_request", "message": "` + message + `"}`))
+	json.NewEncoder(w).Encode(ErrorResponse{
+		Error:   "bad_request",
+		Message: message,
+	})
 }
+
 
 func internalError(w http.ResponseWriter, message string) {
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusInternalServerError)
-	w.Write([]byte(`{"error": "internal_error", "message": "` + message + `"}`))
+	json.NewEncoder(w).Encode(ErrorResponse{
+		Error:   "internal_error",
+		Message: message,
+	})
 }

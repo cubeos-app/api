@@ -79,11 +79,17 @@ func (h *NetworkHandler) Routes() chi.Router {
 // Network Status and Mode
 // =============================================================================
 
-// GetNetworkStatus returns the current network status.
-// GET /api/v1/network/status
+// GetNetworkStatus godoc
+// @Summary Get network status
+// @Description Returns current network status including mode, connectivity, and interface states
+// @Tags Network
+// @Produce json
+// @Security BearerAuth
+// @Success 200 {object} managers.NetworkStatus "Network status"
+// @Failure 500 {object} ErrorResponse "Failed to get status"
+// @Router /network/status [get]
 func (h *NetworkHandler) GetNetworkStatus(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
-
 	status, err := h.network.GetStatus(ctx)
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, err.Error())
@@ -92,8 +98,39 @@ func (h *NetworkHandler) GetNetworkStatus(w http.ResponseWriter, r *http.Request
 	writeJSON(w, http.StatusOK, status)
 }
 
-// SetNetworkMode changes the network operating mode.
-// POST /api/v1/network/mode
+// GetNetworkMode godoc
+// @Summary Get current network mode
+// @Description Returns the current network operating mode
+// @Tags Network
+// @Produce json
+// @Security BearerAuth
+// @Success 200 {object} map[string]interface{} "Current network mode"
+// @Router /network/mode [get]
+func (h *NetworkHandler) GetNetworkMode(w http.ResponseWriter, r *http.Request) {
+	ctx := r.Context()
+	status, err := h.network.GetStatus(ctx)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]interface{}{
+		"mode":        status.Mode,
+		"description": getModeDescription(string(status.Mode)),
+	})
+}
+
+// SetNetworkMode godoc
+// @Summary Set network mode
+// @Description Changes the network operating mode (offline, online_eth, online_wifi, server_eth, server_wifi)
+// @Tags Network
+// @Accept json
+// @Produce json
+// @Security BearerAuth
+// @Param request body object true "Network mode configuration" example({"mode": "online_eth"})
+// @Success 200 {object} map[string]interface{} "Mode changed with status"
+// @Failure 400 {object} ErrorResponse "Invalid mode or missing parameters"
+// @Failure 500 {object} ErrorResponse "Failed to change mode"
+// @Router /network/mode [post]
 func (h *NetworkHandler) SetNetworkMode(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
 
@@ -113,7 +150,6 @@ func (h *NetworkHandler) SetNetworkMode(w http.ResponseWriter, r *http.Request) 
 		return
 	}
 
-	// Validate mode
 	validModes := map[string]bool{
 		"offline":     true,
 		"online_eth":  true,
@@ -127,13 +163,11 @@ func (h *NetworkHandler) SetNetworkMode(w http.ResponseWriter, r *http.Request) 
 		return
 	}
 
-	// WiFi modes require SSID
 	if (req.Mode == "online_wifi" || req.Mode == "server_wifi") && req.SSID == "" {
 		writeError(w, http.StatusBadRequest, "SSID is required for WiFi modes")
 		return
 	}
 
-	// Convert string to managers.NetworkMode
 	var mode managers.NetworkMode
 	switch req.Mode {
 	case "offline":
@@ -153,7 +187,6 @@ func (h *NetworkHandler) SetNetworkMode(w http.ResponseWriter, r *http.Request) 
 		return
 	}
 
-	// Return updated status
 	status, _ := h.network.GetStatus(ctx)
 	writeJSON(w, http.StatusOK, map[string]interface{}{
 		"success": true,
@@ -162,169 +195,114 @@ func (h *NetworkHandler) SetNetworkMode(w http.ResponseWriter, r *http.Request) 
 	})
 }
 
-// =============================================================================
-// Internet Connectivity
-// =============================================================================
-
-// GetInternetStatus checks internet connectivity.
-// GET /api/v1/network/internet
-func (h *NetworkHandler) GetInternetStatus(w http.ResponseWriter, r *http.Request) {
-	ctx := r.Context()
-
-	// Try to check connectivity via HAL
-	if h.halClient != nil {
-		status, err := h.halClient.GetNetworkStatus(ctx)
-		if err == nil {
-			writeJSON(w, http.StatusOK, map[string]interface{}{
-				"connected":    status["internet"],
-				"check_target": "1.1.1.1",
-				"method":       "hal",
-			})
-			return
-		}
+// GetAvailableModes godoc
+// @Summary Get available network modes
+// @Description Returns list of available network operating modes
+// @Tags Network
+// @Produce json
+// @Security BearerAuth
+// @Success 200 {object} map[string]interface{} "Available modes"
+// @Router /network/modes [get]
+func (h *NetworkHandler) GetAvailableModes(w http.ResponseWriter, r *http.Request) {
+	modes := []map[string]interface{}{
+		{"id": "offline", "name": "Offline (AP Only)", "description": "Air-gapped access point mode"},
+		{"id": "online_eth", "name": "Online via Ethernet", "description": "AP + NAT via Ethernet uplink"},
+		{"id": "online_wifi", "name": "Online via WiFi", "description": "AP + NAT via USB WiFi dongle"},
+		{"id": "server_eth", "name": "Server via Ethernet", "description": "No AP, direct Ethernet connection"},
+		{"id": "server_wifi", "name": "Server via WiFi", "description": "No AP, direct WiFi connection"},
 	}
-
-	// Fallback: use network manager
-	netStatus, err := h.network.GetStatus(ctx)
-	if err != nil {
-		writeError(w, http.StatusInternalServerError, err.Error())
-		return
-	}
-
 	writeJSON(w, http.StatusOK, map[string]interface{}{
-		"connected":    netStatus.Internet,
-		"check_target": "1.1.1.1",
-		"method":       "manager",
+		"modes": modes,
+		"count": len(modes),
 	})
 }
 
 // =============================================================================
-// Network Interfaces
+// WiFi Management
 // =============================================================================
 
-// GetInterfaces returns a list of network interfaces.
-// GET /api/v1/network/interfaces
-func (h *NetworkHandler) GetInterfaces(w http.ResponseWriter, r *http.Request) {
-	ctx := r.Context()
-
-	if h.halClient == nil {
-		writeError(w, http.StatusServiceUnavailable, "HAL service unavailable")
-		return
-	}
-
-	interfaces, err := h.halClient.ListInterfaces(ctx)
-	if err != nil {
-		writeError(w, http.StatusInternalServerError, "Failed to list interfaces: "+err.Error())
-		return
-	}
-
-	writeJSON(w, http.StatusOK, map[string]interface{}{
-		"interfaces": interfaces,
-	})
+// ScanWiFi godoc
+// @Summary Scan WiFi networks
+// @Description Scans for available WiFi networks in range
+// @Tags Network
+// @Produce json
+// @Security BearerAuth
+// @Success 200 {object} map[string]interface{} "Available WiFi networks"
+// @Failure 500 {object} ErrorResponse "Failed to scan networks"
+// @Router /network/wifi/scan [get]
+func (h *NetworkHandler) ScanWiFi(w http.ResponseWriter, r *http.Request) {
+	h.ScanWiFiNetworks(w, r)
 }
 
-// GetInterfacesDetailed returns detailed information about all network interfaces.
-// GET /api/v1/network/interfaces/detailed
-func (h *NetworkHandler) GetInterfacesDetailed(w http.ResponseWriter, r *http.Request) {
-	ctx := r.Context()
-
-	if h.halClient == nil {
-		writeError(w, http.StatusServiceUnavailable, "HAL service unavailable")
-		return
-	}
-
-	interfaces, err := h.halClient.ListInterfaces(ctx)
-	if err != nil {
-		writeError(w, http.StatusInternalServerError, "Failed to list interfaces: "+err.Error())
-		return
-	}
-
-	// Enrich interface data
-	type DetailedInterface struct {
-		Name          string   `json:"name"`
-		IsUp          bool     `json:"is_up"`
-		MACAddress    string   `json:"mac_address"`
-		IPv4Addresses []string `json:"ipv4_addresses"`
-		IPv6Addresses []string `json:"ipv6_addresses"`
-		MTU           int      `json:"mtu"`
-		Type          string   `json:"type"` // ethernet, wifi, loopback, bridge, virtual
-		Role          string   `json:"role"` // ap, client, wan, unused
-		IsWireless    bool     `json:"is_wireless"`
-	}
-
-	var detailed []DetailedInterface
-	for _, iface := range interfaces {
-		di := DetailedInterface{
-			Name:          iface.Name,
-			IsUp:          iface.IsUp,
-			MACAddress:    iface.MACAddress,
-			IPv4Addresses: iface.IPv4Addresses,
-			IPv6Addresses: iface.IPv6Addresses,
-			MTU:           iface.MTU,
-		}
-
-		// Determine interface type and role
-		switch {
-		case iface.Name == "lo":
-			di.Type = "loopback"
-			di.Role = "system"
-		case strings.HasPrefix(iface.Name, "eth"):
-			di.Type = "ethernet"
-			di.Role = "wan"
-		case iface.Name == "wlan0":
-			di.Type = "wifi"
-			di.Role = "ap"
-			di.IsWireless = true
-		case strings.HasPrefix(iface.Name, "wlan") || strings.HasPrefix(iface.Name, "wlx"):
-			di.Type = "wifi"
-			di.Role = "client"
-			di.IsWireless = true
-		case strings.HasPrefix(iface.Name, "docker") || strings.HasPrefix(iface.Name, "br-"):
-			di.Type = "bridge"
-			di.Role = "container"
-		case strings.HasPrefix(iface.Name, "veth"):
-			di.Type = "virtual"
-			di.Role = "container"
-		default:
-			di.Type = "unknown"
-			di.Role = "unused"
-		}
-
-		detailed = append(detailed, di)
-	}
-
-	writeJSON(w, http.StatusOK, map[string]interface{}{
-		"interfaces": detailed,
-		"count":      len(detailed),
-	})
-}
-
-// =============================================================================
-// WiFi Scanning and Connection
-// =============================================================================
-
-// ScanWiFiNetworks scans for available WiFi networks.
-// GET /api/v1/network/wifi/scan
+// ScanWiFiNetworks godoc
+// @Summary Scan WiFi networks
+// @Description Scans for available WiFi networks in range
+// @Tags Network
+// @Produce json
+// @Security BearerAuth
+// @Param interface query string false "WiFi interface to use for scanning"
+// @Success 200 {object} map[string]interface{} "Available WiFi networks"
+// @Failure 500 {object} ErrorResponse "Failed to scan networks"
+// @Router /network/wifi/scan [get]
 func (h *NetworkHandler) ScanWiFiNetworks(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
-
-	// Optional interface parameter
-	_ = r.URL.Query().Get("interface") // interface filter not yet implemented
-
 	networks, err := h.network.ScanWiFiNetworks(ctx)
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, err.Error())
 		return
 	}
-
 	writeJSON(w, http.StatusOK, map[string]interface{}{
 		"networks": networks,
 		"count":    len(networks),
 	})
 }
 
-// ConnectToWiFi connects to a WiFi network.
-// POST /api/v1/network/wifi/connect
+// GetWiFiStatus godoc
+// @Summary Get WiFi status
+// @Description Returns current WiFi connection status
+// @Tags Network
+// @Produce json
+// @Security BearerAuth
+// @Success 200 {object} map[string]interface{} "WiFi status"
+// @Router /network/wifi/status [get]
+func (h *NetworkHandler) GetWiFiStatus(w http.ResponseWriter, r *http.Request) {
+	ctx := r.Context()
+	status, err := h.network.GetWiFiStatus(ctx)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+	writeJSON(w, http.StatusOK, status)
+}
+
+// ConnectWiFi godoc
+// @Summary Connect to WiFi network
+// @Description Connects to a WiFi network as a client
+// @Tags Network
+// @Accept json
+// @Produce json
+// @Security BearerAuth
+// @Param request body object true "WiFi credentials" example({"ssid": "MyNetwork", "password": "secret"})
+// @Success 200 {object} map[string]interface{} "Connection successful"
+// @Failure 400 {object} ErrorResponse "Invalid request or missing SSID"
+// @Failure 500 {object} ErrorResponse "Failed to connect"
+// @Router /network/wifi/connect [post]
+func (h *NetworkHandler) ConnectWiFi(w http.ResponseWriter, r *http.Request) {
+	h.ConnectToWiFi(w, r)
+}
+
+// ConnectToWiFi godoc
+// @Summary Connect to WiFi network
+// @Description Connects to a WiFi network as a client
+// @Tags Network
+// @Accept json
+// @Produce json
+// @Security BearerAuth
+// @Param request body object true "WiFi credentials" example({"ssid": "MyNetwork", "password": "secret"})
+// @Success 200 {object} map[string]interface{} "Connection successful"
+// @Failure 400 {object} ErrorResponse "Invalid request or missing SSID"
+// @Failure 500 {object} ErrorResponse "Failed to connect"
+// @Router /network/wifi/connect [post]
 func (h *NetworkHandler) ConnectToWiFi(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
 
@@ -355,30 +333,93 @@ func (h *NetworkHandler) ConnectToWiFi(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
+// DisconnectWiFi godoc
+// @Summary Disconnect from WiFi
+// @Description Disconnects from the current WiFi network
+// @Tags Network
+// @Produce json
+// @Security BearerAuth
+// @Success 200 {object} map[string]interface{} "Disconnected"
+// @Failure 500 {object} ErrorResponse "Failed to disconnect"
+// @Router /network/wifi/disconnect [post]
+func (h *NetworkHandler) DisconnectWiFi(w http.ResponseWriter, r *http.Request) {
+	ctx := r.Context()
+	if err := h.network.DisconnectWiFi(ctx); err != nil {
+		writeError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]interface{}{
+		"success": true,
+		"message": "Disconnected from WiFi",
+	})
+}
+
+// GetSavedNetworks godoc
+// @Summary Get saved WiFi networks
+// @Description Returns list of saved WiFi network configurations
+// @Tags Network
+// @Produce json
+// @Security BearerAuth
+// @Success 200 {object} map[string]interface{} "Saved networks"
+// @Router /network/wifi/saved [get]
+func (h *NetworkHandler) GetSavedNetworks(w http.ResponseWriter, r *http.Request) {
+	ctx := r.Context()
+	networks, err := h.network.GetSavedNetworks(ctx)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]interface{}{
+		"networks": networks,
+		"count":    len(networks),
+	})
+}
+
+// ForgetNetwork godoc
+// @Summary Forget saved WiFi network
+// @Description Removes a saved WiFi network configuration
+// @Tags Network
+// @Produce json
+// @Security BearerAuth
+// @Param ssid path string true "Network SSID"
+// @Success 200 {object} map[string]interface{} "Network forgotten"
+// @Failure 500 {object} ErrorResponse "Failed to forget network"
+// @Router /network/wifi/saved/{ssid} [delete]
+func (h *NetworkHandler) ForgetNetwork(w http.ResponseWriter, r *http.Request) {
+	ctx := r.Context()
+	ssid := chi.URLParam(r, "ssid")
+	if err := h.network.ForgetNetwork(ctx, ssid); err != nil {
+		writeError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]interface{}{
+		"success": true,
+		"message": "Network forgotten: " + ssid,
+	})
+}
+
 // =============================================================================
 // Access Point Management
 // =============================================================================
 
-// GetAPStatus returns detailed AP status.
-// GET /api/v1/network/wifi/ap/status
+// GetAPStatus godoc
+// @Summary Get AP status
+// @Description Returns detailed WiFi access point status
+// @Tags Network
+// @Produce json
+// @Security BearerAuth
+// @Success 200 {object} map[string]interface{} "AP status"
+// @Failure 500 {object} ErrorResponse "Failed to get AP status"
+// @Router /network/wifi/ap/status [get]
 func (h *NetworkHandler) GetAPStatus(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
-
-	// Get AP config
 	config, err := h.network.GetAPConfig(ctx)
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, "Failed to get AP config: "+err.Error())
 		return
 	}
 
-	// Get connected clients
-	clients, err := h.network.GetConnectedClients()
-	if err != nil {
-		// Don't fail completely if we can't get clients
-		clients = nil
-	}
-
-	// Check if hostapd is running via HAL
+	clients, _ := h.network.GetConnectedClients()
 	var hostapdRunning bool
 	if h.halClient != nil {
 		status, err := h.halClient.GetServiceStatus(ctx, "hostapd")
@@ -392,111 +433,183 @@ func (h *NetworkHandler) GetAPStatus(w http.ResponseWriter, r *http.Request) {
 		"running":   hostapdRunning,
 		"ssid":      config.SSID,
 		"channel":   config.Channel,
-		"interface": "wlan0", // default AP interface
+		"interface": "wlan0",
 		"hidden":    config.Hidden,
 		"clients":   len(clients),
 	})
 }
 
-// RestartAP restarts the access point.
-// POST /api/v1/network/wifi/ap/restart
-func (h *NetworkHandler) RestartAP(w http.ResponseWriter, r *http.Request) {
+// StartAP godoc
+// @Summary Start access point
+// @Description Starts the WiFi access point
+// @Tags Network
+// @Produce json
+// @Security BearerAuth
+// @Success 200 {object} map[string]interface{} "AP started"
+// @Failure 500 {object} ErrorResponse "Failed to start AP"
+// @Router /network/ap/start [post]
+func (h *NetworkHandler) StartAP(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
-
 	if h.halClient == nil {
 		writeError(w, http.StatusServiceUnavailable, "HAL service unavailable")
 		return
 	}
+	if err := h.halClient.StartService(ctx, "hostapd"); err != nil {
+		writeError(w, http.StatusInternalServerError, "Failed to start AP: "+err.Error())
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]interface{}{
+		"success": true,
+		"message": "Access point started",
+	})
+}
 
+// StopAP godoc
+// @Summary Stop access point
+// @Description Stops the WiFi access point
+// @Tags Network
+// @Produce json
+// @Security BearerAuth
+// @Success 200 {object} map[string]interface{} "AP stopped"
+// @Failure 500 {object} ErrorResponse "Failed to stop AP"
+// @Router /network/ap/stop [post]
+func (h *NetworkHandler) StopAP(w http.ResponseWriter, r *http.Request) {
+	ctx := r.Context()
+	if h.halClient == nil {
+		writeError(w, http.StatusServiceUnavailable, "HAL service unavailable")
+		return
+	}
+	if err := h.halClient.StopService(ctx, "hostapd"); err != nil {
+		writeError(w, http.StatusInternalServerError, "Failed to stop AP: "+err.Error())
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]interface{}{
+		"success": true,
+		"message": "Access point stopped",
+	})
+}
+
+// ConfigureAP godoc
+// @Summary Configure access point
+// @Description Updates access point configuration
+// @Tags Network
+// @Accept json
+// @Produce json
+// @Security BearerAuth
+// @Param config body object true "AP configuration"
+// @Success 200 {object} map[string]interface{} "AP configured"
+// @Failure 400 {object} ErrorResponse "Invalid configuration"
+// @Failure 500 {object} ErrorResponse "Failed to configure AP"
+// @Router /network/ap/config [put]
+func (h *NetworkHandler) ConfigureAP(w http.ResponseWriter, r *http.Request) {
+	h.UpdateAPConfig(w, r)
+}
+
+// RestartAP godoc
+// @Summary Restart access point
+// @Description Restarts the WiFi access point (hostapd service)
+// @Tags Network
+// @Produce json
+// @Security BearerAuth
+// @Success 200 {object} map[string]interface{} "AP restarted"
+// @Failure 500 {object} ErrorResponse "Failed to restart AP"
+// @Failure 503 {object} ErrorResponse "HAL service unavailable"
+// @Router /network/wifi/ap/restart [post]
+func (h *NetworkHandler) RestartAP(w http.ResponseWriter, r *http.Request) {
+	ctx := r.Context()
+	if h.halClient == nil {
+		writeError(w, http.StatusServiceUnavailable, "HAL service unavailable")
+		return
+	}
 	if err := h.halClient.RestartService(ctx, "hostapd"); err != nil {
 		writeError(w, http.StatusInternalServerError, "Failed to restart AP: "+err.Error())
 		return
 	}
-
 	writeJSON(w, http.StatusOK, map[string]interface{}{
 		"success": true,
 		"message": "Access point restarted",
 	})
 }
 
-// GetAPClients returns connected AP clients.
-// GET /api/v1/network/wifi/ap/clients
-// GET /api/v1/network/ap/clients (legacy)
+// GetAPClients godoc
+// @Summary List AP clients
+// @Description Returns list of clients connected to the access point
+// @Tags Network
+// @Produce json
+// @Security BearerAuth
+// @Success 200 {object} map[string]interface{} "Connected clients"
+// @Failure 500 {object} ErrorResponse "Failed to get clients"
+// @Router /network/wifi/ap/clients [get]
 func (h *NetworkHandler) GetAPClients(w http.ResponseWriter, r *http.Request) {
-	_ = r.Context() // ctx available if needed
-
 	clients, err := h.network.GetConnectedClients()
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, err.Error())
 		return
 	}
-
 	writeJSON(w, http.StatusOK, map[string]interface{}{
 		"clients": clients,
 		"count":   len(clients),
 	})
 }
 
-// KickAPClient disconnects a client from the AP.
-// POST /api/v1/network/wifi/ap/clients/{mac}/kick
+// KickAPClient godoc
+// @Summary Kick AP client
+// @Description Disconnects a client from the access point
+// @Tags Network
+// @Produce json
+// @Security BearerAuth
+// @Param mac path string true "Client MAC address"
+// @Success 200 {object} map[string]interface{} "Client disconnected"
+// @Failure 400 {object} ErrorResponse "Invalid MAC address"
+// @Failure 500 {object} ErrorResponse "Failed to kick client"
+// @Router /network/wifi/ap/clients/{mac}/kick [post]
 func (h *NetworkHandler) KickAPClient(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
-
 	mac := chi.URLParam(r, "mac")
-	if mac == "" {
-		writeError(w, http.StatusBadRequest, "MAC address is required")
+	if mac == "" || !isValidMAC(mac) {
+		writeError(w, http.StatusBadRequest, "Invalid MAC address")
 		return
 	}
-
-	// Validate MAC format
-	if !isValidMAC(mac) {
-		writeError(w, http.StatusBadRequest, "Invalid MAC address format")
-		return
-	}
-
 	if h.halClient == nil {
 		writeError(w, http.StatusServiceUnavailable, "HAL service unavailable")
 		return
 	}
-
 	if err := h.halClient.KickAPClient(ctx, mac); err != nil {
 		writeError(w, http.StatusInternalServerError, "Failed to kick client: "+err.Error())
 		return
 	}
-
 	writeJSON(w, http.StatusOK, map[string]interface{}{
 		"success": true,
 		"message": "Client " + mac + " disconnected",
 	})
 }
 
-// BlockAPClient blocks a client from connecting to the AP.
-// POST /api/v1/network/wifi/ap/clients/{mac}/block
+// BlockAPClient godoc
+// @Summary Block AP client
+// @Description Blocks a client from connecting to the access point
+// @Tags Network
+// @Produce json
+// @Security BearerAuth
+// @Param mac path string true "Client MAC address"
+// @Success 200 {object} map[string]interface{} "Client blocked"
+// @Failure 400 {object} ErrorResponse "Invalid MAC address"
+// @Failure 500 {object} ErrorResponse "Failed to block client"
+// @Router /network/wifi/ap/clients/{mac}/block [post]
 func (h *NetworkHandler) BlockAPClient(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
-
 	mac := chi.URLParam(r, "mac")
-	if mac == "" {
-		writeError(w, http.StatusBadRequest, "MAC address is required")
+	if mac == "" || !isValidMAC(mac) {
+		writeError(w, http.StatusBadRequest, "Invalid MAC address")
 		return
 	}
-
-	// Validate MAC format
-	if !isValidMAC(mac) {
-		writeError(w, http.StatusBadRequest, "Invalid MAC address format")
-		return
-	}
-
 	if h.halClient == nil {
 		writeError(w, http.StatusServiceUnavailable, "HAL service unavailable")
 		return
 	}
-
 	if err := h.halClient.BlockAPClient(ctx, mac); err != nil {
 		writeError(w, http.StatusInternalServerError, "Failed to block client: "+err.Error())
 		return
 	}
-
 	writeJSON(w, http.StatusOK, map[string]interface{}{
 		"success": true,
 		"message": "Client " + mac + " blocked",
@@ -504,25 +617,40 @@ func (h *NetworkHandler) BlockAPClient(w http.ResponseWriter, r *http.Request) {
 }
 
 // =============================================================================
-// Legacy AP Configuration (backward compatibility)
+// Legacy AP Configuration
 // =============================================================================
 
-// GetAPConfig returns the AP configuration.
-// GET /api/v1/network/ap/config
+// GetAPConfig godoc
+// @Summary Get AP configuration
+// @Description Returns the access point configuration
+// @Tags Network
+// @Produce json
+// @Security BearerAuth
+// @Success 200 {object} managers.APConfig "AP configuration"
+// @Failure 500 {object} ErrorResponse "Failed to get config"
+// @Router /network/ap/config [get]
 func (h *NetworkHandler) GetAPConfig(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
-
 	config, err := h.network.GetAPConfig(ctx)
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, err.Error())
 		return
 	}
-
 	writeJSON(w, http.StatusOK, config)
 }
 
-// UpdateAPConfig updates the AP configuration.
-// PUT /api/v1/network/ap/config
+// UpdateAPConfig godoc
+// @Summary Update AP configuration
+// @Description Updates the access point configuration (SSID, password, channel, hidden)
+// @Tags Network
+// @Accept json
+// @Produce json
+// @Security BearerAuth
+// @Param config body object true "AP configuration"
+// @Success 200 {object} map[string]interface{} "Configuration updated"
+// @Failure 400 {object} ErrorResponse "Invalid configuration"
+// @Failure 500 {object} ErrorResponse "Failed to update config"
+// @Router /network/ap/config [put]
 func (h *NetworkHandler) UpdateAPConfig(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
 
@@ -560,58 +688,224 @@ func (h *NetworkHandler) UpdateAPConfig(w http.ResponseWriter, r *http.Request) 
 }
 
 // =============================================================================
-// Traffic Statistics
+// Network Interfaces
 // =============================================================================
 
-// GetTrafficStats returns current traffic statistics for all interfaces.
-// GET /api/v1/network/traffic
-func (h *NetworkHandler) GetTrafficStats(w http.ResponseWriter, r *http.Request) {
+// GetInterfaces godoc
+// @Summary List network interfaces
+// @Description Returns a list of network interfaces
+// @Tags Network
+// @Produce json
+// @Security BearerAuth
+// @Success 200 {object} map[string]interface{} "Network interfaces"
+// @Failure 503 {object} ErrorResponse "HAL service unavailable"
+// @Router /network/interfaces [get]
+func (h *NetworkHandler) GetInterfaces(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
-
 	if h.halClient == nil {
 		writeError(w, http.StatusServiceUnavailable, "HAL service unavailable")
 		return
 	}
+	interfaces, err := h.halClient.ListInterfaces(ctx)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "Failed to list interfaces: "+err.Error())
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]interface{}{
+		"interfaces": interfaces,
+	})
+}
 
+// GetInterfacesDetailed godoc
+// @Summary Get detailed network interfaces
+// @Description Returns detailed information about all network interfaces
+// @Tags Network
+// @Produce json
+// @Security BearerAuth
+// @Success 200 {object} map[string]interface{} "Detailed network interfaces"
+// @Failure 503 {object} ErrorResponse "HAL service unavailable"
+// @Router /network/interfaces/detailed [get]
+func (h *NetworkHandler) GetInterfacesDetailed(w http.ResponseWriter, r *http.Request) {
+	ctx := r.Context()
+	if h.halClient == nil {
+		writeError(w, http.StatusServiceUnavailable, "HAL service unavailable")
+		return
+	}
+	interfaces, err := h.halClient.ListInterfaces(ctx)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "Failed to list interfaces: "+err.Error())
+		return
+	}
+
+	type DetailedInterface struct {
+		Name          string   `json:"name"`
+		IsUp          bool     `json:"is_up"`
+		MACAddress    string   `json:"mac_address"`
+		IPv4Addresses []string `json:"ipv4_addresses"`
+		IPv6Addresses []string `json:"ipv6_addresses"`
+		MTU           int      `json:"mtu"`
+		Type          string   `json:"type"`
+		Role          string   `json:"role"`
+		IsWireless    bool     `json:"is_wireless"`
+	}
+
+	var detailed []DetailedInterface
+	for _, iface := range interfaces {
+		di := DetailedInterface{
+			Name:          iface.Name,
+			IsUp:          iface.IsUp,
+			MACAddress:    iface.MACAddress,
+			IPv4Addresses: iface.IPv4Addresses,
+			IPv6Addresses: iface.IPv6Addresses,
+			MTU:           iface.MTU,
+		}
+
+		switch {
+		case iface.Name == "lo":
+			di.Type = "loopback"
+			di.Role = "system"
+		case strings.HasPrefix(iface.Name, "eth"):
+			di.Type = "ethernet"
+			di.Role = "wan"
+		case iface.Name == "wlan0":
+			di.Type = "wifi"
+			di.Role = "ap"
+			di.IsWireless = true
+		case strings.HasPrefix(iface.Name, "wlan") || strings.HasPrefix(iface.Name, "wlx"):
+			di.Type = "wifi"
+			di.Role = "client"
+			di.IsWireless = true
+		case strings.HasPrefix(iface.Name, "docker") || strings.HasPrefix(iface.Name, "br-"):
+			di.Type = "bridge"
+			di.Role = "container"
+		case strings.HasPrefix(iface.Name, "veth"):
+			di.Type = "virtual"
+			di.Role = "container"
+		default:
+			di.Type = "unknown"
+			di.Role = "unused"
+		}
+
+		detailed = append(detailed, di)
+	}
+
+	writeJSON(w, http.StatusOK, map[string]interface{}{
+		"interfaces": detailed,
+		"count":      len(detailed),
+	})
+}
+
+// =============================================================================
+// Internet Connectivity
+// =============================================================================
+
+// GetInternetStatus godoc
+// @Summary Check internet connectivity
+// @Description Tests internet connectivity and returns status
+// @Tags Network
+// @Produce json
+// @Security BearerAuth
+// @Success 200 {object} map[string]interface{} "Connectivity status"
+// @Router /network/internet [get]
+func (h *NetworkHandler) GetInternetStatus(w http.ResponseWriter, r *http.Request) {
+	ctx := r.Context()
+	if h.halClient != nil {
+		status, err := h.halClient.GetNetworkStatus(ctx)
+		if err == nil {
+			writeJSON(w, http.StatusOK, map[string]interface{}{
+				"connected":    status["internet"],
+				"check_target": "1.1.1.1",
+				"method":       "hal",
+			})
+			return
+		}
+	}
+
+	netStatus, err := h.network.GetStatus(ctx)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+
+	writeJSON(w, http.StatusOK, map[string]interface{}{
+		"connected":    netStatus.Internet,
+		"check_target": "1.1.1.1",
+		"method":       "manager",
+	})
+}
+
+// CheckConnectivity godoc
+// @Summary Check connectivity
+// @Description Tests network connectivity to various endpoints
+// @Tags Network
+// @Produce json
+// @Security BearerAuth
+// @Success 200 {object} map[string]interface{} "Connectivity status"
+// @Router /network/connectivity [get]
+func (h *NetworkHandler) CheckConnectivity(w http.ResponseWriter, r *http.Request) {
+	h.GetInternetStatus(w, r)
+}
+
+// =============================================================================
+// Traffic Statistics
+// =============================================================================
+
+// GetTrafficStats godoc
+// @Summary Get traffic statistics
+// @Description Returns current traffic statistics for all interfaces
+// @Tags Network
+// @Produce json
+// @Security BearerAuth
+// @Success 200 {object} map[string]interface{} "Traffic statistics"
+// @Failure 503 {object} ErrorResponse "HAL service unavailable"
+// @Router /network/traffic [get]
+func (h *NetworkHandler) GetTrafficStats(w http.ResponseWriter, r *http.Request) {
+	ctx := r.Context()
+	if h.halClient == nil {
+		writeError(w, http.StatusServiceUnavailable, "HAL service unavailable")
+		return
+	}
 	stats, err := h.halClient.GetTrafficStats(ctx)
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, "Failed to get traffic stats: "+err.Error())
 		return
 	}
-
 	writeJSON(w, http.StatusOK, map[string]interface{}{
 		"stats": stats,
 	})
 }
 
-// GetTrafficHistory returns traffic history for a specific interface.
-// GET /api/v1/network/traffic/{iface}/history
+// GetTrafficHistory godoc
+// @Summary Get traffic history
+// @Description Returns historical traffic data for a specific interface
+// @Tags Network
+// @Produce json
+// @Security BearerAuth
+// @Param iface path string true "Interface name"
+// @Param duration query string false "History duration" default(1h)
+// @Success 200 {object} map[string]interface{} "Traffic history"
+// @Failure 503 {object} ErrorResponse "HAL service unavailable"
+// @Router /network/traffic/{iface}/history [get]
 func (h *NetworkHandler) GetTrafficHistory(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
-
 	iface := chi.URLParam(r, "iface")
 	if iface == "" {
 		writeError(w, http.StatusBadRequest, "Interface name is required")
 		return
 	}
-
 	if h.halClient == nil {
 		writeError(w, http.StatusServiceUnavailable, "HAL service unavailable")
 		return
 	}
-
-	// Get duration from query params (default: 1h)
 	duration := r.URL.Query().Get("duration")
 	if duration == "" {
 		duration = "1h"
 	}
-
 	history, err := h.halClient.GetTrafficHistory(ctx, iface, duration)
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, "Failed to get traffic history: "+err.Error())
 		return
 	}
-
 	writeJSON(w, http.StatusOK, map[string]interface{}{
 		"interface": iface,
 		"duration":  duration,
@@ -620,39 +914,17 @@ func (h *NetworkHandler) GetTrafficHistory(w http.ResponseWriter, r *http.Reques
 }
 
 // =============================================================================
-// Helper Functions
+// Network Settings and VPN
 // =============================================================================
 
-// isValidMAC validates a MAC address format
-func isValidMAC(mac string) bool {
-	// Accept formats: AA:BB:CC:DD:EE:FF or AA-BB-CC-DD-EE-FF
-	mac = strings.ToUpper(mac)
-	mac = strings.ReplaceAll(mac, "-", ":")
-
-	parts := strings.Split(mac, ":")
-	if len(parts) != 6 {
-		return false
-	}
-
-	for _, part := range parts {
-		if len(part) != 2 {
-			return false
-		}
-		for _, c := range part {
-			if !((c >= '0' && c <= '9') || (c >= 'A' && c <= 'F')) {
-				return false
-			}
-		}
-	}
-	return true
-}
-
-// =============================================================================
-// Network Modes V2 - Settings and VPN Overlay
-// =============================================================================
-
-// GetNetworkSettings returns current network configuration
-// GET /api/v1/network/settings
+// GetNetworkSettings godoc
+// @Summary Get network settings
+// @Description Returns current network configuration
+// @Tags Network
+// @Produce json
+// @Security BearerAuth
+// @Success 200 {object} managers.NetworkConfig "Network configuration"
+// @Router /network/settings [get]
 func (h *NetworkHandler) GetNetworkSettings(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
 	config, err := h.network.GetNetworkConfig(ctx)
@@ -663,8 +935,18 @@ func (h *NetworkHandler) GetNetworkSettings(w http.ResponseWriter, r *http.Reque
 	writeJSON(w, http.StatusOK, config)
 }
 
-// UpdateNetworkSettings updates network configuration
-// PUT /api/v1/network/settings
+// UpdateNetworkSettings godoc
+// @Summary Update network settings
+// @Description Updates network configuration
+// @Tags Network
+// @Accept json
+// @Produce json
+// @Security BearerAuth
+// @Param settings body object true "Network settings"
+// @Success 200 {object} managers.NetworkConfig "Updated configuration"
+// @Failure 400 {object} ErrorResponse "Invalid request body"
+// @Failure 500 {object} ErrorResponse "Failed to update settings"
+// @Router /network/settings [put]
 func (h *NetworkHandler) UpdateNetworkSettings(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
 
@@ -687,7 +969,6 @@ func (h *NetworkHandler) UpdateNetworkSettings(w http.ResponseWriter, r *http.Re
 		return
 	}
 
-	// Update fields if provided
 	if req.GatewayIP != "" {
 		config.GatewayIP = req.GatewayIP
 	}
@@ -712,8 +993,14 @@ func (h *NetworkHandler) UpdateNetworkSettings(w http.ResponseWriter, r *http.Re
 	writeJSON(w, http.StatusOK, config)
 }
 
-// GetVPNMode returns current VPN overlay mode
-// GET /api/v1/network/vpn/mode
+// GetVPNMode godoc
+// @Summary Get VPN mode
+// @Description Returns current VPN overlay mode
+// @Tags Network
+// @Produce json
+// @Security BearerAuth
+// @Success 200 {object} map[string]interface{} "Current VPN mode"
+// @Router /network/vpn/mode [get]
 func (h *NetworkHandler) GetVPNMode(w http.ResponseWriter, r *http.Request) {
 	mode := h.network.GetCurrentVPNMode()
 	writeJSON(w, http.StatusOK, map[string]interface{}{
@@ -721,8 +1008,18 @@ func (h *NetworkHandler) GetVPNMode(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
-// SetVPNMode sets VPN overlay mode
-// POST /api/v1/network/vpn/mode
+// SetVPNMode godoc
+// @Summary Set VPN mode
+// @Description Sets VPN overlay mode for network traffic
+// @Tags Network
+// @Accept json
+// @Produce json
+// @Security BearerAuth
+// @Param request body object true "VPN mode configuration"
+// @Success 200 {object} map[string]interface{} "VPN mode updated"
+// @Failure 400 {object} ErrorResponse "Invalid mode"
+// @Failure 500 {object} ErrorResponse "Failed to set VPN mode"
+// @Router /network/vpn/mode [post]
 func (h *NetworkHandler) SetVPNMode(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
 
@@ -736,14 +1033,12 @@ func (h *NetworkHandler) SetVPNMode(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Validate mode
 	validModes := map[string]bool{"none": true, "wireguard": true, "openvpn": true, "tor": true}
 	if !validModes[req.Mode] {
 		writeError(w, http.StatusBadRequest, "invalid VPN mode: must be none, wireguard, openvpn, or tor")
 		return
 	}
 
-	// WireGuard and OpenVPN require config_id
 	if (req.Mode == "wireguard" || req.Mode == "openvpn") && req.ConfigID == nil {
 		writeError(w, http.StatusBadRequest, "config_id required for wireguard/openvpn modes")
 		return
@@ -766,17 +1061,59 @@ func (h *NetworkHandler) SetVPNMode(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
-// DismissServerModeWarning dismisses the server mode warning
-// POST /api/v1/network/warning/dismiss
+// DismissServerModeWarning godoc
+// @Summary Dismiss server mode warning
+// @Description Dismisses the warning shown when using server network modes
+// @Tags Network
+// @Produce json
+// @Security BearerAuth
+// @Success 200 {object} map[string]interface{} "Warning dismissed"
+// @Router /network/warning/dismiss [post]
 func (h *NetworkHandler) DismissServerModeWarning(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
-
 	if err := h.network.DismissServerModeWarning(ctx); err != nil {
 		writeError(w, http.StatusInternalServerError, err.Error())
 		return
 	}
-
 	writeJSON(w, http.StatusOK, map[string]interface{}{
 		"message": "Server mode warning dismissed",
 	})
+}
+
+// =============================================================================
+// Helper Functions
+// =============================================================================
+
+func isValidMAC(mac string) bool {
+	mac = strings.ToUpper(mac)
+	mac = strings.ReplaceAll(mac, "-", ":")
+	parts := strings.Split(mac, ":")
+	if len(parts) != 6 {
+		return false
+	}
+	for _, part := range parts {
+		if len(part) != 2 {
+			return false
+		}
+		for _, c := range part {
+			if !((c >= '0' && c <= '9') || (c >= 'A' && c <= 'F')) {
+				return false
+			}
+		}
+	}
+	return true
+}
+
+func getModeDescription(mode string) string {
+	descriptions := map[string]string{
+		"offline":     "Air-gapped access point mode",
+		"online_eth":  "AP + NAT via Ethernet uplink",
+		"online_wifi": "AP + NAT via USB WiFi dongle",
+		"server_eth":  "No AP, direct Ethernet connection",
+		"server_wifi": "No AP, direct WiFi connection",
+	}
+	if desc, ok := descriptions[mode]; ok {
+		return desc
+	}
+	return "Unknown mode"
 }

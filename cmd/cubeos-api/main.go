@@ -24,11 +24,77 @@
 //	@name						Authorization
 //	@description				JWT token for authentication. Format: "Bearer {token}"
 //
-//	@tag.name					Hardware
-//	@tag.description			Raspberry Pi hardware control (GPIO, I2C, sensors, power)
+//	@tag.name					Health
+//	@tag.description			Health check and system status endpoints
+//
+//	@tag.name					Auth
+//	@tag.description			Authentication endpoints (login, logout, token refresh)
+//
+//	@tag.name					System
+//	@tag.description			System information and control
+//
+//	@tag.name					Network
+//	@tag.description			Network interfaces, WiFi, AP management, network modes
+//
+//	@tag.name					Clients
+//	@tag.description			Connected client management (DHCP leases)
 //
 //	@tag.name					Storage
 //	@tag.description			Block devices, USB storage, network mounts
+//
+//	@tag.name					Docker
+//	@tag.description			Docker container and service management
+//
+//	@tag.name					Categories
+//	@tag.description			Application categories
+//
+//	@tag.name					Apps
+//	@tag.description			Unified application management (Swarm-based)
+//
+//	@tag.name					AppStore
+//	@tag.description			Application store and marketplace
+//
+//	@tag.name					VPN
+//	@tag.description			VPN configuration (WireGuard, OpenVPN, Tor)
+//
+//	@tag.name					Mounts
+//	@tag.description			Remote mount management (SMB, NFS)
+//
+//	@tag.name					Firewall
+//	@tag.description			Firewall rules and port management
+//
+//	@tag.name					CasaOS
+//	@tag.description			CasaOS app import and compatibility
+//
+//	@tag.name					Chat
+//	@tag.description			AI assistant chat interface
+//
+//	@tag.name					Docs
+//	@tag.description			Documentation viewer
+//
+//	@tag.name					FQDNs
+//	@tag.description			FQDN and DNS record management
+//
+//	@tag.name					NPM
+//	@tag.description			Nginx Proxy Manager integration
+//
+//	@tag.name					Ports
+//	@tag.description			Port allocation and management
+//
+//	@tag.name					Profiles
+//	@tag.description			System profiles (minimal, standard, full)
+//
+//	@tag.name					Registry
+//	@tag.description			Local Docker registry management
+//
+//	@tag.name					Setup
+//	@tag.description			First boot setup wizard
+//
+//	@tag.name					WebSocket
+//	@tag.description			Real-time WebSocket connections
+//
+//	@tag.name					Hardware
+//	@tag.description			Raspberry Pi hardware control (GPIO, I2C, sensors, power)
 //
 //	@tag.name					Communication
 //	@tag.description			GPS, Cellular, Meshtastic, Iridium, Bluetooth
@@ -39,17 +105,32 @@
 //	@tag.name					Logs
 //	@tag.description			System logs (kernel, journal, hardware)
 //
-//	@tag.name					System
-//	@tag.description			System information and control
+//	@tag.name					Backup
+//	@tag.description			Backup and restore operations
 //
-//	@tag.name					Network
-//	@tag.description			Network interfaces, WiFi, AP management
+//	@tag.name					Processes
+//	@tag.description			System process management
 //
-//	@tag.name					Services
-//	@tag.description			Docker service management
+//	@tag.name					Wizard
+//	@tag.description			Setup wizard and recommendations
 //
-//	@tag.name					Auth
-//	@tag.description			Authentication endpoints
+//	@tag.name					Monitoring
+//	@tag.description			System monitoring and alerts
+//
+//	@tag.name					Preferences
+//	@tag.description			User preferences management
+//
+//	@tag.name					Favorites
+//	@tag.description			User favorites management
+//
+//	@tag.name					Power
+//	@tag.description			Power management and UPS status
+//
+//	@tag.name					SMB
+//	@tag.description			SMB share management
+//
+//	@tag.name					DiskHealth
+//	@tag.description			Disk health monitoring (SMART)
 package main
 
 import (
@@ -241,24 +322,6 @@ func main() {
 	wsManager := handlers.NewWSManager(systemMgr, networkMgr, monitoringMgr, docker)
 	wsHandlers := handlers.NewWSHandlers(wsManager)
 
-	// Start background tasks
-	stopCh := make(chan struct{})
-	defer close(stopCh)
-
-	// Start stats recording (every 2 seconds)
-	go monitoringMgr.StartRecording(2*time.Second, stopCh)
-
-	// Sync app stores in background
-	go func() {
-		time.Sleep(5 * time.Second) // Wait for startup
-		log.Println("Syncing app stores...")
-		if err := appStoreMgr.SyncAllStores(); err != nil {
-			log.Printf("Warning: Failed to sync app stores: %v", err)
-		} else {
-			log.Println("App stores synced successfully")
-		}
-	}()
-
 	// Create router
 	r := chi.NewRouter()
 
@@ -266,13 +329,14 @@ func main() {
 	r.Use(chimw.Logger)
 	r.Use(chimw.Recoverer)
 	r.Use(chimw.RealIP)
+	r.Use(chimw.RequestID)
 	r.Use(chimw.Timeout(60 * time.Second))
 
-	// CORS
+	// CORS configuration
 	r.Use(cors.Handler(cors.Options{
 		AllowedOrigins:   []string{"*"},
-		AllowedMethods:   []string{"GET", "POST", "PUT", "DELETE", "OPTIONS"},
-		AllowedHeaders:   []string{"Accept", "Authorization", "Content-Type", "X-Requested-With"},
+		AllowedMethods:   []string{"GET", "POST", "PUT", "DELETE", "OPTIONS", "PATCH"},
+		AllowedHeaders:   []string{"Accept", "Authorization", "Content-Type", "X-CSRF-Token"},
 		ExposedHeaders:   []string{"Link"},
 		AllowCredentials: true,
 		MaxAge:           300,
@@ -280,11 +344,12 @@ func main() {
 
 	// Public routes
 	r.Get("/health", h.Health)
-	r.Get("/", func(w http.ResponseWriter, r *http.Request) {
-		http.Redirect(w, r, "/health", http.StatusTemporaryRedirect)
-	})
 
-	// Swagger UI - auto-generated from swaggo annotations
+	// WebSocket routes (public, auth via query param)
+	r.Get("/ws/stats", wsHandlers.StatsWebSocket)
+	r.Get("/ws/monitoring", wsHandlers.MonitoringWebSocket)
+
+	// Swagger documentation
 	r.Get("/api/v1/docs/*", httpSwagger.Handler(
 		httpSwagger.URL("/api/v1/docs/doc.json"),
 		httpSwagger.DeepLinking(true),
@@ -292,125 +357,87 @@ func main() {
 		httpSwagger.DomID("swagger-ui"),
 	))
 
-	// WebSocket routes (no JWT for initial connection, but needs token in query)
-	r.Get("/ws/stats", wsHandlers.StatsWebSocket)
-	r.Get("/api/monitoring/ws", wsHandlers.MonitoringWebSocket)
-
 	// API v1 routes
 	r.Route("/api/v1", func(r chi.Router) {
-		// Authentication (public)
+		// Public auth routes
 		r.Post("/auth/login", h.Login)
 
 		// Protected routes
 		r.Group(func(r chi.Router) {
 			r.Use(middleware.JWTAuth(cfg))
 
-			// Auth
-			r.Post("/auth/refresh", h.RefreshToken)
-			r.Get("/auth/me", h.GetMe)
-			r.Post("/auth/password", h.ChangePassword)
+			// Auth routes
+			r.Route("/auth", func(r chi.Router) {
+				r.Post("/logout", h.Logout)
+				r.Post("/refresh", h.RefreshToken)
+				r.Get("/me", h.GetMe)
+				r.Post("/password", h.ChangePassword)
+			})
 
-			// System
+			// System Info
 			r.Route("/system", func(r chi.Router) {
 				r.Get("/info", h.GetSystemInfo)
 				r.Get("/stats", h.GetSystemStats)
-				r.Get("/temperature", h.GetTemperature)
-				r.Get("/uptime", h.GetUptime)
 				r.Get("/hostname", h.GetHostname)
-				r.Get("/datetime", h.GetDateTime)
-				r.Get("/storage", h.GetStorageOverview) // Alias for frontend
+				r.Post("/hostname", h.SetHostname)
+				r.Get("/timezone", h.GetTimezone)
+				r.Post("/timezone", h.SetTimezone)
+				r.Get("/timezones", h.GetTimezones)
 				r.Post("/reboot", h.Reboot)
 				r.Post("/shutdown", h.Shutdown)
-				r.Post("/cancel-shutdown", h.CancelShutdown)
-
-				// Systemd services
-				r.Get("/services", h.GetSystemdServices)
-				r.Get("/services/{service}", h.GetSystemdService)
-				r.Post("/services/{service}/restart", h.RestartSystemdService)
 			})
 
-			// Network - all network routes consolidated here (including Sprint 3)
+			// Network Management
 			r.Route("/network", func(r chi.Router) {
-				r.Get("/interfaces", h.GetNetworkInterfaces)
-				r.Get("/interfaces/detailed", h.GetNetworkInterfacesDetailed)
-				r.Get("/interfaces/{name}", h.GetNetworkInterface)
-				r.Get("/internet", h.CheckInternet)
-				r.Get("/traffic", h.GetTrafficStats)
-				r.Get("/traffic/{interface}/history", h.GetTrafficHistory)
+				// Basic network info
+				r.Get("/interfaces", h.GetInterfaces)
+				r.Get("/status", h.GetNetworkStatus)
+				r.Get("/dns", h.GetDNSConfig)
+				r.Post("/dns", h.SetDNSConfig)
 
-				// WiFi AP
-				r.Get("/wifi/ap/status", h.GetAPStatus)
-				r.Get("/wifi/ap/config", h.GetAPConfig)
-				r.Put("/wifi/ap/config", h.UpdateAPConfig)
-				r.Post("/wifi/ap/restart", h.RestartAP)
-				r.Get("/wifi/ap/clients", h.GetClients)
-				r.Post("/wifi/ap/clients/{mac}/kick", h.KickClient)
-				r.Post("/wifi/ap/clients/{mac}/block", h.BlockClient)
-
-				// Legacy AP routes (for backward compatibility)
-				r.Get("/ap/status", h.GetAPStatus)
-				r.Get("/ap/config", h.GetAPConfig)
-				r.Put("/ap/config", h.UpdateAPConfig)
-				r.Post("/ap/restart", h.RestartAP)
-				// FIX: Add /ap/clients route for Sprint 3 test compatibility
-				r.Get("/ap/clients", networkHandler.GetAPClients)
-
-				// DHCP
-				r.Get("/dhcp/leases", h.GetDHCPLeases)
-
-				// Sprint 3: Network mode switching (via HAL)
-				r.Get("/status", networkHandler.GetNetworkStatus)
+				// Network mode management (Sprint 3)
+				r.Get("/mode", networkHandler.GetNetworkMode)
 				r.Post("/mode", networkHandler.SetNetworkMode)
-				r.Get("/wifi/scan", networkHandler.ScanWiFiNetworks)
-				r.Post("/wifi/connect", networkHandler.ConnectToWiFi)
-				// Network Modes V2 - Settings and VPN overlay
-				r.Get("/settings", networkHandler.GetNetworkSettings)
-				r.Put("/settings", networkHandler.UpdateNetworkSettings)
-				r.Get("/vpn/mode", networkHandler.GetVPNMode)
-				r.Post("/vpn/mode", networkHandler.SetVPNMode)
-				r.Post("/warning/dismiss", networkHandler.DismissServerModeWarning)
+				r.Get("/modes", networkHandler.GetAvailableModes)
+
+				// WiFi management (Sprint 3)
+				r.Get("/wifi/scan", networkHandler.ScanWiFi)
+				r.Get("/wifi/status", networkHandler.GetWiFiStatus)
+				r.Post("/wifi/connect", networkHandler.ConnectWiFi)
+				r.Post("/wifi/disconnect", networkHandler.DisconnectWiFi)
+				r.Get("/wifi/saved", networkHandler.GetSavedNetworks)
+				r.Delete("/wifi/saved/{ssid}", networkHandler.ForgetNetwork)
+
+				// Access Point management (Sprint 3)
+				r.Get("/ap/status", networkHandler.GetAPStatus)
+				r.Post("/ap/start", networkHandler.StartAP)
+				r.Post("/ap/stop", networkHandler.StopAP)
+				r.Put("/ap/config", networkHandler.ConfigureAP)
+
+				// Connectivity check
+				r.Get("/connectivity", networkHandler.CheckConnectivity)
 			})
 
-			// Clients (WiFi)
+			// Connected Clients (DHCP)
 			r.Route("/clients", func(r chi.Router) {
-				r.Get("/", h.GetClients)
+				r.Get("/", h.GetConnectedClients)
 				r.Get("/count", h.GetClientCount)
-				r.Get("/stats", h.GetClientStats)
-				r.Get("/blocked", h.GetBlockedClients)
-				r.Post("/block/{mac}", h.BlockClient)
-				r.Post("/unblock/{mac}", h.UnblockClient)
-				r.Post("/kick/{mac}", h.KickClient)
+				r.Post("/{mac}/block", h.BlockClient)
+				r.Post("/{mac}/unblock", h.UnblockClient)
 			})
 
-			// Storage (legacy - disk info and SMB)
+			// Storage (SMB Shares - legacy, unified in /mounts)
 			r.Route("/storage", func(r chi.Router) {
-				r.Get("/disks", h.GetDisks)
-				r.Get("/overview", h.GetStorageOverview)
-				r.Get("/service-data", h.GetServiceDataSizes)
-
-				// SMB Shares
-				r.Route("/smb", func(r chi.Router) {
-					r.Get("/status", ext.GetSMBStatus)
-					r.Get("/shares", ext.GetSMBShares)
-					r.Get("/shares/{name}", ext.GetSMBShare)
-					r.Post("/shares", ext.CreateSMBShare)
-					r.Put("/shares/{name}", ext.UpdateSMBShare)
-					r.Delete("/shares/{name}", ext.DeleteSMBShare)
-				})
-
-				// Disk Health (S.M.A.R.T.)
-				r.Get("/health", ext.GetDiskHealth)
-				r.Get("/health/{device}", ext.GetDiskHealthByDevice)
+				r.Get("/", h.GetStorage)
+				r.Get("/mounts", h.GetMounts)
+				r.Post("/mounts", h.AddMount)
+				r.Delete("/mounts/{id}", h.RemoveMount)
 			})
 
-			// Docker Services
+			// Services
 			r.Route("/services", func(r chi.Router) {
-				r.Get("/", h.GetServices)
-				r.Get("/status", h.GetAllContainerStatus)
-				r.Get("/categories", h.GetCategories)
+				r.Get("/", h.ListServices)
 				r.Get("/{name}", h.GetService)
-				r.Get("/{name}/logs", h.GetServiceLogs)
-				r.Get("/{name}/stats", h.GetServiceStats)
 				r.Post("/{name}/start", h.StartService)
 				r.Post("/{name}/stop", h.StopService)
 				r.Post("/{name}/restart", h.RestartService)

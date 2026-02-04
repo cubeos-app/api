@@ -53,8 +53,17 @@ func (h *AppsHandler) Routes() chi.Router {
 	return r
 }
 
-// ListApps returns all apps with optional filtering.
-// GET /api/v1/apps?type=user&enabled=true
+// ListApps godoc
+// @Summary List all apps
+// @Description Returns all apps with optional filtering by type and enabled state
+// @Tags Apps
+// @Produce json
+// @Security BearerAuth
+// @Param type query string false "Filter by app type (system, user)"
+// @Param enabled query bool false "Filter by enabled state"
+// @Success 200 {object} map[string]interface{} "List of apps"
+// @Failure 500 {object} ErrorResponse "Failed to list apps"
+// @Router /apps [get]
 func (h *AppsHandler) ListApps(w http.ResponseWriter, r *http.Request) {
 	filter := &models.AppFilter{}
 
@@ -77,8 +86,16 @@ func (h *AppsHandler) ListApps(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
-// GetApp returns a single app by name.
-// GET /api/v1/apps/{name}
+// GetApp godoc
+// @Summary Get app details
+// @Description Returns details of a specific app by name
+// @Tags Apps
+// @Produce json
+// @Security BearerAuth
+// @Param name path string true "App name"
+// @Success 200 {object} models.App "App details"
+// @Failure 404 {object} ErrorResponse "App not found"
+// @Router /apps/{name} [get]
 func (h *AppsHandler) GetApp(w http.ResponseWriter, r *http.Request) {
 	name := chi.URLParam(r, "name")
 
@@ -91,8 +108,18 @@ func (h *AppsHandler) GetApp(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, app)
 }
 
-// InstallApp installs a new app.
-// POST /api/v1/apps
+// InstallApp godoc
+// @Summary Install an app
+// @Description Installs a new app from the app store or custom source
+// @Tags Apps
+// @Accept json
+// @Produce json
+// @Security BearerAuth
+// @Param request body models.InstallAppRequest true "App installation configuration"
+// @Success 201 {object} models.App "Installed app details"
+// @Failure 400 {object} ErrorResponse "Invalid request or missing name"
+// @Failure 500 {object} ErrorResponse "Failed to install app"
+// @Router /apps [post]
 func (h *AppsHandler) InstallApp(w http.ResponseWriter, r *http.Request) {
 	var req models.InstallAppRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
@@ -114,8 +141,18 @@ func (h *AppsHandler) InstallApp(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusCreated, app)
 }
 
-// UninstallApp removes an app.
-// DELETE /api/v1/apps/{name}?keep_data=false
+// UninstallApp godoc
+// @Summary Uninstall an app
+// @Description Removes an installed app with optional data retention
+// @Tags Apps
+// @Produce json
+// @Security BearerAuth
+// @Param name path string true "App name"
+// @Param keep_data query bool false "Keep app data after uninstall" default(false)
+// @Success 200 {object} map[string]interface{} "Uninstall confirmation"
+// @Failure 404 {object} ErrorResponse "App not found"
+// @Failure 500 {object} ErrorResponse "Failed to uninstall app"
+// @Router /apps/{name} [delete]
 func (h *AppsHandler) UninstallApp(w http.ResponseWriter, r *http.Request) {
 	name := chi.URLParam(r, "name")
 	keepData := r.URL.Query().Get("keep_data") == "true"
@@ -137,8 +174,16 @@ func (h *AppsHandler) UninstallApp(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
-// StartApp starts an app.
-// POST /api/v1/apps/{name}/start
+// StartApp godoc
+// @Summary Start an app
+// @Description Starts a stopped app
+// @Tags Apps
+// @Produce json
+// @Security BearerAuth
+// @Param name path string true "App name"
+// @Success 200 {object} map[string]interface{} "Start confirmation"
+// @Failure 500 {object} ErrorResponse "Failed to start app"
+// @Router /apps/{name}/start [post]
 func (h *AppsHandler) StartApp(w http.ResponseWriter, r *http.Request) {
 	name := chi.URLParam(r, "name")
 
@@ -153,8 +198,16 @@ func (h *AppsHandler) StartApp(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
-// StopApp stops an app.
-// POST /api/v1/apps/{name}/stop
+// StopApp godoc
+// @Summary Stop an app
+// @Description Stops a running app
+// @Tags Apps
+// @Produce json
+// @Security BearerAuth
+// @Param name path string true "App name"
+// @Success 200 {object} map[string]interface{} "Stop confirmation"
+// @Failure 500 {object} ErrorResponse "Failed to stop app"
+// @Router /apps/{name}/stop [post]
 func (h *AppsHandler) StopApp(w http.ResponseWriter, r *http.Request) {
 	name := chi.URLParam(r, "name")
 
@@ -169,8 +222,16 @@ func (h *AppsHandler) StopApp(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
-// RestartApp restarts an app.
-// POST /api/v1/apps/{name}/restart
+// RestartApp godoc
+// @Summary Restart an app
+// @Description Restarts an app (stop then start)
+// @Tags Apps
+// @Produce json
+// @Security BearerAuth
+// @Param name path string true "App name"
+// @Success 200 {object} map[string]interface{} "Restart confirmation"
+// @Failure 500 {object} ErrorResponse "Failed to restart app"
+// @Router /apps/{name}/restart [post]
 func (h *AppsHandler) RestartApp(w http.ResponseWriter, r *http.Request) {
 	name := chi.URLParam(r, "name")
 
@@ -185,8 +246,16 @@ func (h *AppsHandler) RestartApp(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
-// EnableApp enables an app to start on boot.
-// POST /api/v1/apps/{name}/enable
+// EnableApp godoc
+// @Summary Enable app auto-start
+// @Description Enables an app to start automatically on boot
+// @Tags Apps
+// @Produce json
+// @Security BearerAuth
+// @Param name path string true "App name"
+// @Success 200 {object} map[string]interface{} "Enable confirmation"
+// @Failure 500 {object} ErrorResponse "Failed to enable app"
+// @Router /apps/{name}/enable [post]
 func (h *AppsHandler) EnableApp(w http.ResponseWriter, r *http.Request) {
 	name := chi.URLParam(r, "name")
 
@@ -201,8 +270,16 @@ func (h *AppsHandler) EnableApp(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
-// DisableApp disables an app from starting on boot.
-// POST /api/v1/apps/{name}/disable
+// DisableApp godoc
+// @Summary Disable app auto-start
+// @Description Disables an app from starting automatically on boot
+// @Tags Apps
+// @Produce json
+// @Security BearerAuth
+// @Param name path string true "App name"
+// @Success 200 {object} map[string]interface{} "Disable confirmation"
+// @Failure 500 {object} ErrorResponse "Failed to disable app"
+// @Router /apps/{name}/disable [post]
 func (h *AppsHandler) DisableApp(w http.ResponseWriter, r *http.Request) {
 	name := chi.URLParam(r, "name")
 
@@ -217,8 +294,18 @@ func (h *AppsHandler) DisableApp(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
-// GetAppLogs returns logs for an app.
-// GET /api/v1/apps/{name}/logs?lines=100&since=2026-01-31T00:00:00Z
+// GetAppLogs godoc
+// @Summary Get app logs
+// @Description Returns logs for a specific app
+// @Tags Apps
+// @Produce json
+// @Security BearerAuth
+// @Param name path string true "App name"
+// @Param lines query int false "Number of log lines" default(100)
+// @Param since query string false "Since timestamp (RFC3339)"
+// @Success 200 {object} map[string]interface{} "App logs"
+// @Failure 500 {object} ErrorResponse "Failed to get logs"
+// @Router /apps/{name}/logs [get]
 func (h *AppsHandler) GetAppLogs(w http.ResponseWriter, r *http.Request) {
 	name := chi.URLParam(r, "name")
 
@@ -248,8 +335,19 @@ func (h *AppsHandler) GetAppLogs(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
-// SetAppTor enables/disables Tor routing for an app.
-// POST /api/v1/apps/{name}/tor
+// SetAppTor godoc
+// @Summary Configure Tor routing for app
+// @Description Enables or disables Tor network routing for an app's traffic
+// @Tags Apps
+// @Accept json
+// @Produce json
+// @Security BearerAuth
+// @Param name path string true "App name"
+// @Param request body object true "Tor enabled state" example({"enabled": true})
+// @Success 200 {object} map[string]interface{} "Tor configuration updated"
+// @Failure 400 {object} ErrorResponse "Invalid request body"
+// @Failure 500 {object} ErrorResponse "Failed to configure Tor"
+// @Router /apps/{name}/tor [post]
 func (h *AppsHandler) SetAppTor(w http.ResponseWriter, r *http.Request) {
 	name := chi.URLParam(r, "name")
 
@@ -272,8 +370,19 @@ func (h *AppsHandler) SetAppTor(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
-// SetAppVPN enables/disables VPN routing for an app.
-// POST /api/v1/apps/{name}/vpn
+// SetAppVPN godoc
+// @Summary Configure VPN routing for app
+// @Description Enables or disables VPN routing for an app's traffic
+// @Tags Apps
+// @Accept json
+// @Produce json
+// @Security BearerAuth
+// @Param name path string true "App name"
+// @Param request body object true "VPN enabled state" example({"enabled": true})
+// @Success 200 {object} map[string]interface{} "VPN configuration updated"
+// @Failure 400 {object} ErrorResponse "Invalid request body"
+// @Failure 500 {object} ErrorResponse "Failed to configure VPN"
+// @Router /apps/{name}/vpn [post]
 func (h *AppsHandler) SetAppVPN(w http.ResponseWriter, r *http.Request) {
 	name := chi.URLParam(r, "name")
 

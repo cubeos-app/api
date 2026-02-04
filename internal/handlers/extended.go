@@ -55,6 +55,20 @@ func NewExtendedHandlers(
 // Logs
 // =============================================================================
 
+// GetJournalLogs godoc
+// @Summary Get journal logs
+// @Description Returns system journal logs with optional filtering
+// @Tags Logs
+// @Produce json
+// @Security BearerAuth
+// @Param unit query string false "Filter by systemd unit"
+// @Param lines query int false "Number of lines" default(100)
+// @Param since query string false "Since timestamp"
+// @Param until query string false "Until timestamp"
+// @Param priority query string false "Log priority filter"
+// @Param grep query string false "Text filter"
+// @Success 200 {object} models.LogsResponse "Journal log entries"
+// @Router /logs/journal [get]
 func (h *ExtendedHandlers) GetJournalLogs(w http.ResponseWriter, r *http.Request) {
 	unit := r.URL.Query().Get("unit")
 	lines, _ := strconv.Atoi(r.URL.Query().Get("lines"))
@@ -74,6 +88,14 @@ func (h *ExtendedHandlers) GetJournalLogs(w http.ResponseWriter, r *http.Request
 	})
 }
 
+// GetLogUnits godoc
+// @Summary List available log units
+// @Description Returns list of available systemd units for log filtering
+// @Tags Logs
+// @Produce json
+// @Security BearerAuth
+// @Success 200 {object} models.LogUnitsResponse "Available log units"
+// @Router /logs/units [get]
 func (h *ExtendedHandlers) GetLogUnits(w http.ResponseWriter, r *http.Request) {
 	units := h.logs.GetAvailableUnits()
 
@@ -83,6 +105,18 @@ func (h *ExtendedHandlers) GetLogUnits(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
+// GetServiceLogs godoc
+// @Summary Get service logs
+// @Description Returns logs for a specific systemd service
+// @Tags Logs
+// @Produce json
+// @Security BearerAuth
+// @Param service path string true "Service name"
+// @Param lines query int false "Number of lines" default(100)
+// @Param since query string false "Since timestamp"
+// @Param priority query string false "Log priority filter"
+// @Success 200 {object} map[string]interface{} "Service log entries"
+// @Router /logs/service/{service} [get]
 func (h *ExtendedHandlers) GetServiceLogs(w http.ResponseWriter, r *http.Request) {
 	service := chi.URLParam(r, "service")
 	lines, _ := strconv.Atoi(r.URL.Query().Get("lines"))
@@ -106,6 +140,18 @@ func (h *ExtendedHandlers) GetServiceLogs(w http.ResponseWriter, r *http.Request
 	})
 }
 
+// GetContainerLogs godoc
+// @Summary Get container logs
+// @Description Returns logs for a specific Docker container
+// @Tags Logs
+// @Produce json
+// @Security BearerAuth
+// @Param container path string true "Container name or ID"
+// @Param lines query int false "Number of lines" default(100)
+// @Param since query string false "Since timestamp"
+// @Param timestamps query bool false "Include timestamps" default(true)
+// @Success 200 {object} models.ContainerLogsResponse "Container log entries"
+// @Router /logs/container/{container} [get]
 func (h *ExtendedHandlers) GetContainerLogs(w http.ResponseWriter, r *http.Request) {
 	container := chi.URLParam(r, "container")
 	lines, _ := strconv.Atoi(r.URL.Query().Get("lines"))
@@ -124,6 +170,15 @@ func (h *ExtendedHandlers) GetContainerLogs(w http.ResponseWriter, r *http.Reque
 	})
 }
 
+// GetKernelLogs godoc
+// @Summary Get kernel logs
+// @Description Returns kernel (dmesg) log messages
+// @Tags Logs
+// @Produce json
+// @Security BearerAuth
+// @Param lines query int false "Number of lines" default(200)
+// @Success 200 {object} map[string]interface{} "Kernel log entries"
+// @Router /logs/kernel [get]
 func (h *ExtendedHandlers) GetKernelLogs(w http.ResponseWriter, r *http.Request) {
 	lines, _ := strconv.Atoi(r.URL.Query().Get("lines"))
 	if lines == 0 {
@@ -138,6 +193,16 @@ func (h *ExtendedHandlers) GetKernelLogs(w http.ResponseWriter, r *http.Request)
 	})
 }
 
+// GetBootLogs godoc
+// @Summary Get boot logs
+// @Description Returns logs from a specific boot session
+// @Tags Logs
+// @Produce json
+// @Security BearerAuth
+// @Param boot query int false "Boot ID (0=current, -1=previous)" default(0)
+// @Param lines query int false "Number of lines" default(500)
+// @Success 200 {object} map[string]interface{} "Boot log entries"
+// @Router /logs/boot [get]
 func (h *ExtendedHandlers) GetBootLogs(w http.ResponseWriter, r *http.Request) {
 	boot, _ := strconv.Atoi(r.URL.Query().Get("boot"))
 	lines, _ := strconv.Atoi(r.URL.Query().Get("lines"))
@@ -154,6 +219,19 @@ func (h *ExtendedHandlers) GetBootLogs(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
+// ReadLogFile godoc
+// @Summary Read log file
+// @Description Reads content from a specific log file (restricted paths)
+// @Tags Logs
+// @Produce json
+// @Security BearerAuth
+// @Param path query string true "Log file path"
+// @Param lines query int false "Number of lines" default(100)
+// @Param grep query string false "Text filter"
+// @Success 200 {object} map[string]interface{} "Log file content"
+// @Failure 400 {object} ErrorResponse "Path parameter required"
+// @Failure 403 {object} ErrorResponse "Access denied"
+// @Router /logs/file [get]
 func (h *ExtendedHandlers) ReadLogFile(w http.ResponseWriter, r *http.Request) {
 	path := r.URL.Query().Get("path")
 	if path == "" {
@@ -180,6 +258,16 @@ func (h *ExtendedHandlers) ReadLogFile(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
+// GetRecentErrors godoc
+// @Summary Get recent errors
+// @Description Returns recent error log entries across all services
+// @Tags Logs
+// @Produce json
+// @Security BearerAuth
+// @Param lines query int false "Number of lines" default(50)
+// @Param hours query int false "Hours to look back" default(24)
+// @Success 200 {object} map[string]interface{} "Recent error entries"
+// @Router /logs/errors [get]
 func (h *ExtendedHandlers) GetRecentErrors(w http.ResponseWriter, r *http.Request) {
 	lines, _ := strconv.Atoi(r.URL.Query().Get("lines"))
 	if lines == 0 {
@@ -203,6 +291,15 @@ func (h *ExtendedHandlers) GetRecentErrors(w http.ResponseWriter, r *http.Reques
 // Firewall
 // =============================================================================
 
+// GetFirewallStatus godoc
+// @Summary Get firewall status
+// @Description Returns current firewall (iptables) status
+// @Tags Firewall
+// @Produce json
+// @Security BearerAuth
+// @Success 200 {object} map[string]interface{} "Firewall status"
+// @Failure 500 {object} ErrorResponse "Failed to get status"
+// @Router /firewall/status [get]
 func (h *ExtendedHandlers) GetFirewallStatus(w http.ResponseWriter, r *http.Request) {
 	status, err := h.firewall.GetStatus(r.Context())
 	if err != nil {
@@ -212,6 +309,18 @@ func (h *ExtendedHandlers) GetFirewallStatus(w http.ResponseWriter, r *http.Requ
 	writeJSON(w, http.StatusOK, status)
 }
 
+// GetFirewallRules godoc
+// @Summary Get firewall rules
+// @Description Returns firewall rules for a specific table
+// @Tags Firewall
+// @Produce json
+// @Security BearerAuth
+// @Param table query string false "Table name (filter, nat, mangle, raw)" default(filter)
+// @Param all query bool false "Show all rules including Docker auto-generated"
+// @Success 200 {object} map[string]interface{} "Firewall rules"
+// @Failure 400 {object} ErrorResponse "Invalid table name"
+// @Failure 500 {object} ErrorResponse "Failed to get rules"
+// @Router /firewall/rules [get]
 func (h *ExtendedHandlers) GetFirewallRules(w http.ResponseWriter, r *http.Request) {
 	table := r.URL.Query().Get("table")
 	if table == "" {
@@ -241,11 +350,28 @@ func (h *ExtendedHandlers) GetFirewallRules(w http.ResponseWriter, r *http.Reque
 	})
 }
 
+// GetNATStatus godoc
+// @Summary Get NAT status
+// @Description Returns NAT/masquerading status
+// @Tags Firewall
+// @Produce json
+// @Security BearerAuth
+// @Success 200 {object} map[string]interface{} "NAT status"
+// @Router /firewall/nat/status [get]
 func (h *ExtendedHandlers) GetNATStatus(w http.ResponseWriter, r *http.Request) {
 	status, _ := h.firewall.GetNATStatus(r.Context())
 	writeJSON(w, http.StatusOK, status)
 }
 
+// EnableNAT godoc
+// @Summary Enable NAT
+// @Description Enables NAT/masquerading for internet sharing
+// @Tags Firewall
+// @Produce json
+// @Security BearerAuth
+// @Success 200 {object} models.SuccessResponse "NAT enabled"
+// @Failure 500 {object} ErrorResponse "Failed to enable NAT"
+// @Router /firewall/nat/enable [post]
 func (h *ExtendedHandlers) EnableNAT(w http.ResponseWriter, r *http.Request) {
 	result := h.firewall.EnableNAT(r.Context())
 	if result.Status == "error" {
@@ -255,6 +381,15 @@ func (h *ExtendedHandlers) EnableNAT(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, result)
 }
 
+// DisableNAT godoc
+// @Summary Disable NAT
+// @Description Disables NAT/masquerading
+// @Tags Firewall
+// @Produce json
+// @Security BearerAuth
+// @Success 200 {object} models.SuccessResponse "NAT disabled"
+// @Failure 500 {object} ErrorResponse "Failed to disable NAT"
+// @Router /firewall/nat/disable [post]
 func (h *ExtendedHandlers) DisableNAT(w http.ResponseWriter, r *http.Request) {
 	result := h.firewall.DisableNAT(r.Context())
 	if result.Status == "error" {
@@ -264,6 +399,19 @@ func (h *ExtendedHandlers) DisableNAT(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, result)
 }
 
+// AllowPort godoc
+// @Summary Allow port
+// @Description Adds firewall rule to allow traffic on a port
+// @Tags Firewall
+// @Produce json
+// @Security BearerAuth
+// @Param port query int true "Port number (1-65535)"
+// @Param protocol query string false "Protocol (tcp/udp)" default(tcp)
+// @Param comment query string false "Rule comment"
+// @Success 200 {object} models.SuccessResponse "Port allowed"
+// @Failure 400 {object} ErrorResponse "Invalid port"
+// @Failure 500 {object} ErrorResponse "Failed to add rule"
+// @Router /firewall/port/allow [post]
 func (h *ExtendedHandlers) AllowPort(w http.ResponseWriter, r *http.Request) {
 	portStr := r.URL.Query().Get("port")
 	port, err := strconv.Atoi(portStr)
@@ -286,6 +434,18 @@ func (h *ExtendedHandlers) AllowPort(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, result)
 }
 
+// BlockPort godoc
+// @Summary Block port
+// @Description Adds firewall rule to block traffic on a port
+// @Tags Firewall
+// @Produce json
+// @Security BearerAuth
+// @Param port query int true "Port number (1-65535)"
+// @Param protocol query string false "Protocol (tcp/udp)" default(tcp)
+// @Success 200 {object} models.SuccessResponse "Port blocked"
+// @Failure 400 {object} ErrorResponse "Invalid port"
+// @Failure 500 {object} ErrorResponse "Failed to add rule"
+// @Router /firewall/port/block [post]
 func (h *ExtendedHandlers) BlockPort(w http.ResponseWriter, r *http.Request) {
 	portStr := r.URL.Query().Get("port")
 	port, err := strconv.Atoi(portStr)
@@ -307,6 +467,19 @@ func (h *ExtendedHandlers) BlockPort(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, result)
 }
 
+// RemovePortRule godoc
+// @Summary Remove port rule
+// @Description Removes a firewall rule for a port
+// @Tags Firewall
+// @Produce json
+// @Security BearerAuth
+// @Param port path int true "Port number"
+// @Param protocol query string false "Protocol (tcp/udp)" default(tcp)
+// @Param action query string false "Rule action (ACCEPT/DROP)" default(ACCEPT)
+// @Success 200 {object} models.SuccessResponse "Rule removed"
+// @Failure 400 {object} ErrorResponse "Invalid port"
+// @Failure 500 {object} ErrorResponse "Failed to remove rule"
+// @Router /firewall/port/{port} [delete]
 func (h *ExtendedHandlers) RemovePortRule(w http.ResponseWriter, r *http.Request) {
 	portStr := chi.URLParam(r, "port")
 	port, err := strconv.Atoi(portStr)
@@ -332,6 +505,16 @@ func (h *ExtendedHandlers) RemovePortRule(w http.ResponseWriter, r *http.Request
 	writeJSON(w, http.StatusOK, result)
 }
 
+// AllowService godoc
+// @Summary Allow service
+// @Description Adds firewall rule to allow a known service (http, https, ssh, etc.)
+// @Tags Firewall
+// @Produce json
+// @Security BearerAuth
+// @Param service path string true "Service name"
+// @Success 200 {object} models.SuccessResponse "Service allowed"
+// @Failure 400 {object} ErrorResponse "Unknown service"
+// @Router /firewall/service/{service}/allow [post]
 func (h *ExtendedHandlers) AllowService(w http.ResponseWriter, r *http.Request) {
 	service := chi.URLParam(r, "service")
 	result := h.firewall.AllowService(r.Context(), service)
@@ -342,16 +525,40 @@ func (h *ExtendedHandlers) AllowService(w http.ResponseWriter, r *http.Request) 
 	writeJSON(w, http.StatusOK, result)
 }
 
+// SaveFirewallRules godoc
+// @Summary Save firewall rules
+// @Description Persists current firewall rules to survive reboot
+// @Tags Firewall
+// @Produce json
+// @Security BearerAuth
+// @Success 200 {object} models.SuccessResponse "Rules saved"
+// @Router /firewall/save [post]
 func (h *ExtendedHandlers) SaveFirewallRules(w http.ResponseWriter, r *http.Request) {
 	result := h.firewall.SaveRules(r.Context())
 	writeJSON(w, http.StatusOK, result)
 }
 
+// RestoreFirewallRules godoc
+// @Summary Restore firewall rules
+// @Description Restores firewall rules from saved configuration
+// @Tags Firewall
+// @Produce json
+// @Security BearerAuth
+// @Success 200 {object} models.SuccessResponse "Rules restored"
+// @Router /firewall/restore [post]
 func (h *ExtendedHandlers) RestoreFirewallRules(w http.ResponseWriter, r *http.Request) {
 	result := h.firewall.RestoreRules(r.Context())
 	writeJSON(w, http.StatusOK, result)
 }
 
+// GetIPForward godoc
+// @Summary Get IP forwarding status
+// @Description Returns IPv4 forwarding status
+// @Tags Firewall
+// @Produce json
+// @Security BearerAuth
+// @Success 200 {object} map[string]interface{} "IP forward status"
+// @Router /firewall/ipforward [get]
 func (h *ExtendedHandlers) GetIPForward(w http.ResponseWriter, r *http.Request) {
 	status, _ := h.firewall.GetNATStatus(r.Context())
 	writeJSON(w, http.StatusOK, map[string]interface{}{
@@ -359,6 +566,17 @@ func (h *ExtendedHandlers) GetIPForward(w http.ResponseWriter, r *http.Request) 
 	})
 }
 
+// SetIPForward godoc
+// @Summary Set IP forwarding
+// @Description Enables or disables IPv4 forwarding
+// @Tags Firewall
+// @Accept json
+// @Produce json
+// @Security BearerAuth
+// @Param request body object true "Enable state" example({"enabled": true})
+// @Success 200 {object} models.SuccessResponse "IP forward updated"
+// @Failure 400 {object} ErrorResponse "Invalid request body"
+// @Router /firewall/ipforward [put]
 func (h *ExtendedHandlers) SetIPForward(w http.ResponseWriter, r *http.Request) {
 	var req struct {
 		Enabled bool `json:"enabled"`
@@ -372,6 +590,16 @@ func (h *ExtendedHandlers) SetIPForward(w http.ResponseWriter, r *http.Request) 
 	writeJSON(w, http.StatusOK, result)
 }
 
+// ResetFirewall godoc
+// @Summary Reset firewall
+// @Description Resets firewall to default state (requires confirmation)
+// @Tags Firewall
+// @Produce json
+// @Security BearerAuth
+// @Param confirm query bool true "Confirmation flag" example(true)
+// @Success 200 {object} models.SuccessResponse "Firewall reset"
+// @Failure 400 {object} ErrorResponse "Confirmation required"
+// @Router /firewall/reset [post]
 func (h *ExtendedHandlers) ResetFirewall(w http.ResponseWriter, r *http.Request) {
 	confirm := r.URL.Query().Get("confirm") == "true"
 	if !confirm {
@@ -387,6 +615,14 @@ func (h *ExtendedHandlers) ResetFirewall(w http.ResponseWriter, r *http.Request)
 // Backup
 // =============================================================================
 
+// ListBackups godoc
+// @Summary List backups
+// @Description Returns list of all available backups
+// @Tags Backup
+// @Produce json
+// @Security BearerAuth
+// @Success 200 {object} models.BackupListResponse "Backup list"
+// @Router /backups [get]
 func (h *ExtendedHandlers) ListBackups(w http.ResponseWriter, r *http.Request) {
 	backups := h.backup.ListBackups()
 	totalSize := h.backup.GetTotalSize()
@@ -398,6 +634,16 @@ func (h *ExtendedHandlers) ListBackups(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
+// GetBackup godoc
+// @Summary Get backup details
+// @Description Returns details of a specific backup
+// @Tags Backup
+// @Produce json
+// @Security BearerAuth
+// @Param backup_id path string true "Backup ID"
+// @Success 200 {object} models.Backup "Backup details"
+// @Failure 404 {object} ErrorResponse "Backup not found"
+// @Router /backups/{backup_id} [get]
 func (h *ExtendedHandlers) GetBackup(w http.ResponseWriter, r *http.Request) {
 	backupID := chi.URLParam(r, "backup_id")
 	backup := h.backup.GetBackup(backupID)
@@ -408,6 +654,17 @@ func (h *ExtendedHandlers) GetBackup(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, backup)
 }
 
+// CreateBackup godoc
+// @Summary Create backup
+// @Description Creates a new system backup
+// @Tags Backup
+// @Accept json
+// @Produce json
+// @Security BearerAuth
+// @Param request body models.BackupCreateRequest false "Backup options"
+// @Success 200 {object} models.Backup "Created backup"
+// @Failure 500 {object} ErrorResponse "Failed to create backup"
+// @Router /backups [post]
 func (h *ExtendedHandlers) CreateBackup(w http.ResponseWriter, r *http.Request) {
 	var req models.BackupCreateRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
@@ -428,6 +685,17 @@ func (h *ExtendedHandlers) CreateBackup(w http.ResponseWriter, r *http.Request) 
 	writeJSON(w, http.StatusOK, result)
 }
 
+// QuickBackup godoc
+// @Summary Quick backup
+// @Description Creates a quick backup with defaults
+// @Tags Backup
+// @Produce json
+// @Security BearerAuth
+// @Param backup_type query string false "Backup type" default(config)
+// @Param description query string false "Backup description"
+// @Success 200 {object} models.Backup "Created backup"
+// @Failure 500 {object} ErrorResponse "Failed to create backup"
+// @Router /backups/quick [post]
 func (h *ExtendedHandlers) QuickBackup(w http.ResponseWriter, r *http.Request) {
 	backupType := r.URL.Query().Get("backup_type")
 	if backupType == "" {
@@ -446,6 +714,19 @@ func (h *ExtendedHandlers) QuickBackup(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, result)
 }
 
+// RestoreBackup godoc
+// @Summary Restore backup
+// @Description Restores system from a backup (requires confirmation)
+// @Tags Backup
+// @Produce json
+// @Security BearerAuth
+// @Param backup_id path string true "Backup ID"
+// @Param confirm query bool true "Confirmation flag" example(true)
+// @Param restart_services query bool false "Restart services after restore" default(true)
+// @Success 200 {object} models.SuccessResponse "Backup restored"
+// @Failure 400 {object} ErrorResponse "Confirmation required"
+// @Failure 500 {object} ErrorResponse "Failed to restore backup"
+// @Router /backups/{backup_id}/restore [post]
 func (h *ExtendedHandlers) RestoreBackup(w http.ResponseWriter, r *http.Request) {
 	backupID := chi.URLParam(r, "backup_id")
 	confirm := r.URL.Query().Get("confirm") == "true"
@@ -465,6 +746,16 @@ func (h *ExtendedHandlers) RestoreBackup(w http.ResponseWriter, r *http.Request)
 	writeJSON(w, http.StatusOK, result)
 }
 
+// DeleteBackup godoc
+// @Summary Delete backup
+// @Description Deletes a specific backup
+// @Tags Backup
+// @Produce json
+// @Security BearerAuth
+// @Param backup_id path string true "Backup ID"
+// @Success 200 {object} models.SuccessResponse "Backup deleted"
+// @Failure 404 {object} ErrorResponse "Backup not found"
+// @Router /backups/{backup_id} [delete]
 func (h *ExtendedHandlers) DeleteBackup(w http.ResponseWriter, r *http.Request) {
 	backupID := chi.URLParam(r, "backup_id")
 	result := h.backup.DeleteBackup(backupID)
@@ -475,6 +766,16 @@ func (h *ExtendedHandlers) DeleteBackup(w http.ResponseWriter, r *http.Request) 
 	writeJSON(w, http.StatusOK, result)
 }
 
+// DownloadBackup godoc
+// @Summary Download backup
+// @Description Downloads a backup file
+// @Tags Backup
+// @Produce application/gzip
+// @Security BearerAuth
+// @Param backup_id path string true "Backup ID"
+// @Success 200 {file} binary "Backup file"
+// @Failure 404 {object} ErrorResponse "Backup not found"
+// @Router /backups/{backup_id}/download [get]
 func (h *ExtendedHandlers) DownloadBackup(w http.ResponseWriter, r *http.Request) {
 	backupID := chi.URLParam(r, "backup_id")
 	backup := h.backup.GetBackup(backupID)
@@ -494,6 +795,14 @@ func (h *ExtendedHandlers) DownloadBackup(w http.ResponseWriter, r *http.Request
 	http.ServeFile(w, r, filepath)
 }
 
+// GetBackupStats godoc
+// @Summary Get backup statistics
+// @Description Returns backup storage statistics
+// @Tags Backup
+// @Produce json
+// @Security BearerAuth
+// @Success 200 {object} map[string]interface{} "Backup statistics"
+// @Router /backups/stats [get]
 func (h *ExtendedHandlers) GetBackupStats(w http.ResponseWriter, r *http.Request) {
 	stats := h.backup.GetStats()
 	writeJSON(w, http.StatusOK, stats)
@@ -503,6 +812,17 @@ func (h *ExtendedHandlers) GetBackupStats(w http.ResponseWriter, r *http.Request
 // Processes
 // =============================================================================
 
+// ListProcesses godoc
+// @Summary List processes
+// @Description Returns list of running processes
+// @Tags Processes
+// @Produce json
+// @Security BearerAuth
+// @Param sort_by query string false "Sort field (cpu, memory, pid)" default(cpu)
+// @Param limit query int false "Maximum processes to return" default(50)
+// @Param filter_name query string false "Filter by process name"
+// @Success 200 {object} models.ProcessListResponse "Process list"
+// @Router /processes [get]
 func (h *ExtendedHandlers) ListProcesses(w http.ResponseWriter, r *http.Request) {
 	sortBy := r.URL.Query().Get("sort_by")
 	if sortBy == "" {
@@ -525,6 +845,17 @@ func (h *ExtendedHandlers) ListProcesses(w http.ResponseWriter, r *http.Request)
 	})
 }
 
+// GetProcess godoc
+// @Summary Get process details
+// @Description Returns details of a specific process by PID
+// @Tags Processes
+// @Produce json
+// @Security BearerAuth
+// @Param pid path int true "Process ID"
+// @Success 200 {object} models.Process "Process details"
+// @Failure 400 {object} ErrorResponse "Invalid PID"
+// @Failure 404 {object} ErrorResponse "Process not found"
+// @Router /processes/{pid} [get]
 func (h *ExtendedHandlers) GetProcess(w http.ResponseWriter, r *http.Request) {
 	pidStr := chi.URLParam(r, "pid")
 	pid, err := strconv.Atoi(pidStr)
@@ -542,6 +873,18 @@ func (h *ExtendedHandlers) GetProcess(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, proc)
 }
 
+// KillProcess godoc
+// @Summary Kill process
+// @Description Sends a signal to terminate a process
+// @Tags Processes
+// @Produce json
+// @Security BearerAuth
+// @Param pid path int true "Process ID"
+// @Param sig query string false "Signal to send" default(SIGTERM)
+// @Success 200 {object} models.SuccessResponse "Process killed"
+// @Failure 400 {object} ErrorResponse "Invalid PID"
+// @Failure 403 {object} ErrorResponse "Cannot kill protected process"
+// @Router /processes/{pid}/kill [post]
 func (h *ExtendedHandlers) KillProcess(w http.ResponseWriter, r *http.Request) {
 	pidStr := chi.URLParam(r, "pid")
 	pid, err := strconv.Atoi(pidStr)
@@ -564,6 +907,17 @@ func (h *ExtendedHandlers) KillProcess(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, result)
 }
 
+// TerminateProcess godoc
+// @Summary Terminate process
+// @Description Sends SIGTERM to gracefully terminate a process
+// @Tags Processes
+// @Produce json
+// @Security BearerAuth
+// @Param pid path int true "Process ID"
+// @Success 200 {object} models.SuccessResponse "Process terminated"
+// @Failure 400 {object} ErrorResponse "Invalid PID"
+// @Failure 403 {object} ErrorResponse "Cannot terminate protected process"
+// @Router /processes/{pid}/terminate [post]
 func (h *ExtendedHandlers) TerminateProcess(w http.ResponseWriter, r *http.Request) {
 	pidStr := chi.URLParam(r, "pid")
 	pid, err := strconv.Atoi(pidStr)
@@ -581,11 +935,28 @@ func (h *ExtendedHandlers) TerminateProcess(w http.ResponseWriter, r *http.Reque
 	writeJSON(w, http.StatusOK, result)
 }
 
+// GetProcessStats godoc
+// @Summary Get process statistics
+// @Description Returns overall process statistics
+// @Tags Processes
+// @Produce json
+// @Security BearerAuth
+// @Success 200 {object} map[string]interface{} "Process statistics"
+// @Router /processes/stats [get]
 func (h *ExtendedHandlers) GetProcessStats(w http.ResponseWriter, r *http.Request) {
 	stats := h.processes.GetProcessStats()
 	writeJSON(w, http.StatusOK, stats)
 }
 
+// TopCPUProcesses godoc
+// @Summary Top CPU processes
+// @Description Returns processes with highest CPU usage
+// @Tags Processes
+// @Produce json
+// @Security BearerAuth
+// @Param limit query int false "Number of processes" default(10)
+// @Success 200 {object} models.ProcessListResponse "Top CPU processes"
+// @Router /processes/top/cpu [get]
 func (h *ExtendedHandlers) TopCPUProcesses(w http.ResponseWriter, r *http.Request) {
 	limit, _ := strconv.Atoi(r.URL.Query().Get("limit"))
 	if limit == 0 {
@@ -600,6 +971,15 @@ func (h *ExtendedHandlers) TopCPUProcesses(w http.ResponseWriter, r *http.Reques
 	})
 }
 
+// TopMemoryProcesses godoc
+// @Summary Top memory processes
+// @Description Returns processes with highest memory usage
+// @Tags Processes
+// @Produce json
+// @Security BearerAuth
+// @Param limit query int false "Number of processes" default(10)
+// @Success 200 {object} models.ProcessListResponse "Top memory processes"
+// @Router /processes/top/memory [get]
 func (h *ExtendedHandlers) TopMemoryProcesses(w http.ResponseWriter, r *http.Request) {
 	limit, _ := strconv.Atoi(r.URL.Query().Get("limit"))
 	if limit == 0 {
@@ -614,6 +994,16 @@ func (h *ExtendedHandlers) TopMemoryProcesses(w http.ResponseWriter, r *http.Req
 	})
 }
 
+// SearchProcesses godoc
+// @Summary Search processes
+// @Description Searches for processes by name
+// @Tags Processes
+// @Produce json
+// @Security BearerAuth
+// @Param name path string true "Process name to search"
+// @Param exact query bool false "Exact match only"
+// @Success 200 {object} map[string]interface{} "Matching processes"
+// @Router /processes/search/{name} [get]
 func (h *ExtendedHandlers) SearchProcesses(w http.ResponseWriter, r *http.Request) {
 	name := chi.URLParam(r, "name")
 	exact := r.URL.Query().Get("exact") == "true"
@@ -632,6 +1022,14 @@ func (h *ExtendedHandlers) SearchProcesses(w http.ResponseWriter, r *http.Reques
 // Wizard
 // =============================================================================
 
+// GetProfiles godoc
+// @Summary List wizard profiles
+// @Description Returns available setup profiles
+// @Tags Wizard
+// @Produce json
+// @Security BearerAuth
+// @Success 200 {object} map[string]interface{} "Available profiles"
+// @Router /wizard/profiles [get]
 func (h *ExtendedHandlers) GetProfiles(w http.ResponseWriter, r *http.Request) {
 	profiles := h.wizard.GetProfiles()
 	writeJSON(w, http.StatusOK, map[string]interface{}{
@@ -639,11 +1037,30 @@ func (h *ExtendedHandlers) GetProfiles(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
+// GetWizardServices godoc
+// @Summary List wizard services
+// @Description Returns services available for wizard configuration
+// @Tags Wizard
+// @Produce json
+// @Security BearerAuth
+// @Success 200 {object} map[string]interface{} "Available services"
+// @Router /wizard/services [get]
 func (h *ExtendedHandlers) GetWizardServices(w http.ResponseWriter, r *http.Request) {
 	response := h.wizard.GetWizardServices()
 	writeJSON(w, http.StatusOK, response)
 }
 
+// ApplyProfile godoc
+// @Summary Apply wizard profile
+// @Description Applies a setup profile to configure services
+// @Tags Wizard
+// @Accept json
+// @Produce json
+// @Security BearerAuth
+// @Param request body models.ApplyProfileRequest true "Profile configuration"
+// @Success 200 {object} models.ApplyProfileResponse "Profile applied"
+// @Failure 400 {object} ErrorResponse "Invalid request or profile"
+// @Router /wizard/apply [post]
 func (h *ExtendedHandlers) ApplyProfile(w http.ResponseWriter, r *http.Request) {
 	var req models.ApplyProfileRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
@@ -665,6 +1082,15 @@ func (h *ExtendedHandlers) ApplyProfile(w http.ResponseWriter, r *http.Request) 
 	writeJSON(w, http.StatusOK, response)
 }
 
+// GetRecommendations godoc
+// @Summary Get service recommendations
+// @Description Returns service recommendations based on available resources
+// @Tags Wizard
+// @Produce json
+// @Security BearerAuth
+// @Param available_ram_mb query int false "Available RAM in MB" default(4096)
+// @Success 200 {object} map[string]interface{} "Recommendations"
+// @Router /wizard/recommendations [get]
 func (h *ExtendedHandlers) GetRecommendations(w http.ResponseWriter, r *http.Request) {
 	ramStr := r.URL.Query().Get("available_ram_mb")
 	ram, _ := strconv.Atoi(ramStr)
@@ -676,6 +1102,17 @@ func (h *ExtendedHandlers) GetRecommendations(w http.ResponseWriter, r *http.Req
 	writeJSON(w, http.StatusOK, recommendations)
 }
 
+// EstimateResources godoc
+// @Summary Estimate resource usage
+// @Description Estimates resource requirements for selected services
+// @Tags Wizard
+// @Accept json
+// @Produce json
+// @Security BearerAuth
+// @Param request body object true "Service list" example({"services": ["pihole", "nginx"]})
+// @Success 200 {object} map[string]interface{} "Resource estimate"
+// @Failure 400 {object} ErrorResponse "Invalid request body"
+// @Router /wizard/estimate [post]
 func (h *ExtendedHandlers) EstimateResources(w http.ResponseWriter, r *http.Request) {
 	var req struct {
 		Services []string `json:"services"`
@@ -693,11 +1130,27 @@ func (h *ExtendedHandlers) EstimateResources(w http.ResponseWriter, r *http.Requ
 // Monitoring
 // =============================================================================
 
+// GetMonitoringStats godoc
+// @Summary Get monitoring statistics
+// @Description Returns current system monitoring statistics
+// @Tags Monitoring
+// @Produce json
+// @Security BearerAuth
+// @Success 200 {object} map[string]interface{} "Monitoring statistics"
+// @Router /monitoring/stats [get]
 func (h *ExtendedHandlers) GetMonitoringStats(w http.ResponseWriter, r *http.Request) {
 	stats := h.monitoring.GetCurrentStats()
 	writeJSON(w, http.StatusOK, stats)
 }
 
+// GetWSConnections godoc
+// @Summary Get WebSocket connections
+// @Description Returns count of active WebSocket connections
+// @Tags Monitoring
+// @Produce json
+// @Security BearerAuth
+// @Success 200 {object} map[string]interface{} "WebSocket connections"
+// @Router /monitoring/websocket [get]
 func (h *ExtendedHandlers) GetWSConnections(w http.ResponseWriter, r *http.Request) {
 	// This would need access to WebSocket manager
 	writeJSON(w, http.StatusOK, map[string]interface{}{
@@ -705,6 +1158,15 @@ func (h *ExtendedHandlers) GetWSConnections(w http.ResponseWriter, r *http.Reque
 	})
 }
 
+// GetStatsHistory godoc
+// @Summary Get statistics history
+// @Description Returns historical monitoring statistics
+// @Tags Monitoring
+// @Produce json
+// @Security BearerAuth
+// @Param minutes query int false "Minutes of history (max 60)" default(60)
+// @Success 200 {object} models.StatsHistoryResponse "Statistics history"
+// @Router /monitoring/history [get]
 func (h *ExtendedHandlers) GetStatsHistory(w http.ResponseWriter, r *http.Request) {
 	minutes, _ := strconv.Atoi(r.URL.Query().Get("minutes"))
 	if minutes == 0 || minutes > 60 {
@@ -719,11 +1181,30 @@ func (h *ExtendedHandlers) GetStatsHistory(w http.ResponseWriter, r *http.Reques
 	})
 }
 
+// GetAlertThresholds godoc
+// @Summary Get alert thresholds
+// @Description Returns current monitoring alert thresholds
+// @Tags Monitoring
+// @Produce json
+// @Security BearerAuth
+// @Success 200 {object} map[string]float64 "Alert thresholds"
+// @Router /monitoring/thresholds [get]
 func (h *ExtendedHandlers) GetAlertThresholds(w http.ResponseWriter, r *http.Request) {
 	thresholds := h.monitoring.GetThresholds()
 	writeJSON(w, http.StatusOK, thresholds)
 }
 
+// SetAlertThresholds godoc
+// @Summary Set alert thresholds
+// @Description Updates monitoring alert thresholds
+// @Tags Monitoring
+// @Accept json
+// @Produce json
+// @Security BearerAuth
+// @Param thresholds body map[string]float64 true "Threshold values"
+// @Success 200 {object} map[string]float64 "Updated thresholds"
+// @Failure 400 {object} ErrorResponse "Invalid request body"
+// @Router /monitoring/thresholds [put]
 func (h *ExtendedHandlers) SetAlertThresholds(w http.ResponseWriter, r *http.Request) {
 	var thresholds map[string]float64
 	if err := json.NewDecoder(r.Body).Decode(&thresholds); err != nil {
@@ -735,6 +1216,14 @@ func (h *ExtendedHandlers) SetAlertThresholds(w http.ResponseWriter, r *http.Req
 	writeJSON(w, http.StatusOK, updated)
 }
 
+// GetCurrentAlerts godoc
+// @Summary Get current alerts
+// @Description Returns currently active monitoring alerts
+// @Tags Monitoring
+// @Produce json
+// @Security BearerAuth
+// @Success 200 {object} map[string]interface{} "Active alerts"
+// @Router /monitoring/alerts [get]
 func (h *ExtendedHandlers) GetCurrentAlerts(w http.ResponseWriter, r *http.Request) {
 	alerts := h.monitoring.GetCurrentAlerts()
 	writeJSON(w, http.StatusOK, alerts)
@@ -744,11 +1233,31 @@ func (h *ExtendedHandlers) GetCurrentAlerts(w http.ResponseWriter, r *http.Reque
 // Preferences
 // =============================================================================
 
+// GetPreferences godoc
+// @Summary Get user preferences
+// @Description Returns current user preferences
+// @Tags Preferences
+// @Produce json
+// @Security BearerAuth
+// @Success 200 {object} models.Preferences "User preferences"
+// @Router /preferences [get]
 func (h *ExtendedHandlers) GetPreferences(w http.ResponseWriter, r *http.Request) {
 	prefs := h.preferences.Get()
 	writeJSON(w, http.StatusOK, prefs)
 }
 
+// SetPreferences godoc
+// @Summary Update user preferences
+// @Description Updates user preferences
+// @Tags Preferences
+// @Accept json
+// @Produce json
+// @Security BearerAuth
+// @Param preferences body models.PreferencesUpdate true "Preference updates"
+// @Success 200 {object} map[string]interface{} "Updated preferences"
+// @Failure 400 {object} ErrorResponse "Invalid request body"
+// @Failure 500 {object} ErrorResponse "Failed to save preferences"
+// @Router /preferences [put]
 func (h *ExtendedHandlers) SetPreferences(w http.ResponseWriter, r *http.Request) {
 	var update models.PreferencesUpdate
 	if err := json.NewDecoder(r.Body).Decode(&update); err != nil {
@@ -768,6 +1277,14 @@ func (h *ExtendedHandlers) SetPreferences(w http.ResponseWriter, r *http.Request
 	})
 }
 
+// ResetPreferences godoc
+// @Summary Reset preferences
+// @Description Resets user preferences to defaults
+// @Tags Preferences
+// @Produce json
+// @Security BearerAuth
+// @Success 200 {object} map[string]interface{} "Reset preferences"
+// @Router /preferences/reset [post]
 func (h *ExtendedHandlers) ResetPreferences(w http.ResponseWriter, r *http.Request) {
 	prefs := h.preferences.Reset()
 	writeJSON(w, http.StatusOK, map[string]interface{}{
@@ -780,7 +1297,14 @@ func (h *ExtendedHandlers) ResetPreferences(w http.ResponseWriter, r *http.Reque
 // Favorites
 // =============================================================================
 
-// GetFavorites returns the list of favorite services
+// GetFavorites godoc
+// @Summary Get favorites
+// @Description Returns list of favorite services
+// @Tags Favorites
+// @Produce json
+// @Security BearerAuth
+// @Success 200 {object} map[string]interface{} "Favorite services"
+// @Router /favorites [get]
 func (h *ExtendedHandlers) GetFavorites(w http.ResponseWriter, r *http.Request) {
 	prefs := h.preferences.Get()
 	writeJSON(w, http.StatusOK, map[string]interface{}{
@@ -788,7 +1312,16 @@ func (h *ExtendedHandlers) GetFavorites(w http.ResponseWriter, r *http.Request) 
 	})
 }
 
-// AddFavorite adds a service to favorites
+// AddFavorite godoc
+// @Summary Add favorite
+// @Description Adds a service to favorites
+// @Tags Favorites
+// @Produce json
+// @Security BearerAuth
+// @Param name path string true "Service name"
+// @Success 200 {object} map[string]interface{} "Updated favorites"
+// @Failure 400 {object} ErrorResponse "Service name required"
+// @Router /favorites/{name} [post]
 func (h *ExtendedHandlers) AddFavorite(w http.ResponseWriter, r *http.Request) {
 	serviceName := chi.URLParam(r, "name")
 	if serviceName == "" {
@@ -803,7 +1336,16 @@ func (h *ExtendedHandlers) AddFavorite(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
-// RemoveFavorite removes a service from favorites
+// RemoveFavorite godoc
+// @Summary Remove favorite
+// @Description Removes a service from favorites
+// @Tags Favorites
+// @Produce json
+// @Security BearerAuth
+// @Param name path string true "Service name"
+// @Success 200 {object} map[string]interface{} "Updated favorites"
+// @Failure 400 {object} ErrorResponse "Service name required"
+// @Router /favorites/{name} [delete]
 func (h *ExtendedHandlers) RemoveFavorite(w http.ResponseWriter, r *http.Request) {
 	serviceName := chi.URLParam(r, "name")
 	if serviceName == "" {
@@ -818,7 +1360,16 @@ func (h *ExtendedHandlers) RemoveFavorite(w http.ResponseWriter, r *http.Request
 	})
 }
 
-// ToggleFavorite toggles a service's favorite status
+// ToggleFavorite godoc
+// @Summary Toggle favorite
+// @Description Toggles a service's favorite status
+// @Tags Favorites
+// @Produce json
+// @Security BearerAuth
+// @Param name path string true "Service name"
+// @Success 200 {object} map[string]interface{} "Updated favorites with new status"
+// @Failure 400 {object} ErrorResponse "Service name required"
+// @Router /favorites/{name}/toggle [post]
 func (h *ExtendedHandlers) ToggleFavorite(w http.ResponseWriter, r *http.Request) {
 	serviceName := chi.URLParam(r, "name")
 	if serviceName == "" {
@@ -854,6 +1405,14 @@ func (h *ExtendedHandlers) ToggleFavorite(w http.ResponseWriter, r *http.Request
 // Power/UPS (Geekworm X1202)
 // =============================================================================
 
+// GetPowerStatus godoc
+// @Summary Get power/UPS status
+// @Description Returns UPS battery and power status (Geekworm X1202)
+// @Tags Power
+// @Produce json
+// @Security BearerAuth
+// @Success 200 {object} map[string]interface{} "Power/UPS status"
+// @Router /power/status [get]
 func (h *ExtendedHandlers) GetPowerStatus(w http.ResponseWriter, r *http.Request) {
 	if h.power == nil {
 		writeJSON(w, http.StatusOK, map[string]interface{}{
@@ -915,6 +1474,19 @@ func (h *ExtendedHandlers) GetPowerStatus(w http.ResponseWriter, r *http.Request
 	writeJSON(w, http.StatusOK, response)
 }
 
+// SetCharging godoc
+// @Summary Set charging state
+// @Description Enables or disables battery charging
+// @Tags Power
+// @Accept json
+// @Produce json
+// @Security BearerAuth
+// @Param request body object true "Charging state" example({"enable": true})
+// @Success 200 {object} map[string]interface{} "Charging state updated"
+// @Failure 400 {object} ErrorResponse "Invalid request body"
+// @Failure 500 {object} ErrorResponse "Failed to set charging"
+// @Failure 503 {object} ErrorResponse "Power manager not available"
+// @Router /power/charging [put]
 func (h *ExtendedHandlers) SetCharging(w http.ResponseWriter, r *http.Request) {
 	if h.power == nil {
 		writeError(w, http.StatusServiceUnavailable, "Power manager not available")
@@ -944,11 +1516,28 @@ func (h *ExtendedHandlers) SetCharging(w http.ResponseWriter, r *http.Request) {
 // SMB Share Handlers
 // =============================================================================
 
+// GetSMBStatus godoc
+// @Summary Get SMB status
+// @Description Returns SMB/Samba server status
+// @Tags SMB
+// @Produce json
+// @Security BearerAuth
+// @Success 200 {object} map[string]interface{} "SMB server status"
+// @Router /smb/status [get]
 func (h *ExtendedHandlers) GetSMBStatus(w http.ResponseWriter, r *http.Request) {
 	status := h.storage.GetSMBStatus()
 	writeJSON(w, http.StatusOK, status)
 }
 
+// GetSMBShares godoc
+// @Summary List SMB shares
+// @Description Returns list of configured SMB shares
+// @Tags SMB
+// @Produce json
+// @Security BearerAuth
+// @Success 200 {object} map[string]interface{} "SMB shares"
+// @Failure 500 {object} ErrorResponse "Failed to get shares"
+// @Router /smb/shares [get]
 func (h *ExtendedHandlers) GetSMBShares(w http.ResponseWriter, r *http.Request) {
 	shares, err := h.storage.GetSMBShares()
 	if err != nil {
@@ -962,6 +1551,17 @@ func (h *ExtendedHandlers) GetSMBShares(w http.ResponseWriter, r *http.Request) 
 	})
 }
 
+// GetSMBShare godoc
+// @Summary Get SMB share
+// @Description Returns details of a specific SMB share
+// @Tags SMB
+// @Produce json
+// @Security BearerAuth
+// @Param name path string true "Share name"
+// @Success 200 {object} managers.SMBShare "SMB share details"
+// @Failure 404 {object} ErrorResponse "Share not found"
+// @Failure 500 {object} ErrorResponse "Failed to get share"
+// @Router /smb/shares/{name} [get]
 func (h *ExtendedHandlers) GetSMBShare(w http.ResponseWriter, r *http.Request) {
 	name := chi.URLParam(r, "name")
 
@@ -981,6 +1581,18 @@ func (h *ExtendedHandlers) GetSMBShare(w http.ResponseWriter, r *http.Request) {
 	writeError(w, http.StatusNotFound, "Share not found")
 }
 
+// CreateSMBShare godoc
+// @Summary Create SMB share
+// @Description Creates a new SMB share
+// @Tags SMB
+// @Accept json
+// @Produce json
+// @Security BearerAuth
+// @Param share body managers.SMBShare true "SMB share configuration"
+// @Success 201 {object} map[string]interface{} "Share created"
+// @Failure 400 {object} ErrorResponse "Invalid request body"
+// @Failure 500 {object} ErrorResponse "Failed to create share"
+// @Router /smb/shares [post]
 func (h *ExtendedHandlers) CreateSMBShare(w http.ResponseWriter, r *http.Request) {
 	var share managers.SMBShare
 	if err := json.NewDecoder(r.Body).Decode(&share); err != nil {
@@ -1000,6 +1612,19 @@ func (h *ExtendedHandlers) CreateSMBShare(w http.ResponseWriter, r *http.Request
 	})
 }
 
+// UpdateSMBShare godoc
+// @Summary Update SMB share
+// @Description Updates an existing SMB share
+// @Tags SMB
+// @Accept json
+// @Produce json
+// @Security BearerAuth
+// @Param name path string true "Share name"
+// @Param share body managers.SMBShare true "SMB share configuration"
+// @Success 200 {object} map[string]interface{} "Share updated"
+// @Failure 400 {object} ErrorResponse "Invalid request body"
+// @Failure 500 {object} ErrorResponse "Failed to update share"
+// @Router /smb/shares/{name} [put]
 func (h *ExtendedHandlers) UpdateSMBShare(w http.ResponseWriter, r *http.Request) {
 	name := chi.URLParam(r, "name")
 
@@ -1020,6 +1645,16 @@ func (h *ExtendedHandlers) UpdateSMBShare(w http.ResponseWriter, r *http.Request
 	})
 }
 
+// DeleteSMBShare godoc
+// @Summary Delete SMB share
+// @Description Deletes an SMB share
+// @Tags SMB
+// @Produce json
+// @Security BearerAuth
+// @Param name path string true "Share name"
+// @Success 200 {object} map[string]interface{} "Share deleted"
+// @Failure 500 {object} ErrorResponse "Failed to delete share"
+// @Router /smb/shares/{name} [delete]
 func (h *ExtendedHandlers) DeleteSMBShare(w http.ResponseWriter, r *http.Request) {
 	name := chi.URLParam(r, "name")
 
@@ -1038,6 +1673,15 @@ func (h *ExtendedHandlers) DeleteSMBShare(w http.ResponseWriter, r *http.Request
 // Disk Health (S.M.A.R.T.) Handlers
 // =============================================================================
 
+// GetDiskHealth godoc
+// @Summary Get disk health
+// @Description Returns S.M.A.R.T. health status for all disks
+// @Tags Storage
+// @Produce json
+// @Security BearerAuth
+// @Success 200 {object} map[string]interface{} "Disk health status"
+// @Failure 500 {object} ErrorResponse "Failed to get disk health"
+// @Router /storage/health [get]
 func (h *ExtendedHandlers) GetDiskHealth(w http.ResponseWriter, r *http.Request) {
 	disks, err := h.storage.GetDiskHealth()
 	if err != nil {
@@ -1065,6 +1709,16 @@ func (h *ExtendedHandlers) GetDiskHealth(w http.ResponseWriter, r *http.Request)
 	})
 }
 
+// GetDiskHealthByDevice godoc
+// @Summary Get disk health by device
+// @Description Returns S.M.A.R.T. health status for a specific disk
+// @Tags Storage
+// @Produce json
+// @Security BearerAuth
+// @Param device path string true "Device name (e.g., sda)"
+// @Success 200 {object} managers.DiskHealth "Disk health details"
+// @Failure 500 {object} ErrorResponse "Failed to get disk health"
+// @Router /storage/health/{device} [get]
 func (h *ExtendedHandlers) GetDiskHealthByDevice(w http.ResponseWriter, r *http.Request) {
 	device := chi.URLParam(r, "device")
 

@@ -207,7 +207,14 @@ func NewWSHandlers(manager *WSManager) *WSHandlers {
 	return &WSHandlers{manager: manager}
 }
 
-// StatsWebSocket handles the stats WebSocket endpoint
+// StatsWebSocket godoc
+// @Summary Real-time system stats WebSocket
+// @Description WebSocket endpoint for real-time system statistics. Sends JSON messages containing CPU, memory, disk, temperature, network traffic, and Docker container stats at the specified interval.
+// @Tags WebSocket
+// @Produce json
+// @Param interval query integer false "Update interval in seconds (1-60, default: 2)"
+// @Success 101 {string} string "Switching Protocols - WebSocket connection established"
+// @Router /ws/stats [get]
 func (h *WSHandlers) StatsWebSocket(w http.ResponseWriter, r *http.Request) {
 	// Get interval from query param
 	intervalStr := r.URL.Query().Get("interval")
@@ -262,12 +269,26 @@ func (h *WSHandlers) StatsWebSocket(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
-// MonitoringWebSocket handles the monitoring WebSocket endpoint
+// MonitoringWebSocket godoc
+// @Summary Real-time monitoring WebSocket
+// @Description Alias for /ws/stats - WebSocket endpoint for real-time system monitoring. Sends periodic JSON messages with system, network, and Docker statistics.
+// @Tags WebSocket
+// @Produce json
+// @Param interval query integer false "Update interval in seconds (1-60, default: 2)"
+// @Success 101 {string} string "Switching Protocols - WebSocket connection established"
+// @Router /ws/monitoring [get]
 func (h *WSHandlers) MonitoringWebSocket(w http.ResponseWriter, r *http.Request) {
 	h.StatsWebSocket(w, r)
 }
 
-// GetConnectionCount returns current WebSocket connection count
+// GetConnectionCount godoc
+// @Summary Get WebSocket connection count
+// @Description Returns the number of active WebSocket connections
+// @Tags WebSocket
+// @Produce json
+// @Security BearerAuth
+// @Success 200 {object} map[string]interface{} "active_connections: number of connected clients"
+// @Router /ws/connections [get]
 func (h *WSHandlers) GetConnectionCount(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, map[string]interface{}{
 		"active_connections": h.manager.Count(),

@@ -56,7 +56,14 @@ type CreateProxyHostRequest struct {
 	AdvancedConfig string   `json:"advanced_config"`
 }
 
-// GetStatus returns NPM service status
+// GetStatus godoc
+// @Summary Get NPM service status
+// @Description Returns Nginx Proxy Manager service status including health, authentication state, and proxy host count
+// @Tags NPM
+// @Produce json
+// @Security BearerAuth
+// @Success 200 {object} NPMStatus "NPM status with online, authenticated, version, host_count, base_url"
+// @Router /npm/status [get]
 func (h *NPMHandler) GetStatus(w http.ResponseWriter, r *http.Request) {
 	status := NPMStatus{
 		Online:        h.npmManager.IsHealthy(),
@@ -77,7 +84,16 @@ func (h *NPMHandler) GetStatus(w http.ResponseWriter, r *http.Request) {
 	json.NewEncoder(w).Encode(status)
 }
 
-// GetHosts returns all NPM proxy hosts
+// GetHosts godoc
+// @Summary List NPM proxy hosts
+// @Description Returns all configured Nginx Proxy Manager proxy hosts
+// @Tags NPM
+// @Produce json
+// @Security BearerAuth
+// @Success 200 {object} map[string]interface{} "hosts: array of proxy host configurations"
+// @Failure 500 {object} ErrorResponse "Failed to fetch NPM hosts"
+// @Failure 503 {object} ErrorResponse "NPM authentication not configured"
+// @Router /npm/hosts [get]
 func (h *NPMHandler) GetHosts(w http.ResponseWriter, r *http.Request) {
 	if !h.npmManager.IsAuthenticated() {
 		w.Header().Set("Content-Type", "application/json")
@@ -104,7 +120,19 @@ func (h *NPMHandler) GetHosts(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
-// CreateHost creates a new NPM proxy host
+// CreateHost godoc
+// @Summary Create NPM proxy host
+// @Description Creates a new Nginx Proxy Manager proxy host with domain routing, forwarding, SSL, and caching options
+// @Tags NPM
+// @Accept json
+// @Produce json
+// @Security BearerAuth
+// @Param request body CreateProxyHostRequest true "Proxy host configuration"
+// @Success 201 {object} managers.NPMProxyHostExtended "Created proxy host"
+// @Failure 400 {object} ErrorResponse "Invalid request body"
+// @Failure 500 {object} ErrorResponse "Failed to create proxy host"
+// @Failure 503 {object} ErrorResponse "NPM authentication not configured"
+// @Router /npm/hosts [post]
 func (h *NPMHandler) CreateHost(w http.ResponseWriter, r *http.Request) {
 	if !h.npmManager.IsAuthenticated() {
 		w.Header().Set("Content-Type", "application/json")
@@ -152,7 +180,17 @@ func (h *NPMHandler) CreateHost(w http.ResponseWriter, r *http.Request) {
 	json.NewEncoder(w).Encode(created)
 }
 
-// DeleteHost deletes an NPM proxy host
+// DeleteHost godoc
+// @Summary Delete NPM proxy host
+// @Description Deletes an Nginx Proxy Manager proxy host by ID
+// @Tags NPM
+// @Security BearerAuth
+// @Param id path integer true "Proxy host ID"
+// @Success 204 "Proxy host deleted successfully"
+// @Failure 400 {object} ErrorResponse "Host ID required or invalid"
+// @Failure 500 {object} ErrorResponse "Failed to delete proxy host"
+// @Failure 503 {object} ErrorResponse "NPM authentication not configured"
+// @Router /npm/hosts/{id} [delete]
 func (h *NPMHandler) DeleteHost(w http.ResponseWriter, r *http.Request) {
 	if !h.npmManager.IsAuthenticated() {
 		w.Header().Set("Content-Type", "application/json")

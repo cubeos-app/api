@@ -10,6 +10,7 @@ import (
 	"log"
 	"net/http"
 	"os"
+	"os/exec"
 	"strings"
 	"time"
 
@@ -808,7 +809,6 @@ func (m *NetworkManager) DismissServerModeWarning(ctx context.Context) error {
 }
 
 // GetAPClients returns connected AP clients
-// GetAPClients returns connected AP clients
 func (m *NetworkManager) GetAPClients(ctx context.Context) ([]models.APClient, error) {
 	if m.IsServerMode() {
 		return []models.APClient{}, nil // No AP in server mode
@@ -890,11 +890,6 @@ func (m *NetworkManager) UpdateAPConfig(ctx context.Context, ssid, password stri
 	return fmt.Errorf("AP configuration update not yet implemented")
 }
 
-// =============================================================================
-// Network Modes V2 - Server Mode Warning
-// ADD THIS CODE TO END OF internal/managers/network.go
-// =============================================================================
-
 // IsServerModeWarningDismissed checks if server mode warning has been dismissed
 func (m *NetworkManager) IsServerModeWarningDismissed(ctx context.Context) (bool, error) {
 	if m.db == nil {
@@ -909,4 +904,312 @@ func (m *NetworkManager) IsServerModeWarningDismissed(ctx context.Context) (bool
 		return false, err
 	}
 	return dismissed == 1, nil
+}
+
+// =============================================================================
+// NEW METHODS: DNS Configuration and WiFi Status
+// =============================================================================
+
+// DNSConfig represents DNS configuration
+type DNSConfig struct {
+	PrimaryDNS   string   `json:"primary_dns"`
+	SecondaryDNS string   `json:"secondary_dns,omitempty"`
+	SearchDomain string   `json:"search_domain,omitempty"`
+	DNSServers   []string `json:"dns_servers,omitempty"`
+}
+
+// GetDNSConfig returns the current DNS configuration
+func (m *NetworkManager) GetDNSConfig(ctx context.Context) (*DNSConfig, error) {
+	config := &DNSConfig{
+		PrimaryDNS:   "10.42.24.1", // Pi-hole default
+		SecondaryDNS: "",
+		DNSServers:   []string{"10.42.24.1"},
+	}
+
+	// Try to read from /etc/resolv.conf
+	resolvPaths := []string{"/host/etc/resolv.conf", "/etc/resolv.conf"}
+	for _, path := range resolvPaths {
+		data, err := os.ReadFile(path)
+		if err != nil {
+			continue
+		}
+
+		lines := strings.Split(string(data), "\n")
+		var servers []string
+		for _, line := range lines {
+			line = strings.TrimSpace(line)
+			if strings.HasPrefix(line, "nameserver") {
+				parts := strings.Fields(line)
+				if len(parts) >= 2 {
+					servers = append(servers, parts[1])
+				}
+			} else if strings.HasPrefix(line, "search") {
+				parts := strings.Fields(line)
+				if len(parts) >= 2 {
+					config.SearchDomain = parts[1]
+				}
+			}
+		}
+
+		if len(servers) > 0 {
+			config.PrimaryDNS = servers[0]
+			config.DNSServers = servers
+			if len(servers) > 1 {
+				config.SecondaryDNS = servers[1]
+			}
+		}
+		break
+	}
+
+	return config, nil
+}
+
+// SetDNSConfig sets the DNS configuration
+func (m *NetworkManager) SetDNSConfig(ctx context.Context, cfg *DNSConfig) error {
+	if cfg == nil {
+		return fmt.Errorf("DNS config cannot be nil")
+	}
+
+	if cfg.PrimaryDNS == "" {
+		return fmt.Errorf("primary DNS server is required")
+	}
+
+	// Build resolv.conf content
+	var lines []string
+	if cfg.SearchDomain != "" {
+		lines = append(lines, fmt.Sprintf("search %s", cfg.SearchDomain))
+	}
+	lines = append(lines, fmt.Sprintf("nameserver %s", cfg.PrimaryDNS))
+	if cfg.SecondaryDNS != "" {
+		lines = append(lines, fmt.Sprintf("nameserver %s", cfg.SecondaryDNS))
+	}
+
+	content := strings.Join(lines, "\n") + "\n"
+
+	// Try to write to /etc/resolv.conf
+	resolvPaths := []string{"/host/etc/resolv.conf", "/etc/resolv.conf"}
+	var lastErr error
+	for _, path := range resolvPaths {
+		if err := os.WriteFile(path, []byte(content), 0644); err == nil {
+			return nil
+		} else {
+			lastErr = err
+		}
+	}
+
+	// If direct write fails, try using resolvconf command
+	cmd := exec.CommandContext(ctx, "resolvconf", "-a", "eth0")
+	cmd.Stdin = strings.NewReader(content)
+	if err := cmd.Run(); err == nil {
+		return nil
+	}
+
+	return fmt.Errorf("failed to set DNS config: %w", lastErr)
+}
+
+// WiFiStatus represents the current WiFi connection status
+type WiFiStatus struct {
+	Connected bool   `json:"connected"`
+	SSID      string `json:"ssid,omitempty"`
+	BSSID     string `json:"bssid,omitempty"`
+	Signal    int    `json:"signal,omitempty"`
+	Frequency int    `json:"frequency,omitempty"`
+	Security  string `json:"security,omitempty"`
+	IPAddress string `json:"ip_address,omitempty"`
+	Interface string `json:"interface"`
+}
+
+// GetWiFiStatus returns the current WiFi connection status
+func (m *NetworkManager) GetWiFiStatus(ctx context.Context) (*WiFiStatus, error) {
+	status := &WiFiStatus{
+		Connected: false,
+		Interface: m.wifiClientInterface,
+	}
+
+	// Determine which interface to check
+	iface := m.wifiClientInterface
+	if m.currentMode == NetworkModeServerWiFi {
+		iface = m.apInterface
+		status.Interface = m.apInterface
+	}
+
+	// Try to get interface info from HAL
+	ifaceInfo, err := m.hal.GetInterface(ctx, iface)
+	if err != nil {
+		return status, nil
+	}
+
+	// Check if connected (has IP address)
+	if len(ifaceInfo.IPv4Addresses) > 0 {
+		status.Connected = true
+		status.IPAddress = ifaceInfo.IPv4Addresses[0]
+	}
+
+	// Try to get SSID using iwgetid or nmcli
+	cmd := exec.CommandContext(ctx, "iwgetid", iface, "-r")
+	if output, err := cmd.Output(); err == nil {
+		ssid := strings.TrimSpace(string(output))
+		if ssid != "" {
+			status.Connected = true
+			status.SSID = ssid
+		}
+	}
+
+	// Try to get signal strength using iwconfig
+	cmd = exec.CommandContext(ctx, "iwconfig", iface)
+	if output, err := cmd.Output(); err == nil {
+		outputStr := string(output)
+
+		// Parse signal level
+		if idx := strings.Index(outputStr, "Signal level="); idx >= 0 {
+			// Extract signal value (e.g., "-50 dBm" or "50/100")
+			rest := outputStr[idx+len("Signal level="):]
+			if spaceIdx := strings.IndexAny(rest, " \t\n"); spaceIdx > 0 {
+				signalStr := rest[:spaceIdx]
+				// Handle dBm format
+				signalStr = strings.TrimSuffix(signalStr, "dBm")
+				var signal int
+				if _, err := fmt.Sscanf(signalStr, "%d", &signal); err == nil {
+					status.Signal = signal
+				}
+			}
+		}
+
+		// Parse frequency
+		if idx := strings.Index(outputStr, "Frequency:"); idx >= 0 {
+			rest := outputStr[idx+len("Frequency:"):]
+			var freq float64
+			if _, err := fmt.Sscanf(rest, "%f", &freq); err == nil {
+				status.Frequency = int(freq * 1000) // Convert GHz to MHz
+			}
+		}
+	}
+
+	return status, nil
+}
+
+// SavedNetwork represents a saved WiFi network
+type SavedNetwork struct {
+	SSID     string `json:"ssid"`
+	Security string `json:"security,omitempty"`
+	AutoJoin bool   `json:"auto_join"`
+}
+
+// GetSavedNetworks returns a list of saved WiFi networks
+func (m *NetworkManager) GetSavedNetworks(ctx context.Context) ([]SavedNetwork, error) {
+	var networks []SavedNetwork
+
+	// Try NetworkManager first (nmcli)
+	cmd := exec.CommandContext(ctx, "nmcli", "-t", "-f", "NAME,TYPE,AUTOCONNECT", "connection", "show")
+	if output, err := cmd.Output(); err == nil {
+		lines := strings.Split(strings.TrimSpace(string(output)), "\n")
+		for _, line := range lines {
+			parts := strings.Split(line, ":")
+			if len(parts) >= 3 && parts[1] == "802-11-wireless" {
+				autoJoin := parts[2] == "yes"
+				networks = append(networks, SavedNetwork{
+					SSID:     parts[0],
+					AutoJoin: autoJoin,
+				})
+			}
+		}
+		return networks, nil
+	}
+
+	// Try wpa_supplicant config file
+	wpaConfPaths := []string{
+		"/host/etc/wpa_supplicant/wpa_supplicant.conf",
+		"/etc/wpa_supplicant/wpa_supplicant.conf",
+		"/host/etc/wpa_supplicant/wpa_supplicant-wlan0.conf",
+		"/etc/wpa_supplicant/wpa_supplicant-wlan0.conf",
+	}
+
+	for _, path := range wpaConfPaths {
+		data, err := os.ReadFile(path)
+		if err != nil {
+			continue
+		}
+
+		// Simple parsing of wpa_supplicant.conf
+		content := string(data)
+		networkBlocks := strings.Split(content, "network={")
+		for i := 1; i < len(networkBlocks); i++ {
+			block := networkBlocks[i]
+			endIdx := strings.Index(block, "}")
+			if endIdx < 0 {
+				continue
+			}
+			block = block[:endIdx]
+
+			var ssid string
+			lines := strings.Split(block, "\n")
+			for _, line := range lines {
+				line = strings.TrimSpace(line)
+				if strings.HasPrefix(line, "ssid=") {
+					ssid = strings.Trim(line[5:], "\"")
+					break
+				}
+			}
+
+			if ssid != "" {
+				networks = append(networks, SavedNetwork{
+					SSID:     ssid,
+					AutoJoin: true, // wpa_supplicant networks auto-join by default
+				})
+			}
+		}
+
+		if len(networks) > 0 {
+			break
+		}
+	}
+
+	return networks, nil
+}
+
+// ForgetNetwork removes a saved WiFi network
+func (m *NetworkManager) ForgetNetwork(ctx context.Context, ssid string) error {
+	if ssid == "" {
+		return fmt.Errorf("SSID cannot be empty")
+	}
+
+	// Try NetworkManager first (nmcli)
+	cmd := exec.CommandContext(ctx, "nmcli", "connection", "delete", ssid)
+	if err := cmd.Run(); err == nil {
+		return nil
+	}
+
+	// Try wpa_cli
+	cmd = exec.CommandContext(ctx, "wpa_cli", "-i", m.wifiClientInterface, "list_networks")
+	output, err := cmd.Output()
+	if err != nil {
+		return fmt.Errorf("failed to list networks: %w", err)
+	}
+
+	// Parse network list to find the network ID
+	lines := strings.Split(string(output), "\n")
+	for _, line := range lines {
+		fields := strings.Fields(line)
+		if len(fields) >= 2 {
+			// Skip header line
+			if fields[0] == "network" {
+				continue
+			}
+			// Check if SSID matches
+			if len(fields) >= 2 && fields[1] == ssid {
+				networkID := fields[0]
+				// Remove the network
+				cmd = exec.CommandContext(ctx, "wpa_cli", "-i", m.wifiClientInterface, "remove_network", networkID)
+				if err := cmd.Run(); err != nil {
+					return fmt.Errorf("failed to remove network: %w", err)
+				}
+				// Save configuration
+				cmd = exec.CommandContext(ctx, "wpa_cli", "-i", m.wifiClientInterface, "save_config")
+				cmd.Run() // Ignore error
+				return nil
+			}
+		}
+	}
+
+	return fmt.Errorf("network '%s' not found in saved networks", ssid)
 }

@@ -816,3 +816,215 @@ func formatByteSize(bytes int64) string {
 	}
 	return fmt.Sprintf("%.1f %cB", float64(bytes)/float64(div), "KMGTPE"[exp])
 }
+
+// =============================================================================
+// NEW METHODS: Hostname and Timezone Management
+// =============================================================================
+
+// SetHostname sets the system hostname
+func (m *SystemManager) SetHostname(hostname string) error {
+	if hostname == "" {
+		return fmt.Errorf("hostname cannot be empty")
+	}
+
+	// Validate hostname (basic check)
+	if len(hostname) > 253 {
+		return fmt.Errorf("hostname too long (max 253 characters)")
+	}
+
+	// Use hostnamectl if available (systemd)
+	cmd := exec.Command("hostnamectl", "set-hostname", hostname)
+	if err := cmd.Run(); err != nil {
+		// Fall back to writing directly to /etc/hostname
+		hostPaths := []string{"/host/etc/hostname", "/etc/hostname"}
+		var lastErr error
+		for _, path := range hostPaths {
+			if err := os.WriteFile(path, []byte(hostname+"\n"), 0644); err == nil {
+				return nil
+			} else {
+				lastErr = err
+			}
+		}
+		return fmt.Errorf("failed to set hostname: %w", lastErr)
+	}
+
+	return nil
+}
+
+// GetTimezone returns the current system timezone
+func (m *SystemManager) GetTimezone() string {
+	// Try timedatectl first (systemd)
+	cmd := exec.Command("timedatectl", "show", "--property=Timezone", "--value")
+	if output, err := cmd.Output(); err == nil {
+		tz := strings.TrimSpace(string(output))
+		if tz != "" {
+			return tz
+		}
+	}
+
+	// Fall back to reading /etc/timezone
+	tzPaths := []string{"/host/etc/timezone", "/etc/timezone"}
+	for _, path := range tzPaths {
+		if data, err := os.ReadFile(path); err == nil {
+			tz := strings.TrimSpace(string(data))
+			if tz != "" {
+				return tz
+			}
+		}
+	}
+
+	// Try reading the localtime symlink
+	localtimePaths := []string{"/host/etc/localtime", "/etc/localtime"}
+	for _, path := range localtimePaths {
+		if target, err := os.Readlink(path); err == nil {
+			// Extract timezone from path like /usr/share/zoneinfo/America/New_York
+			if idx := strings.Index(target, "/zoneinfo/"); idx >= 0 {
+				return target[idx+len("/zoneinfo/"):]
+			}
+		}
+	}
+
+	return "UTC"
+}
+
+// SetTimezone sets the system timezone
+func (m *SystemManager) SetTimezone(timezone string) error {
+	if timezone == "" {
+		return fmt.Errorf("timezone cannot be empty")
+	}
+
+	// Validate timezone exists
+	zonePaths := []string{
+		filepath.Join("/usr/share/zoneinfo", timezone),
+		filepath.Join("/host/usr/share/zoneinfo", timezone),
+	}
+
+	var zonePath string
+	for _, p := range zonePaths {
+		if _, err := os.Stat(p); err == nil {
+			zonePath = p
+			break
+		}
+	}
+
+	if zonePath == "" {
+		return fmt.Errorf("invalid timezone: %s", timezone)
+	}
+
+	// Use timedatectl if available (systemd)
+	cmd := exec.Command("timedatectl", "set-timezone", timezone)
+	if err := cmd.Run(); err == nil {
+		return nil
+	}
+
+	// Fall back to manual method
+	// Write to /etc/timezone
+	tzPaths := []string{"/host/etc/timezone", "/etc/timezone"}
+	for _, path := range tzPaths {
+		if err := os.WriteFile(path, []byte(timezone+"\n"), 0644); err == nil {
+			break
+		}
+	}
+
+	// Update /etc/localtime symlink
+	localTimePaths := []string{"/host/etc/localtime", "/etc/localtime"}
+	for _, path := range localTimePaths {
+		os.Remove(path)
+		// Use the appropriate zoneinfo path
+		zoneFile := filepath.Join("/usr/share/zoneinfo", timezone)
+		if err := os.Symlink(zoneFile, path); err == nil {
+			return nil
+		}
+	}
+
+	return nil
+}
+
+// GetTimezones returns a list of available timezones
+func (m *SystemManager) GetTimezones() []string {
+	var timezones []string
+
+	// Try to read all timezones from the system
+	zoneinfoDir := "/usr/share/zoneinfo"
+	if _, err := os.Stat(zoneinfoDir); os.IsNotExist(err) {
+		zoneinfoDir = "/host/usr/share/zoneinfo"
+	}
+
+	if _, err := os.Stat(zoneinfoDir); err == nil {
+		_ = filepath.Walk(zoneinfoDir, func(path string, info os.FileInfo, err error) error {
+			if err != nil {
+				return nil
+			}
+
+			// Skip directories we don't want
+			if info.IsDir() {
+				name := info.Name()
+				if name == "posix" || name == "right" || name == "Etc" {
+					return filepath.SkipDir
+				}
+				return nil
+			}
+
+			// Get relative path from zoneinfo
+			relPath, err := filepath.Rel(zoneinfoDir, path)
+			if err != nil {
+				return nil
+			}
+
+			// Skip files that aren't timezones
+			if strings.Contains(relPath, ".") ||
+				relPath == "localtime" ||
+				relPath == "posixrules" ||
+				relPath == "leap-seconds.list" ||
+				relPath == "leapseconds" ||
+				relPath == "tzdata.zi" ||
+				relPath == "zone.tab" ||
+				relPath == "zone1970.tab" ||
+				relPath == "iso3166.tab" {
+				return nil
+			}
+
+			// Validate it looks like a timezone (contains a /)
+			if strings.Contains(relPath, "/") {
+				timezones = append(timezones, relPath)
+			}
+
+			return nil
+		})
+	}
+
+	// If we found some timezones, return them
+	if len(timezones) > 0 {
+		return timezones
+	}
+
+	// Fall back to common timezones
+	return []string{
+		"UTC",
+		"America/New_York",
+		"America/Chicago",
+		"America/Denver",
+		"America/Los_Angeles",
+		"America/Toronto",
+		"America/Vancouver",
+		"America/Sao_Paulo",
+		"Europe/London",
+		"Europe/Paris",
+		"Europe/Berlin",
+		"Europe/Amsterdam",
+		"Europe/Rome",
+		"Europe/Madrid",
+		"Europe/Moscow",
+		"Asia/Tokyo",
+		"Asia/Shanghai",
+		"Asia/Hong_Kong",
+		"Asia/Singapore",
+		"Asia/Dubai",
+		"Asia/Kolkata",
+		"Asia/Seoul",
+		"Australia/Sydney",
+		"Australia/Melbourne",
+		"Pacific/Auckland",
+		"Pacific/Honolulu",
+	}
+}

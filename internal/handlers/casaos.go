@@ -59,8 +59,14 @@ type CasaOSStoreInfo struct {
 	Compatible  bool   `json:"compatible"`
 }
 
-// GetStores returns CasaOS-compatible store information
-// GET /api/v1/casaos/stores
+// GetStores godoc
+// @Summary List CasaOS-compatible stores
+// @Description Returns all registered app stores plus well-known CasaOS community stores (Official, Big Bear, LinuxServer.io)
+// @Tags CasaOS
+// @Produce json
+// @Security BearerAuth
+// @Success 200 {object} map[string]interface{} "stores: array of CasaOSStoreInfo, count, info (format docs)"
+// @Router /casaos/stores [get]
 func (h *CasaOSHandler) GetStores(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
 
@@ -202,8 +208,17 @@ type EnvVarPreview struct {
 	Description string `json:"description,omitempty"`
 }
 
-// PreviewManifest parses and previews a CasaOS manifest
-// POST /api/v1/casaos/preview
+// PreviewManifest godoc
+// @Summary Preview a CasaOS manifest
+// @Description Parses and validates a CasaOS docker-compose manifest without importing. Returns detailed preview with services, ports, volumes, env vars, and ARM64 compatibility check.
+// @Tags CasaOS
+// @Accept json
+// @Produce json
+// @Security BearerAuth
+// @Param request body PreviewRequest true "Preview request with manifest content or URL"
+// @Success 200 {object} PreviewResponse "Parsed manifest preview with validation results"
+// @Failure 400 {object} ErrorResponse "Invalid request, failed to fetch URL, or missing manifest"
+// @Router /casaos/preview [post]
 func (h *CasaOSHandler) PreviewManifest(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
 
@@ -410,8 +425,19 @@ type ImportResponse struct {
 	Error       string   `json:"error,omitempty"`
 }
 
-// ImportApp imports and optionally starts a CasaOS app
-// POST /api/v1/casaos/import
+// ImportApp godoc
+// @Summary Import a CasaOS app
+// @Description Imports a CasaOS docker-compose manifest, creates app directory structure, and optionally starts the app. Performs variable substitution for PUID, PGID, TZ, and data paths.
+// @Tags CasaOS
+// @Accept json
+// @Produce json
+// @Security BearerAuth
+// @Param request body ImportRequest true "Import request with manifest, app name, and options"
+// @Success 200 {object} ImportResponse "Import result with app details, paths, and status"
+// @Failure 400 {object} ImportResponse "Invalid request, missing fields, invalid manifest, or invalid app name"
+// @Failure 409 {object} ImportResponse "App already exists"
+// @Failure 500 {object} ImportResponse "Failed to create app files"
+// @Router /casaos/import [post]
 func (h *CasaOSHandler) ImportApp(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
 

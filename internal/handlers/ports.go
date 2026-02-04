@@ -36,8 +36,15 @@ func (h *PortsHandler) Routes() chi.Router {
 	return r
 }
 
-// ListPorts returns all port allocations.
-// GET /api/v1/ports
+// ListPorts godoc
+// @Summary List all port allocations
+// @Description Returns all port allocations with statistics. Ports are allocated in the 6xxx range per CubeOS port scheme.
+// @Tags Ports
+// @Produce json
+// @Security BearerAuth
+// @Success 200 {object} map[string]interface{} "ports: array of allocations, stats: allocation statistics"
+// @Failure 500 {object} ErrorResponse "Failed to get port allocations"
+// @Router /ports [get]
 func (h *PortsHandler) ListPorts(w http.ResponseWriter, r *http.Request) {
 	allocations, err := h.portManager.GetAllAllocations()
 	if err != nil {
@@ -63,8 +70,18 @@ type AddPortRequest struct {
 	IsPrimary   bool   `json:"is_primary"`
 }
 
-// AddPort allocates a new port.
-// POST /api/v1/ports
+// AddPort godoc
+// @Summary Allocate a port
+// @Description Allocates a port for an app. If port is 0 or omitted, auto-allocates from the user range (6100-6999). Reserved system ports cannot be allocated.
+// @Tags Ports
+// @Accept json
+// @Produce json
+// @Security BearerAuth
+// @Param request body AddPortRequest true "Port allocation request"
+// @Success 201 {object} map[string]interface{} "success: true, message, port: allocated port number"
+// @Failure 400 {object} ErrorResponse "Invalid request, missing app_id, invalid protocol, or reserved port"
+// @Failure 409 {object} ErrorResponse "Port already allocated"
+// @Router /ports [post]
 func (h *PortsHandler) AddPort(w http.ResponseWriter, r *http.Request) {
 	var req AddPortRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
@@ -119,8 +136,19 @@ func (h *PortsHandler) AddPort(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
-// DeletePort removes a port allocation.
-// DELETE /api/v1/ports/{port}?protocol=tcp
+// DeletePort godoc
+// @Summary Deallocate a port
+// @Description Removes a port allocation. Protocol defaults to TCP if not specified.
+// @Tags Ports
+// @Produce json
+// @Security BearerAuth
+// @Param port path integer true "Port number"
+// @Param protocol query string false "Protocol (tcp or udp, defaults to tcp)"
+// @Success 200 {object} map[string]interface{} "success: true, message"
+// @Failure 400 {object} ErrorResponse "Invalid port number"
+// @Failure 404 {object} ErrorResponse "Port not allocated"
+// @Failure 500 {object} ErrorResponse "Failed to check or deallocate port"
+// @Router /ports/{port} [delete]
 func (h *PortsHandler) DeletePort(w http.ResponseWriter, r *http.Request) {
 	portStr := chi.URLParam(r, "port")
 	port, err := strconv.Atoi(portStr)
@@ -158,8 +186,15 @@ func (h *PortsHandler) DeletePort(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
-// GetPortStats returns port allocation statistics.
-// GET /api/v1/ports/stats
+// GetPortStats godoc
+// @Summary Get port allocation statistics
+// @Description Returns statistics about port allocations including total allocated, available, and per-range breakdowns
+// @Tags Ports
+// @Produce json
+// @Security BearerAuth
+// @Success 200 {object} map[string]interface{} "Port allocation statistics"
+// @Failure 500 {object} ErrorResponse "Failed to get port stats"
+// @Router /ports/stats [get]
 func (h *PortsHandler) GetPortStats(w http.ResponseWriter, r *http.Request) {
 	stats, err := h.portManager.GetPortStats()
 	if err != nil {
@@ -170,8 +205,14 @@ func (h *PortsHandler) GetPortStats(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, stats)
 }
 
-// GetReservedPorts returns the list of reserved system ports.
-// GET /api/v1/ports/reserved
+// GetReservedPorts godoc
+// @Summary Get reserved system ports
+// @Description Returns the list of reserved system ports and CubeOS port range definitions (system: 6000-6009, platform: 6010-6019, network: 6020-6029, ai: 6030-6039, user: 6100-6999)
+// @Tags Ports
+// @Produce json
+// @Security BearerAuth
+// @Success 200 {object} map[string]interface{} "reserved_ports: array with port/description, ranges: port range definitions"
+// @Router /ports/reserved [get]
 func (h *PortsHandler) GetReservedPorts(w http.ResponseWriter, r *http.Request) {
 	reserved := make([]map[string]interface{}, 0)
 	for port, desc := range managers.ReservedSystemPorts {

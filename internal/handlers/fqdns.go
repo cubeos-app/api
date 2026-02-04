@@ -82,7 +82,15 @@ func (h *FQDNsHandler) Routes() chi.Router {
 	return r
 }
 
-// ListFQDNs returns all FQDNs
+// ListFQDNs godoc
+// @Summary List all FQDNs
+// @Description Returns all configured FQDNs with their associated apps, backend ports, and SSL status. Includes stats for total, with_ssl, and without_ssl counts.
+// @Tags FQDNs
+// @Produce json
+// @Security BearerAuth
+// @Success 200 {object} map[string]interface{} "fqdns: array of FQDN objects, stats: count summaries"
+// @Failure 500 {object} ErrorResponse "Failed to query FQDNs"
+// @Router /fqdns [get]
 func (h *FQDNsHandler) ListFQDNs(w http.ResponseWriter, r *http.Request) {
 	query := `
 		SELECT f.id, f.app_id, COALESCE(a.name, '') as app_name,
@@ -129,7 +137,17 @@ func (h *FQDNsHandler) ListFQDNs(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
-// GetFQDN returns a single FQDN by its full domain name
+// GetFQDN godoc
+// @Summary Get an FQDN
+// @Description Returns a single FQDN by its full domain name or subdomain
+// @Tags FQDNs
+// @Produce json
+// @Security BearerAuth
+// @Param fqdn path string true "Full FQDN (e.g., myapp.cubeos.cube) or subdomain (e.g., myapp)"
+// @Success 200 {object} FQDN "FQDN details"
+// @Failure 404 {object} ErrorResponse "FQDN not found"
+// @Failure 500 {object} ErrorResponse "Failed to query FQDN"
+// @Router /fqdns/{fqdn} [get]
 func (h *FQDNsHandler) GetFQDN(w http.ResponseWriter, r *http.Request) {
 	fqdnParam := chi.URLParam(r, "fqdn")
 
@@ -158,7 +176,19 @@ func (h *FQDNsHandler) GetFQDN(w http.ResponseWriter, r *http.Request) {
 	fqdnRespondJSON(w, http.StatusOK, f)
 }
 
-// CreateFQDN creates a new FQDN entry
+// CreateFQDN godoc
+// @Summary Create an FQDN
+// @Description Creates a new FQDN entry with DNS record (Pi-hole) and reverse proxy (NPM). Subdomain is automatically suffixed with .cubeos.cube domain.
+// @Tags FQDNs
+// @Accept json
+// @Produce json
+// @Security BearerAuth
+// @Param request body CreateFQDNRequest true "FQDN creation request"
+// @Success 201 {object} FQDN "Created FQDN"
+// @Failure 400 {object} ErrorResponse "Invalid request, missing subdomain, invalid port, or app not found"
+// @Failure 409 {object} ErrorResponse "FQDN already exists"
+// @Failure 500 {object} ErrorResponse "Failed to create FQDN"
+// @Router /fqdns [post]
 func (h *FQDNsHandler) CreateFQDN(w http.ResponseWriter, r *http.Request) {
 	var req CreateFQDNRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
@@ -253,7 +283,20 @@ func (h *FQDNsHandler) CreateFQDN(w http.ResponseWriter, r *http.Request) {
 	fqdnRespondJSON(w, http.StatusCreated, fqdn)
 }
 
-// UpdateFQDN updates an existing FQDN
+// UpdateFQDN godoc
+// @Summary Update an FQDN
+// @Description Updates an existing FQDN's backend port and/or SSL status
+// @Tags FQDNs
+// @Accept json
+// @Produce json
+// @Security BearerAuth
+// @Param fqdn path string true "Full FQDN or subdomain"
+// @Param request body UpdateFQDNRequest true "FQDN update request (partial update supported)"
+// @Success 200 {object} FQDN "Updated FQDN"
+// @Failure 400 {object} ErrorResponse "Invalid JSON or invalid port"
+// @Failure 404 {object} ErrorResponse "FQDN not found"
+// @Failure 500 {object} ErrorResponse "Failed to update FQDN"
+// @Router /fqdns/{fqdn} [put]
 func (h *FQDNsHandler) UpdateFQDN(w http.ResponseWriter, r *http.Request) {
 	fqdnParam := chi.URLParam(r, "fqdn")
 
@@ -307,7 +350,17 @@ func (h *FQDNsHandler) UpdateFQDN(w http.ResponseWriter, r *http.Request) {
 	h.GetFQDN(w, r)
 }
 
-// DeleteFQDN deletes an FQDN
+// DeleteFQDN godoc
+// @Summary Delete an FQDN
+// @Description Deletes an FQDN and removes associated DNS record from Pi-hole
+// @Tags FQDNs
+// @Produce json
+// @Security BearerAuth
+// @Param fqdn path string true "Full FQDN or subdomain"
+// @Success 200 {object} map[string]interface{} "message: deletion confirmation, fqdn: deleted domain"
+// @Failure 404 {object} ErrorResponse "FQDN not found"
+// @Failure 500 {object} ErrorResponse "Failed to delete FQDN"
+// @Router /fqdns/{fqdn} [delete]
 func (h *FQDNsHandler) DeleteFQDN(w http.ResponseWriter, r *http.Request) {
 	fqdnParam := chi.URLParam(r, "fqdn")
 

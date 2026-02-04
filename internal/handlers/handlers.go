@@ -58,6 +58,13 @@ func writeError(w http.ResponseWriter, status int, message string) {
 // Health
 // =============================================================================
 
+// Health godoc
+// @Summary Health check
+// @Description Returns API health status, version, and uptime
+// @Tags Health
+// @Produce json
+// @Success 200 {object} models.HealthResponse "Health status"
+// @Router /health [get]
 func (h *Handlers) Health(w http.ResponseWriter, r *http.Request) {
 	uptime := time.Since(h.startTime).Seconds()
 	writeJSON(w, http.StatusOK, models.HealthResponse{
@@ -72,6 +79,18 @@ func (h *Handlers) Health(w http.ResponseWriter, r *http.Request) {
 // Authentication
 // =============================================================================
 
+// Login godoc
+// @Summary User login
+// @Description Authenticate user and return JWT access token
+// @Tags Auth
+// @Accept json
+// @Produce json
+// @Param request body models.LoginRequest true "Login credentials"
+// @Success 200 {object} models.LoginResponse "Login successful"
+// @Failure 400 {object} ErrorResponse "Invalid request body"
+// @Failure 401 {object} ErrorResponse "Invalid credentials"
+// @Failure 500 {object} ErrorResponse "Server error"
+// @Router /auth/login [post]
 func (h *Handlers) Login(w http.ResponseWriter, r *http.Request) {
 	var req models.LoginRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
@@ -118,6 +137,31 @@ func (h *Handlers) Login(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
+// Logout godoc
+// @Summary User logout
+// @Description Logout current user (client should discard token)
+// @Tags Auth
+// @Produce json
+// @Security BearerAuth
+// @Success 200 {object} models.SuccessResponse "Logout successful"
+// @Router /auth/logout [post]
+func (h *Handlers) Logout(w http.ResponseWriter, r *http.Request) {
+	writeJSON(w, http.StatusOK, models.SuccessResponse{
+		Status:  "success",
+		Message: "Logged out successfully",
+	})
+}
+
+// RefreshToken godoc
+// @Summary Refresh JWT token
+// @Description Generate a new JWT token using existing valid token
+// @Tags Auth
+// @Produce json
+// @Security BearerAuth
+// @Success 200 {object} map[string]interface{} "New token"
+// @Failure 401 {object} ErrorResponse "Invalid token"
+// @Failure 500 {object} ErrorResponse "Failed to generate token"
+// @Router /auth/refresh [post]
 func (h *Handlers) RefreshToken(w http.ResponseWriter, r *http.Request) {
 	claims := middleware.GetUserFromContext(r.Context())
 	if claims == nil {
@@ -138,6 +182,15 @@ func (h *Handlers) RefreshToken(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
+// GetMe godoc
+// @Summary Get current user
+// @Description Returns current authenticated user information
+// @Tags Auth
+// @Produce json
+// @Security BearerAuth
+// @Success 200 {object} map[string]interface{} "User info with username and role"
+// @Failure 401 {object} ErrorResponse "Invalid token"
+// @Router /auth/me [get]
 func (h *Handlers) GetMe(w http.ResponseWriter, r *http.Request) {
 	claims := middleware.GetUserFromContext(r.Context())
 	if claims == nil {
@@ -151,6 +204,19 @@ func (h *Handlers) GetMe(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
+// ChangePassword godoc
+// @Summary Change password
+// @Description Change password for current authenticated user
+// @Tags Auth
+// @Accept json
+// @Produce json
+// @Security BearerAuth
+// @Param request body models.ChangePasswordRequest true "Current and new password"
+// @Success 200 {object} models.SuccessResponse "Password changed successfully"
+// @Failure 400 {object} ErrorResponse "Invalid request body"
+// @Failure 401 {object} ErrorResponse "Invalid token or current password incorrect"
+// @Failure 500 {object} ErrorResponse "Server error"
+// @Router /auth/password [post]
 func (h *Handlers) ChangePassword(w http.ResponseWriter, r *http.Request) {
 	claims := middleware.GetUserFromContext(r.Context())
 	if claims == nil {
@@ -164,7 +230,6 @@ func (h *Handlers) ChangePassword(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Get current password hash
 	var currentHash string
 	err := h.db.Get(&currentHash, "SELECT password_hash FROM users WHERE username = ?", claims.Username)
 	if err != nil {
@@ -172,20 +237,17 @@ func (h *Handlers) ChangePassword(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Verify current password
 	if err := bcrypt.CompareHashAndPassword([]byte(currentHash), []byte(req.CurrentPassword)); err != nil {
 		writeError(w, http.StatusUnauthorized, "Current password is incorrect")
 		return
 	}
 
-	// Hash new password
 	newHash, err := bcrypt.GenerateFromPassword([]byte(req.NewPassword), bcrypt.DefaultCost)
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, "Failed to hash password")
 		return
 	}
 
-	// Update password
 	_, err = h.db.Exec("UPDATE users SET password_hash = ? WHERE username = ?", string(newHash), claims.Username)
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, "Failed to update password")
@@ -202,112 +264,195 @@ func (h *Handlers) ChangePassword(w http.ResponseWriter, r *http.Request) {
 // System
 // =============================================================================
 
+// GetSystemInfo godoc
+// @Summary Get system information
+// @Description Returns detailed system information including hardware, OS, and memory
+// @Tags System
+// @Produce json
+// @Security BearerAuth
+// @Success 200 {object} models.SystemInfo "System information"
+// @Router /system/info [get]
 func (h *Handlers) GetSystemInfo(w http.ResponseWriter, r *http.Request) {
 	info := h.system.GetSystemInfo()
 	writeJSON(w, http.StatusOK, info)
 }
 
+// GetSystemStats godoc
+// @Summary Get system statistics
+// @Description Returns current system statistics including CPU, memory, and disk usage
+// @Tags System
+// @Produce json
+// @Security BearerAuth
+// @Success 200 {object} models.SystemStats "System statistics"
+// @Router /system/stats [get]
 func (h *Handlers) GetSystemStats(w http.ResponseWriter, r *http.Request) {
 	stats := h.system.GetSystemStats()
 	writeJSON(w, http.StatusOK, stats)
 }
 
+// GetTemperature godoc
+// @Summary Get CPU temperature
+// @Description Returns current CPU/SoC temperature
+// @Tags System
+// @Produce json
+// @Security BearerAuth
+// @Success 200 {object} models.TemperatureInfo "Temperature information"
+// @Router /system/temperature [get]
 func (h *Handlers) GetTemperature(w http.ResponseWriter, r *http.Request) {
 	temp := h.system.GetTemperature()
 	writeJSON(w, http.StatusOK, temp)
 }
 
+// Reboot godoc
+// @Summary Reboot system
+// @Description Initiates system reboot with optional delay
+// @Tags System
+// @Produce json
+// @Security BearerAuth
+// @Param delay query int false "Delay in seconds before reboot" default(0)
+// @Success 200 {object} models.SuccessResponse "Reboot scheduled"
+// @Failure 500 {object} ErrorResponse "Failed to schedule reboot"
+// @Router /system/reboot [post]
 func (h *Handlers) Reboot(w http.ResponseWriter, r *http.Request) {
 	delay, _ := strconv.Atoi(r.URL.Query().Get("delay"))
-
 	result, err := h.system.Reboot(delay)
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, err.Error())
 		return
 	}
-
 	writeJSON(w, http.StatusOK, result)
 }
 
+// Shutdown godoc
+// @Summary Shutdown system
+// @Description Initiates system shutdown with optional delay
+// @Tags System
+// @Produce json
+// @Security BearerAuth
+// @Param delay query int false "Delay in seconds before shutdown" default(0)
+// @Success 200 {object} models.SuccessResponse "Shutdown scheduled"
+// @Failure 500 {object} ErrorResponse "Failed to schedule shutdown"
+// @Router /system/shutdown [post]
 func (h *Handlers) Shutdown(w http.ResponseWriter, r *http.Request) {
 	delay, _ := strconv.Atoi(r.URL.Query().Get("delay"))
-
 	result, err := h.system.Shutdown(delay)
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, err.Error())
 		return
 	}
-
 	writeJSON(w, http.StatusOK, result)
 }
 
-func (h *Handlers) CancelShutdown(w http.ResponseWriter, r *http.Request) {
-	result, _ := h.system.CancelShutdown()
-	writeJSON(w, http.StatusOK, result)
-}
-
-func (h *Handlers) GetUptime(w http.ResponseWriter, r *http.Request) {
-	secs, human := h.system.GetUptime()
-	writeJSON(w, http.StatusOK, map[string]interface{}{
-		"uptime_seconds": secs,
-		"uptime_human":   human,
-		"boot_time":      h.system.GetBootTime(),
-	})
-}
-
+// GetHostname godoc
+// @Summary Get hostname
+// @Description Returns the system hostname
+// @Tags System
+// @Produce json
+// @Security BearerAuth
+// @Success 200 {object} map[string]string "Hostname"
+// @Router /system/hostname [get]
 func (h *Handlers) GetHostname(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, map[string]string{
 		"hostname": h.system.GetHostname(),
 	})
 }
 
-func (h *Handlers) GetDateTime(w http.ResponseWriter, r *http.Request) {
-	dt, tz := h.system.GetDateTime()
-	writeJSON(w, http.StatusOK, map[string]interface{}{
-		"datetime":  dt.Format(time.RFC3339),
-		"timestamp": dt.Unix(),
-		"timezone":  tz,
-	})
-}
-
-func (h *Handlers) GetSystemdServices(w http.ResponseWriter, r *http.Request) {
-	services := []string{"hostapd", "dnsmasq", "docker", "nginx", "pihole-FTL"}
-	statuses := make(map[string]interface{})
-
-	for _, svc := range services {
-		statuses[svc] = h.system.GetServiceStatus(svc)
+// SetHostname godoc
+// @Summary Set hostname
+// @Description Sets the system hostname
+// @Tags System
+// @Accept json
+// @Produce json
+// @Security BearerAuth
+// @Param request body object true "Hostname" example({"hostname": "cubeos"})
+// @Success 200 {object} models.SuccessResponse "Hostname updated"
+// @Failure 400 {object} ErrorResponse "Invalid request body"
+// @Failure 500 {object} ErrorResponse "Failed to set hostname"
+// @Router /system/hostname [post]
+func (h *Handlers) SetHostname(w http.ResponseWriter, r *http.Request) {
+	var req struct {
+		Hostname string `json:"hostname"`
 	}
-
-	writeJSON(w, http.StatusOK, map[string]interface{}{"services": statuses})
-}
-
-func (h *Handlers) GetSystemdService(w http.ResponseWriter, r *http.Request) {
-	service := chi.URLParam(r, "service")
-	status := h.system.GetServiceStatus(service)
-	writeJSON(w, http.StatusOK, status)
-}
-
-func (h *Handlers) RestartSystemdService(w http.ResponseWriter, r *http.Request) {
-	service := chi.URLParam(r, "service")
-
-	// Allowed services
-	allowed := map[string]bool{
-		"hostapd": true, "dnsmasq": true, "docker": true, "nginx": true, "pihole-FTL": true,
-	}
-
-	if !allowed[service] {
-		writeError(w, http.StatusForbidden, "Service not allowed")
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		writeError(w, http.StatusBadRequest, "Invalid request body")
 		return
 	}
-
-	if err := h.system.RestartService(service); err != nil {
+	if req.Hostname == "" {
+		writeError(w, http.StatusBadRequest, "Hostname is required")
+		return
+	}
+	if err := h.system.SetHostname(req.Hostname); err != nil {
 		writeError(w, http.StatusInternalServerError, err.Error())
 		return
 	}
-
 	writeJSON(w, http.StatusOK, models.SuccessResponse{
 		Status:  "success",
-		Message: "Service " + service + " restarted",
+		Message: "Hostname updated to " + req.Hostname,
+	})
+}
+
+// GetTimezone godoc
+// @Summary Get timezone
+// @Description Returns the current system timezone
+// @Tags System
+// @Produce json
+// @Security BearerAuth
+// @Success 200 {object} map[string]string "Timezone"
+// @Router /system/timezone [get]
+func (h *Handlers) GetTimezone(w http.ResponseWriter, r *http.Request) {
+	tz := h.system.GetTimezone()
+	writeJSON(w, http.StatusOK, map[string]string{
+		"timezone": tz,
+	})
+}
+
+// SetTimezone godoc
+// @Summary Set timezone
+// @Description Sets the system timezone
+// @Tags System
+// @Accept json
+// @Produce json
+// @Security BearerAuth
+// @Param request body object true "Timezone" example({"timezone": "Europe/Amsterdam"})
+// @Success 200 {object} models.SuccessResponse "Timezone updated"
+// @Failure 400 {object} ErrorResponse "Invalid request body or timezone"
+// @Failure 500 {object} ErrorResponse "Failed to set timezone"
+// @Router /system/timezone [post]
+func (h *Handlers) SetTimezone(w http.ResponseWriter, r *http.Request) {
+	var req struct {
+		Timezone string `json:"timezone"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		writeError(w, http.StatusBadRequest, "Invalid request body")
+		return
+	}
+	if req.Timezone == "" {
+		writeError(w, http.StatusBadRequest, "Timezone is required")
+		return
+	}
+	if err := h.system.SetTimezone(req.Timezone); err != nil {
+		writeError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+	writeJSON(w, http.StatusOK, models.SuccessResponse{
+		Status:  "success",
+		Message: "Timezone updated to " + req.Timezone,
+	})
+}
+
+// GetTimezones godoc
+// @Summary List available timezones
+// @Description Returns list of available system timezones
+// @Tags System
+// @Produce json
+// @Security BearerAuth
+// @Success 200 {object} map[string]interface{} "Available timezones"
+// @Router /system/timezones [get]
+func (h *Handlers) GetTimezones(w http.ResponseWriter, r *http.Request) {
+	timezones := h.system.GetTimezones()
+	writeJSON(w, http.StatusOK, map[string]interface{}{
+		"timezones": timezones,
+		"count":     len(timezones),
 	})
 }
 
@@ -315,163 +460,109 @@ func (h *Handlers) RestartSystemdService(w http.ResponseWriter, r *http.Request)
 // Network
 // =============================================================================
 
-func (h *Handlers) GetNetworkInterfaces(w http.ResponseWriter, r *http.Request) {
+// GetInterfaces godoc
+// @Summary List network interfaces
+// @Description Returns list of all network interfaces with basic information
+// @Tags Network
+// @Produce json
+// @Security BearerAuth
+// @Success 200 {array} models.NetworkInterface "Network interfaces"
+// @Router /network/interfaces [get]
+func (h *Handlers) GetInterfaces(w http.ResponseWriter, r *http.Request) {
 	interfaces := h.system.GetNetworkInterfaces()
 	writeJSON(w, http.StatusOK, interfaces)
 }
 
-func (h *Handlers) GetNetworkInterface(w http.ResponseWriter, r *http.Request) {
-	name := chi.URLParam(r, "name")
-	interfaces := h.system.GetNetworkInterfaces()
-
-	for _, iface := range interfaces {
-		if iface.Name == name {
-			writeJSON(w, http.StatusOK, iface)
-			return
-		}
-	}
-
-	writeError(w, http.StatusNotFound, "Interface not found")
-}
-
-func (h *Handlers) GetAPStatus(w http.ResponseWriter, r *http.Request) {
-	// TODO: Implement via HAL when AP management is added
-	writeJSON(w, http.StatusOK, map[string]interface{}{
-		"status":  "running",
-		"ssid":    "CubeOS",
-		"message": "AP status via HAL not yet implemented",
-	})
-}
-
-func (h *Handlers) GetAPConfig(w http.ResponseWriter, r *http.Request) {
-	// Return current config from environment
-	writeJSON(w, http.StatusOK, map[string]interface{}{
-		"ssid":    "CubeOS",
-		"channel": 7, // Default
-		"hidden":  false,
-	})
-}
-
-func (h *Handlers) UpdateAPConfig(w http.ResponseWriter, r *http.Request) {
-	var cfg models.WiFiAPConfig
-	if err := json.NewDecoder(r.Body).Decode(&cfg); err != nil {
-		writeError(w, http.StatusBadRequest, "Invalid request body")
-		return
-	}
-
-	// TODO: Implement via HAL
-	writeError(w, http.StatusNotImplemented, "AP configuration update not yet implemented")
-}
-
-func (h *Handlers) RestartAP(w http.ResponseWriter, r *http.Request) {
-	if err := h.hal.RestartService(r.Context(), "hostapd"); err != nil {
-		writeError(w, http.StatusInternalServerError, err.Error())
-		return
-	}
-
-	writeJSON(w, http.StatusOK, models.SuccessResponse{
-		Status:  "success",
-		Message: "WiFi AP restarted",
-	})
-}
-
-func (h *Handlers) GetDHCPLeases(w http.ResponseWriter, r *http.Request) {
-	// DHCP is managed by Pi-hole - return stub
-	writeJSON(w, http.StatusOK, map[string]interface{}{
-		"leases":  []interface{}{},
-		"count":   0,
-		"message": "DHCP leases managed by Pi-hole",
-	})
-}
-
-func (h *Handlers) RestartDHCP(w http.ResponseWriter, r *http.Request) {
-	// DHCP is managed by Pi-hole
-	if h.hal != nil {
-		if err := h.hal.RestartService(r.Context(), "pihole-FTL"); err != nil {
-			writeError(w, http.StatusInternalServerError, err.Error())
-			return
-		}
-	}
-
-	writeJSON(w, http.StatusOK, models.SuccessResponse{
-		Status:  "success",
-		Message: "DHCP server restart requested",
-	})
-}
-
-func (h *Handlers) CheckInternet(w http.ResponseWriter, r *http.Request) {
-	connected := h.network.HasInternet()
-	writeJSON(w, http.StatusOK, map[string]interface{}{
-		"connected": connected,
-		"timestamp": time.Now(),
-	})
-}
-
-func (h *Handlers) GetWiFiQR(w http.ResponseWriter, r *http.Request) {
-	// Return WiFi credentials for QR generation on frontend
-	writeJSON(w, http.StatusOK, map[string]interface{}{
-		"ssid":      "CubeOS",
-		"auth_type": "WPA",
-		"message":   "Generate QR on frontend",
-	})
-}
-
-func (h *Handlers) GetNetworkInterfacesDetailed(w http.ResponseWriter, r *http.Request) {
-	interfaces, err := h.hal.ListInterfaces(r.Context())
+// GetNetworkStatus godoc
+// @Summary Get network status
+// @Description Returns current network status including mode, connectivity, and interface states
+// @Tags Network
+// @Produce json
+// @Security BearerAuth
+// @Success 200 {object} map[string]interface{} "Network status"
+// @Failure 500 {object} ErrorResponse "Failed to get status"
+// @Router /network/status [get]
+func (h *Handlers) GetNetworkStatus(w http.ResponseWriter, r *http.Request) {
+	status, err := h.network.GetStatus(r.Context())
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, err.Error())
 		return
 	}
-	writeJSON(w, http.StatusOK, map[string]interface{}{
-		"interfaces": interfaces,
-		"count":      len(interfaces),
-		"timestamp":  time.Now(),
-	})
+	writeJSON(w, http.StatusOK, status)
 }
 
-func (h *Handlers) GetTrafficStats(w http.ResponseWriter, r *http.Request) {
-	// Traffic stats from interfaces
-	interfaces, _ := h.hal.ListInterfaces(r.Context())
-	stats := make(map[string]interface{})
-	for _, iface := range interfaces {
-		stats[iface.Name] = map[string]interface{}{
-			"rx_bytes": 0,
-			"tx_bytes": 0,
-		}
+// GetDNSConfig godoc
+// @Summary Get DNS configuration
+// @Description Returns current DNS server configuration
+// @Tags Network
+// @Produce json
+// @Security BearerAuth
+// @Success 200 {object} map[string]interface{} "DNS configuration"
+// @Failure 500 {object} ErrorResponse "Failed to get DNS configuration"
+// @Router /network/dns [get]
+func (h *Handlers) GetDNSConfig(w http.ResponseWriter, r *http.Request) {
+	config, err := h.network.GetDNSConfig(r.Context())
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, err.Error())
+		return
 	}
-	writeJSON(w, http.StatusOK, map[string]interface{}{
-		"stats":     stats,
-		"timestamp": time.Now(),
-	})
+	writeJSON(w, http.StatusOK, config)
 }
 
-func (h *Handlers) GetTrafficHistory(w http.ResponseWriter, r *http.Request) {
-	iface := chi.URLParam(r, "interface")
-	minutes, _ := strconv.Atoi(r.URL.Query().Get("minutes"))
-	if minutes == 0 {
-		minutes = 60
+// SetDNSConfig godoc
+// @Summary Set DNS configuration
+// @Description Updates DNS server configuration
+// @Tags Network
+// @Accept json
+// @Produce json
+// @Security BearerAuth
+// @Param config body object true "DNS configuration" example({"primary": "1.1.1.1", "secondary": "8.8.8.8"})
+// @Success 200 {object} models.SuccessResponse "DNS configuration updated"
+// @Failure 400 {object} ErrorResponse "Invalid request body"
+// @Failure 500 {object} ErrorResponse "Failed to update DNS"
+// @Router /network/dns [post]
+func (h *Handlers) SetDNSConfig(w http.ResponseWriter, r *http.Request) {
+	var req struct {
+		Primary   string `json:"primary"`
+		Secondary string `json:"secondary"`
 	}
-
-	// Traffic history not implemented - return empty
-	writeJSON(w, http.StatusOK, map[string]interface{}{
-		"interface": iface,
-		"minutes":   minutes,
-		"history":   []interface{}{},
-		"count":     0,
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		writeError(w, http.StatusBadRequest, "Invalid request body")
+		return
+	}
+	cfg := &managers.DNSConfig{
+		PrimaryDNS:   req.Primary,
+		SecondaryDNS: req.Secondary,
+	}
+	if err := h.network.SetDNSConfig(r.Context(), cfg); err != nil {
+		writeError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+	writeJSON(w, http.StatusOK, models.SuccessResponse{
+		Status:  "success",
+		Message: "DNS configuration updated",
 	})
 }
 
 // =============================================================================
-// Clients (WiFi)
+// Clients
 // =============================================================================
 
-func (h *Handlers) GetClients(w http.ResponseWriter, r *http.Request) {
+// GetConnectedClients godoc
+// @Summary List connected clients
+// @Description Returns list of connected WiFi clients
+// @Tags Clients
+// @Produce json
+// @Security BearerAuth
+// @Success 200 {object} map[string]interface{} "Connected clients"
+// @Failure 500 {object} ErrorResponse "Failed to get clients"
+// @Router /clients [get]
+func (h *Handlers) GetConnectedClients(w http.ResponseWriter, r *http.Request) {
 	clients, err := h.network.GetConnectedClients()
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, err.Error())
 		return
 	}
-	// GetConnectedClients returns []interface{}, wrap manually
 	writeJSON(w, http.StatusOK, map[string]interface{}{
 		"total_count": len(clients),
 		"clients":     clients,
@@ -479,6 +570,14 @@ func (h *Handlers) GetClients(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
+// GetClientCount godoc
+// @Summary Get client count
+// @Description Returns number of connected WiFi clients
+// @Tags Clients
+// @Produce json
+// @Security BearerAuth
+// @Success 200 {object} map[string]interface{} "Client count"
+// @Router /clients/count [get]
 func (h *Handlers) GetClientCount(w http.ResponseWriter, r *http.Request) {
 	clients, _ := h.network.GetConnectedClients()
 	writeJSON(w, http.StatusOK, map[string]interface{}{
@@ -487,69 +586,323 @@ func (h *Handlers) GetClientCount(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
-func (h *Handlers) GetClientStats(w http.ResponseWriter, r *http.Request) {
-	clients, _ := h.network.GetConnectedClients()
-	writeJSON(w, http.StatusOK, map[string]interface{}{
-		"total_clients": len(clients),
-		"timestamp":     time.Now(),
-	})
-}
-
+// BlockClient godoc
+// @Summary Block a client
+// @Description Blocks a client by MAC address
+// @Tags Clients
+// @Produce json
+// @Security BearerAuth
+// @Param mac path string true "MAC address"
+// @Success 200 {object} models.SuccessResponse "Client blocked"
+// @Failure 501 {object} ErrorResponse "Not implemented"
+// @Router /clients/{mac}/block [post]
 func (h *Handlers) BlockClient(w http.ResponseWriter, r *http.Request) {
 	mac := chi.URLParam(r, "mac")
-	// Client blocking not implemented via HAL yet
 	writeError(w, http.StatusNotImplemented, "Client blocking not yet implemented for MAC: "+mac)
 }
 
+// UnblockClient godoc
+// @Summary Unblock a client
+// @Description Unblocks a previously blocked client by MAC address
+// @Tags Clients
+// @Produce json
+// @Security BearerAuth
+// @Param mac path string true "MAC address"
+// @Success 200 {object} models.SuccessResponse "Client unblocked"
+// @Failure 501 {object} ErrorResponse "Not implemented"
+// @Router /clients/{mac}/unblock [post]
 func (h *Handlers) UnblockClient(w http.ResponseWriter, r *http.Request) {
 	mac := chi.URLParam(r, "mac")
-	// Client unblocking not implemented via HAL yet
 	writeError(w, http.StatusNotImplemented, "Client unblocking not yet implemented for MAC: "+mac)
-}
-
-func (h *Handlers) KickClient(w http.ResponseWriter, r *http.Request) {
-	mac := chi.URLParam(r, "mac")
-	// Client kicking not implemented via HAL yet
-	writeError(w, http.StatusNotImplemented, "Client kicking not yet implemented for MAC: "+mac)
-}
-
-func (h *Handlers) GetBlockedClients(w http.ResponseWriter, r *http.Request) {
-	// Return empty list - blocking not implemented
-	writeJSON(w, http.StatusOK, map[string]interface{}{
-		"blocked_macs": []string{},
-		"count":        0,
-	})
 }
 
 // =============================================================================
 // Storage
 // =============================================================================
 
-func (h *Handlers) GetDisks(w http.ResponseWriter, r *http.Request) {
-	disks := h.system.GetDisks()
-	writeJSON(w, http.StatusOK, disks)
-}
-
-func (h *Handlers) GetStorageOverview(w http.ResponseWriter, r *http.Request) {
+// GetStorage godoc
+// @Summary Get storage overview
+// @Description Returns storage overview and mount information
+// @Tags Storage
+// @Produce json
+// @Security BearerAuth
+// @Success 200 {object} map[string]interface{} "Storage information"
+// @Router /storage [get]
+func (h *Handlers) GetStorage(w http.ResponseWriter, r *http.Request) {
 	overview := h.system.GetStorageOverview()
-	writeJSON(w, http.StatusOK, overview)
+	writeJSON(w, http.StatusOK, map[string]interface{}{
+		"overview": overview,
+	})
 }
 
-func (h *Handlers) GetServiceDataSizes(w http.ResponseWriter, r *http.Request) {
-	sizes := h.system.GetServiceDataSizes("/cubeos/apps")
-
-	// Calculate totals
-	var totalSize int64
-	for _, s := range sizes {
-		totalSize += s.Size
-	}
-
+// GetMounts godoc
+// @Summary List mounts
+// @Description Returns list of mounted filesystems
+// @Tags Storage
+// @Produce json
+// @Security BearerAuth
+// @Success 200 {object} map[string]interface{} "Mount points"
+// @Router /storage/mounts [get]
+func (h *Handlers) GetMounts(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, map[string]interface{}{
-		"services":    sizes,
-		"count":       len(sizes),
-		"total_size":  totalSize,
-		"total_human": formatByteSize(totalSize),
+		"mounts": []interface{}{},
+		"count":  0,
 	})
+}
+
+// AddMount godoc
+// @Summary Add mount
+// @Description Adds a new mount point
+// @Tags Storage
+// @Accept json
+// @Produce json
+// @Security BearerAuth
+// @Param mount body object true "Mount configuration"
+// @Success 200 {object} models.SuccessResponse "Mount added"
+// @Failure 501 {object} ErrorResponse "Not implemented"
+// @Router /storage/mounts [post]
+func (h *Handlers) AddMount(w http.ResponseWriter, r *http.Request) {
+	writeError(w, http.StatusNotImplemented, "Mount management not yet implemented")
+}
+
+// RemoveMount godoc
+// @Summary Remove mount
+// @Description Removes a mount point
+// @Tags Storage
+// @Produce json
+// @Security BearerAuth
+// @Param id path string true "Mount ID"
+// @Success 200 {object} models.SuccessResponse "Mount removed"
+// @Failure 501 {object} ErrorResponse "Not implemented"
+// @Router /storage/mounts/{id} [delete]
+func (h *Handlers) RemoveMount(w http.ResponseWriter, r *http.Request) {
+	writeError(w, http.StatusNotImplemented, "Mount management not yet implemented")
+}
+
+// =============================================================================
+// Services
+// =============================================================================
+
+// ListServices godoc
+// @Summary List Docker services
+// @Description Returns list of all Docker services/containers
+// @Tags Services
+// @Produce json
+// @Security BearerAuth
+// @Success 200 {object} map[string]interface{} "Docker services"
+// @Failure 500 {object} ErrorResponse "Failed to get services"
+// @Router /services [get]
+func (h *Handlers) ListServices(w http.ResponseWriter, r *http.Request) {
+	resp, err := h.docker.GetServicesResponse(r.Context())
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+	writeJSON(w, http.StatusOK, resp)
+}
+
+// GetService godoc
+// @Summary Get Docker service
+// @Description Returns details of a specific Docker service/container
+// @Tags Services
+// @Produce json
+// @Security BearerAuth
+// @Param name path string true "Service name"
+// @Success 200 {object} map[string]interface{} "Service details"
+// @Failure 404 {object} ErrorResponse "Service not found"
+// @Router /services/{name} [get]
+func (h *Handlers) GetService(w http.ResponseWriter, r *http.Request) {
+	name := chi.URLParam(r, "name")
+	container, err := h.docker.GetContainer(r.Context(), name)
+	if err != nil {
+		writeError(w, http.StatusNotFound, "Service not found")
+		return
+	}
+	writeJSON(w, http.StatusOK, container)
+}
+
+// StartService godoc
+// @Summary Start Docker service
+// @Description Starts a Docker service/container
+// @Tags Services
+// @Produce json
+// @Security BearerAuth
+// @Param name path string true "Service name"
+// @Success 200 {object} models.ServiceAction "Service started"
+// @Failure 403 {object} ErrorResponse "Cannot modify core service"
+// @Failure 500 {object} ErrorResponse "Failed to start service"
+// @Router /services/{name}/start [post]
+func (h *Handlers) StartService(w http.ResponseWriter, r *http.Request) {
+	name := chi.URLParam(r, "name")
+	if config.IsCoreService(name) {
+		writeError(w, http.StatusForbidden, "Cannot modify core service")
+		return
+	}
+	if err := h.docker.StartContainer(r.Context(), name); err != nil {
+		writeError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+	writeJSON(w, http.StatusOK, models.ServiceAction{
+		Success: true,
+		Service: name,
+		Action:  "start",
+		Message: "Service started",
+	})
+}
+
+// StopService godoc
+// @Summary Stop Docker service
+// @Description Stops a Docker service/container
+// @Tags Services
+// @Produce json
+// @Security BearerAuth
+// @Param name path string true "Service name"
+// @Success 200 {object} models.ServiceAction "Service stopped"
+// @Failure 403 {object} ErrorResponse "Cannot modify core service"
+// @Failure 500 {object} ErrorResponse "Failed to stop service"
+// @Router /services/{name}/stop [post]
+func (h *Handlers) StopService(w http.ResponseWriter, r *http.Request) {
+	name := chi.URLParam(r, "name")
+	if config.IsCoreService(name) {
+		writeError(w, http.StatusForbidden, "Cannot modify core service")
+		return
+	}
+	if err := h.docker.StopContainer(r.Context(), name, h.cfg.ContainerStopTimeout); err != nil {
+		writeError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+	writeJSON(w, http.StatusOK, models.ServiceAction{
+		Success: true,
+		Service: name,
+		Action:  "stop",
+		Message: "Service stopped",
+	})
+}
+
+// RestartService godoc
+// @Summary Restart Docker service
+// @Description Restarts a Docker service/container
+// @Tags Services
+// @Produce json
+// @Security BearerAuth
+// @Param name path string true "Service name"
+// @Success 200 {object} models.ServiceAction "Service restarted"
+// @Failure 500 {object} ErrorResponse "Failed to restart service"
+// @Router /services/{name}/restart [post]
+func (h *Handlers) RestartService(w http.ResponseWriter, r *http.Request) {
+	name := chi.URLParam(r, "name")
+	if err := h.docker.RestartContainer(r.Context(), name, h.cfg.ContainerStopTimeout); err != nil {
+		writeError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+	writeJSON(w, http.StatusOK, models.ServiceAction{
+		Success: true,
+		Service: name,
+		Action:  "restart",
+		Message: "Service restarted",
+	})
+}
+
+// EnableService godoc
+// @Summary Enable Docker service
+// @Description Enables a Docker service for auto-start
+// @Tags Services
+// @Produce json
+// @Security BearerAuth
+// @Param name path string true "Service name"
+// @Success 200 {object} map[string]interface{} "Service enabled"
+// @Failure 403 {object} ErrorResponse "Cannot modify core service"
+// @Failure 500 {object} ErrorResponse "Failed to enable service"
+// @Router /services/{name}/enable [post]
+func (h *Handlers) EnableService(w http.ResponseWriter, r *http.Request) {
+	name := chi.URLParam(r, "name")
+	if config.IsCoreService(name) {
+		writeError(w, http.StatusForbidden, "Cannot modify core service")
+		return
+	}
+	result, err := h.docker.EnableService(r.Context(), name)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+	writeJSON(w, http.StatusOK, result)
+}
+
+// DisableService godoc
+// @Summary Disable Docker service
+// @Description Disables a Docker service from auto-start
+// @Tags Services
+// @Produce json
+// @Security BearerAuth
+// @Param name path string true "Service name"
+// @Success 200 {object} map[string]interface{} "Service disabled"
+// @Failure 403 {object} ErrorResponse "Cannot modify core service"
+// @Failure 500 {object} ErrorResponse "Failed to disable service"
+// @Router /services/{name}/disable [post]
+func (h *Handlers) DisableService(w http.ResponseWriter, r *http.Request) {
+	name := chi.URLParam(r, "name")
+	if config.IsCoreService(name) {
+		writeError(w, http.StatusForbidden, "Cannot modify core service")
+		return
+	}
+	result, err := h.docker.DisableService(r.Context(), name)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+	writeJSON(w, http.StatusOK, result)
+}
+
+// =============================================================================
+// Docker Management
+// =============================================================================
+
+// DockerPrune godoc
+// @Summary Prune Docker resources
+// @Description Removes unused Docker resources (containers, images, volumes, networks)
+// @Tags Docker
+// @Produce json
+// @Security BearerAuth
+// @Success 200 {object} map[string]interface{} "Prune results"
+// @Failure 503 {object} ErrorResponse "Docker not available"
+// @Router /docker/prune [post]
+func (h *Handlers) DockerPrune(w http.ResponseWriter, r *http.Request) {
+	if h.docker == nil {
+		writeError(w, http.StatusServiceUnavailable, "Docker not available")
+		return
+	}
+	result, err := h.docker.PruneAll(r.Context())
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]interface{}{
+		"status":  "success",
+		"message": "Docker cleanup completed",
+		"result":  result,
+	})
+}
+
+// DockerDiskUsage godoc
+// @Summary Get Docker disk usage
+// @Description Returns Docker disk usage statistics
+// @Tags Docker
+// @Produce json
+// @Security BearerAuth
+// @Success 200 {object} map[string]interface{} "Docker disk usage"
+// @Failure 503 {object} ErrorResponse "Docker not available"
+// @Router /docker/disk-usage [get]
+func (h *Handlers) DockerDiskUsage(w http.ResponseWriter, r *http.Request) {
+	if h.docker == nil {
+		writeError(w, http.StatusServiceUnavailable, "Docker not available")
+		return
+	}
+	usage, err := h.docker.GetDiskUsage(r.Context())
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+	writeJSON(w, http.StatusOK, usage)
 }
 
 // formatByteSize converts bytes to human readable format
@@ -564,225 +917,4 @@ func formatByteSize(bytes int64) string {
 		exp++
 	}
 	return fmt.Sprintf("%.1f %cB", float64(bytes)/float64(div), "KMGTPE"[exp])
-}
-
-// =============================================================================
-// Docker Services
-// =============================================================================
-
-func (h *Handlers) GetServices(w http.ResponseWriter, r *http.Request) {
-	resp, err := h.docker.GetServicesResponse(r.Context())
-	if err != nil {
-		writeError(w, http.StatusInternalServerError, err.Error())
-		return
-	}
-	writeJSON(w, http.StatusOK, resp)
-}
-
-func (h *Handlers) GetAllContainerStatus(w http.ResponseWriter, r *http.Request) {
-	statusMap, err := h.docker.GetAllContainerStatus(r.Context())
-	if err != nil {
-		writeError(w, http.StatusInternalServerError, err.Error())
-		return
-	}
-	writeJSON(w, http.StatusOK, map[string]interface{}{
-		"containers": statusMap,
-		"count":      len(statusMap),
-	})
-}
-
-func (h *Handlers) GetService(w http.ResponseWriter, r *http.Request) {
-	name := chi.URLParam(r, "name")
-
-	container, err := h.docker.GetContainer(r.Context(), name)
-	if err != nil {
-		writeError(w, http.StatusNotFound, "Service not found")
-		return
-	}
-
-	writeJSON(w, http.StatusOK, container)
-}
-
-func (h *Handlers) StartService(w http.ResponseWriter, r *http.Request) {
-	name := chi.URLParam(r, "name")
-
-	if config.IsCoreService(name) {
-		writeError(w, http.StatusForbidden, "Cannot modify core service")
-		return
-	}
-
-	if err := h.docker.StartContainer(r.Context(), name); err != nil {
-		writeError(w, http.StatusInternalServerError, err.Error())
-		return
-	}
-
-	writeJSON(w, http.StatusOK, models.ServiceAction{
-		Success: true,
-		Service: name,
-		Action:  "start",
-		Message: "Service started",
-	})
-}
-
-func (h *Handlers) StopService(w http.ResponseWriter, r *http.Request) {
-	name := chi.URLParam(r, "name")
-
-	if config.IsCoreService(name) {
-		writeError(w, http.StatusForbidden, "Cannot modify core service")
-		return
-	}
-
-	if err := h.docker.StopContainer(r.Context(), name, h.cfg.ContainerStopTimeout); err != nil {
-		writeError(w, http.StatusInternalServerError, err.Error())
-		return
-	}
-
-	writeJSON(w, http.StatusOK, models.ServiceAction{
-		Success: true,
-		Service: name,
-		Action:  "stop",
-		Message: "Service stopped",
-	})
-}
-
-func (h *Handlers) RestartService(w http.ResponseWriter, r *http.Request) {
-	name := chi.URLParam(r, "name")
-
-	if err := h.docker.RestartContainer(r.Context(), name, h.cfg.ContainerStopTimeout); err != nil {
-		writeError(w, http.StatusInternalServerError, err.Error())
-		return
-	}
-
-	writeJSON(w, http.StatusOK, models.ServiceAction{
-		Success: true,
-		Service: name,
-		Action:  "restart",
-		Message: "Service restarted",
-	})
-}
-
-func (h *Handlers) EnableService(w http.ResponseWriter, r *http.Request) {
-	name := chi.URLParam(r, "name")
-
-	if config.IsCoreService(name) {
-		writeError(w, http.StatusForbidden, "Cannot modify core service")
-		return
-	}
-
-	result, err := h.docker.EnableService(r.Context(), name)
-	if err != nil {
-		writeError(w, http.StatusInternalServerError, err.Error())
-		return
-	}
-
-	writeJSON(w, http.StatusOK, result)
-}
-
-func (h *Handlers) DisableService(w http.ResponseWriter, r *http.Request) {
-	name := chi.URLParam(r, "name")
-
-	if config.IsCoreService(name) {
-		writeError(w, http.StatusForbidden, "Cannot modify core service")
-		return
-	}
-
-	result, err := h.docker.DisableService(r.Context(), name)
-	if err != nil {
-		writeError(w, http.StatusInternalServerError, err.Error())
-		return
-	}
-
-	writeJSON(w, http.StatusOK, result)
-}
-
-func (h *Handlers) GetServiceLogs(w http.ResponseWriter, r *http.Request) {
-	name := chi.URLParam(r, "name")
-	tail, _ := strconv.Atoi(r.URL.Query().Get("tail"))
-	if tail == 0 {
-		tail = 100
-	}
-	since := r.URL.Query().Get("since")
-
-	logs, err := h.docker.GetContainerLogs(r.Context(), name, tail, since)
-	if err != nil {
-		writeError(w, http.StatusInternalServerError, err.Error())
-		return
-	}
-
-	writeJSON(w, http.StatusOK, map[string]interface{}{
-		"service": name,
-		"logs":    logs,
-		"tail":    tail,
-	})
-}
-
-func (h *Handlers) GetServiceStats(w http.ResponseWriter, r *http.Request) {
-	name := chi.URLParam(r, "name")
-
-	stats, err := h.docker.GetContainerStats(r.Context(), name)
-	if err != nil {
-		writeError(w, http.StatusInternalServerError, err.Error())
-		return
-	}
-
-	writeJSON(w, http.StatusOK, stats)
-}
-
-// =============================================================================
-// Categories
-// =============================================================================
-
-func (h *Handlers) GetCategories(w http.ResponseWriter, r *http.Request) {
-	categories := make([]map[string]interface{}, 0)
-
-	for id, info := range config.Categories {
-		categories = append(categories, map[string]interface{}{
-			"id":          id,
-			"name":        info.Name,
-			"description": info.Description,
-			"icon":        info.Icon,
-		})
-	}
-
-	writeJSON(w, http.StatusOK, map[string]interface{}{
-		"categories": categories,
-	})
-}
-
-// =============================================================================
-// Docker Management
-// =============================================================================
-
-func (h *Handlers) DockerPrune(w http.ResponseWriter, r *http.Request) {
-	if h.docker == nil {
-		writeError(w, http.StatusServiceUnavailable, "Docker not available")
-		return
-	}
-
-	result, err := h.docker.PruneAll(r.Context())
-	if err != nil {
-		writeError(w, http.StatusInternalServerError, err.Error())
-		return
-	}
-
-	writeJSON(w, http.StatusOK, map[string]interface{}{
-		"status":  "success",
-		"message": "Docker cleanup completed",
-		"result":  result,
-	})
-}
-
-func (h *Handlers) DockerDiskUsage(w http.ResponseWriter, r *http.Request) {
-	if h.docker == nil {
-		writeError(w, http.StatusServiceUnavailable, "Docker not available")
-		return
-	}
-
-	usage, err := h.docker.GetDiskUsage(r.Context())
-	if err != nil {
-		writeError(w, http.StatusInternalServerError, err.Error())
-		return
-	}
-
-	writeJSON(w, http.StatusOK, usage)
 }

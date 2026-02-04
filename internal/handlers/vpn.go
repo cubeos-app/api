@@ -37,8 +37,15 @@ func (h *VPNHandler) Routes() chi.Router {
 	return r
 }
 
-// GetStatus returns the current VPN connection status
-// GET /api/v1/vpn/status
+// GetStatus godoc
+// @Summary Get VPN connection status
+// @Description Returns the current VPN connection status including active connection details
+// @Tags VPN
+// @Produce json
+// @Security BearerAuth
+// @Success 200 {object} models.VPNStatus "Current VPN status"
+// @Failure 500 {object} ErrorResponse "VPN_STATUS_ERROR"
+// @Router /vpn/status [get]
 func (h *VPNHandler) GetStatus(w http.ResponseWriter, r *http.Request) {
 	status, err := h.vpn.GetStatus(r.Context())
 	if err != nil {
@@ -49,8 +56,15 @@ func (h *VPNHandler) GetStatus(w http.ResponseWriter, r *http.Request) {
 	vpnRespondJSON(w, http.StatusOK, status)
 }
 
-// ListConfigs returns all VPN configurations
-// GET /api/v1/vpn/configs
+// ListConfigs godoc
+// @Summary List all VPN configurations
+// @Description Returns all saved VPN configurations (WireGuard and OpenVPN)
+// @Tags VPN
+// @Produce json
+// @Security BearerAuth
+// @Success 200 {object} map[string]interface{} "configs: array of VPN configurations"
+// @Failure 500 {object} ErrorResponse "VPN_LIST_ERROR"
+// @Router /vpn/configs [get]
 func (h *VPNHandler) ListConfigs(w http.ResponseWriter, r *http.Request) {
 	configs, err := h.vpn.ListConfigs(r.Context())
 	if err != nil {
@@ -63,8 +77,17 @@ func (h *VPNHandler) ListConfigs(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
-// GetConfig returns a specific VPN configuration
-// GET /api/v1/vpn/configs/{name}
+// GetConfig godoc
+// @Summary Get a VPN configuration
+// @Description Returns details of a specific VPN configuration by name
+// @Tags VPN
+// @Produce json
+// @Security BearerAuth
+// @Param name path string true "Configuration name"
+// @Success 200 {object} models.VPNConfig "VPN configuration details"
+// @Failure 400 {object} ErrorResponse "INVALID_NAME - Configuration name is required"
+// @Failure 404 {object} ErrorResponse "VPN_NOT_FOUND - Configuration not found"
+// @Router /vpn/configs/{name} [get]
 func (h *VPNHandler) GetConfig(w http.ResponseWriter, r *http.Request) {
 	name := chi.URLParam(r, "name")
 	if name == "" {
@@ -81,8 +104,18 @@ func (h *VPNHandler) GetConfig(w http.ResponseWriter, r *http.Request) {
 	vpnRespondJSON(w, http.StatusOK, cfg)
 }
 
-// AddConfig adds a new VPN configuration
-// POST /api/v1/vpn/configs
+// AddConfig godoc
+// @Summary Add a new VPN configuration
+// @Description Adds a new WireGuard or OpenVPN configuration. Config file content must be base64 encoded.
+// @Tags VPN
+// @Accept json
+// @Produce json
+// @Security BearerAuth
+// @Param request body object true "VPN configuration" SchemaExample({"name": "my-vpn", "type": "wireguard", "config": "W0ludGVyZmFjZV0K..."})
+// @Success 201 {object} models.VPNConfig "Created VPN configuration"
+// @Failure 400 {object} ErrorResponse "INVALID_JSON, MISSING_NAME, MISSING_TYPE, or MISSING_CONFIG"
+// @Failure 500 {object} ErrorResponse "VPN_ADD_ERROR"
+// @Router /vpn/configs [post]
 func (h *VPNHandler) AddConfig(w http.ResponseWriter, r *http.Request) {
 	var req struct {
 		Name   string           `json:"name"`
@@ -117,8 +150,17 @@ func (h *VPNHandler) AddConfig(w http.ResponseWriter, r *http.Request) {
 	vpnRespondJSON(w, http.StatusCreated, cfg)
 }
 
-// DeleteConfig removes a VPN configuration
-// DELETE /api/v1/vpn/configs/{name}
+// DeleteConfig godoc
+// @Summary Delete a VPN configuration
+// @Description Removes a VPN configuration by name. Disconnects first if currently active.
+// @Tags VPN
+// @Produce json
+// @Security BearerAuth
+// @Param name path string true "Configuration name"
+// @Success 200 {object} map[string]string "status: deleted, name: config name"
+// @Failure 400 {object} ErrorResponse "INVALID_NAME - Configuration name is required"
+// @Failure 500 {object} ErrorResponse "VPN_DELETE_ERROR"
+// @Router /vpn/configs/{name} [delete]
 func (h *VPNHandler) DeleteConfig(w http.ResponseWriter, r *http.Request) {
 	name := chi.URLParam(r, "name")
 	if name == "" {
@@ -137,8 +179,18 @@ func (h *VPNHandler) DeleteConfig(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
-// Connect establishes a VPN connection
-// POST /api/v1/vpn/configs/{name}/connect
+// Connect godoc
+// @Summary Connect to VPN
+// @Description Establishes a VPN connection using the specified configuration
+// @Tags VPN
+// @Produce json
+// @Security BearerAuth
+// @Param name path string true "Configuration name"
+// @Success 200 {object} map[string]interface{} "status: connected, name, details"
+// @Failure 400 {object} ErrorResponse "INVALID_NAME - Configuration name is required"
+// @Failure 404 {object} ErrorResponse "VPN_NOT_FOUND - Configuration not found"
+// @Failure 500 {object} ErrorResponse "VPN_CONNECT_ERROR"
+// @Router /vpn/configs/{name}/connect [post]
 func (h *VPNHandler) Connect(w http.ResponseWriter, r *http.Request) {
 	name := chi.URLParam(r, "name")
 	if name == "" {
@@ -166,8 +218,17 @@ func (h *VPNHandler) Connect(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
-// Disconnect terminates a VPN connection
-// POST /api/v1/vpn/configs/{name}/disconnect
+// Disconnect godoc
+// @Summary Disconnect from VPN
+// @Description Terminates the active VPN connection for the specified configuration
+// @Tags VPN
+// @Produce json
+// @Security BearerAuth
+// @Param name path string true "Configuration name"
+// @Success 200 {object} map[string]string "status: disconnected, name"
+// @Failure 400 {object} ErrorResponse "INVALID_NAME - Configuration name is required"
+// @Failure 500 {object} ErrorResponse "VPN_DISCONNECT_ERROR"
+// @Router /vpn/configs/{name}/disconnect [post]
 func (h *VPNHandler) Disconnect(w http.ResponseWriter, r *http.Request) {
 	name := chi.URLParam(r, "name")
 	if name == "" {
@@ -186,8 +247,19 @@ func (h *VPNHandler) Disconnect(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
-// SetAutoConnect enables or disables auto-connect for a VPN config
-// PUT /api/v1/vpn/configs/{name}/auto-connect
+// SetAutoConnect godoc
+// @Summary Set VPN auto-connect
+// @Description Enables or disables auto-connect on boot for a VPN configuration
+// @Tags VPN
+// @Accept json
+// @Produce json
+// @Security BearerAuth
+// @Param name path string true "Configuration name"
+// @Param request body object true "Auto-connect setting" SchemaExample({"enabled": true})
+// @Success 200 {object} map[string]interface{} "name, auto_connect: boolean"
+// @Failure 400 {object} ErrorResponse "INVALID_NAME or INVALID_JSON"
+// @Failure 500 {object} ErrorResponse "VPN_AUTOCONNECT_ERROR"
+// @Router /vpn/configs/{name}/auto-connect [put]
 func (h *VPNHandler) SetAutoConnect(w http.ResponseWriter, r *http.Request) {
 	name := chi.URLParam(r, "name")
 	if name == "" {
@@ -215,8 +287,15 @@ func (h *VPNHandler) SetAutoConnect(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
-// GetPublicIP returns the current public IP address
-// GET /api/v1/vpn/public-ip
+// GetPublicIP godoc
+// @Summary Get public IP address
+// @Description Returns the current public IP address (useful to verify VPN is working)
+// @Tags VPN
+// @Produce json
+// @Security BearerAuth
+// @Success 200 {object} map[string]string "public_ip: current public IP address"
+// @Failure 500 {object} ErrorResponse "PUBLIC_IP_ERROR"
+// @Router /vpn/public-ip [get]
 func (h *VPNHandler) GetPublicIP(w http.ResponseWriter, r *http.Request) {
 	ip, err := h.vpn.GetPublicIP(r.Context())
 	if err != nil {

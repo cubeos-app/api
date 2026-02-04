@@ -66,8 +66,14 @@ type RegistryStatus struct {
 	Error        string `json:"error,omitempty"`
 }
 
-// GetStatus returns the registry health and status.
-// GET /api/v1/registry/status
+// GetStatus godoc
+// @Summary Get registry status
+// @Description Returns the local Docker registry health status including online state, version, disk usage, and image count
+// @Tags Registry
+// @Produce json
+// @Security BearerAuth
+// @Success 200 {object} RegistryStatus "Registry status with online, url, version, disk_usage, image_count"
+// @Router /registry/status [get]
 func (h *RegistryHandler) GetStatus(w http.ResponseWriter, r *http.Request) {
 	status := RegistryStatus{
 		URL: h.registryURL,
@@ -115,8 +121,16 @@ type RegistryImage struct {
 	FullName string   `json:"full_name,omitempty"`
 }
 
-// ListImages returns all images in the registry.
-// GET /api/v1/registry/images
+// ListImages godoc
+// @Summary List registry images
+// @Description Returns all images stored in the local Docker registry with optional tag details
+// @Tags Registry
+// @Produce json
+// @Security BearerAuth
+// @Param include_tags query boolean false "Include full tag list for each image"
+// @Success 200 {object} map[string]interface{} "images: array of RegistryImage, count, url"
+// @Failure 503 {object} ErrorResponse "Failed to get image list (registry unavailable)"
+// @Router /registry/images [get]
 func (h *RegistryHandler) ListImages(w http.ResponseWriter, r *http.Request) {
 	images, err := h.getImageList()
 	if err != nil {
@@ -154,8 +168,16 @@ func (h *RegistryHandler) ListImages(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
-// GetImageTags returns tags for a specific image.
-// GET /api/v1/registry/images/{name}/tags
+// GetImageTags godoc
+// @Summary Get image tags
+// @Description Returns all tags for a specific image in the local registry. Supports nested image names (e.g., library/nginx).
+// @Tags Registry
+// @Produce json
+// @Security BearerAuth
+// @Param name path string true "Image name (e.g., nginx or library/nginx)"
+// @Success 200 {object} map[string]interface{} "name: image name, tags: array of tag strings"
+// @Failure 404 {object} ErrorResponse "Image not found or failed to get tags"
+// @Router /registry/images/{name}/tags [get]
 func (h *RegistryHandler) GetImageTags(w http.ResponseWriter, r *http.Request) {
 	name := chi.URLParam(r, "name")
 
@@ -180,8 +202,18 @@ func (h *RegistryHandler) GetImageTags(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
-// DeleteImage deletes an image from the registry.
-// DELETE /api/v1/registry/images/{name}?tag=latest
+// DeleteImage godoc
+// @Summary Delete an image tag
+// @Description Deletes a specific tag of an image from the local registry. Requires garbage collection to reclaim disk space.
+// @Tags Registry
+// @Produce json
+// @Security BearerAuth
+// @Param name path string true "Image name"
+// @Param tag query string false "Tag to delete (defaults to 'latest')"
+// @Success 200 {object} map[string]interface{} "success: true, message: deletion confirmation"
+// @Failure 404 {object} ErrorResponse "Image or tag not found"
+// @Failure 500 {object} ErrorResponse "Failed to delete image"
+// @Router /registry/images/{name} [delete]
 func (h *RegistryHandler) DeleteImage(w http.ResponseWriter, r *http.Request) {
 	name := chi.URLParam(r, "name")
 	tag := r.URL.Query().Get("tag")
@@ -225,8 +257,16 @@ type CleanupRequest struct {
 	DryRun        bool `json:"dry_run"`         // If true, only report what would be deleted
 }
 
-// CleanupRegistry removes old/unused images.
-// POST /api/v1/registry/cleanup
+// CleanupRegistry godoc
+// @Summary Cleanup old images
+// @Description Identifies and optionally removes old/unused image tags. Use dry_run=true to preview. Requires running garbage-collect on the registry container to reclaim disk space.
+// @Tags Registry
+// @Accept json
+// @Produce json
+// @Security BearerAuth
+// @Param request body CleanupRequest false "Cleanup options (defaults: keep_tags=2, dry_run=false)"
+// @Success 200 {object} map[string]interface{} "success, dry_run, deleted_count, deleted_images, message with gc command"
+// @Router /registry/cleanup [post]
 func (h *RegistryHandler) CleanupRegistry(w http.ResponseWriter, r *http.Request) {
 	var req CleanupRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
@@ -268,8 +308,14 @@ func (h *RegistryHandler) CleanupRegistry(w http.ResponseWriter, r *http.Request
 	})
 }
 
-// GetDiskUsage returns detailed disk usage information.
-// GET /api/v1/registry/disk-usage
+// GetDiskUsage godoc
+// @Summary Get registry disk usage
+// @Description Returns the disk space used by the local Docker registry storage
+// @Tags Registry
+// @Produce json
+// @Security BearerAuth
+// @Success 200 {object} map[string]interface{} "bytes: size in bytes, readable: human-readable size, path: storage path"
+// @Router /registry/disk-usage [get]
 func (h *RegistryHandler) GetDiskUsage(w http.ResponseWriter, r *http.Request) {
 	totalBytes := h.getDiskUsage()
 

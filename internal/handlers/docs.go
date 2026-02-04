@@ -54,7 +54,15 @@ type DocContent struct {
 	Content string `json:"content"`
 }
 
-// ListDocs returns a flat list of all documentation files
+// ListDocs godoc
+// @Summary List all documentation files
+// @Description Returns a flat list of all markdown documentation files sorted by path. Titles are extracted from the first H1 heading in each file.
+// @Tags Docs
+// @Produce json
+// @Security BearerAuth
+// @Success 200 {array} DocFile "Array of documentation files"
+// @Failure 500 {object} ErrorResponse "Failed to list docs"
+// @Router /docs [get]
 func (h *DocsHandler) ListDocs(w http.ResponseWriter, r *http.Request) {
 	var docs []DocFile
 
@@ -106,7 +114,14 @@ func (h *DocsHandler) ListDocs(w http.ResponseWriter, r *http.Request) {
 	json.NewEncoder(w).Encode(docs)
 }
 
-// GetDocsTree returns documentation as a tree structure
+// GetDocsTree godoc
+// @Summary Get documentation tree
+// @Description Returns documentation files as a hierarchical tree structure with directories and nested children. Directories are sorted before files.
+// @Tags Docs
+// @Produce json
+// @Security BearerAuth
+// @Success 200 {array} DocFile "Tree of documentation files with nested children"
+// @Router /docs/tree [get]
 func (h *DocsHandler) GetDocsTree(w http.ResponseWriter, r *http.Request) {
 	tree := buildDocTree(h.docsPath, h.docsPath)
 
@@ -169,7 +184,18 @@ func buildDocTree(basePath, currentPath string) []DocFile {
 	return items
 }
 
-// GetDoc returns a single documentation file content
+// GetDoc godoc
+// @Summary Get documentation file content
+// @Description Returns the content of a specific markdown documentation file. The .md extension is optional in the path. Returns README.md if no path is specified.
+// @Tags Docs
+// @Produce json
+// @Security BearerAuth
+// @Param path path string false "Document path (without .md extension)"
+// @Success 200 {object} DocContent "Document content with title and path"
+// @Failure 400 {object} ErrorResponse "Invalid path (directory traversal attempt)"
+// @Failure 404 {object} ErrorResponse "Document not found"
+// @Failure 500 {object} ErrorResponse "Failed to read document"
+// @Router /docs/{path} [get]
 func (h *DocsHandler) GetDoc(w http.ResponseWriter, r *http.Request) {
 	// Get the path from URL (everything after /api/v1/docs/)
 	docPath := chi.URLParam(r, "*")
@@ -216,7 +242,16 @@ func (h *DocsHandler) GetDoc(w http.ResponseWriter, r *http.Request) {
 	json.NewEncoder(w).Encode(doc)
 }
 
-// SearchDocs searches documentation content
+// SearchDocs godoc
+// @Summary Search documentation
+// @Description Searches documentation content for the given query (case-insensitive). Returns matching files with their paths and titles.
+// @Tags Docs
+// @Produce json
+// @Security BearerAuth
+// @Param q query string true "Search query"
+// @Success 200 {array} DocFile "Array of matching documentation files"
+// @Failure 400 {object} ErrorResponse "Query parameter 'q' required"
+// @Router /docs/search [get]
 func (h *DocsHandler) SearchDocs(w http.ResponseWriter, r *http.Request) {
 	query := strings.ToLower(r.URL.Query().Get("q"))
 	if query == "" {

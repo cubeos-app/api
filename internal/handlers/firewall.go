@@ -50,8 +50,14 @@ func (h *FirewallHandler) Routes() chi.Router {
 	return r
 }
 
-// GetStatus returns overall firewall status.
-// GET /api/v1/firewall/status
+// GetStatus godoc
+// @Summary Get firewall status
+// @Description Returns overall firewall status including NAT, IP forwarding, and rules count
+// @Tags Firewall
+// @Produce json
+// @Security BearerAuth
+// @Success 200 {object} map[string]interface{} "enabled, nat_enabled, forwarding_enabled, rules_count"
+// @Router /firewall/status [get]
 func (h *FirewallHandler) GetStatus(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
 
@@ -93,8 +99,16 @@ func (h *FirewallHandler) GetStatus(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
-// GetNATStatus returns NAT/masquerade status.
-// GET /api/v1/firewall/nat
+// GetNATStatus godoc
+// @Summary Get NAT status
+// @Description Returns NAT/masquerade status and configuration details
+// @Tags Firewall
+// @Produce json
+// @Security BearerAuth
+// @Success 200 {object} map[string]interface{} "NAT status details"
+// @Failure 500 {object} ErrorResponse "Failed to get NAT status"
+// @Failure 503 {object} ErrorResponse "Firewall service unavailable"
+// @Router /firewall/nat [get]
 func (h *FirewallHandler) GetNATStatus(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
 
@@ -112,8 +126,16 @@ func (h *FirewallHandler) GetNATStatus(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, status)
 }
 
-// EnableNAT enables NAT/masquerade.
-// POST /api/v1/firewall/nat/enable
+// EnableNAT godoc
+// @Summary Enable NAT
+// @Description Enables NAT/masquerade for internet sharing through the access point
+// @Tags Firewall
+// @Produce json
+// @Security BearerAuth
+// @Success 200 {object} map[string]interface{} "status, message"
+// @Failure 500 {object} ErrorResponse "Failed to enable NAT"
+// @Failure 503 {object} ErrorResponse "Firewall service unavailable"
+// @Router /firewall/nat/enable [post]
 func (h *FirewallHandler) EnableNAT(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
 
@@ -131,8 +153,16 @@ func (h *FirewallHandler) EnableNAT(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, result)
 }
 
-// DisableNAT disables NAT/masquerade.
-// POST /api/v1/firewall/nat/disable
+// DisableNAT godoc
+// @Summary Disable NAT
+// @Description Disables NAT/masquerade, stopping internet sharing
+// @Tags Firewall
+// @Produce json
+// @Security BearerAuth
+// @Success 200 {object} map[string]interface{} "status, message"
+// @Failure 500 {object} ErrorResponse "Failed to disable NAT"
+// @Failure 503 {object} ErrorResponse "Firewall service unavailable"
+// @Router /firewall/nat/disable [post]
 func (h *FirewallHandler) DisableNAT(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
 
@@ -150,8 +180,16 @@ func (h *FirewallHandler) DisableNAT(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, result)
 }
 
-// GetForwardingStatus returns IP forwarding status.
-// GET /api/v1/firewall/forwarding
+// GetForwardingStatus godoc
+// @Summary Get IP forwarding status
+// @Description Returns whether IP forwarding (net.ipv4.ip_forward) is enabled
+// @Tags Firewall
+// @Produce json
+// @Security BearerAuth
+// @Success 200 {object} map[string]interface{} "enabled: boolean"
+// @Failure 500 {object} ErrorResponse "Failed to get forwarding status"
+// @Failure 503 {object} ErrorResponse "HAL service unavailable"
+// @Router /firewall/forwarding [get]
 func (h *FirewallHandler) GetForwardingStatus(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
 
@@ -171,8 +209,16 @@ func (h *FirewallHandler) GetForwardingStatus(w http.ResponseWriter, r *http.Req
 	})
 }
 
-// EnableForwarding enables IP forwarding.
-// POST /api/v1/firewall/forwarding/enable
+// EnableForwarding godoc
+// @Summary Enable IP forwarding
+// @Description Enables IP forwarding (net.ipv4.ip_forward=1) required for NAT and routing
+// @Tags Firewall
+// @Produce json
+// @Security BearerAuth
+// @Success 200 {object} map[string]interface{} "success: true, message"
+// @Failure 500 {object} ErrorResponse "Failed to enable forwarding"
+// @Failure 503 {object} ErrorResponse "HAL service unavailable"
+// @Router /firewall/forwarding/enable [post]
 func (h *FirewallHandler) EnableForwarding(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
 
@@ -192,8 +238,16 @@ func (h *FirewallHandler) EnableForwarding(w http.ResponseWriter, r *http.Reques
 	})
 }
 
-// DisableForwarding disables IP forwarding.
-// POST /api/v1/firewall/forwarding/disable
+// DisableForwarding godoc
+// @Summary Disable IP forwarding
+// @Description Disables IP forwarding (net.ipv4.ip_forward=0)
+// @Tags Firewall
+// @Produce json
+// @Security BearerAuth
+// @Success 200 {object} map[string]interface{} "success: true, message"
+// @Failure 500 {object} ErrorResponse "Failed to disable forwarding"
+// @Failure 503 {object} ErrorResponse "HAL service unavailable"
+// @Router /firewall/forwarding/disable [post]
 func (h *FirewallHandler) DisableForwarding(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
 
@@ -213,8 +267,18 @@ func (h *FirewallHandler) DisableForwarding(w http.ResponseWriter, r *http.Reque
 	})
 }
 
-// GetRules returns current firewall rules.
-// GET /api/v1/firewall/rules
+// GetRules godoc
+// @Summary Get firewall rules
+// @Description Returns current iptables firewall rules with optional filtering by chain or table
+// @Tags Firewall
+// @Produce json
+// @Security BearerAuth
+// @Param chain query string false "Filter by chain (INPUT, OUTPUT, FORWARD)"
+// @Param table query string false "Filter by table (filter, nat, mangle)"
+// @Success 200 {object} map[string]interface{} "rules: map of rules, count: total"
+// @Failure 500 {object} ErrorResponse "Failed to get firewall rules"
+// @Failure 503 {object} ErrorResponse "HAL service unavailable"
+// @Router /firewall/rules [get]
 func (h *FirewallHandler) GetRules(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
 
@@ -259,8 +323,19 @@ type AddRuleRequest struct {
 	Args  []string `json:"args"`
 }
 
-// AddRule adds a new firewall rule.
-// POST /api/v1/firewall/rules
+// AddRule godoc
+// @Summary Add firewall rule
+// @Description Adds a new iptables firewall rule to the specified table and chain
+// @Tags Firewall
+// @Accept json
+// @Produce json
+// @Security BearerAuth
+// @Param request body AddRuleRequest true "Firewall rule" SchemaExample({"table": "filter", "chain": "INPUT", "args": ["-p", "tcp", "--dport", "8080", "-j", "ACCEPT"]})
+// @Success 200 {object} map[string]interface{} "success: true, message, rule"
+// @Failure 400 {object} ErrorResponse "Invalid request or missing chain"
+// @Failure 500 {object} ErrorResponse "Failed to add firewall rule"
+// @Failure 503 {object} ErrorResponse "HAL service unavailable"
+// @Router /firewall/rules [post]
 func (h *FirewallHandler) AddRule(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
 
@@ -298,8 +373,19 @@ func (h *FirewallHandler) AddRule(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
-// DeleteRule deletes a firewall rule.
-// DELETE /api/v1/firewall/rules
+// DeleteRule godoc
+// @Summary Delete firewall rule
+// @Description Deletes an iptables firewall rule from the specified table and chain
+// @Tags Firewall
+// @Accept json
+// @Produce json
+// @Security BearerAuth
+// @Param request body AddRuleRequest true "Firewall rule to delete" SchemaExample({"table": "filter", "chain": "INPUT", "args": ["-p", "tcp", "--dport", "8080", "-j", "ACCEPT"]})
+// @Success 200 {object} map[string]interface{} "success: true, message"
+// @Failure 400 {object} ErrorResponse "Invalid request or missing chain"
+// @Failure 500 {object} ErrorResponse "Failed to delete firewall rule"
+// @Failure 503 {object} ErrorResponse "HAL service unavailable"
+// @Router /firewall/rules [delete]
 func (h *FirewallHandler) DeleteRule(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
 
