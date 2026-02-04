@@ -296,7 +296,7 @@ func (h *Handlers) GetSystemStats(w http.ResponseWriter, r *http.Request) {
 // @Tags System
 // @Produce json
 // @Security BearerAuth
-// @Success 200 {object} models.TemperatureInfo "Temperature information"
+// @Success 200 {object} models.Temperature "Temperature information"
 // @Router /system/temperature [get]
 func (h *Handlers) GetTemperature(w http.ResponseWriter, r *http.Request) {
 	temp := h.system.GetTemperature()

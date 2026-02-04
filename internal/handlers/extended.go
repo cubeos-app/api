@@ -641,7 +641,7 @@ func (h *ExtendedHandlers) ListBackups(w http.ResponseWriter, r *http.Request) {
 // @Produce json
 // @Security BearerAuth
 // @Param backup_id path string true "Backup ID"
-// @Success 200 {object} models.Backup "Backup details"
+// @Success 200 {object} models.BackupInfo "Backup details"
 // @Failure 404 {object} ErrorResponse "Backup not found"
 // @Router /backups/{backup_id} [get]
 func (h *ExtendedHandlers) GetBackup(w http.ResponseWriter, r *http.Request) {
@@ -662,7 +662,7 @@ func (h *ExtendedHandlers) GetBackup(w http.ResponseWriter, r *http.Request) {
 // @Produce json
 // @Security BearerAuth
 // @Param request body models.BackupCreateRequest false "Backup options"
-// @Success 200 {object} models.Backup "Created backup"
+// @Success 200 {object} models.BackupInfo "Created backup"
 // @Failure 500 {object} ErrorResponse "Failed to create backup"
 // @Router /backups [post]
 func (h *ExtendedHandlers) CreateBackup(w http.ResponseWriter, r *http.Request) {
@@ -693,7 +693,7 @@ func (h *ExtendedHandlers) CreateBackup(w http.ResponseWriter, r *http.Request) 
 // @Security BearerAuth
 // @Param backup_type query string false "Backup type" default(config)
 // @Param description query string false "Backup description"
-// @Success 200 {object} models.Backup "Created backup"
+// @Success 200 {object} models.BackupInfo "Created backup"
 // @Failure 500 {object} ErrorResponse "Failed to create backup"
 // @Router /backups/quick [post]
 func (h *ExtendedHandlers) QuickBackup(w http.ResponseWriter, r *http.Request) {
@@ -852,7 +852,7 @@ func (h *ExtendedHandlers) ListProcesses(w http.ResponseWriter, r *http.Request)
 // @Produce json
 // @Security BearerAuth
 // @Param pid path int true "Process ID"
-// @Success 200 {object} models.Process "Process details"
+// @Success 200 {object} models.ProcessInfo "Process details"
 // @Failure 400 {object} ErrorResponse "Invalid PID"
 // @Failure 404 {object} ErrorResponse "Process not found"
 // @Router /processes/{pid} [get]

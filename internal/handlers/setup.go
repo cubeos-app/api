@@ -159,7 +159,7 @@ func (h *SetupHandler) GetDNSProviders(w http.ResponseWriter, r *http.Request) {
 // @Accept json
 // @Produce json
 // @Param request body models.SetupConfig true "Setup configuration to validate"
-// @Success 200 {object} models.ValidationResult "Validation result with valid flag, errors, and warnings"
+// @Success 200 {object} models.SetupValidation "Validation result with valid flag, errors, and warnings"
 // @Failure 400 {object} ErrorResponse "Invalid request body"
 // @Router /setup/validate [post]
 func (h *SetupHandler) ValidateConfig(w http.ResponseWriter, r *http.Request) {
