@@ -199,8 +199,8 @@ func main() {
 
 	// Create HAL client for hardware access (Sprint 3)
 	// HAL runs on host network at port 6005, accessible from container via host IP
-	halClient := hal.NewClient("http://10.42.24.1:6005/hal")
-	log.Printf("HAL client initialized (endpoint: http://10.42.24.1:6005/hal)")
+	halClient := hal.NewClient("http://10.42.24.1:6005")
+	log.Printf("HAL client initialized (endpoint: http://10.42.24.1:6005)")
 
 	// Create core managers (with HAL client for hardware access)
 	systemMgr := managers.NewSystemManager()
@@ -322,6 +322,14 @@ func main() {
 	wsManager := handlers.NewWSManager(systemMgr, networkMgr, monitoringMgr, docker)
 	wsHandlers := handlers.NewWSHandlers(wsManager)
 
+	// Create SMB handler
+	smbHandler := handlers.NewSMBHandler()
+	log.Printf("SMBHandler initialized")
+
+	// Create Backups handler
+	backupsHandler := handlers.NewBackupsHandler("/cubeos/backups")
+	log.Printf("BackupsHandler initialized")
+
 	// Create router
 	r := chi.NewRouter()
 
@@ -442,17 +450,8 @@ func main() {
 			// Firewall (Sprint 5C - using dedicated FirewallHandler)
 			r.Mount("/firewall", firewallHandler.Routes())
 
-			// Backup
-			r.Route("/backup", func(r chi.Router) {
-				r.Get("/", ext.ListBackups)
-				r.Get("/stats/summary", ext.GetBackupStats)
-				r.Get("/{backup_id}", ext.GetBackup)
-				r.Get("/{backup_id}/download", ext.DownloadBackup)
-				r.Post("/create", ext.CreateBackup)
-				r.Post("/quick", ext.QuickBackup)
-				r.Post("/restore/{backup_id}", ext.RestoreBackup)
-				r.Delete("/{backup_id}", ext.DeleteBackup)
-			})
+			// Backups - use handler instead of inline routes
+			r.Mount("/backups", backupsHandler.Routes())
 
 			// Processes
 			r.Route("/processes", func(r chi.Router) {
@@ -471,18 +470,18 @@ func main() {
 				r.Get("/profiles", ext.GetProfiles)
 				r.Get("/services", ext.GetWizardServices)
 				r.Get("/recommendations", ext.GetRecommendations)
-				r.Post("/apply-profile", ext.ApplyProfile)
+				r.Post("/apply", ext.ApplyProfile) // Fixed: was /apply-profile
 				r.Post("/estimate", ext.EstimateResources)
 			})
 
 			// Monitoring
 			r.Route("/monitoring", func(r chi.Router) {
 				r.Get("/stats", ext.GetMonitoringStats)
-				r.Get("/connections", wsHandlers.GetConnectionCount)
 				r.Get("/history", ext.GetStatsHistory)
-				r.Get("/alerts/thresholds", ext.GetAlertThresholds)
-				r.Put("/alerts/thresholds", ext.SetAlertThresholds)
-				r.Get("/alerts/current", ext.GetCurrentAlerts)
+				r.Get("/thresholds", ext.GetAlertThresholds)   // Fixed: was /alerts/thresholds
+				r.Put("/thresholds", ext.SetAlertThresholds)   // Fixed: was /alerts/thresholds
+				r.Get("/alerts", ext.GetCurrentAlerts)         // Fixed: was /alerts/current
+				r.Get("/websocket", wsHandlers.StatsWebSocket) // Add WebSocket endpoint
 			})
 
 			// Power/UPS (legacy)
@@ -494,12 +493,13 @@ func main() {
 			// Preferences
 			r.Get("/preferences", ext.GetPreferences)
 			r.Post("/preferences", ext.SetPreferences)
+			r.Post("/preferences/reset", ext.ResetPreferences) // Added
 
 			// Favorites
 			r.Get("/favorites", ext.GetFavorites)
 			r.Post("/favorites/{name}", ext.AddFavorite)
 			r.Delete("/favorites/{name}", ext.RemoveFavorite)
-			r.Put("/favorites/{name}/toggle", ext.ToggleFavorite)
+			r.Post("/favorites/{name}/toggle", ext.ToggleFavorite) // Fixed: was PUT
 
 			// App Store
 			r.Mount("/appstore", appStoreHandler.Routes())
@@ -564,6 +564,12 @@ func main() {
 			// HAL Logs API - Kernel, journal, hardware logs via HAL
 			// 4 endpoints (separate from legacy /logs which has more options)
 			r.Mount("/hal/logs", halLogsHandler.Routes())
+
+			// SMB/Samba shares management
+			r.Mount("/smb", smbHandler.Routes())
+
+			// WebSocket endpoints
+			r.Mount("/ws", wsHandlers.Routes())
 
 		})
 

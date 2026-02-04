@@ -9,6 +9,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/go-chi/chi/v5"
 	"github.com/gorilla/websocket"
 
 	"cubeos-api/internal/managers"
@@ -205,6 +206,17 @@ type WSHandlers struct {
 // NewWSHandlers creates WebSocket handlers
 func NewWSHandlers(manager *WSManager) *WSHandlers {
 	return &WSHandlers{manager: manager}
+}
+
+// Routes returns the WebSocket routes
+func (h *WSHandlers) Routes() chi.Router {
+	r := chi.NewRouter()
+
+	r.Get("/stats", h.StatsWebSocket)
+	r.Get("/monitoring", h.MonitoringWebSocket)
+	r.Get("/connections", h.GetConnectionCount)
+
+	return r
 }
 
 // StatsWebSocket godoc

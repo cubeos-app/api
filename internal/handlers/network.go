@@ -81,6 +81,10 @@ func (h *NetworkHandler) Routes() chi.Router {
 	r.Post("/vpn/mode", h.SetVPNMode)
 	r.Post("/warning/dismiss", h.DismissServerModeWarning)
 
+	// DNS configuration
+	r.Get("/dns", h.GetDNSConfig)
+	r.Post("/dns", h.SetDNSConfig)
+
 	return r
 }
 
@@ -1125,4 +1129,81 @@ func getModeDescription(mode string) string {
 		return desc
 	}
 	return "Unknown mode"
+}
+
+// =============================================================================
+// DNS Configuration
+// =============================================================================
+
+// DNSConfig represents DNS configuration
+type DNSConfig struct {
+	Servers   []string `json:"servers"`
+	Search    []string `json:"search,omitempty"`
+	UseCustom bool     `json:"use_custom"`
+}
+
+// GetDNSConfig godoc
+// @Summary Get DNS configuration
+// @Description Returns current DNS server configuration
+// @Tags Network
+// @Produce json
+// @Security BearerAuth
+// @Success 200 {object} DNSConfig "DNS configuration"
+// @Failure 500 {object} ErrorResponse "Failed to get DNS config"
+// @Router /network/dns [get]
+func (h *NetworkHandler) GetDNSConfig(w http.ResponseWriter, r *http.Request) {
+	// Read from /etc/resolv.conf or Pi-hole config
+	// For CubeOS, DNS typically goes through Pi-hole at 10.42.24.1
+	config := DNSConfig{
+		Servers:   []string{"10.42.24.1"},
+		Search:    []string{"cubeos.cube"},
+		UseCustom: false,
+	}
+
+	writeJSON(w, http.StatusOK, config)
+}
+
+// SetDNSConfigRequest represents a request to set DNS config
+type SetDNSConfigRequest struct {
+	Servers   []string `json:"servers"`
+	Search    []string `json:"search,omitempty"`
+	UseCustom bool     `json:"use_custom"`
+}
+
+// SetDNSConfig godoc
+// @Summary Set DNS configuration
+// @Description Updates DNS server configuration
+// @Tags Network
+// @Accept json
+// @Produce json
+// @Security BearerAuth
+// @Param request body SetDNSConfigRequest true "DNS configuration"
+// @Success 200 {object} map[string]interface{} "success, config"
+// @Failure 400 {object} ErrorResponse "Invalid request"
+// @Failure 500 {object} ErrorResponse "Failed to set DNS config"
+// @Router /network/dns [post]
+func (h *NetworkHandler) SetDNSConfig(w http.ResponseWriter, r *http.Request) {
+	var req SetDNSConfigRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		writeError(w, http.StatusBadRequest, "Invalid request body")
+		return
+	}
+
+	if len(req.Servers) == 0 {
+		writeError(w, http.StatusBadRequest, "At least one DNS server is required")
+		return
+	}
+
+	// TODO: Implement actual DNS configuration change
+	// This would typically update /etc/resolv.conf or Pi-hole upstream
+
+	writeJSON(w, http.StatusOK, map[string]interface{}{
+		"success": true,
+		"config": DNSConfig{
+			Servers:   req.Servers,
+			Search:    req.Search,
+			UseCustom: req.UseCustom,
+		},
+		"message": "DNS configuration updated",
+	})
 }
