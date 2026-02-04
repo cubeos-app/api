@@ -14,12 +14,13 @@ import (
 
 // AppStoreHandler handles app store API requests
 type AppStoreHandler struct {
-	manager *managers.AppStoreManager
+	manager    *managers.AppStoreManager
+	npmManager *managers.NPMManager
 }
 
 // NewAppStoreHandler creates a new app store handler
-func NewAppStoreHandler(manager *managers.AppStoreManager) *AppStoreHandler {
-	return &AppStoreHandler{manager: manager}
+func NewAppStoreHandler(manager *managers.AppStoreManager, npmManager *managers.NPMManager) *AppStoreHandler {
+	return &AppStoreHandler{manager: manager, npmManager: npmManager}
 }
 
 // Routes returns the router for app store endpoints
@@ -937,12 +938,27 @@ func (h *AppStoreHandler) RestoreCoreConfigBackup(w http.ResponseWriter, r *http
 // @Failure 500 {object} ErrorResponse "Failed to fetch proxy hosts"
 // @Router /appstore/proxy-hosts [get]
 func (h *AppStoreHandler) GetProxyHosts(w http.ResponseWriter, r *http.Request) {
-	hosts, err := h.manager.GetNPMProxyHosts()
-	if err != nil {
-		http.Error(w, `{"error":"`+err.Error()+`"}`, http.StatusInternalServerError)
+	// Use NPMManager which has proper token initialization
+	if h.npmManager == nil || !h.npmManager.IsAuthenticated() {
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusServiceUnavailable)
+		json.NewEncoder(w).Encode(map[string]string{
+			"error": "NPM authentication not configured",
+		})
 		return
 	}
 
+	hosts, err := h.npmManager.ListProxyHosts()
+	if err != nil {
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusInternalServerError)
+		json.NewEncoder(w).Encode(map[string]string{
+			"error": err.Error(),
+		})
+		return
+	}
+
+	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(map[string]interface{}{
 		"hosts": hosts,
 	})

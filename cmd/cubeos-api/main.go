@@ -271,7 +271,7 @@ func main() {
 	// Create handlers
 	h := handlers.NewHandlers(cfg, db, docker, halClient)
 	ext := handlers.NewExtendedHandlers(logMgr, firewallMgr, backupMgr, processMgr, wizardMgr, monitoringMgr, prefMgr, powerMgr, storageMgr)
-	appStoreHandler := handlers.NewAppStoreHandler(appStoreMgr)
+	appStoreHandler := handlers.NewAppStoreHandler(appStoreMgr, npmMgr)
 	setupHandler := handlers.NewSetupHandler(setupMgr)
 
 	// Create Chat handler (AI Assistant)
