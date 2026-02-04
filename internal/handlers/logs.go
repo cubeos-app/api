@@ -45,7 +45,7 @@ func (h *LogsHandler) Routes() chi.Router {
 // @Failure 500 {object} ErrorResponse "Failed to get kernel logs"
 // @Failure 503 {object} ErrorResponse "HAL unavailable"
 // @Security BearerAuth
-// @Router /api/v1/logs/kernel [get]
+// @Router /api/v1/hal/logs/kernel [get]
 func (h *LogsHandler) GetKernelLogs(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
 
@@ -86,7 +86,7 @@ func (h *LogsHandler) GetKernelLogs(w http.ResponseWriter, r *http.Request) {
 // @Failure 500 {object} ErrorResponse "Failed to get journal logs"
 // @Failure 503 {object} ErrorResponse "HAL unavailable"
 // @Security BearerAuth
-// @Router /api/v1/logs/journal [get]
+// @Router /api/v1/hal/logs/journal [get]
 func (h *LogsHandler) GetJournalLogs(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
 
@@ -131,7 +131,7 @@ func (h *LogsHandler) GetJournalLogs(w http.ResponseWriter, r *http.Request) {
 // @Failure 500 {object} ErrorResponse "Failed to get hardware logs"
 // @Failure 503 {object} ErrorResponse "HAL unavailable"
 // @Security BearerAuth
-// @Router /api/v1/logs/hardware [get]
+// @Router /api/v1/hal/logs/hardware [get]
 func (h *LogsHandler) GetHardwareLogs(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
 
@@ -161,7 +161,7 @@ func (h *LogsHandler) GetHardwareLogs(w http.ResponseWriter, r *http.Request) {
 // @Failure 500 {object} ErrorResponse "Failed to get hardware logs"
 // @Failure 503 {object} ErrorResponse "HAL unavailable"
 // @Security BearerAuth
-// @Router /api/v1/logs/hardware/{category} [get]
+// @Router /api/v1/hal/logs/hardware/{category} [get]
 func (h *LogsHandler) GetHardwareLogsByCategory(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
 	category := chi.URLParam(r, "category")
