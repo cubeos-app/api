@@ -63,10 +63,8 @@ build:
     - cd /app
     - go clean -modcache
     - go mod download
-    # Install swag CLI for Swagger generation
     - go install github.com/swaggo/swag/cmd/swag@latest
     - export PATH=$PATH:$(go env GOPATH)/bin
-    # Generate Swagger documentation from annotations
     - |
       echo "📝 Generating Swagger documentation..."
       swag init \
@@ -76,10 +74,8 @@ build:
         --parseDependency \
         --parseInternal
     - ls -la docs/
-    # Build binaries for both architectures
     - GOOS=linux GOARCH=arm64 CGO_ENABLED=0 go build -ldflags="-s -w -X main.Version=${CI_COMMIT_SHORT_SHA}" -o cubeos-api-arm64 ./cmd/cubeos-api/
     - GOOS=linux GOARCH=amd64 CGO_ENABLED=0 go build -ldflags="-s -w -X main.Version=${CI_COMMIT_SHORT_SHA}" -o cubeos-api-amd64 ./cmd/cubeos-api/
-    # Copy artifacts
     - cp cubeos-api-arm64 cubeos-api-amd64 ${CI_PROJECT_DIR}/
     - cp -r docs ${CI_PROJECT_DIR}/
     - ls -lh ${CI_PROJECT_DIR}/cubeos-api-*
@@ -119,7 +115,7 @@ package:
     - if: $CI_COMMIT_BRANCH == "main"
 
 # -----------------------------------------------------------------------------
-# DEPLOY - Deploy as Swarm stack on Pi
+# DEPLOY - Deploy as Swarm stack on Pi with FORCED image update
 # -----------------------------------------------------------------------------
 deploy:
   stage: deploy
@@ -128,37 +124,53 @@ deploy:
     - echo "$GHCR_TOKEN" | docker login ghcr.io -u "$GHCR_USER" --password-stdin
   script:
     - echo "🚀 Deploying CubeOS API as Swarm stack..."
+    # Pull the specific commit image
     - docker pull ${GHCR_IMAGE}:${CI_COMMIT_SHORT_SHA}
     - docker tag ${GHCR_IMAGE}:${CI_COMMIT_SHORT_SHA} ${GHCR_IMAGE}:latest
-    # Remove old stack if exists (only cubeos-api, not other services)
-    - docker stack rm cubeos-api 2>/dev/null || true
-    - echo "⏳ Waiting for old stack to drain..."
-    - sleep 20
-    # Deploy as Swarm stack with ARM64 workaround
+    # Check if stack exists
     - |
-      cd /cubeos/coreapps/cubeos-api/appconfig
-      docker stack deploy \
-        --compose-file docker-compose.yml \
-        --resolve-image never \
-        cubeos-api
-    # Wait for Swarm to schedule the task
-    - echo "⏳ Waiting for stack to schedule..."
-    - sleep 15
-    # Wait for service to be healthy (longer timeout for Swarm)
+      if docker stack ls | grep -q cubeos-api; then
+        echo "📦 Stack exists - forcing service update with new image..."
+        docker service update \
+          --force \
+          --image ${GHCR_IMAGE}:${CI_COMMIT_SHORT_SHA} \
+          --update-parallelism 1 \
+          --update-delay 10s \
+          cubeos-api_cubeos-api
+      else
+        echo "📦 Stack doesn't exist - deploying fresh..."
+        cd /cubeos/coreapps/cubeos-api/appconfig
+        docker stack deploy \
+          --compose-file docker-compose.yml \
+          --resolve-image never \
+          cubeos-api
+        sleep 10
+        # Force update to ensure correct image
+        docker service update \
+          --force \
+          --image ${GHCR_IMAGE}:${CI_COMMIT_SHORT_SHA} \
+          cubeos-api_cubeos-api
+      fi
+    # Wait for service to be healthy
     - |
       echo "⏳ Waiting for API to be healthy..."
       for i in $(seq 1 45); do
         if curl -sf http://127.0.0.1:6010/health > /dev/null 2>&1; then
           echo "✅ Health check passed!"
           echo "📚 Swagger UI: http://cubeos.cube:6010/api/v1/docs/index.html"
+          echo ""
+          echo "=== Deployment Info ==="
           docker service ls | grep cubeos-api || true
+          echo ""
+          echo "Image: ${GHCR_IMAGE}:${CI_COMMIT_SHORT_SHA}"
+          docker image inspect ${GHCR_IMAGE}:${CI_COMMIT_SHORT_SHA} --format 'Built: {{.Created}}' 2>/dev/null || true
           exit 0
         fi
         echo "  Attempt $i/45..."
         sleep 3
       done
       echo "❌ Health check failed after 45 attempts"
-      docker service logs cubeos-api_api --tail 50 2>/dev/null || true
+      docker service logs cubeos-api_cubeos-api --tail 50 2>/dev/null || true
       exit 1
   environment:
     name: production
