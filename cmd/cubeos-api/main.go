@@ -387,36 +387,8 @@ func main() {
 				r.Post("/shutdown", h.Shutdown)
 			})
 
-			// Network Management
-			r.Route("/network", func(r chi.Router) {
-				// Basic network info
-				r.Get("/interfaces", h.GetInterfaces)
-				r.Get("/status", h.GetNetworkStatus)
-				r.Get("/dns", h.GetDNSConfig)
-				r.Post("/dns", h.SetDNSConfig)
-
-				// Network mode management (Sprint 3)
-				r.Get("/mode", networkHandler.GetNetworkMode)
-				r.Post("/mode", networkHandler.SetNetworkMode)
-				r.Get("/modes", networkHandler.GetAvailableModes)
-
-				// WiFi management (Sprint 3)
-				r.Get("/wifi/scan", networkHandler.ScanWiFi)
-				r.Get("/wifi/status", networkHandler.GetWiFiStatus)
-				r.Post("/wifi/connect", networkHandler.ConnectWiFi)
-				r.Post("/wifi/disconnect", networkHandler.DisconnectWiFi)
-				r.Get("/wifi/saved", networkHandler.GetSavedNetworks)
-				r.Delete("/wifi/saved/{ssid}", networkHandler.ForgetNetwork)
-
-				// Access Point management (Sprint 3)
-				r.Get("/ap/status", networkHandler.GetAPStatus)
-				r.Post("/ap/start", networkHandler.StartAP)
-				r.Post("/ap/stop", networkHandler.StopAP)
-				r.Put("/ap/config", networkHandler.ConfigureAP)
-
-				// Connectivity check
-				r.Get("/connectivity", networkHandler.CheckConnectivity)
-			})
+			// Network Management (all routes via NetworkHandler)
+			r.Mount("/network", networkHandler.Routes())
 
 			// Connected Clients (DHCP)
 			r.Route("/clients", func(r chi.Router) {
@@ -593,8 +565,6 @@ func main() {
 			// 4 endpoints (separate from legacy /logs which has more options)
 			r.Mount("/hal/logs", halLogsHandler.Routes())
 
-			// NOTE: Network routes are already defined in /network block above.
-			// DO NOT add r.Mount("/network", ...) here - it causes duplicate route panic!
 		})
 
 		// Setup wizard routes (semi-public - accessible before full setup)
