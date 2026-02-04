@@ -32,6 +32,7 @@ import (
 	"net/http"
 	"net/url"
 	"strconv"
+	"strings"
 	"time"
 )
 
@@ -2563,4 +2564,95 @@ func (c *Client) IsMounted(ctx context.Context, path string) (bool, error) {
 	}
 
 	return resp.Mounted, nil
+}
+
+// =============================================================================
+// Firewall Rules Response (HAL returns nested structure)
+// =============================================================================
+
+// FirewallRulesResponse represents the nested firewall rules from HAL
+// HAL returns: {"filter": {"INPUT": [...], "OUTPUT": [...]}, "nat": {...}}
+type FirewallRulesResponse struct {
+	Filter map[string][]string `json:"filter,omitempty"`
+	NAT    map[string][]string `json:"nat,omitempty"`
+	Mangle map[string][]string `json:"mangle,omitempty"`
+	Raw    map[string][]string `json:"raw,omitempty"`
+}
+
+// GetFirewallRulesDetailed returns current iptables rules in nested format
+func (c *Client) GetFirewallRulesDetailed(ctx context.Context) (*FirewallRulesResponse, error) {
+	body, err := c.doRequest(ctx, http.MethodGet, "/firewall/rules", nil)
+	if err != nil {
+		return nil, err
+	}
+
+	var resp FirewallRulesResponse
+	if err := json.Unmarshal(body, &resp); err != nil {
+		return nil, fmt.Errorf("failed to parse response: %w", err)
+	}
+
+	return &resp, nil
+}
+
+// =============================================================================
+// WiFi Saved Networks (HAL proxy methods)
+// =============================================================================
+
+// SavedWiFiNetwork represents a saved WiFi network from HAL
+type SavedWiFiNetwork struct {
+	SSID     string `json:"ssid"`
+	Security string `json:"security,omitempty"`
+	AutoJoin bool   `json:"auto_join"`
+}
+
+// SavedWiFiNetworksResponse is the HAL response for saved networks
+type SavedWiFiNetworksResponse struct {
+	Networks []SavedWiFiNetwork `json:"networks"`
+	Count    int                `json:"count"`
+}
+
+// GetSavedWiFiNetworks returns saved WiFi networks via HAL
+func (c *Client) GetSavedWiFiNetworks(ctx context.Context, iface string) (*SavedWiFiNetworksResponse, error) {
+	path := "/network/wifi/saved"
+	if iface != "" {
+		path += "?interface=" + url.QueryEscape(iface)
+	}
+
+	body, err := c.doRequest(ctx, http.MethodGet, path, nil)
+	if err != nil {
+		return nil, err
+	}
+
+	var resp SavedWiFiNetworksResponse
+	if err := json.Unmarshal(body, &resp); err != nil {
+		return nil, fmt.Errorf("failed to parse response: %w", err)
+	}
+
+	return &resp, nil
+}
+
+// ForgetWiFiNetwork removes a saved WiFi network via HAL
+func (c *Client) ForgetWiFiNetwork(ctx context.Context, ssid, iface string) error {
+	path := "/network/wifi/saved/" + url.PathEscape(ssid)
+	if iface != "" {
+		path += "?interface=" + url.QueryEscape(iface)
+	}
+
+	return c.doDelete(ctx, path, nil)
+}
+
+// =============================================================================
+// Storage SMART via HAL
+// =============================================================================
+
+// GetStorageDeviceSMART returns SMART data for a device via HAL endpoint
+func (c *Client) GetStorageDeviceSMART(ctx context.Context, device string) (*SMARTInfo, error) {
+	// Remove /dev/ prefix if present for the URL
+	device = strings.TrimPrefix(device, "/dev/")
+
+	var result SMARTInfo
+	if err := c.doGet(ctx, "/storage/devices/"+device+"/smart", &result); err != nil {
+		return nil, err
+	}
+	return &result, nil
 }

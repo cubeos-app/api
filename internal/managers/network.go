@@ -1099,6 +1099,23 @@ type SavedNetwork struct {
 func (m *NetworkManager) GetSavedNetworks(ctx context.Context) ([]SavedNetwork, error) {
 	var networks []SavedNetwork
 
+	// Try HAL first (works from container)
+	if m.hal != nil {
+		halNetworks, err := m.hal.GetSavedWiFiNetworks(ctx, m.wifiClientInterface)
+		if err == nil && halNetworks != nil && len(halNetworks.Networks) > 0 {
+			for _, n := range halNetworks.Networks {
+				networks = append(networks, SavedNetwork{
+					SSID:     n.SSID,
+					Security: n.Security,
+					AutoJoin: n.AutoJoin,
+				})
+			}
+			return networks, nil
+		}
+		// Fall through to local methods if HAL fails
+		log.Printf("NetworkManager: HAL GetSavedWiFiNetworks failed: %v, trying local methods", err)
+	}
+
 	// Try NetworkManager first (nmcli)
 	cmd := exec.CommandContext(ctx, "nmcli", "-t", "-f", "NAME,TYPE,AUTOCONNECT", "connection", "show")
 	if output, err := cmd.Output(); err == nil {
@@ -1171,6 +1188,16 @@ func (m *NetworkManager) GetSavedNetworks(ctx context.Context) ([]SavedNetwork, 
 func (m *NetworkManager) ForgetNetwork(ctx context.Context, ssid string) error {
 	if ssid == "" {
 		return fmt.Errorf("SSID cannot be empty")
+	}
+
+	// Try HAL first (works from container)
+	if m.hal != nil {
+		err := m.hal.ForgetWiFiNetwork(ctx, ssid, m.wifiClientInterface)
+		if err == nil {
+			return nil
+		}
+		// Fall through to local methods if HAL fails
+		log.Printf("NetworkManager: HAL ForgetWiFiNetwork failed: %v, trying local methods", err)
 	}
 
 	// Try NetworkManager first (nmcli)

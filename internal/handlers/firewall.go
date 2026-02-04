@@ -102,9 +102,21 @@ func (h *FirewallHandler) GetStatus(w http.ResponseWriter, r *http.Request) {
 	// Get firewall rules count
 	rulesCount := 0
 	if h.halClient != nil {
-		rules, err := h.halClient.GetFirewallRules(ctx)
-		if err == nil {
-			rulesCount = len(rules)
+		rulesResp, err := h.halClient.GetFirewallRulesDetailed(ctx)
+		if err == nil && rulesResp != nil {
+			// Count rules across all tables
+			for _, chains := range rulesResp.Filter {
+				rulesCount += len(chains)
+			}
+			for _, chains := range rulesResp.NAT {
+				rulesCount += len(chains)
+			}
+			for _, chains := range rulesResp.Mangle {
+				rulesCount += len(chains)
+			}
+			for _, chains := range rulesResp.Raw {
+				rulesCount += len(chains)
+			}
 		}
 	}
 
@@ -304,32 +316,75 @@ func (h *FirewallHandler) GetRules(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	rules, err := h.halClient.GetFirewallRules(ctx)
+	// Get detailed (nested) firewall rules from HAL
+	rulesResp, err := h.halClient.GetFirewallRulesDetailed(ctx)
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, "Failed to get firewall rules: "+err.Error())
 		return
 	}
 
-	// Filter by chain/table if specified
-	chain := r.URL.Query().Get("chain")
-	table := r.URL.Query().Get("table")
+	// Flatten nested structure into "table:chain" -> rules format
+	flatRules := make(map[string][]string)
+	totalCount := 0
 
-	if chain != "" || table != "" {
-		filtered := make(map[string]string)
-		for k, v := range rules {
-			// Simple filtering - check if key contains chain/table
-			matchChain := chain == "" || strings.Contains(strings.ToUpper(k), strings.ToUpper(chain))
-			matchTable := table == "" || strings.Contains(strings.ToLower(k), strings.ToLower(table))
+	// Process filter table
+	for chain, rules := range rulesResp.Filter {
+		key := "filter:" + chain
+		flatRules[key] = rules
+		totalCount += len(rules)
+	}
+
+	// Process nat table
+	for chain, rules := range rulesResp.NAT {
+		key := "nat:" + chain
+		flatRules[key] = rules
+		totalCount += len(rules)
+	}
+
+	// Process mangle table
+	for chain, rules := range rulesResp.Mangle {
+		key := "mangle:" + chain
+		flatRules[key] = rules
+		totalCount += len(rules)
+	}
+
+	// Process raw table
+	for chain, rules := range rulesResp.Raw {
+		key := "raw:" + chain
+		flatRules[key] = rules
+		totalCount += len(rules)
+	}
+
+	// Filter by chain/table if specified
+	chainFilter := r.URL.Query().Get("chain")
+	tableFilter := r.URL.Query().Get("table")
+
+	if chainFilter != "" || tableFilter != "" {
+		filtered := make(map[string][]string)
+		filteredCount := 0
+		for k, v := range flatRules {
+			// Key format is "table:chain"
+			parts := strings.SplitN(k, ":", 2)
+			if len(parts) != 2 {
+				continue
+			}
+			table := parts[0]
+			chain := parts[1]
+
+			matchChain := chainFilter == "" || strings.EqualFold(chain, chainFilter)
+			matchTable := tableFilter == "" || strings.EqualFold(table, tableFilter)
 			if matchChain && matchTable {
 				filtered[k] = v
+				filteredCount += len(v)
 			}
 		}
-		rules = filtered
+		flatRules = filtered
+		totalCount = filteredCount
 	}
 
 	writeJSON(w, http.StatusOK, map[string]interface{}{
-		"rules": rules,
-		"count": len(rules),
+		"rules": flatRules,
+		"count": totalCount,
 	})
 }
 

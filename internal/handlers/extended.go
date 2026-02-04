@@ -9,6 +9,7 @@ import (
 
 	"github.com/go-chi/chi/v5"
 
+	"cubeos-api/internal/hal"
 	"cubeos-api/internal/managers"
 	"cubeos-api/internal/models"
 )
@@ -24,6 +25,7 @@ type ExtendedHandlers struct {
 	preferences *managers.PreferencesManager
 	power       *managers.PowerManager
 	storage     *managers.StorageManager
+	halClient   *hal.Client
 }
 
 // NewExtendedHandlers creates extended handlers
@@ -37,6 +39,7 @@ func NewExtendedHandlers(
 	preferences *managers.PreferencesManager,
 	power *managers.PowerManager,
 	storage *managers.StorageManager,
+	halClient *hal.Client,
 ) *ExtendedHandlers {
 	return &ExtendedHandlers{
 		logs:        logs,
@@ -48,6 +51,7 @@ func NewExtendedHandlers(
 		preferences: preferences,
 		power:       power,
 		storage:     storage,
+		halClient:   halClient,
 	}
 }
 
@@ -1727,6 +1731,27 @@ func (h *ExtendedHandlers) GetDiskHealthByDevice(w http.ResponseWriter, r *http.
 		device = "/dev/" + device
 	}
 
+	// Try HAL first (it has smartctl installed)
+	if h.halClient != nil {
+		smartInfo, err := h.halClient.GetStorageDeviceSMART(r.Context(), device)
+		if err == nil {
+			// Convert HAL SMARTInfo to DiskHealth format
+			health := managers.DiskHealth{
+				Device:       smartInfo.Device,
+				Health:       smartInfo.Health,
+				Temperature:  smartInfo.Temperature,
+				PowerOnHours: smartInfo.PowerOnHours,
+			}
+			if smartInfo.Health == "" {
+				health.Health = "UNKNOWN"
+			}
+			writeJSON(w, http.StatusOK, health)
+			return
+		}
+		// Fall through to local method if HAL fails
+	}
+
+	// Fall back to local storage manager
 	health, err := h.storage.GetDiskHealthByDevice(device)
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, err.Error())
