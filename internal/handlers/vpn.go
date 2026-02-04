@@ -8,6 +8,7 @@ import (
 	"github.com/go-chi/chi/v5"
 
 	"cubeos-api/internal/managers"
+	_ "cubeos-api/internal/models" // swagger
 )
 
 // VPNHandler handles VPN-related HTTP requests
