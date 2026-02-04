@@ -275,7 +275,7 @@ func (h *AppStoreHandler) GetCategories(w http.ResponseWriter, r *http.Request) 
 // @Security BearerAuth
 // @Param storeID path string true "Store ID"
 // @Param appName path string true "App name"
-// @Success 200 {object} models.CatalogApp "App details"
+// @Success 200 {object} models.StoreApp "App details"
 // @Failure 404 {object} ErrorResponse "App not found"
 // @Router /appstore/stores/{storeID}/apps/{appName} [get]
 func (h *AppStoreHandler) GetApp(w http.ResponseWriter, r *http.Request) {
