@@ -240,20 +240,23 @@ type APClientsResponse struct {
 }
 
 // TrafficStats represents traffic statistics for interfaces
+// HAL returns: {"interfaces": {"eth0": {...}, "wlan0": {...}}, "source": "..."}
 type TrafficStats struct {
-	Interfaces []InterfaceTraffic `json:"interfaces"`
-	Timestamp  int64              `json:"timestamp"`
+	Interfaces map[string]InterfaceTraffic `json:"interfaces"`
+	Source     string                      `json:"source,omitempty"`
 }
 
 // InterfaceTraffic represents traffic for a single interface
 type InterfaceTraffic struct {
-	Name      string `json:"name"`
+	Name      string `json:"name,omitempty"` // Only set when converted to slice
 	RXBytes   int64  `json:"rx_bytes"`
 	TXBytes   int64  `json:"tx_bytes"`
 	RXPackets int64  `json:"rx_packets"`
 	TXPackets int64  `json:"tx_packets"`
 	RXErrors  int64  `json:"rx_errors"`
 	TXErrors  int64  `json:"tx_errors"`
+	RXDropped int64  `json:"rx_dropped"`
+	TXDropped int64  `json:"tx_dropped"`
 }
 
 // =============================================================================
@@ -2567,19 +2570,28 @@ func (c *Client) IsMounted(ctx context.Context, path string) (bool, error) {
 }
 
 // =============================================================================
-// Firewall Rules Response (HAL returns nested structure)
+// Firewall Rules Response (HAL actual format)
 // =============================================================================
 
-// FirewallRulesResponse represents the nested firewall rules from HAL
-// HAL returns: {"filter": {"INPUT": [...], "OUTPUT": [...]}, "nat": {...}}
-type FirewallRulesResponse struct {
-	Filter map[string][]string `json:"filter,omitempty"`
-	NAT    map[string][]string `json:"nat,omitempty"`
-	Mangle map[string][]string `json:"mangle,omitempty"`
-	Raw    map[string][]string `json:"raw,omitempty"`
+// FirewallRule represents a single iptables rule from HAL
+type FirewallRule struct {
+	Chain       string `json:"chain"`
+	Destination string `json:"destination"`
+	Prot        string `json:"prot"`
+	Source      string `json:"source"`
+	Target      string `json:"target"`
 }
 
-// GetFirewallRulesDetailed returns current iptables rules in nested format
+// FirewallRulesResponse represents firewall rules from HAL
+// HAL returns: {"filter": [{rule}, {rule}], "nat": [{rule}, {rule}]}
+type FirewallRulesResponse struct {
+	Filter []FirewallRule `json:"filter,omitempty"`
+	NAT    []FirewallRule `json:"nat,omitempty"`
+	Mangle []FirewallRule `json:"mangle,omitempty"`
+	Raw    []FirewallRule `json:"raw,omitempty"`
+}
+
+// GetFirewallRulesDetailed returns current iptables rules from HAL
 func (c *Client) GetFirewallRulesDetailed(ctx context.Context) (*FirewallRulesResponse, error) {
 	body, err := c.doRequest(ctx, http.MethodGet, "/firewall/rules", nil)
 	if err != nil {

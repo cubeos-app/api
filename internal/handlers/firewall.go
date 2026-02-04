@@ -104,19 +104,7 @@ func (h *FirewallHandler) GetStatus(w http.ResponseWriter, r *http.Request) {
 	if h.halClient != nil {
 		rulesResp, err := h.halClient.GetFirewallRulesDetailed(ctx)
 		if err == nil && rulesResp != nil {
-			// Count rules across all tables
-			for _, chains := range rulesResp.Filter {
-				rulesCount += len(chains)
-			}
-			for _, chains := range rulesResp.NAT {
-				rulesCount += len(chains)
-			}
-			for _, chains := range rulesResp.Mangle {
-				rulesCount += len(chains)
-			}
-			for _, chains := range rulesResp.Raw {
-				rulesCount += len(chains)
-			}
+			rulesCount = len(rulesResp.Filter) + len(rulesResp.NAT) + len(rulesResp.Mangle) + len(rulesResp.Raw)
 		}
 	}
 
@@ -316,53 +304,48 @@ func (h *FirewallHandler) GetRules(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Get detailed (nested) firewall rules from HAL
+	// Get detailed firewall rules from HAL
 	rulesResp, err := h.halClient.GetFirewallRulesDetailed(ctx)
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, "Failed to get firewall rules: "+err.Error())
 		return
 	}
 
-	// Flatten nested structure into "table:chain" -> rules format
-	flatRules := make(map[string][]string)
-	totalCount := 0
+	// Build response grouped by "table:chain"
+	rulesByTableChain := make(map[string][]hal.FirewallRule)
 
 	// Process filter table
-	for chain, rules := range rulesResp.Filter {
-		key := "filter:" + chain
-		flatRules[key] = rules
-		totalCount += len(rules)
+	for _, rule := range rulesResp.Filter {
+		key := "filter:" + rule.Chain
+		rulesByTableChain[key] = append(rulesByTableChain[key], rule)
 	}
 
 	// Process nat table
-	for chain, rules := range rulesResp.NAT {
-		key := "nat:" + chain
-		flatRules[key] = rules
-		totalCount += len(rules)
+	for _, rule := range rulesResp.NAT {
+		key := "nat:" + rule.Chain
+		rulesByTableChain[key] = append(rulesByTableChain[key], rule)
 	}
 
 	// Process mangle table
-	for chain, rules := range rulesResp.Mangle {
-		key := "mangle:" + chain
-		flatRules[key] = rules
-		totalCount += len(rules)
+	for _, rule := range rulesResp.Mangle {
+		key := "mangle:" + rule.Chain
+		rulesByTableChain[key] = append(rulesByTableChain[key], rule)
 	}
 
 	// Process raw table
-	for chain, rules := range rulesResp.Raw {
-		key := "raw:" + chain
-		flatRules[key] = rules
-		totalCount += len(rules)
+	for _, rule := range rulesResp.Raw {
+		key := "raw:" + rule.Chain
+		rulesByTableChain[key] = append(rulesByTableChain[key], rule)
 	}
 
 	// Filter by chain/table if specified
 	chainFilter := r.URL.Query().Get("chain")
 	tableFilter := r.URL.Query().Get("table")
 
+	totalCount := 0
 	if chainFilter != "" || tableFilter != "" {
-		filtered := make(map[string][]string)
-		filteredCount := 0
-		for k, v := range flatRules {
+		filtered := make(map[string][]hal.FirewallRule)
+		for k, rules := range rulesByTableChain {
 			// Key format is "table:chain"
 			parts := strings.SplitN(k, ":", 2)
 			if len(parts) != 2 {
@@ -374,16 +357,19 @@ func (h *FirewallHandler) GetRules(w http.ResponseWriter, r *http.Request) {
 			matchChain := chainFilter == "" || strings.EqualFold(chain, chainFilter)
 			matchTable := tableFilter == "" || strings.EqualFold(table, tableFilter)
 			if matchChain && matchTable {
-				filtered[k] = v
-				filteredCount += len(v)
+				filtered[k] = rules
+				totalCount += len(rules)
 			}
 		}
-		flatRules = filtered
-		totalCount = filteredCount
+		rulesByTableChain = filtered
+	} else {
+		for _, rules := range rulesByTableChain {
+			totalCount += len(rules)
+		}
 	}
 
 	writeJSON(w, http.StatusOK, map[string]interface{}{
-		"rules": flatRules,
+		"rules": rulesByTableChain,
 		"count": totalCount,
 	})
 }
