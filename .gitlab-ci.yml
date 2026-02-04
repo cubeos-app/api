@@ -136,6 +136,7 @@ deploy:
           --image ${GHCR_IMAGE}:${CI_COMMIT_SHORT_SHA} \
           --update-parallelism 1 \
           --update-delay 10s \
+          --update-order stop-first \
           cubeos-api_cubeos-api
       else
         echo "📦 Stack doesn't exist - deploying fresh..."
@@ -149,6 +150,7 @@ deploy:
         docker service update \
           --force \
           --image ${GHCR_IMAGE}:${CI_COMMIT_SHORT_SHA} \
+          --update-order stop-first \
           cubeos-api_cubeos-api
       fi
     # Wait for service to be healthy
