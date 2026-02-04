@@ -391,6 +391,7 @@ func main() {
 			r.Route("/system", func(r chi.Router) {
 				r.Get("/info", h.GetSystemInfo)
 				r.Get("/stats", h.GetSystemStats)
+				r.Get("/temperature", h.GetTemperature)
 				r.Get("/hostname", h.GetHostname)
 				r.Post("/hostname", h.SetHostname)
 				r.Get("/timezone", h.GetTimezone)
@@ -414,6 +415,8 @@ func main() {
 			// Storage (SMB Shares - legacy, unified in /mounts)
 			r.Route("/storage", func(r chi.Router) {
 				r.Get("/", h.GetStorage)
+				r.Get("/health", ext.GetDiskHealth)
+				r.Get("/health/{device}", ext.GetDiskHealthByDevice)
 				r.Get("/mounts", h.GetMounts)
 				r.Post("/mounts", h.AddMount)
 				r.Delete("/mounts/{id}", h.RemoveMount)

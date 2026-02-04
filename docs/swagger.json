@@ -9611,7 +9611,7 @@
                         "BearerAuth": []
                     }
                 ],
-                "description": "Returns IPv4 forwarding status",
+                "description": "Returns the current state of IP forwarding (net.ipv4.ip_forward)",
                 "produces": [
                     "application/json"
                 ],
@@ -9621,10 +9621,16 @@
                 "summary": "Get IP forwarding status",
                 "responses": {
                     "200": {
-                        "description": "IP forward status",
+                        "description": "enabled: boolean, value: string",
                         "schema": {
                             "type": "object",
                             "additionalProperties": true
+                        }
+                    },
+                    "500": {
+                        "description": "Failed to get IP forward status",
+                        "schema": {
+                            "$ref": "#/definitions/internal_handlers.ErrorResponse"
                         }
                     }
                 }
@@ -9635,7 +9641,7 @@
                         "BearerAuth": []
                     }
                 ],
-                "description": "Enables or disables IPv4 forwarding",
+                "description": "Enables or disables IP forwarding",
                 "consumes": [
                     "application/json"
                 ],
@@ -9645,27 +9651,34 @@
                 "tags": [
                     "Firewall"
                 ],
-                "summary": "Set IP forwarding",
+                "summary": "Set IP forwarding status",
                 "parameters": [
                     {
-                        "description": "Enable state",
+                        "description": "IP forward setting",
                         "name": "request",
                         "in": "body",
                         "required": true,
                         "schema": {
-                            "type": "object"
+                            "$ref": "#/definitions/internal_handlers.SetIPForwardRequest"
                         }
                     }
                 ],
                 "responses": {
                     "200": {
-                        "description": "IP forward updated",
+                        "description": "success, enabled",
                         "schema": {
-                            "$ref": "#/definitions/cubeos-api_internal_models.SuccessResponse"
+                            "type": "object",
+                            "additionalProperties": true
                         }
                     },
                     "400": {
-                        "description": "Invalid request body",
+                        "description": "Invalid request",
+                        "schema": {
+                            "$ref": "#/definitions/internal_handlers.ErrorResponse"
+                        }
+                    },
+                    "500": {
+                        "description": "Failed to set IP forward",
                         "schema": {
                             "$ref": "#/definitions/internal_handlers.ErrorResponse"
                         }
@@ -9820,51 +9833,44 @@
                         "BearerAuth": []
                     }
                 ],
-                "description": "Adds firewall rule to allow traffic on a port",
+                "description": "Opens a port in the firewall for incoming traffic",
+                "consumes": [
+                    "application/json"
+                ],
                 "produces": [
                     "application/json"
                 ],
                 "tags": [
                     "Firewall"
                 ],
-                "summary": "Allow port",
+                "summary": "Allow incoming traffic on a port",
                 "parameters": [
                     {
-                        "type": "integer",
-                        "description": "Port number (1-65535)",
-                        "name": "port",
-                        "in": "query",
-                        "required": true
-                    },
-                    {
-                        "type": "string",
-                        "default": "tcp",
-                        "description": "Protocol (tcp/udp)",
-                        "name": "protocol",
-                        "in": "query"
-                    },
-                    {
-                        "type": "string",
-                        "description": "Rule comment",
-                        "name": "comment",
-                        "in": "query"
+                        "description": "Port to allow",
+                        "name": "request",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/internal_handlers.AllowPortRequest"
+                        }
                     }
                 ],
                 "responses": {
                     "200": {
-                        "description": "Port allowed",
+                        "description": "success, port, protocol",
                         "schema": {
-                            "$ref": "#/definitions/cubeos-api_internal_models.SuccessResponse"
+                            "type": "object",
+                            "additionalProperties": true
                         }
                     },
                     "400": {
-                        "description": "Invalid port",
+                        "description": "Invalid port or protocol",
                         "schema": {
                             "$ref": "#/definitions/internal_handlers.ErrorResponse"
                         }
                     },
                     "500": {
-                        "description": "Failed to add rule",
+                        "description": "Failed to allow port",
                         "schema": {
                             "$ref": "#/definitions/internal_handlers.ErrorResponse"
                         }
@@ -9879,45 +9885,44 @@
                         "BearerAuth": []
                     }
                 ],
-                "description": "Adds firewall rule to block traffic on a port",
+                "description": "Blocks a port in the firewall for incoming traffic",
+                "consumes": [
+                    "application/json"
+                ],
                 "produces": [
                     "application/json"
                 ],
                 "tags": [
                     "Firewall"
                 ],
-                "summary": "Block port",
+                "summary": "Block incoming traffic on a port",
                 "parameters": [
                     {
-                        "type": "integer",
-                        "description": "Port number (1-65535)",
-                        "name": "port",
-                        "in": "query",
-                        "required": true
-                    },
-                    {
-                        "type": "string",
-                        "default": "tcp",
-                        "description": "Protocol (tcp/udp)",
-                        "name": "protocol",
-                        "in": "query"
+                        "description": "Port to block",
+                        "name": "request",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/internal_handlers.AllowPortRequest"
+                        }
                     }
                 ],
                 "responses": {
                     "200": {
-                        "description": "Port blocked",
+                        "description": "success, port, protocol",
                         "schema": {
-                            "$ref": "#/definitions/cubeos-api_internal_models.SuccessResponse"
+                            "type": "object",
+                            "additionalProperties": true
                         }
                     },
                     "400": {
-                        "description": "Invalid port",
+                        "description": "Invalid port or protocol",
                         "schema": {
                             "$ref": "#/definitions/internal_handlers.ErrorResponse"
                         }
                     },
                     "500": {
-                        "description": "Failed to add rule",
+                        "description": "Failed to block port",
                         "schema": {
                             "$ref": "#/definitions/internal_handlers.ErrorResponse"
                         }
@@ -9932,14 +9937,14 @@
                         "BearerAuth": []
                     }
                 ],
-                "description": "Removes a firewall rule for a port",
+                "description": "Removes any firewall rules for the specified port",
                 "produces": [
                     "application/json"
                 ],
                 "tags": [
                     "Firewall"
                 ],
-                "summary": "Remove port rule",
+                "summary": "Delete port firewall rule",
                 "parameters": [
                     {
                         "type": "integer",
@@ -9950,24 +9955,17 @@
                     },
                     {
                         "type": "string",
-                        "default": "tcp",
-                        "description": "Protocol (tcp/udp)",
+                        "description": "Protocol (tcp, udp)",
                         "name": "protocol",
-                        "in": "query"
-                    },
-                    {
-                        "type": "string",
-                        "default": "ACCEPT",
-                        "description": "Rule action (ACCEPT/DROP)",
-                        "name": "action",
                         "in": "query"
                     }
                 ],
                 "responses": {
                     "200": {
-                        "description": "Rule removed",
+                        "description": "success, message",
                         "schema": {
-                            "$ref": "#/definitions/cubeos-api_internal_models.SuccessResponse"
+                            "type": "object",
+                            "additionalProperties": true
                         }
                     },
                     "400": {
@@ -9977,7 +9975,7 @@
                         }
                     },
                     "500": {
-                        "description": "Failed to remove rule",
+                        "description": "Failed to delete port rule",
                         "schema": {
                             "$ref": "#/definitions/internal_handlers.ErrorResponse"
                         }
@@ -9992,33 +9990,24 @@
                         "BearerAuth": []
                     }
                 ],
-                "description": "Resets firewall to default state (requires confirmation)",
+                "description": "Resets all firewall rules to default (allow all)",
                 "produces": [
                     "application/json"
                 ],
                 "tags": [
                     "Firewall"
                 ],
-                "summary": "Reset firewall",
-                "parameters": [
-                    {
-                        "type": "boolean",
-                        "example": true,
-                        "description": "Confirmation flag",
-                        "name": "confirm",
-                        "in": "query",
-                        "required": true
-                    }
-                ],
+                "summary": "Reset firewall to defaults",
                 "responses": {
                     "200": {
-                        "description": "Firewall reset",
+                        "description": "success, message",
                         "schema": {
-                            "$ref": "#/definitions/cubeos-api_internal_models.SuccessResponse"
+                            "type": "object",
+                            "additionalProperties": true
                         }
                     },
-                    "400": {
-                        "description": "Confirmation required",
+                    "500": {
+                        "description": "Failed to reset firewall",
                         "schema": {
                             "$ref": "#/definitions/internal_handlers.ErrorResponse"
                         }
@@ -10033,7 +10022,7 @@
                         "BearerAuth": []
                     }
                 ],
-                "description": "Restores firewall rules from saved configuration",
+                "description": "Restores firewall rules from persistent storage",
                 "produces": [
                     "application/json"
                 ],
@@ -10043,9 +10032,16 @@
                 "summary": "Restore firewall rules",
                 "responses": {
                     "200": {
-                        "description": "Rules restored",
+                        "description": "success, message",
                         "schema": {
-                            "$ref": "#/definitions/cubeos-api_internal_models.SuccessResponse"
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    },
+                    "500": {
+                        "description": "Failed to restore rules",
+                        "schema": {
+                            "$ref": "#/definitions/internal_handlers.ErrorResponse"
                         }
                     }
                 }
@@ -10222,7 +10218,7 @@
                         "BearerAuth": []
                     }
                 ],
-                "description": "Persists current firewall rules to survive reboot",
+                "description": "Saves current firewall rules to persistent storage",
                 "produces": [
                     "application/json"
                 ],
@@ -10232,9 +10228,16 @@
                 "summary": "Save firewall rules",
                 "responses": {
                     "200": {
-                        "description": "Rules saved",
+                        "description": "success, message",
                         "schema": {
-                            "$ref": "#/definitions/cubeos-api_internal_models.SuccessResponse"
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    },
+                    "500": {
+                        "description": "Failed to save rules",
+                        "schema": {
+                            "$ref": "#/definitions/internal_handlers.ErrorResponse"
                         }
                     }
                 }
@@ -10247,18 +10250,18 @@
                         "BearerAuth": []
                     }
                 ],
-                "description": "Adds firewall rule to allow a known service (http, https, ssh, etc.)",
+                "description": "Opens firewall for a named service (ssh, http, https, etc.)",
                 "produces": [
                     "application/json"
                 ],
                 "tags": [
                     "Firewall"
                 ],
-                "summary": "Allow service",
+                "summary": "Allow a service through the firewall",
                 "parameters": [
                     {
                         "type": "string",
-                        "description": "Service name",
+                        "description": "Service name (ssh, http, https, dns, etc.)",
                         "name": "service",
                         "in": "path",
                         "required": true
@@ -10266,13 +10269,20 @@
                 ],
                 "responses": {
                     "200": {
-                        "description": "Service allowed",
+                        "description": "success, service, ports",
                         "schema": {
-                            "$ref": "#/definitions/cubeos-api_internal_models.SuccessResponse"
+                            "type": "object",
+                            "additionalProperties": true
                         }
                     },
                     "400": {
                         "description": "Unknown service",
+                        "schema": {
+                            "$ref": "#/definitions/internal_handlers.ErrorResponse"
+                        }
+                    },
+                    "500": {
+                        "description": "Failed to allow service",
                         "schema": {
                             "$ref": "#/definitions/internal_handlers.ErrorResponse"
                         }
@@ -11528,12 +11538,11 @@
                     "200": {
                         "description": "DNS configuration",
                         "schema": {
-                            "type": "object",
-                            "additionalProperties": true
+                            "$ref": "#/definitions/internal_handlers.DNSConfig"
                         }
                     },
                     "500": {
-                        "description": "Failed to get DNS configuration",
+                        "description": "Failed to get DNS config",
                         "schema": {
                             "$ref": "#/definitions/internal_handlers.ErrorResponse"
                         }
@@ -11560,29 +11569,30 @@
                 "parameters": [
                     {
                         "description": "DNS configuration",
-                        "name": "config",
+                        "name": "request",
                         "in": "body",
                         "required": true,
                         "schema": {
-                            "type": "object"
+                            "$ref": "#/definitions/internal_handlers.SetDNSConfigRequest"
                         }
                     }
                 ],
                 "responses": {
                     "200": {
-                        "description": "DNS configuration updated",
+                        "description": "success, config",
                         "schema": {
-                            "$ref": "#/definitions/cubeos-api_internal_models.SuccessResponse"
+                            "type": "object",
+                            "additionalProperties": true
                         }
                     },
                     "400": {
-                        "description": "Invalid request body",
+                        "description": "Invalid request",
                         "schema": {
                             "$ref": "#/definitions/internal_handlers.ErrorResponse"
                         }
                     },
                     "500": {
-                        "description": "Failed to update DNS",
+                        "description": "Failed to set DNS config",
                         "schema": {
                             "$ref": "#/definitions/internal_handlers.ErrorResponse"
                         }
@@ -13513,7 +13523,7 @@
                         "BearerAuth": []
                     }
                 ],
-                "description": "Returns list of configured SMB shares",
+                "description": "Returns all configured SMB shares",
                 "produces": [
                     "application/json"
                 ],
@@ -13523,14 +13533,14 @@
                 "summary": "List SMB shares",
                 "responses": {
                     "200": {
-                        "description": "SMB shares",
+                        "description": "shares array",
                         "schema": {
                             "type": "object",
                             "additionalProperties": true
                         }
                     },
                     "500": {
-                        "description": "Failed to get shares",
+                        "description": "Failed to list shares",
                         "schema": {
                             "$ref": "#/definitions/internal_handlers.ErrorResponse"
                         }
@@ -13543,7 +13553,7 @@
                         "BearerAuth": []
                     }
                 ],
-                "description": "Creates a new SMB share",
+                "description": "Creates a new SMB share with the specified configuration",
                 "consumes": [
                     "application/json"
                 ],
@@ -13556,25 +13566,30 @@
                 "summary": "Create SMB share",
                 "parameters": [
                     {
-                        "description": "SMB share configuration",
-                        "name": "share",
+                        "description": "Share configuration",
+                        "name": "request",
                         "in": "body",
                         "required": true,
                         "schema": {
-                            "$ref": "#/definitions/cubeos-api_internal_managers.SMBShare"
+                            "$ref": "#/definitions/internal_handlers.CreateShareRequest"
                         }
                     }
                 ],
                 "responses": {
                     "201": {
-                        "description": "Share created",
+                        "description": "Created share",
                         "schema": {
-                            "type": "object",
-                            "additionalProperties": true
+                            "$ref": "#/definitions/internal_handlers.SMBShare"
                         }
                     },
                     "400": {
-                        "description": "Invalid request body",
+                        "description": "Invalid request",
+                        "schema": {
+                            "$ref": "#/definitions/internal_handlers.ErrorResponse"
+                        }
+                    },
+                    "409": {
+                        "description": "Share already exists",
                         "schema": {
                             "$ref": "#/definitions/internal_handlers.ErrorResponse"
                         }
@@ -13595,14 +13610,14 @@
                         "BearerAuth": []
                     }
                 ],
-                "description": "Returns details of a specific SMB share",
+                "description": "Returns details for a specific SMB share",
                 "produces": [
                     "application/json"
                 ],
                 "tags": [
                     "SMB"
                 ],
-                "summary": "Get SMB share",
+                "summary": "Get SMB share details",
                 "parameters": [
                     {
                         "type": "string",
@@ -13614,9 +13629,9 @@
                 ],
                 "responses": {
                     "200": {
-                        "description": "SMB share details",
+                        "description": "Share details",
                         "schema": {
-                            "$ref": "#/definitions/cubeos-api_internal_managers.SMBShare"
+                            "$ref": "#/definitions/internal_handlers.SMBShare"
                         }
                     },
                     "404": {
@@ -13639,7 +13654,7 @@
                         "BearerAuth": []
                     }
                 ],
-                "description": "Updates an existing SMB share",
+                "description": "Updates an existing SMB share configuration",
                 "consumes": [
                     "application/json"
                 ],
@@ -13659,25 +13674,30 @@
                         "required": true
                     },
                     {
-                        "description": "SMB share configuration",
-                        "name": "share",
+                        "description": "Updated share configuration",
+                        "name": "request",
                         "in": "body",
                         "required": true,
                         "schema": {
-                            "$ref": "#/definitions/cubeos-api_internal_managers.SMBShare"
+                            "$ref": "#/definitions/internal_handlers.CreateShareRequest"
                         }
                     }
                 ],
                 "responses": {
                     "200": {
-                        "description": "Share updated",
+                        "description": "Updated share",
                         "schema": {
-                            "type": "object",
-                            "additionalProperties": true
+                            "$ref": "#/definitions/internal_handlers.SMBShare"
                         }
                     },
                     "400": {
-                        "description": "Invalid request body",
+                        "description": "Invalid request",
+                        "schema": {
+                            "$ref": "#/definitions/internal_handlers.ErrorResponse"
+                        }
+                    },
+                    "404": {
+                        "description": "Share not found",
                         "schema": {
                             "$ref": "#/definitions/internal_handlers.ErrorResponse"
                         }
@@ -13696,7 +13716,7 @@
                         "BearerAuth": []
                     }
                 ],
-                "description": "Deletes an SMB share",
+                "description": "Deletes an SMB share (does not delete the underlying data)",
                 "produces": [
                     "application/json"
                 ],
@@ -13715,10 +13735,16 @@
                 ],
                 "responses": {
                     "200": {
-                        "description": "Share deleted",
+                        "description": "success, message",
                         "schema": {
                             "type": "object",
                             "additionalProperties": true
+                        }
+                    },
+                    "404": {
+                        "description": "Share not found",
+                        "schema": {
+                            "$ref": "#/definitions/internal_handlers.ErrorResponse"
                         }
                     },
                     "500": {
@@ -13737,20 +13763,26 @@
                         "BearerAuth": []
                     }
                 ],
-                "description": "Returns SMB/Samba server status",
+                "description": "Returns the status of the Samba/SMB service",
                 "produces": [
                     "application/json"
                 ],
                 "tags": [
                     "SMB"
                 ],
-                "summary": "Get SMB status",
+                "summary": "Get SMB service status",
                 "responses": {
                     "200": {
-                        "description": "SMB server status",
+                        "description": "running, version, workgroup, shares_count",
                         "schema": {
                             "type": "object",
                             "additionalProperties": true
+                        }
+                    },
+                    "500": {
+                        "description": "Failed to get SMB status",
+                        "schema": {
+                            "$ref": "#/definitions/internal_handlers.ErrorResponse"
                         }
                     }
                 }
@@ -18593,6 +18625,18 @@
                 }
             }
         },
+        "internal_handlers.AllowPortRequest": {
+            "type": "object",
+            "properties": {
+                "port": {
+                    "type": "integer"
+                },
+                "protocol": {
+                    "description": "tcp, udp, or both",
+                    "type": "string"
+                }
+            }
+        },
         "internal_handlers.AudioDevicesListResponse": {
             "type": "object",
             "properties": {
@@ -18601,6 +18645,66 @@
                     "items": {
                         "$ref": "#/definitions/cubeos-api_internal_hal.AudioDevice"
                     }
+                }
+            }
+        },
+        "internal_handlers.Backup": {
+            "type": "object",
+            "properties": {
+                "apps": {
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    }
+                },
+                "created_at": {
+                    "type": "string"
+                },
+                "description": {
+                    "type": "string"
+                },
+                "id": {
+                    "type": "string"
+                },
+                "name": {
+                    "type": "string"
+                },
+                "path": {
+                    "type": "string"
+                },
+                "size": {
+                    "type": "integer"
+                },
+                "size_human": {
+                    "type": "string"
+                },
+                "status": {
+                    "description": "completed, failed, in-progress",
+                    "type": "string"
+                },
+                "type": {
+                    "description": "full, incremental, config-only",
+                    "type": "string"
+                }
+            }
+        },
+        "internal_handlers.BackupStats": {
+            "type": "object",
+            "properties": {
+                "last_backup": {
+                    "type": "string"
+                },
+                "oldest_backup": {
+                    "type": "string"
+                },
+                "total_backups": {
+                    "type": "integer"
+                },
+                "total_size": {
+                    "type": "integer"
+                },
+                "total_size_human": {
+                    "type": "string"
                 }
             }
         },
@@ -18739,6 +18843,28 @@
                 }
             }
         },
+        "internal_handlers.CreateBackupRequest": {
+            "type": "object",
+            "properties": {
+                "apps": {
+                    "description": "specific apps to backup, empty = all",
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    }
+                },
+                "description": {
+                    "type": "string"
+                },
+                "name": {
+                    "type": "string"
+                },
+                "type": {
+                    "description": "full, incremental, config-only",
+                    "type": "string"
+                }
+            }
+        },
         "internal_handlers.CreateFQDNRequest": {
             "type": "object",
             "properties": {
@@ -18784,6 +18910,55 @@
                     "type": "string"
                 },
                 "ssl_forced": {
+                    "type": "boolean"
+                }
+            }
+        },
+        "internal_handlers.CreateShareRequest": {
+            "type": "object",
+            "properties": {
+                "browseable": {
+                    "type": "boolean"
+                },
+                "description": {
+                    "type": "string"
+                },
+                "guest_ok": {
+                    "type": "boolean"
+                },
+                "name": {
+                    "type": "string"
+                },
+                "path": {
+                    "type": "string"
+                },
+                "read_only": {
+                    "type": "boolean"
+                },
+                "valid_users": {
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    }
+                }
+            }
+        },
+        "internal_handlers.DNSConfig": {
+            "type": "object",
+            "properties": {
+                "search": {
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    }
+                },
+                "servers": {
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    }
+                },
+                "use_custom": {
                     "type": "boolean"
                 }
             }
@@ -19294,6 +19469,41 @@
                 }
             }
         },
+        "internal_handlers.SMBShare": {
+            "type": "object",
+            "properties": {
+                "browseable": {
+                    "type": "boolean"
+                },
+                "created": {
+                    "type": "string"
+                },
+                "description": {
+                    "type": "string"
+                },
+                "guest_ok": {
+                    "type": "boolean"
+                },
+                "modified": {
+                    "type": "string"
+                },
+                "name": {
+                    "type": "string"
+                },
+                "path": {
+                    "type": "string"
+                },
+                "read_only": {
+                    "type": "boolean"
+                },
+                "valid_users": {
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    }
+                }
+            }
+        },
         "internal_handlers.ServicePreview": {
             "type": "object",
             "properties": {
@@ -19310,6 +19520,34 @@
                     "type": "string"
                 },
                 "privileged": {
+                    "type": "boolean"
+                }
+            }
+        },
+        "internal_handlers.SetDNSConfigRequest": {
+            "type": "object",
+            "properties": {
+                "search": {
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    }
+                },
+                "servers": {
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    }
+                },
+                "use_custom": {
+                    "type": "boolean"
+                }
+            }
+        },
+        "internal_handlers.SetIPForwardRequest": {
+            "type": "object",
+            "properties": {
+                "enabled": {
                     "type": "boolean"
                 }
             }

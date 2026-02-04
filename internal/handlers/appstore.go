@@ -344,13 +344,13 @@ func (h *AppStoreHandler) GetAppIcon(w http.ResponseWriter, r *http.Request) {
 
 	iconPath := h.manager.GetIconPath(storeID, appName)
 	if iconPath == "" {
-		http.Error(w, "icon not found", http.StatusNotFound)
+		http.Error(w, `{"error":"icon not found"}`, http.StatusNotFound)
 		return
 	}
 
 	data, err := os.ReadFile(iconPath)
 	if err != nil {
-		http.Error(w, "icon not found", http.StatusNotFound)
+		http.Error(w, `{"error":"icon not found"}`, http.StatusNotFound)
 		return
 	}
 
