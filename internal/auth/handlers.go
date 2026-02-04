@@ -326,7 +326,6 @@ func badRequest(w http.ResponseWriter, message string) {
 	})
 }
 
-
 func internalError(w http.ResponseWriter, message string) {
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusInternalServerError)
