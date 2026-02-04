@@ -115,65 +115,160 @@ package:
     - if: $CI_COMMIT_BRANCH == "main"
 
 # -----------------------------------------------------------------------------
-# DEPLOY - Deploy as Swarm stack on Pi with FORCED image update
+# DEPLOY - Bulletproof deployment for host-mode Swarm services
+# -----------------------------------------------------------------------------
+# Host-mode ports require special handling: the old container MUST release
+# the port before the new one can bind. Standard rolling updates fail because
+# Swarm tries to start the new container before the old one stops.
+#
+# Strategy: Scale down → wait for port → update image → scale up
 # -----------------------------------------------------------------------------
 deploy:
   stage: deploy
   tags: [arm64, cubeos, deploy]
+  variables:
+    SERVICE_NAME: "cubeos-api_cubeos-api"
+    STACK_NAME: "cubeos-api"
+    HOST_PORT: "6010"
+    COMPOSE_PATH: "/cubeos/coreapps/cubeos-api/appconfig/docker-compose.yml"
   before_script:
     - echo "$GHCR_TOKEN" | docker login ghcr.io -u "$GHCR_USER" --password-stdin
   script:
-    - echo "🚀 Deploying CubeOS API as Swarm stack..."
-    # Pull the specific commit image
+    - echo "🚀 Deploying CubeOS API (commit ${CI_COMMIT_SHORT_SHA})..."
+    
+    # Pull the new image first
     - docker pull ${GHCR_IMAGE}:${CI_COMMIT_SHORT_SHA}
     - docker tag ${GHCR_IMAGE}:${CI_COMMIT_SHORT_SHA} ${GHCR_IMAGE}:latest
-    # Check if stack exists
+    
+    # Check current state
     - |
-      if docker stack ls | grep -q cubeos-api; then
-        echo "📦 Stack exists - forcing service update with new image..."
+      echo "📊 Current state:"
+      docker service ls | grep ${STACK_NAME} || echo "  No existing services found"
+      
+    # Determine deployment strategy
+    - |
+      if docker service inspect ${SERVICE_NAME} > /dev/null 2>&1; then
+        echo "📦 Service exists - performing zero-downtime update..."
+        
+        # Step 1: Scale down to release the host port
+        echo "  ⏬ Scaling down service..."
+        docker service scale ${SERVICE_NAME}=0 --detach=false || true
+        
+        # Step 2: Wait for port to be released (max 30 seconds)
+        echo "  ⏳ Waiting for port ${HOST_PORT} to be released..."
+        for i in $(seq 1 15); do
+          if ! ss -tlnp | grep -q ":${HOST_PORT} "; then
+            echo "  ✅ Port ${HOST_PORT} is free"
+            break
+          fi
+          if [ $i -eq 15 ]; then
+            echo "  ⚠️  Port still in use, forcing cleanup..."
+            # Kill any lingering containers using the port
+            docker ps -q --filter "publish=${HOST_PORT}" | xargs -r docker kill || true
+            sleep 2
+          fi
+          sleep 2
+        done
+        
+        # Step 3: Update the service image
+        echo "  🔄 Updating service image..."
         docker service update \
-          --force \
           --image ${GHCR_IMAGE}:${CI_COMMIT_SHORT_SHA} \
-          --update-parallelism 1 \
-          --update-delay 10s \
-          --update-order stop-first \
-          cubeos-api_cubeos-api
+          --force \
+          --detach=false \
+          ${SERVICE_NAME} || {
+            echo "  ⚠️  Service update failed, will redeploy stack"
+            docker stack rm ${STACK_NAME} || true
+            sleep 5
+          }
+        
+        # Step 4: Scale back up
+        echo "  ⏫ Scaling up service..."
+        docker service scale ${SERVICE_NAME}=1 --detach=false || true
+        
       else
-        echo "📦 Stack doesn't exist - deploying fresh..."
-        cd /cubeos/coreapps/cubeos-api/appconfig
+        echo "📦 Service doesn't exist - deploying fresh stack..."
+      fi
+      
+    # Ensure stack is deployed (handles fresh deploy or recovery)
+    - |
+      if ! docker service inspect ${SERVICE_NAME} > /dev/null 2>&1; then
+        echo "🆕 Deploying stack from compose file..."
+        
+        # Make sure port is free before deploying
+        for i in $(seq 1 10); do
+          if ! ss -tlnp | grep -q ":${HOST_PORT} "; then
+            break
+          fi
+          echo "  Waiting for port ${HOST_PORT}... ($i/10)"
+          sleep 2
+        done
+        
+        # Deploy the stack
         docker stack deploy \
-          --compose-file docker-compose.yml \
+          --compose-file ${COMPOSE_PATH} \
           --resolve-image never \
-          cubeos-api
-        sleep 10
+          ${STACK_NAME}
+        
+        sleep 5
+        
         # Force update to ensure correct image
         docker service update \
-          --force \
           --image ${GHCR_IMAGE}:${CI_COMMIT_SHORT_SHA} \
-          --update-order stop-first \
-          cubeos-api_cubeos-api
+          --detach=false \
+          ${SERVICE_NAME} || true
       fi
-    # Wait for service to be healthy
+      
+    # Health check with detailed feedback
     - |
+      echo ""
       echo "⏳ Waiting for API to be healthy..."
+      HEALTH_URL="http://127.0.0.1:${HOST_PORT}/health"
+      
       for i in $(seq 1 45); do
-        if curl -sf http://127.0.0.1:6010/health > /dev/null 2>&1; then
+        RESPONSE=$(curl -sf ${HEALTH_URL} 2>/dev/null) && {
+          echo ""
           echo "✅ Health check passed!"
-          echo "📚 Swagger UI: http://cubeos.cube:6010/api/v1/docs/index.html"
+          echo "   Response: ${RESPONSE}"
           echo ""
-          echo "=== Deployment Info ==="
-          docker service ls | grep cubeos-api || true
+          echo "=== Deployment Summary ==="
+          echo "Image:   ${GHCR_IMAGE}:${CI_COMMIT_SHORT_SHA}"
+          echo "Service: ${SERVICE_NAME}"
           echo ""
-          echo "Image: ${GHCR_IMAGE}:${CI_COMMIT_SHORT_SHA}"
-          docker image inspect ${GHCR_IMAGE}:${CI_COMMIT_SHORT_SHA} --format 'Built: {{.Created}}' 2>/dev/null || true
+          docker service ls | grep ${STACK_NAME}
+          echo ""
+          echo "📚 Swagger UI: http://cubeos.cube:${HOST_PORT}/api/v1/docs/index.html"
           exit 0
+        }
+        
+        # Show progress every 5 attempts
+        if [ $((i % 5)) -eq 0 ]; then
+          echo "  Attempt $i/45 - checking service status..."
+          docker service ps ${SERVICE_NAME} --no-trunc 2>/dev/null | head -3 || true
+        else
+          echo "  Attempt $i/45..."
         fi
-        echo "  Attempt $i/45..."
         sleep 3
       done
+      
+      # Health check failed - gather diagnostics
+      echo ""
       echo "❌ Health check failed after 45 attempts"
-      docker service logs cubeos-api_cubeos-api --tail 50 2>/dev/null || true
+      echo ""
+      echo "=== Diagnostics ==="
+      echo "Service status:"
+      docker service ls | grep ${STACK_NAME} || echo "  Stack not found"
+      echo ""
+      echo "Service tasks:"
+      docker service ps ${SERVICE_NAME} --no-trunc 2>/dev/null || echo "  Service not found"
+      echo ""
+      echo "Recent logs:"
+      docker service logs ${SERVICE_NAME} --tail 30 2>/dev/null || echo "  No logs available"
+      echo ""
+      echo "Port status:"
+      ss -tlnp | grep ${HOST_PORT} || echo "  Port ${HOST_PORT} not listening"
       exit 1
+      
   environment:
     name: production
     url: http://nllei01mule01:6010
