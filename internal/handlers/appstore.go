@@ -614,7 +614,7 @@ func (h *AppStoreHandler) AppAction(w http.ResponseWriter, r *http.Request) {
 // @Produce json
 // @Security BearerAuth
 // @Param appID path string true "App ID"
-// @Success 200 {object} models.AppConfig "App configuration files"
+// @Success 200 {object} map[string]interface{} "App configuration files"
 // @Failure 404 {object} ErrorResponse "App not found"
 // @Router /appstore/installed/{appID}/config [get]
 func (h *AppStoreHandler) GetAppConfig(w http.ResponseWriter, r *http.Request) {
