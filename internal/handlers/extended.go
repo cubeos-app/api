@@ -1734,24 +1734,31 @@ func (h *ExtendedHandlers) GetDiskHealthByDevice(w http.ResponseWriter, r *http.
 	// Try HAL first (it has smartctl installed)
 	if h.halClient != nil {
 		smartInfo, err := h.halClient.GetStorageDeviceSMART(r.Context(), device)
-		if err == nil {
-			// Convert HAL SMARTInfo to DiskHealth format
-			health := managers.DiskHealth{
-				Device:       smartInfo.Device,
-				Health:       smartInfo.Health,
-				Temperature:  smartInfo.Temperature,
-				PowerOnHours: smartInfo.PowerOnHours,
+		if err != nil {
+			// HAL is available but returned an error - return it directly
+			// Don't fall through to local smartctl which won't exist in container
+			if strings.Contains(err.Error(), "not found") {
+				writeError(w, http.StatusNotFound, "device not found: "+device)
+			} else {
+				writeError(w, http.StatusInternalServerError, "Failed to get SMART info: "+err.Error())
 			}
-			if smartInfo.Health == "" {
-				health.Health = "UNKNOWN"
-			}
-			writeJSON(w, http.StatusOK, health)
 			return
 		}
-		// Fall through to local method if HAL fails
+		// Convert HAL SMARTInfo to DiskHealth format
+		health := managers.DiskHealth{
+			Device:       smartInfo.Device,
+			Health:       smartInfo.Health,
+			Temperature:  smartInfo.Temperature,
+			PowerOnHours: smartInfo.PowerOnHours,
+		}
+		if smartInfo.Health == "" {
+			health.Health = "UNKNOWN"
+		}
+		writeJSON(w, http.StatusOK, health)
+		return
 	}
 
-	// Fall back to local storage manager
+	// Fall back to local storage manager (only when HAL is unavailable)
 	health, err := h.storage.GetDiskHealthByDevice(device)
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, err.Error())
