@@ -5,6 +5,8 @@ import (
 	"os"
 	"testing"
 	"time"
+
+	"github.com/docker/docker/api/types/swarm"
 )
 
 // skipIfNoDocker skips the test if Docker is not available
@@ -299,6 +301,77 @@ func TestGetStackServicesValidation(t *testing.T) {
 	_, err := sm.GetStackServices("")
 	if err == nil {
 		t.Error("GetStackServices() should error on empty name")
+	}
+}
+
+// =============================================================================
+// determineHealth Tests
+// =============================================================================
+
+func TestDetermineHealth(t *testing.T) {
+	// Create a minimal SwarmManager - determineHealth doesn't use any struct fields
+	sm := &SwarmManager{}
+
+	tests := []struct {
+		name     string
+		running  int
+		desired  int
+		expected string
+	}{
+		{
+			name:     "all replicas running",
+			running:  1,
+			desired:  1,
+			expected: "running",
+		},
+		{
+			name:     "3/3 replicas running",
+			running:  3,
+			desired:  3,
+			expected: "running",
+		},
+		{
+			name:     "scaled to zero desired",
+			running:  0,
+			desired:  0,
+			expected: "stopped",
+		},
+		{
+			name:     "no replicas running (desired > 0)",
+			running:  0,
+			desired:  1,
+			expected: "stopped",
+		},
+		{
+			name:     "partially started (1/3)",
+			running:  1,
+			desired:  3,
+			expected: "starting",
+		},
+		{
+			name:     "partially started (2/3)",
+			running:  2,
+			desired:  3,
+			expected: "starting",
+		},
+		{
+			name:     "more running than desired returns unknown",
+			running:  3,
+			desired:  1,
+			expected: "unknown",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			// Create a minimal swarm.Service - determineHealth only uses running/desired params
+			var svc swarm.Service
+			got := sm.determineHealth(svc, tt.running, tt.desired)
+			if got != tt.expected {
+				t.Errorf("determineHealth(running=%d, desired=%d) = %q, want %q",
+					tt.running, tt.desired, got, tt.expected)
+			}
+		})
 	}
 }
 

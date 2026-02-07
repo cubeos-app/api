@@ -3,8 +3,10 @@ package managers
 import (
 	"context"
 	"database/sql"
+	"fmt"
 	"strings"
 	"testing"
+	"time"
 
 	"cubeos-api/internal/models"
 	_ "modernc.org/sqlite"
@@ -71,16 +73,19 @@ func TestPortManagerWithDB(t *testing.T) {
 
 	// Create minimal schema
 	_, err = db.Exec(`
-		CREATE TABLE apps (id INTEGER PRIMARY KEY, name TEXT);
+		CREATE TABLE apps (id INTEGER PRIMARY KEY, name TEXT, type TEXT DEFAULT 'user');
 		CREATE TABLE port_allocations (
 			id INTEGER PRIMARY KEY,
 			app_id INTEGER,
-			port INTEGER UNIQUE,
+			port INTEGER,
 			protocol TEXT DEFAULT 'tcp',
 			description TEXT,
 			is_primary BOOLEAN DEFAULT FALSE,
-			created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+			created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+			UNIQUE(port, protocol)
 		);
+		INSERT INTO apps (id, name, type) VALUES (1, 'test-app-1', 'user');
+		INSERT INTO apps (id, name, type) VALUES (2, 'test-app-2', 'user');
 	`)
 	if err != nil {
 		t.Fatalf("failed to create schema: %v", err)
@@ -112,6 +117,208 @@ func TestPortManagerWithDB(t *testing.T) {
 	}
 	if port2 != UserPortMin+1 {
 		t.Errorf("expected second port %d, got %d", UserPortMin+1, port2)
+	}
+}
+
+// TestPortManagerAutoAllocate verifies AllocatePort with port=0 triggers auto-allocation.
+func TestPortManagerAutoAllocate(t *testing.T) {
+	db, err := sql.Open("sqlite", ":memory:")
+	if err != nil {
+		t.Fatalf("failed to open db: %v", err)
+	}
+	defer db.Close()
+
+	_, err = db.Exec(`
+		CREATE TABLE apps (id INTEGER PRIMARY KEY, name TEXT, type TEXT DEFAULT 'user');
+		CREATE TABLE port_allocations (
+			id INTEGER PRIMARY KEY,
+			app_id INTEGER,
+			port INTEGER,
+			protocol TEXT DEFAULT 'tcp',
+			description TEXT DEFAULT '',
+			is_primary BOOLEAN DEFAULT FALSE,
+			created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+			UNIQUE(port, protocol)
+		);
+		INSERT INTO apps (id, name, type) VALUES (1, 'auto-test', 'user');
+	`)
+	if err != nil {
+		t.Fatalf("failed to create schema: %v", err)
+	}
+
+	pm := NewPortManager(db)
+
+	// AllocatePort with port=0 should auto-allocate in user range
+	err = pm.AllocatePort(1, 0, "tcp", "Web UI", true)
+	if err != nil {
+		t.Fatalf("AllocatePort(port=0) error = %v", err)
+	}
+
+	// Verify the allocated port is in user range
+	var allocatedPort int
+	err = db.QueryRow("SELECT port FROM port_allocations WHERE app_id = 1").Scan(&allocatedPort)
+	if err != nil {
+		t.Fatalf("failed to query allocated port: %v", err)
+	}
+	if allocatedPort < UserPortMin || allocatedPort > UserPortMax {
+		t.Errorf("auto-allocated port %d is outside user range [%d-%d]", allocatedPort, UserPortMin, UserPortMax)
+	}
+	if allocatedPort != UserPortMin {
+		t.Errorf("first auto-allocated port = %d, want %d", allocatedPort, UserPortMin)
+	}
+}
+
+// TestPortManagerConcurrentAllocate verifies no deadlock when multiple goroutines
+// call AllocatePort simultaneously. This is the deadlock regression test.
+func TestPortManagerConcurrentAllocate(t *testing.T) {
+	db, err := sql.Open("sqlite", ":memory:")
+	if err != nil {
+		t.Fatalf("failed to open db: %v", err)
+	}
+	defer db.Close()
+
+	// Enable WAL for concurrent reads
+	_, _ = db.Exec("PRAGMA journal_mode=WAL")
+
+	_, err = db.Exec(`
+		CREATE TABLE apps (id INTEGER PRIMARY KEY, name TEXT, type TEXT DEFAULT 'user');
+		CREATE TABLE port_allocations (
+			id INTEGER PRIMARY KEY,
+			app_id INTEGER,
+			port INTEGER,
+			protocol TEXT DEFAULT 'tcp',
+			description TEXT DEFAULT '',
+			is_primary BOOLEAN DEFAULT FALSE,
+			created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+			UNIQUE(port, protocol)
+		);
+	`)
+	if err != nil {
+		t.Fatalf("failed to create schema: %v", err)
+	}
+
+	// Insert 10 apps for concurrent allocation
+	for i := 1; i <= 10; i++ {
+		_, err = db.Exec("INSERT INTO apps (id, name, type) VALUES (?, ?, 'user')",
+			i, fmt.Sprintf("concurrent-app-%d", i))
+		if err != nil {
+			t.Fatalf("failed to insert app %d: %v", i, err)
+		}
+	}
+
+	pm := NewPortManager(db)
+	const goroutines = 10
+
+	// Channel to collect results
+	type result struct {
+		port int
+		err  error
+	}
+	results := make(chan result, goroutines)
+
+	// All goroutines start at the same time
+	start := make(chan struct{})
+
+	for i := 0; i < goroutines; i++ {
+		go func(appID int) {
+			<-start // Wait for signal
+			port, err := pm.AllocateUserPort()
+			if err == nil {
+				// Insert the allocation (simulating real flow)
+				_, err = db.Exec(
+					"INSERT INTO port_allocations (app_id, port, protocol, is_primary) VALUES (?, ?, 'tcp', TRUE)",
+					appID, port,
+				)
+			}
+			results <- result{port: port, err: err}
+		}(i + 1)
+	}
+
+	// Fire all goroutines simultaneously
+	close(start)
+
+	// Collect results with timeout (deadlock detection)
+	done := make(chan struct{})
+	var ports []int
+	var errors []error
+	go func() {
+		for i := 0; i < goroutines; i++ {
+			r := <-results
+			if r.err != nil {
+				errors = append(errors, r.err)
+			} else {
+				ports = append(ports, r.port)
+			}
+		}
+		close(done)
+	}()
+
+	select {
+	case <-done:
+		// Success - no deadlock
+	case <-time.After(10 * time.Second):
+		t.Fatal("DEADLOCK DETECTED: concurrent AllocateUserPort did not complete within 10 seconds")
+	}
+
+	// We expect some duplicates since AllocateUserPort doesn't insert,
+	// but there should be no panics or deadlocks
+	t.Logf("Completed %d allocations, %d errors, ports: %v", len(ports), len(errors), ports)
+
+	if len(ports)+len(errors) != goroutines {
+		t.Errorf("expected %d total results, got %d ports + %d errors", goroutines, len(ports), len(errors))
+	}
+}
+
+// TestPortManagerGapFinding tests that findGapInUserRange works after deletions.
+func TestPortManagerGapFinding(t *testing.T) {
+	db, err := sql.Open("sqlite", ":memory:")
+	if err != nil {
+		t.Fatalf("failed to open db: %v", err)
+	}
+	defer db.Close()
+
+	_, err = db.Exec(`
+		CREATE TABLE apps (id INTEGER PRIMARY KEY, name TEXT, type TEXT DEFAULT 'user');
+		CREATE TABLE port_allocations (
+			id INTEGER PRIMARY KEY,
+			app_id INTEGER,
+			port INTEGER,
+			protocol TEXT DEFAULT 'tcp',
+			description TEXT DEFAULT '',
+			is_primary BOOLEAN DEFAULT FALSE,
+			created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+			UNIQUE(port, protocol)
+		);
+		INSERT INTO apps (id, name, type) VALUES (1, 'gap-test', 'user');
+	`)
+	if err != nil {
+		t.Fatalf("failed to create schema: %v", err)
+	}
+
+	// Allocate first 5 ports in user range
+	for port := UserPortMin; port < UserPortMin+5; port++ {
+		_, err = db.Exec("INSERT INTO port_allocations (app_id, port) VALUES (1, ?)", port)
+		if err != nil {
+			t.Fatalf("failed to insert port %d: %v", port, err)
+		}
+	}
+
+	// Delete the 3rd port (create a gap)
+	gapPort := UserPortMin + 2
+	_, err = db.Exec("DELETE FROM port_allocations WHERE port = ?", gapPort)
+	if err != nil {
+		t.Fatalf("failed to delete port: %v", err)
+	}
+
+	pm := NewPortManager(db)
+
+	// Next allocation should return UserPortMin+5 (next after highest)
+	nextPort, err := pm.AllocateUserPort()
+	if err != nil {
+		t.Fatalf("AllocateUserPort() error = %v", err)
+	}
+	if nextPort != UserPortMin+5 {
+		t.Errorf("expected port %d (next after highest), got %d", UserPortMin+5, nextPort)
 	}
 }
 
