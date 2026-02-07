@@ -3,12 +3,33 @@ package handlers
 import (
 	"encoding/json"
 	"net/http"
+	"path/filepath"
+	"regexp"
 	"strconv"
+	"strings"
 
 	"github.com/go-chi/chi/v5"
 
 	"cubeos-api/internal/hal"
 )
+
+// validDeviceName matches safe device names (e.g., sda, sdb1, nvme0n1p1, mmcblk0)
+var validDeviceName = regexp.MustCompile(`^[a-zA-Z0-9]+$`)
+
+// validateMountPath checks that a mount path is safe (absolute, no traversal)
+func validateMountPath(path string) bool {
+	if path == "" {
+		return false
+	}
+	if !filepath.IsAbs(path) {
+		return false
+	}
+	if strings.Contains(path, "..") {
+		return false
+	}
+	cleaned := filepath.Clean(path)
+	return cleaned == path
+}
 
 // StorageHandler handles storage-related HTTP requests via HAL.
 type StorageHandler struct {
@@ -110,6 +131,11 @@ func (h *StorageHandler) GetStorageDevice(w http.ResponseWriter, r *http.Request
 		return
 	}
 
+	if !validDeviceName.MatchString(device) {
+		writeError(w, http.StatusBadRequest, "Invalid device name")
+		return
+	}
+
 	if h.halClient == nil {
 		writeError(w, http.StatusServiceUnavailable, "HAL service unavailable")
 		return
@@ -143,6 +169,11 @@ func (h *StorageHandler) GetSMARTInfo(w http.ResponseWriter, r *http.Request) {
 
 	if device == "" {
 		writeError(w, http.StatusBadRequest, "Device name is required")
+		return
+	}
+
+	if !validDeviceName.MatchString(device) {
+		writeError(w, http.StatusBadRequest, "Invalid device name")
 		return
 	}
 
@@ -247,6 +278,11 @@ func (h *StorageHandler) MountUSBStorage(w http.ResponseWriter, r *http.Request)
 		return
 	}
 
+	if !validDeviceName.MatchString(device) {
+		writeError(w, http.StatusBadRequest, "Invalid device name")
+		return
+	}
+
 	if h.halClient == nil {
 		writeError(w, http.StatusServiceUnavailable, "HAL service unavailable")
 		return
@@ -294,6 +330,11 @@ func (h *StorageHandler) UnmountUSBStorage(w http.ResponseWriter, r *http.Reques
 		return
 	}
 
+	if !validDeviceName.MatchString(device) {
+		writeError(w, http.StatusBadRequest, "Invalid device name")
+		return
+	}
+
 	if h.halClient == nil {
 		writeError(w, http.StatusServiceUnavailable, "HAL service unavailable")
 		return
@@ -329,6 +370,11 @@ func (h *StorageHandler) EjectUSBStorage(w http.ResponseWriter, r *http.Request)
 
 	if device == "" {
 		writeError(w, http.StatusBadRequest, "Device name is required")
+		return
+	}
+
+	if !validDeviceName.MatchString(device) {
+		writeError(w, http.StatusBadRequest, "Invalid device name")
 		return
 	}
 
@@ -604,6 +650,11 @@ func (h *StorageHandler) MountSMB(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	if !validateMountPath(req.MountPoint) {
+		writeError(w, http.StatusBadRequest, "Invalid mount point: must be an absolute path with no traversal")
+		return
+	}
+
 	if h.halClient == nil {
 		writeError(w, http.StatusServiceUnavailable, "HAL service unavailable")
 		return
@@ -662,6 +713,11 @@ func (h *StorageHandler) MountNFS(w http.ResponseWriter, r *http.Request) {
 
 	if req.MountPoint == "" {
 		writeError(w, http.StatusBadRequest, "Mount point is required (e.g., /mnt/nfs)")
+		return
+	}
+
+	if !validateMountPath(req.MountPoint) {
+		writeError(w, http.StatusBadRequest, "Invalid mount point: must be an absolute path with no traversal")
 		return
 	}
 
@@ -773,6 +829,11 @@ func (h *StorageHandler) UnmountNetwork(w http.ResponseWriter, r *http.Request) 
 		return
 	}
 
+	if !validateMountPath(req.Path) {
+		writeError(w, http.StatusBadRequest, "Invalid mount path: must be an absolute path with no traversal")
+		return
+	}
+
 	if h.halClient == nil {
 		writeError(w, http.StatusServiceUnavailable, "HAL service unavailable")
 		return
@@ -808,6 +869,11 @@ func (h *StorageHandler) IsMounted(w http.ResponseWriter, r *http.Request) {
 
 	if path == "" {
 		writeError(w, http.StatusBadRequest, "Path query parameter is required")
+		return
+	}
+
+	if !validateMountPath(path) {
+		writeError(w, http.StatusBadRequest, "Invalid path: must be an absolute path with no traversal")
 		return
 	}
 

@@ -13350,7 +13350,7 @@ const docTemplate = `{
                     "201": {
                         "description": "Created share",
                         "schema": {
-                            "$ref": "#/definitions/internal_handlers.SMBShare"
+                            "$ref": "#/definitions/cubeos-api_internal_managers.SMBShare"
                         }
                     },
                     "400": {
@@ -13402,7 +13402,7 @@ const docTemplate = `{
                     "200": {
                         "description": "Share details",
                         "schema": {
-                            "$ref": "#/definitions/internal_handlers.SMBShare"
+                            "$ref": "#/definitions/cubeos-api_internal_managers.SMBShare"
                         }
                     },
                     "404": {
@@ -13458,7 +13458,7 @@ const docTemplate = `{
                     "200": {
                         "description": "Updated share",
                         "schema": {
-                            "$ref": "#/definitions/internal_handlers.SMBShare"
+                            "$ref": "#/definitions/cubeos-api_internal_managers.SMBShare"
                         }
                     },
                     "400": {
@@ -13650,115 +13650,6 @@ const docTemplate = `{
                     },
                     "500": {
                         "description": "Failed to get disk health",
-                        "schema": {
-                            "$ref": "#/definitions/internal_handlers.ErrorResponse"
-                        }
-                    }
-                }
-            }
-        },
-        "/storage/mounts": {
-            "get": {
-                "security": [
-                    {
-                        "BearerAuth": []
-                    }
-                ],
-                "description": "Returns list of mounted filesystems",
-                "produces": [
-                    "application/json"
-                ],
-                "tags": [
-                    "Storage"
-                ],
-                "summary": "List mounts",
-                "responses": {
-                    "200": {
-                        "description": "Mount points",
-                        "schema": {
-                            "type": "object",
-                            "additionalProperties": true
-                        }
-                    }
-                }
-            },
-            "post": {
-                "security": [
-                    {
-                        "BearerAuth": []
-                    }
-                ],
-                "description": "Adds a new mount point",
-                "consumes": [
-                    "application/json"
-                ],
-                "produces": [
-                    "application/json"
-                ],
-                "tags": [
-                    "Storage"
-                ],
-                "summary": "Add mount",
-                "parameters": [
-                    {
-                        "description": "Mount configuration",
-                        "name": "mount",
-                        "in": "body",
-                        "required": true,
-                        "schema": {
-                            "type": "object"
-                        }
-                    }
-                ],
-                "responses": {
-                    "200": {
-                        "description": "Mount added",
-                        "schema": {
-                            "$ref": "#/definitions/cubeos-api_internal_models.SuccessResponse"
-                        }
-                    },
-                    "501": {
-                        "description": "Not implemented",
-                        "schema": {
-                            "$ref": "#/definitions/internal_handlers.ErrorResponse"
-                        }
-                    }
-                }
-            }
-        },
-        "/storage/mounts/{id}": {
-            "delete": {
-                "security": [
-                    {
-                        "BearerAuth": []
-                    }
-                ],
-                "description": "Removes a mount point",
-                "produces": [
-                    "application/json"
-                ],
-                "tags": [
-                    "Storage"
-                ],
-                "summary": "Remove mount",
-                "parameters": [
-                    {
-                        "type": "string",
-                        "description": "Mount ID",
-                        "name": "id",
-                        "in": "path",
-                        "required": true
-                    }
-                ],
-                "responses": {
-                    "200": {
-                        "description": "Mount removed",
-                        "schema": {
-                            "$ref": "#/definitions/cubeos-api_internal_models.SuccessResponse"
-                        }
-                    },
-                    "501": {
-                        "description": "Not implemented",
                         "schema": {
                             "$ref": "#/definitions/internal_handlers.ErrorResponse"
                         }
@@ -19090,41 +18981,6 @@ const docTemplate = `{
                 },
                 "username": {
                     "type": "string"
-                }
-            }
-        },
-        "internal_handlers.SMBShare": {
-            "type": "object",
-            "properties": {
-                "browseable": {
-                    "type": "boolean"
-                },
-                "created": {
-                    "type": "string"
-                },
-                "description": {
-                    "type": "string"
-                },
-                "guest_ok": {
-                    "type": "boolean"
-                },
-                "modified": {
-                    "type": "string"
-                },
-                "name": {
-                    "type": "string"
-                },
-                "path": {
-                    "type": "string"
-                },
-                "read_only": {
-                    "type": "boolean"
-                },
-                "valid_users": {
-                    "type": "array",
-                    "items": {
-                        "type": "string"
-                    }
                 }
             }
         },

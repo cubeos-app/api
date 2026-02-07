@@ -354,7 +354,7 @@ func main() {
 	wsHandlers := handlers.NewWSHandlers(wsManager)
 
 	// Create SMB handler
-	smbHandler := handlers.NewSMBHandler()
+	smbHandler := handlers.NewSMBHandler(storageMgr)
 	log.Printf("SMBHandler initialized")
 
 	// Create Backups handler
@@ -468,14 +468,11 @@ func main() {
 				r.Post("/{mac}/unblock", h.UnblockClient)
 			})
 
-			// Storage (SMB Shares - legacy, unified in /mounts)
+			// Storage (disk health and overview — mounts via /mounts API)
 			r.Route("/storage", func(r chi.Router) {
 				r.Get("/", h.GetStorage)
 				r.Get("/health", ext.GetDiskHealth)
 				r.Get("/health/{device}", ext.GetDiskHealthByDevice)
-				r.Get("/mounts", h.GetMounts)
-				r.Post("/mounts", h.AddMount)
-				r.Delete("/mounts/{id}", h.RemoveMount)
 			})
 
 			// Services

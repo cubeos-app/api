@@ -2,6 +2,7 @@ package managers
 
 import (
 	"bufio"
+	"context"
 	"encoding/json"
 	"fmt"
 	"os"
@@ -294,6 +295,9 @@ func (m *StorageManager) GetSMBStatus() map[string]interface{} {
 		"version":   "",
 	}
 
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+
 	// Check if samba is installed - try multiple methods
 	// Method 1: Direct lookup
 	if _, err := exec.LookPath("smbd"); err == nil {
@@ -317,31 +321,31 @@ func (m *StorageManager) GetSMBStatus() map[string]interface{} {
 	}
 
 	// Check service status via nsenter (runs on host)
-	cmd := exec.Command("nsenter", "-t", "1", "-m", "-u", "-i", "-n", "-p", "--", "systemctl", "is-active", "smbd")
+	cmd := exec.CommandContext(ctx, "nsenter", "-t", "1", "-m", "-u", "-i", "-n", "-p", "--", "systemctl", "is-active", "smbd")
 	if output, err := cmd.Output(); err == nil && strings.TrimSpace(string(output)) == "active" {
 		status["running"] = true
 	} else {
 		// Fallback: check if process is running via /proc
-		cmd = exec.Command("sh", "-c", "pgrep -x smbd > /dev/null 2>&1 || nsenter -t 1 -m -p -- pgrep -x smbd > /dev/null 2>&1")
+		cmd = exec.CommandContext(ctx, "sh", "-c", "pgrep -x smbd > /dev/null 2>&1 || nsenter -t 1 -m -p -- pgrep -x smbd > /dev/null 2>&1")
 		if cmd.Run() == nil {
 			status["running"] = true
 		}
 	}
 
 	// Check if enabled
-	cmd = exec.Command("nsenter", "-t", "1", "-m", "-u", "-i", "-n", "-p", "--", "systemctl", "is-enabled", "smbd")
+	cmd = exec.CommandContext(ctx, "nsenter", "-t", "1", "-m", "-u", "-i", "-n", "-p", "--", "systemctl", "is-enabled", "smbd")
 	if output, err := cmd.Output(); err == nil && strings.TrimSpace(string(output)) == "enabled" {
 		status["enabled"] = true
 	}
 
 	// Get version via nsenter
-	cmd = exec.Command("nsenter", "-t", "1", "-m", "-u", "-i", "-n", "-p", "--", "smbd", "--version")
+	cmd = exec.CommandContext(ctx, "nsenter", "-t", "1", "-m", "-u", "-i", "-n", "-p", "--", "smbd", "--version")
 	if output, err := cmd.Output(); err == nil {
 		status["version"] = strings.TrimSpace(string(output))
 	}
 
 	// Get connected clients
-	cmd = exec.Command("nsenter", "-t", "1", "-m", "-u", "-i", "-n", "-p", "--", "smbstatus", "-b", "--json")
+	cmd = exec.CommandContext(ctx, "nsenter", "-t", "1", "-m", "-u", "-i", "-n", "-p", "--", "smbstatus", "-b", "--json")
 	if output, err := cmd.Output(); err == nil {
 		var smbStatus map[string]interface{}
 		if json.Unmarshal(output, &smbStatus) == nil {
@@ -445,11 +449,14 @@ func (m *StorageManager) writeSMBConfig(config *SMBConfig) error {
 }
 
 func (m *StorageManager) reloadSamba() error {
-	// Try to reload
-	cmd := exec.Command("systemctl", "reload", "smbd")
+	// Use nsenter to run systemctl on the host (API runs in Docker container)
+	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
+	defer cancel()
+
+	cmd := exec.CommandContext(ctx, "nsenter", "-t", "1", "-m", "-u", "-i", "-n", "-p", "--", "systemctl", "reload", "smbd")
 	if err := cmd.Run(); err != nil {
 		// Try restart if reload fails
-		cmd = exec.Command("systemctl", "restart", "smbd")
+		cmd = exec.CommandContext(ctx, "nsenter", "-t", "1", "-m", "-u", "-i", "-n", "-p", "--", "systemctl", "restart", "smbd")
 		return cmd.Run()
 	}
 	return nil
@@ -520,12 +527,15 @@ func (m *StorageManager) GetDiskHealthByDevice(device string) (*DiskHealth, erro
 func (m *StorageManager) listBlockDevices() ([]string, error) {
 	var devices []string
 
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+
 	// Try nsenter to run lsblk on host
-	cmd := exec.Command("nsenter", "-t", "1", "-m", "-u", "-i", "-n", "-p", "--", "lsblk", "-d", "-n", "-o", "NAME,TYPE", "-J")
+	cmd := exec.CommandContext(ctx, "nsenter", "-t", "1", "-m", "-u", "-i", "-n", "-p", "--", "lsblk", "-d", "-n", "-o", "NAME,TYPE", "-J")
 	output, err := cmd.Output()
 	if err != nil {
 		// Fallback: try direct lsblk
-		cmd = exec.Command("lsblk", "-d", "-n", "-o", "NAME,TYPE", "-J")
+		cmd = exec.CommandContext(ctx, "lsblk", "-d", "-n", "-o", "NAME,TYPE", "-J")
 		output, err = cmd.Output()
 	}
 
@@ -584,6 +594,9 @@ func (m *StorageManager) getDiskHealthInfo(device string) (*DiskHealth, error) {
 		LastChecked: time.Now(),
 	}
 
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
+
 	// SD/eMMC cards don't support SMART - handle gracefully
 	if strings.Contains(device, "mmcblk") {
 		health.Type = "SD/eMMC"
@@ -591,7 +604,7 @@ func (m *StorageManager) getDiskHealthInfo(device string) (*DiskHealth, error) {
 		health.Model = "SD/eMMC Card"
 
 		// Try to get capacity from lsblk
-		cmd := exec.Command("nsenter", "-t", "1", "-m", "-u", "-i", "-n", "-p", "--", "lsblk", "-b", "-d", "-n", "-o", "SIZE", device)
+		cmd := exec.CommandContext(ctx, "nsenter", "-t", "1", "-m", "-u", "-i", "-n", "-p", "--", "lsblk", "-b", "-d", "-n", "-o", "SIZE", device)
 		if output, err := cmd.Output(); err == nil {
 			if size, err := strconv.ParseInt(strings.TrimSpace(string(output)), 10, 64); err == nil {
 				health.CapacityBytes = size
@@ -605,7 +618,7 @@ func (m *StorageManager) getDiskHealthInfo(device string) (*DiskHealth, error) {
 
 	// Try to run smartctl via nsenter (on host)
 	// First check if smartctl exists on host
-	checkCmd := exec.Command("nsenter", "-t", "1", "-m", "-u", "-i", "-n", "-p", "--", "which", "smartctl")
+	checkCmd := exec.CommandContext(ctx, "nsenter", "-t", "1", "-m", "-u", "-i", "-n", "-p", "--", "which", "smartctl")
 	if _, err := checkCmd.Output(); err != nil {
 		// Fallback: check direct path
 		if _, err := exec.LookPath("smartctl"); err != nil {
@@ -614,21 +627,21 @@ func (m *StorageManager) getDiskHealthInfo(device string) (*DiskHealth, error) {
 	}
 
 	// Get SMART info in JSON format via nsenter
-	cmd := exec.Command("nsenter", "-t", "1", "-m", "-u", "-i", "-n", "-p", "--", "smartctl", "-a", "-j", device)
+	cmd := exec.CommandContext(ctx, "nsenter", "-t", "1", "-m", "-u", "-i", "-n", "-p", "--", "smartctl", "-a", "-j", device)
 	output, err := cmd.Output()
 	if err != nil {
 		// Fallback: try direct smartctl
-		cmd = exec.Command("smartctl", "-a", "-j", device)
+		cmd = exec.CommandContext(ctx, "smartctl", "-a", "-j", device)
 		output, err = cmd.Output()
 		if err != nil {
 			// Try without JSON (older smartctl)
-			return m.getDiskHealthLegacy(device)
+			return m.getDiskHealthLegacy(ctx, device)
 		}
 	}
 
 	var smartData map[string]interface{}
 	if err := json.Unmarshal(output, &smartData); err != nil {
-		return m.getDiskHealthLegacy(device)
+		return m.getDiskHealthLegacy(ctx, device)
 	}
 
 	// Store raw data
@@ -762,7 +775,7 @@ func (m *StorageManager) getDiskHealthInfo(device string) (*DiskHealth, error) {
 	return health, nil
 }
 
-func (m *StorageManager) getDiskHealthLegacy(device string) (*DiskHealth, error) {
+func (m *StorageManager) getDiskHealthLegacy(ctx context.Context, device string) (*DiskHealth, error) {
 	health := &DiskHealth{
 		Device:      device,
 		Health:      "UNKNOWN",
@@ -770,11 +783,11 @@ func (m *StorageManager) getDiskHealthLegacy(device string) (*DiskHealth, error)
 	}
 
 	// Run smartctl without JSON via nsenter
-	cmd := exec.Command("nsenter", "-t", "1", "-m", "-u", "-i", "-n", "-p", "--", "smartctl", "-H", "-i", device)
+	cmd := exec.CommandContext(ctx, "nsenter", "-t", "1", "-m", "-u", "-i", "-n", "-p", "--", "smartctl", "-H", "-i", device)
 	output, _ := cmd.CombinedOutput()
 	if len(output) == 0 {
 		// Fallback to direct
-		cmd = exec.Command("smartctl", "-H", "-i", device)
+		cmd = exec.CommandContext(ctx, "smartctl", "-H", "-i", device)
 		output, _ = cmd.CombinedOutput()
 	}
 	outputStr := string(output)
@@ -821,8 +834,11 @@ func (m *StorageManager) checkCriticalAttributes(health *DiskHealth) {
 
 	for _, attr := range health.Attributes {
 		if name, ok := criticalIDs[attr.ID]; ok {
-			if rawVal, _ := strconv.ParseInt(strings.Fields(attr.RawValue)[0], 10, 64); rawVal > 0 {
-				health.Warnings = append(health.Warnings, fmt.Sprintf("%s: %s (non-zero)", name, attr.RawValue))
+			fields := strings.Fields(attr.RawValue)
+			if len(fields) > 0 {
+				if rawVal, _ := strconv.ParseInt(fields[0], 10, 64); rawVal > 0 {
+					health.Warnings = append(health.Warnings, fmt.Sprintf("%s: %s (non-zero)", name, attr.RawValue))
+				}
 			}
 		}
 	}

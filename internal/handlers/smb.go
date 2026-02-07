@@ -5,16 +5,18 @@ import (
 	"net/http"
 
 	"github.com/go-chi/chi/v5"
+
+	"cubeos-api/internal/managers"
 )
 
 // SMBHandler handles SMB/Samba share management
 type SMBHandler struct {
-	// Future: Add SMB manager when implementing real functionality
+	storage *managers.StorageManager
 }
 
 // NewSMBHandler creates a new SMB handler
-func NewSMBHandler() *SMBHandler {
-	return &SMBHandler{}
+func NewSMBHandler(storage *managers.StorageManager) *SMBHandler {
+	return &SMBHandler{storage: storage}
 }
 
 // Routes returns the SMB routes
@@ -31,19 +33,6 @@ func (h *SMBHandler) Routes() chi.Router {
 	return r
 }
 
-// SMBShare represents an SMB share configuration
-type SMBShare struct {
-	Name        string   `json:"name"`
-	Path        string   `json:"path"`
-	Description string   `json:"description,omitempty"`
-	ReadOnly    bool     `json:"read_only"`
-	Browseable  bool     `json:"browseable"`
-	GuestOK     bool     `json:"guest_ok"`
-	ValidUsers  []string `json:"valid_users,omitempty"`
-	Created     string   `json:"created,omitempty"`
-	Modified    string   `json:"modified,omitempty"`
-}
-
 // GetStatus godoc
 // @Summary Get SMB service status
 // @Description Returns the status of the Samba/SMB service
@@ -54,15 +43,8 @@ type SMBShare struct {
 // @Failure 500 {object} ErrorResponse "Failed to get SMB status"
 // @Router /smb/status [get]
 func (h *SMBHandler) GetStatus(w http.ResponseWriter, r *http.Request) {
-	// Check if smbd is running
-	// For now, return a placeholder response
-	writeJSON(w, http.StatusOK, map[string]interface{}{
-		"running":      false,
-		"version":      "4.x",
-		"workgroup":    "WORKGROUP",
-		"shares_count": 0,
-		"message":      "SMB service not configured",
-	})
+	status := h.storage.GetSMBStatus()
+	writeJSON(w, http.StatusOK, status)
 }
 
 // ListShares godoc
@@ -75,10 +57,15 @@ func (h *SMBHandler) GetStatus(w http.ResponseWriter, r *http.Request) {
 // @Failure 500 {object} ErrorResponse "Failed to list shares"
 // @Router /smb/shares [get]
 func (h *SMBHandler) ListShares(w http.ResponseWriter, r *http.Request) {
-	// Return empty shares list for now
+	shares, err := h.storage.GetSMBShares()
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "Failed to list shares: "+err.Error())
+		return
+	}
+
 	writeJSON(w, http.StatusOK, map[string]interface{}{
-		"shares": []SMBShare{},
-		"count":  0,
+		"shares": shares,
+		"count":  len(shares),
 	})
 }
 
@@ -101,7 +88,7 @@ type CreateShareRequest struct {
 // @Produce json
 // @Security BearerAuth
 // @Param request body CreateShareRequest true "Share configuration"
-// @Success 201 {object} SMBShare "Created share"
+// @Success 201 {object} managers.SMBShare "Created share"
 // @Failure 400 {object} ErrorResponse "Invalid request"
 // @Failure 409 {object} ErrorResponse "Share already exists"
 // @Failure 500 {object} ErrorResponse "Failed to create share"
@@ -123,8 +110,26 @@ func (h *SMBHandler) CreateShare(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// TODO: Implement actual share creation via smb.conf
-	writeError(w, http.StatusNotImplemented, "SMB share creation not yet implemented")
+	share := managers.SMBShare{
+		Name:       req.Name,
+		Path:       req.Path,
+		Comment:    req.Description,
+		ReadOnly:   req.ReadOnly,
+		Browseable: req.Browseable,
+		GuestOK:    req.GuestOK,
+		ValidUsers: req.ValidUsers,
+	}
+
+	if err := h.storage.CreateSMBShare(share); err != nil {
+		writeError(w, http.StatusInternalServerError, "Failed to create share: "+err.Error())
+		return
+	}
+
+	writeJSON(w, http.StatusCreated, map[string]interface{}{
+		"status":  "success",
+		"message": "Share created successfully",
+		"share":   share.Name,
+	})
 }
 
 // GetShare godoc
@@ -134,7 +139,7 @@ func (h *SMBHandler) CreateShare(w http.ResponseWriter, r *http.Request) {
 // @Produce json
 // @Security BearerAuth
 // @Param name path string true "Share name"
-// @Success 200 {object} SMBShare "Share details"
+// @Success 200 {object} managers.SMBShare "Share details"
 // @Failure 404 {object} ErrorResponse "Share not found"
 // @Failure 500 {object} ErrorResponse "Failed to get share"
 // @Router /smb/shares/{name} [get]
@@ -145,7 +150,19 @@ func (h *SMBHandler) GetShare(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// TODO: Look up share in smb.conf
+	shares, err := h.storage.GetSMBShares()
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "Failed to get shares: "+err.Error())
+		return
+	}
+
+	for _, share := range shares {
+		if share.Name == name {
+			writeJSON(w, http.StatusOK, share)
+			return
+		}
+	}
+
 	writeError(w, http.StatusNotFound, "Share not found: "+name)
 }
 
@@ -158,7 +175,7 @@ func (h *SMBHandler) GetShare(w http.ResponseWriter, r *http.Request) {
 // @Security BearerAuth
 // @Param name path string true "Share name"
 // @Param request body CreateShareRequest true "Updated share configuration"
-// @Success 200 {object} SMBShare "Updated share"
+// @Success 200 {object} managers.SMBShare "Updated share"
 // @Failure 400 {object} ErrorResponse "Invalid request"
 // @Failure 404 {object} ErrorResponse "Share not found"
 // @Failure 500 {object} ErrorResponse "Failed to update share"
@@ -176,8 +193,25 @@ func (h *SMBHandler) UpdateShare(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// TODO: Implement share update
-	writeError(w, http.StatusNotImplemented, "SMB share update not yet implemented")
+	share := managers.SMBShare{
+		Name:       name,
+		Path:       req.Path,
+		Comment:    req.Description,
+		ReadOnly:   req.ReadOnly,
+		Browseable: req.Browseable,
+		GuestOK:    req.GuestOK,
+		ValidUsers: req.ValidUsers,
+	}
+
+	if err := h.storage.UpdateSMBShare(name, share); err != nil {
+		writeError(w, http.StatusInternalServerError, "Failed to update share: "+err.Error())
+		return
+	}
+
+	writeJSON(w, http.StatusOK, map[string]interface{}{
+		"status":  "success",
+		"message": "Share updated successfully",
+	})
 }
 
 // DeleteShare godoc
@@ -198,6 +232,13 @@ func (h *SMBHandler) DeleteShare(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// TODO: Implement share deletion
-	writeError(w, http.StatusNotImplemented, "SMB share deletion not yet implemented")
+	if err := h.storage.DeleteSMBShare(name); err != nil {
+		writeError(w, http.StatusInternalServerError, "Failed to delete share: "+err.Error())
+		return
+	}
+
+	writeJSON(w, http.StatusOK, map[string]interface{}{
+		"status":  "success",
+		"message": "Share deleted successfully",
+	})
 }

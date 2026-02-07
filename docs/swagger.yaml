@@ -2877,29 +2877,6 @@ definitions:
       username:
         type: string
     type: object
-  internal_handlers.SMBShare:
-    properties:
-      browseable:
-        type: boolean
-      created:
-        type: string
-      description:
-        type: string
-      guest_ok:
-        type: boolean
-      modified:
-        type: string
-      name:
-        type: string
-      path:
-        type: string
-      read_only:
-        type: boolean
-      valid_users:
-        items:
-          type: string
-        type: array
-    type: object
   internal_handlers.ServicePreview:
     properties:
       image:
@@ -11580,7 +11557,7 @@ paths:
         "201":
           description: Created share
           schema:
-            $ref: '#/definitions/internal_handlers.SMBShare'
+            $ref: '#/definitions/cubeos-api_internal_managers.SMBShare'
         "400":
           description: Invalid request
           schema:
@@ -11642,7 +11619,7 @@ paths:
         "200":
           description: Share details
           schema:
-            $ref: '#/definitions/internal_handlers.SMBShare'
+            $ref: '#/definitions/cubeos-api_internal_managers.SMBShare'
         "404":
           description: Share not found
           schema:
@@ -11678,7 +11655,7 @@ paths:
         "200":
           description: Updated share
           schema:
-            $ref: '#/definitions/internal_handlers.SMBShare'
+            $ref: '#/definitions/cubeos-api_internal_managers.SMBShare'
         "400":
           description: Invalid request
           schema:
@@ -11775,74 +11752,6 @@ paths:
       security:
       - BearerAuth: []
       summary: Get disk health by device
-      tags:
-      - Storage
-  /storage/mounts:
-    get:
-      description: Returns list of mounted filesystems
-      produces:
-      - application/json
-      responses:
-        "200":
-          description: Mount points
-          schema:
-            additionalProperties: true
-            type: object
-      security:
-      - BearerAuth: []
-      summary: List mounts
-      tags:
-      - Storage
-    post:
-      consumes:
-      - application/json
-      description: Adds a new mount point
-      parameters:
-      - description: Mount configuration
-        in: body
-        name: mount
-        required: true
-        schema:
-          type: object
-      produces:
-      - application/json
-      responses:
-        "200":
-          description: Mount added
-          schema:
-            $ref: '#/definitions/cubeos-api_internal_models.SuccessResponse'
-        "501":
-          description: Not implemented
-          schema:
-            $ref: '#/definitions/internal_handlers.ErrorResponse'
-      security:
-      - BearerAuth: []
-      summary: Add mount
-      tags:
-      - Storage
-  /storage/mounts/{id}:
-    delete:
-      description: Removes a mount point
-      parameters:
-      - description: Mount ID
-        in: path
-        name: id
-        required: true
-        type: string
-      produces:
-      - application/json
-      responses:
-        "200":
-          description: Mount removed
-          schema:
-            $ref: '#/definitions/cubeos-api_internal_models.SuccessResponse'
-        "501":
-          description: Not implemented
-          schema:
-            $ref: '#/definitions/internal_handlers.ErrorResponse'
-      security:
-      - BearerAuth: []
-      summary: Remove mount
       tags:
       - Storage
   /system/hostname:

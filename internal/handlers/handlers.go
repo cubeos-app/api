@@ -557,50 +557,6 @@ func (h *Handlers) GetStorage(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
-// GetMounts godoc
-// @Summary List mounts
-// @Description Returns list of mounted filesystems
-// @Tags Storage
-// @Produce json
-// @Security BearerAuth
-// @Success 200 {object} map[string]interface{} "Mount points"
-// @Router /storage/mounts [get]
-func (h *Handlers) GetMounts(w http.ResponseWriter, r *http.Request) {
-	writeJSON(w, http.StatusOK, map[string]interface{}{
-		"mounts": []interface{}{},
-		"count":  0,
-	})
-}
-
-// AddMount godoc
-// @Summary Add mount
-// @Description Adds a new mount point
-// @Tags Storage
-// @Accept json
-// @Produce json
-// @Security BearerAuth
-// @Param mount body object true "Mount configuration"
-// @Success 200 {object} models.SuccessResponse "Mount added"
-// @Failure 501 {object} ErrorResponse "Not implemented"
-// @Router /storage/mounts [post]
-func (h *Handlers) AddMount(w http.ResponseWriter, r *http.Request) {
-	writeError(w, http.StatusNotImplemented, "Mount management not yet implemented")
-}
-
-// RemoveMount godoc
-// @Summary Remove mount
-// @Description Removes a mount point
-// @Tags Storage
-// @Produce json
-// @Security BearerAuth
-// @Param id path string true "Mount ID"
-// @Success 200 {object} models.SuccessResponse "Mount removed"
-// @Failure 501 {object} ErrorResponse "Not implemented"
-// @Router /storage/mounts/{id} [delete]
-func (h *Handlers) RemoveMount(w http.ResponseWriter, r *http.Request) {
-	writeError(w, http.StatusNotImplemented, "Mount management not yet implemented")
-}
-
 // =============================================================================
 // Services
 // =============================================================================
