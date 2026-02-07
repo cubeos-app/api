@@ -345,7 +345,7 @@ func main() {
 	hardwareHandler := handlers.NewHardwareHandler(halClient)
 	halStorageHandler := handlers.NewStorageHandler(halClient)
 	communicationHandler := handlers.NewCommunicationHandler(halClient)
-	mediaHandler := handlers.NewMediaHandler(halClient)
+	mediaHandler := handlers.NewMediaHandler(halClient, cfg.Domain)
 	halLogsHandler := handlers.NewLogsHandler(halClient)
 	log.Printf("HAL handlers initialized (Hardware, Storage, Communication, Media, Logs)")
 

@@ -41,8 +41,10 @@ import (
 // =============================================================================
 
 const (
-	// DefaultHALURL is the default URL for the HAL service
-	DefaultHALURL = "http://127.0.0.1:6005"
+	// DefaultHALURL is the default URL for the HAL service.
+	// Uses the host gateway IP because the API runs inside a Docker container
+	// and HAL runs on the host network.
+	DefaultHALURL = "http://10.42.24.1:6005"
 	// DefaultTimeout is the default HTTP client timeout
 	DefaultTimeout = 30 * time.Second
 )
@@ -1105,7 +1107,7 @@ func (c *Client) Shutdown(ctx context.Context) error {
 // GetServiceStatus returns the status of a systemd service
 func (c *Client) GetServiceStatus(ctx context.Context, name string) (*ServiceStatus, error) {
 	var result ServiceStatus
-	if err := c.doGet(ctx, "/system/service/"+name+"/status", &result); err != nil {
+	if err := c.doGet(ctx, "/system/service/"+url.PathEscape(name)+"/status", &result); err != nil {
 		return nil, err
 	}
 	return &result, nil
@@ -1113,17 +1115,17 @@ func (c *Client) GetServiceStatus(ctx context.Context, name string) (*ServiceSta
 
 // StartService starts a systemd service
 func (c *Client) StartService(ctx context.Context, name string) error {
-	return c.doPost(ctx, "/system/service/"+name+"/start", nil)
+	return c.doPost(ctx, "/system/service/"+url.PathEscape(name)+"/start", nil)
 }
 
 // StopService stops a systemd service
 func (c *Client) StopService(ctx context.Context, name string) error {
-	return c.doPost(ctx, "/system/service/"+name+"/stop", nil)
+	return c.doPost(ctx, "/system/service/"+url.PathEscape(name)+"/stop", nil)
 }
 
 // RestartService restarts a systemd service
 func (c *Client) RestartService(ctx context.Context, name string) error {
-	return c.doPost(ctx, "/system/service/"+name+"/restart", nil)
+	return c.doPost(ctx, "/system/service/"+url.PathEscape(name)+"/restart", nil)
 }
 
 // =============================================================================
@@ -1257,7 +1259,7 @@ func (c *Client) ListInterfaces(ctx context.Context) ([]NetworkInterface, error)
 // GetInterface returns info about a specific interface
 func (c *Client) GetInterface(ctx context.Context, name string) (*NetworkInterface, error) {
 	var result NetworkInterface
-	if err := c.doGet(ctx, "/network/interface/"+name, &result); err != nil {
+	if err := c.doGet(ctx, "/network/interface/"+url.PathEscape(name), &result); err != nil {
 		return nil, err
 	}
 	return &result, nil
@@ -1266,7 +1268,7 @@ func (c *Client) GetInterface(ctx context.Context, name string) (*NetworkInterfa
 // GetInterfaceTraffic returns traffic statistics for an interface
 func (c *Client) GetInterfaceTraffic(ctx context.Context, name string) (*InterfaceTraffic, error) {
 	var result InterfaceTraffic
-	if err := c.doGet(ctx, "/network/interface/"+name+"/traffic", &result); err != nil {
+	if err := c.doGet(ctx, "/network/interface/"+url.PathEscape(name)+"/traffic", &result); err != nil {
 		return nil, err
 	}
 	return &result, nil
@@ -1282,19 +1284,33 @@ type TrafficHistoryPoint struct {
 }
 
 // GetTrafficHistory returns traffic history for an interface over a duration
-// Note: HAL endpoint not yet implemented - returns empty slice
 func (c *Client) GetTrafficHistory(ctx context.Context, iface string, duration string) ([]TrafficHistoryPoint, error) {
-	return []TrafficHistoryPoint{}, nil
+	path := "/network/interface/" + url.PathEscape(iface) + "/traffic/history"
+	if duration != "" {
+		path += "?duration=" + url.QueryEscape(duration)
+	}
+
+	body, err := c.doRequest(ctx, http.MethodGet, path, nil)
+	if err != nil {
+		return nil, err
+	}
+
+	var resp []TrafficHistoryPoint
+	if err := json.Unmarshal(body, &resp); err != nil {
+		return nil, fmt.Errorf("failed to parse traffic history: %w", err)
+	}
+
+	return resp, nil
 }
 
 // BringInterfaceUp brings a network interface up
 func (c *Client) BringInterfaceUp(ctx context.Context, name string) error {
-	return c.doPost(ctx, "/network/interface/"+name+"/up", nil)
+	return c.doPost(ctx, "/network/interface/"+url.PathEscape(name)+"/up", nil)
 }
 
 // BringInterfaceDown brings a network interface down
 func (c *Client) BringInterfaceDown(ctx context.Context, name string) error {
-	return c.doPost(ctx, "/network/interface/"+name+"/down", nil)
+	return c.doPost(ctx, "/network/interface/"+url.PathEscape(name)+"/down", nil)
 }
 
 // GetNetworkStatus returns overall network status
@@ -1314,7 +1330,7 @@ func (c *Client) GetNetworkStatus(ctx context.Context) (map[string]interface{}, 
 
 // ScanWiFi scans for WiFi networks on the specified interface
 func (c *Client) ScanWiFi(ctx context.Context, iface string) ([]WiFiNetwork, error) {
-	body, err := c.doRequest(ctx, http.MethodGet, "/network/wifi/scan/"+iface, nil)
+	body, err := c.doRequest(ctx, http.MethodGet, "/network/wifi/scan/"+url.PathEscape(iface), nil)
 	if err != nil {
 		return nil, err
 	}
@@ -1342,7 +1358,7 @@ func (c *Client) ConnectWiFi(ctx context.Context, iface, ssid, password string) 
 
 // DisconnectWiFi disconnects from WiFi
 func (c *Client) DisconnectWiFi(ctx context.Context, iface string) error {
-	return c.doPost(ctx, "/network/wifi/disconnect/"+iface, nil)
+	return c.doPost(ctx, "/network/wifi/disconnect/"+url.PathEscape(iface), nil)
 }
 
 // GetAPStatus returns Access Point status
@@ -1376,21 +1392,6 @@ func (c *Client) BlockAPClient(ctx context.Context, mac string) error {
 // =============================================================================
 // Firewall Operations
 // =============================================================================
-
-// GetFirewallRules returns current iptables rules
-func (c *Client) GetFirewallRules(ctx context.Context) (map[string]string, error) {
-	body, err := c.doRequest(ctx, http.MethodGet, "/firewall/rules", nil)
-	if err != nil {
-		return nil, err
-	}
-
-	var resp map[string]string
-	if err := json.Unmarshal(body, &resp); err != nil {
-		return nil, fmt.Errorf("failed to parse response: %w", err)
-	}
-
-	return resp, nil
-}
 
 // AddFirewallRule adds a firewall rule
 func (c *Client) AddFirewallRule(ctx context.Context, table, chain string, args []string) error {
@@ -1488,22 +1489,22 @@ func (c *Client) GetVPNStatus(ctx context.Context) (*VPNStatus, error) {
 
 // WireGuardUp brings up a WireGuard interface
 func (c *Client) WireGuardUp(ctx context.Context, name string) error {
-	return c.doPost(ctx, "/vpn/wireguard/up/"+name, nil)
+	return c.doPost(ctx, "/vpn/wireguard/up/"+url.PathEscape(name), nil)
 }
 
 // WireGuardDown brings down a WireGuard interface
 func (c *Client) WireGuardDown(ctx context.Context, name string) error {
-	return c.doPost(ctx, "/vpn/wireguard/down/"+name, nil)
+	return c.doPost(ctx, "/vpn/wireguard/down/"+url.PathEscape(name), nil)
 }
 
 // OpenVPNUp starts OpenVPN with a config
 func (c *Client) OpenVPNUp(ctx context.Context, name string) error {
-	return c.doPost(ctx, "/vpn/openvpn/up/"+name, nil)
+	return c.doPost(ctx, "/vpn/openvpn/up/"+url.PathEscape(name), nil)
 }
 
 // OpenVPNDown stops OpenVPN
 func (c *Client) OpenVPNDown(ctx context.Context, name string) error {
-	return c.doPost(ctx, "/vpn/openvpn/down/"+name, nil)
+	return c.doPost(ctx, "/vpn/openvpn/down/"+url.PathEscape(name), nil)
 }
 
 // GetTorStatus returns Tor service status
@@ -1555,7 +1556,7 @@ func (c *Client) GetStorageDevices(ctx context.Context) (*StorageDevicesResponse
 // GetStorageDevice returns info about a specific device
 func (c *Client) GetStorageDevice(ctx context.Context, device string) (*StorageDevice, error) {
 	var result StorageDevice
-	if err := c.doGet(ctx, "/storage/device/"+device, &result); err != nil {
+	if err := c.doGet(ctx, "/storage/device/"+url.PathEscape(device), &result); err != nil {
 		return nil, err
 	}
 	return &result, nil
@@ -1564,7 +1565,7 @@ func (c *Client) GetStorageDevice(ctx context.Context, device string) (*StorageD
 // GetSMARTInfo returns SMART health data for a device
 func (c *Client) GetSMARTInfo(ctx context.Context, device string) (*SMARTInfo, error) {
 	var result SMARTInfo
-	if err := c.doGet(ctx, "/storage/smart/"+device, &result); err != nil {
+	if err := c.doGet(ctx, "/storage/smart/"+url.PathEscape(device), &result); err != nil {
 		return nil, err
 	}
 	return &result, nil
@@ -2067,7 +2068,7 @@ func (c *Client) Get1WireDevices(ctx context.Context) (*OneWireDevicesResponse, 
 // Read1WireDevice reads a specific 1-Wire device
 func (c *Client) Read1WireDevice(ctx context.Context, deviceID string) (*OneWireDevice, error) {
 	var result OneWireDevice
-	if err := c.doGet(ctx, "/sensors/1wire/device/"+deviceID, &result); err != nil {
+	if err := c.doGet(ctx, "/sensors/1wire/device/"+url.PathEscape(deviceID), &result); err != nil {
 		return nil, err
 	}
 	return &result, nil
@@ -2349,17 +2350,17 @@ func (c *Client) PairBluetoothDevice(ctx context.Context, address string) error 
 
 // ConnectBluetoothDevice connects to a Bluetooth device
 func (c *Client) ConnectBluetoothDevice(ctx context.Context, address string) error {
-	return c.doPost(ctx, "/bluetooth/connect/"+address, nil)
+	return c.doPost(ctx, "/bluetooth/connect/"+url.PathEscape(address), nil)
 }
 
 // DisconnectBluetoothDevice disconnects from a Bluetooth device
 func (c *Client) DisconnectBluetoothDevice(ctx context.Context, address string) error {
-	return c.doPost(ctx, "/bluetooth/disconnect/"+address, nil)
+	return c.doPost(ctx, "/bluetooth/disconnect/"+url.PathEscape(address), nil)
 }
 
 // RemoveBluetoothDevice removes a paired Bluetooth device
 func (c *Client) RemoveBluetoothDevice(ctx context.Context, address string) error {
-	return c.doDelete(ctx, "/bluetooth/remove/"+address, nil)
+	return c.doDelete(ctx, "/bluetooth/remove/"+url.PathEscape(address), nil)
 }
 
 // =============================================================================
@@ -2517,7 +2518,7 @@ func (c *Client) BlockAPClientLegacy(ctx context.Context, mac string) error {
 
 // UnblockAPClient removes a MAC address from the AP blocklist
 func (c *Client) UnblockAPClient(ctx context.Context, mac string) error {
-	return c.doPost(ctx, "/network/wifi/ap/unblock/"+mac, nil)
+	return c.doPost(ctx, "/network/wifi/ap/unblock/"+url.PathEscape(mac), nil)
 }
 
 // StartAP starts the WiFi access point
@@ -2678,7 +2679,7 @@ func (c *Client) GetStorageDeviceSMART(ctx context.Context, device string) (*SMA
 	device = strings.TrimPrefix(device, "/dev/")
 
 	var result SMARTInfo
-	if err := c.doGet(ctx, "/storage/devices/"+device+"/smart", &result); err != nil {
+	if err := c.doGet(ctx, "/storage/devices/"+url.PathEscape(device)+"/smart", &result); err != nil {
 		return nil, err
 	}
 	return &result, nil

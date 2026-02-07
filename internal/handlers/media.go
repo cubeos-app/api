@@ -13,12 +13,17 @@ import (
 // MediaHandler handles camera and audio HTTP requests via HAL.
 type MediaHandler struct {
 	halClient *hal.Client
+	domain    string
 }
 
 // NewMediaHandler creates a new media handler.
-func NewMediaHandler(halClient *hal.Client) *MediaHandler {
+func NewMediaHandler(halClient *hal.Client, domain string) *MediaHandler {
+	if domain == "" {
+		domain = "cubeos.cube"
+	}
 	return &MediaHandler{
 		halClient: halClient,
+		domain:    domain,
 	}
 }
 
@@ -241,7 +246,7 @@ func (h *MediaHandler) GetStreamInfo(w http.ResponseWriter, r *http.Request) {
 // StartStreamRequest represents a stream start request
 type StartStreamRequest struct {
 	Device    string `json:"device,omitempty"`    // Camera device (default: video0)
-	Port      int    `json:"port,omitempty"`      // Stream port (default: 8080)
+	Port      int    `json:"port,omitempty"`      // Stream port (default: 6100)
 	Width     int    `json:"width,omitempty"`     // Stream width (default: 1280)
 	Height    int    `json:"height,omitempty"`    // Stream height (default: 720)
 	Framerate int    `json:"framerate,omitempty"` // Framerate (default: 30)
@@ -271,7 +276,7 @@ func (h *MediaHandler) StartStream(w http.ResponseWriter, r *http.Request) {
 		req.Device = "video0"
 	}
 	if req.Port == 0 {
-		req.Port = 8080
+		req.Port = 6100
 	}
 	if req.Width == 0 {
 		req.Width = 1280
@@ -296,7 +301,7 @@ func (h *MediaHandler) StartStream(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, StreamStartResponse{
 		Success:   true,
 		Message:   "Stream started",
-		StreamURL: "http://cubeos.cube:" + strconv.Itoa(req.Port) + "/stream",
+		StreamURL: "http://" + h.domain + ":" + strconv.Itoa(req.Port) + "/stream",
 	})
 }
 
