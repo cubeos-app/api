@@ -303,7 +303,7 @@ func (h *ExtendedHandlers) GetRecentErrors(w http.ResponseWriter, r *http.Reques
 // @Security BearerAuth
 // @Success 200 {object} map[string]interface{} "Firewall status"
 // @Failure 500 {object} ErrorResponse "Failed to get status"
-// @Router /firewall/status [get]
+// REMOVED: @Router /firewall/status [get]
 func (h *ExtendedHandlers) GetFirewallStatus(w http.ResponseWriter, r *http.Request) {
 	status, err := h.firewall.GetStatus(r.Context())
 	if err != nil {
@@ -324,7 +324,7 @@ func (h *ExtendedHandlers) GetFirewallStatus(w http.ResponseWriter, r *http.Requ
 // @Success 200 {object} map[string]interface{} "Firewall rules"
 // @Failure 400 {object} ErrorResponse "Invalid table name"
 // @Failure 500 {object} ErrorResponse "Failed to get rules"
-// @Router /firewall/rules [get]
+// REMOVED: @Router /firewall/rules [get]
 func (h *ExtendedHandlers) GetFirewallRules(w http.ResponseWriter, r *http.Request) {
 	table := r.URL.Query().Get("table")
 	if table == "" {
@@ -361,7 +361,7 @@ func (h *ExtendedHandlers) GetFirewallRules(w http.ResponseWriter, r *http.Reque
 // @Produce json
 // @Security BearerAuth
 // @Success 200 {object} map[string]interface{} "NAT status"
-// @Router /firewall/nat/status [get]
+// REMOVED: @Router /firewall/nat/status [get]
 func (h *ExtendedHandlers) GetNATStatus(w http.ResponseWriter, r *http.Request) {
 	status, _ := h.firewall.GetNATStatus(r.Context())
 	writeJSON(w, http.StatusOK, status)
@@ -375,7 +375,7 @@ func (h *ExtendedHandlers) GetNATStatus(w http.ResponseWriter, r *http.Request) 
 // @Security BearerAuth
 // @Success 200 {object} models.SuccessResponse "NAT enabled"
 // @Failure 500 {object} ErrorResponse "Failed to enable NAT"
-// @Router /firewall/nat/enable [post]
+// REMOVED: @Router /firewall/nat/enable [post]
 func (h *ExtendedHandlers) EnableNAT(w http.ResponseWriter, r *http.Request) {
 	result := h.firewall.EnableNAT(r.Context())
 	if result.Status == "error" {
@@ -393,7 +393,7 @@ func (h *ExtendedHandlers) EnableNAT(w http.ResponseWriter, r *http.Request) {
 // @Security BearerAuth
 // @Success 200 {object} models.SuccessResponse "NAT disabled"
 // @Failure 500 {object} ErrorResponse "Failed to disable NAT"
-// @Router /firewall/nat/disable [post]
+// REMOVED: @Router /firewall/nat/disable [post]
 func (h *ExtendedHandlers) DisableNAT(w http.ResponseWriter, r *http.Request) {
 	result := h.firewall.DisableNAT(r.Context())
 	if result.Status == "error" {
@@ -415,7 +415,7 @@ func (h *ExtendedHandlers) DisableNAT(w http.ResponseWriter, r *http.Request) {
 // @Success 200 {object} models.SuccessResponse "Port allowed"
 // @Failure 400 {object} ErrorResponse "Invalid port"
 // @Failure 500 {object} ErrorResponse "Failed to add rule"
-// @Router /firewall/port/allow [post]
+// REMOVED: @Router /firewall/port/allow [post]
 func (h *ExtendedHandlers) AllowPort(w http.ResponseWriter, r *http.Request) {
 	portStr := r.URL.Query().Get("port")
 	port, err := strconv.Atoi(portStr)
@@ -449,7 +449,7 @@ func (h *ExtendedHandlers) AllowPort(w http.ResponseWriter, r *http.Request) {
 // @Success 200 {object} models.SuccessResponse "Port blocked"
 // @Failure 400 {object} ErrorResponse "Invalid port"
 // @Failure 500 {object} ErrorResponse "Failed to add rule"
-// @Router /firewall/port/block [post]
+// REMOVED: @Router /firewall/port/block [post]
 func (h *ExtendedHandlers) BlockPort(w http.ResponseWriter, r *http.Request) {
 	portStr := r.URL.Query().Get("port")
 	port, err := strconv.Atoi(portStr)
@@ -483,7 +483,7 @@ func (h *ExtendedHandlers) BlockPort(w http.ResponseWriter, r *http.Request) {
 // @Success 200 {object} models.SuccessResponse "Rule removed"
 // @Failure 400 {object} ErrorResponse "Invalid port"
 // @Failure 500 {object} ErrorResponse "Failed to remove rule"
-// @Router /firewall/port/{port} [delete]
+// REMOVED: @Router /firewall/port/{port} [delete]
 func (h *ExtendedHandlers) RemovePortRule(w http.ResponseWriter, r *http.Request) {
 	portStr := chi.URLParam(r, "port")
 	port, err := strconv.Atoi(portStr)
@@ -518,7 +518,7 @@ func (h *ExtendedHandlers) RemovePortRule(w http.ResponseWriter, r *http.Request
 // @Param service path string true "Service name"
 // @Success 200 {object} models.SuccessResponse "Service allowed"
 // @Failure 400 {object} ErrorResponse "Unknown service"
-// @Router /firewall/service/{service}/allow [post]
+// REMOVED: @Router /firewall/service/{service}/allow [post]
 func (h *ExtendedHandlers) AllowService(w http.ResponseWriter, r *http.Request) {
 	service := chi.URLParam(r, "service")
 	result := h.firewall.AllowService(r.Context(), service)
@@ -536,7 +536,7 @@ func (h *ExtendedHandlers) AllowService(w http.ResponseWriter, r *http.Request) 
 // @Produce json
 // @Security BearerAuth
 // @Success 200 {object} models.SuccessResponse "Rules saved"
-// @Router /firewall/save [post]
+// REMOVED: @Router /firewall/save [post]
 func (h *ExtendedHandlers) SaveFirewallRules(w http.ResponseWriter, r *http.Request) {
 	result := h.firewall.SaveRules(r.Context())
 	writeJSON(w, http.StatusOK, result)
@@ -549,7 +549,7 @@ func (h *ExtendedHandlers) SaveFirewallRules(w http.ResponseWriter, r *http.Requ
 // @Produce json
 // @Security BearerAuth
 // @Success 200 {object} models.SuccessResponse "Rules restored"
-// @Router /firewall/restore [post]
+// REMOVED: @Router /firewall/restore [post]
 func (h *ExtendedHandlers) RestoreFirewallRules(w http.ResponseWriter, r *http.Request) {
 	result := h.firewall.RestoreRules(r.Context())
 	writeJSON(w, http.StatusOK, result)
@@ -562,7 +562,7 @@ func (h *ExtendedHandlers) RestoreFirewallRules(w http.ResponseWriter, r *http.R
 // @Produce json
 // @Security BearerAuth
 // @Success 200 {object} map[string]interface{} "IP forward status"
-// @Router /firewall/ipforward [get]
+// REMOVED: @Router /firewall/ipforward [get]
 func (h *ExtendedHandlers) GetIPForward(w http.ResponseWriter, r *http.Request) {
 	status, _ := h.firewall.GetNATStatus(r.Context())
 	writeJSON(w, http.StatusOK, map[string]interface{}{
@@ -580,7 +580,7 @@ func (h *ExtendedHandlers) GetIPForward(w http.ResponseWriter, r *http.Request) 
 // @Param request body object true "Enable state" example({"enabled": true})
 // @Success 200 {object} models.SuccessResponse "IP forward updated"
 // @Failure 400 {object} ErrorResponse "Invalid request body"
-// @Router /firewall/ipforward [put]
+// REMOVED: @Router /firewall/ipforward [put]
 func (h *ExtendedHandlers) SetIPForward(w http.ResponseWriter, r *http.Request) {
 	var req struct {
 		Enabled bool `json:"enabled"`
@@ -603,7 +603,7 @@ func (h *ExtendedHandlers) SetIPForward(w http.ResponseWriter, r *http.Request) 
 // @Param confirm query bool true "Confirmation flag" example(true)
 // @Success 200 {object} models.SuccessResponse "Firewall reset"
 // @Failure 400 {object} ErrorResponse "Confirmation required"
-// @Router /firewall/reset [post]
+// REMOVED: @Router /firewall/reset [post]
 func (h *ExtendedHandlers) ResetFirewall(w http.ResponseWriter, r *http.Request) {
 	confirm := r.URL.Query().Get("confirm") == "true"
 	if !confirm {
@@ -626,7 +626,7 @@ func (h *ExtendedHandlers) ResetFirewall(w http.ResponseWriter, r *http.Request)
 // @Produce json
 // @Security BearerAuth
 // @Success 200 {object} models.BackupListResponse "Backup list"
-// @Router /backups [get]
+// REMOVED: @Router /backups [get]
 func (h *ExtendedHandlers) ListBackups(w http.ResponseWriter, r *http.Request) {
 	backups := h.backup.ListBackups()
 	totalSize := h.backup.GetTotalSize()
@@ -647,7 +647,7 @@ func (h *ExtendedHandlers) ListBackups(w http.ResponseWriter, r *http.Request) {
 // @Param backup_id path string true "Backup ID"
 // @Success 200 {object} models.BackupInfo "Backup details"
 // @Failure 404 {object} ErrorResponse "Backup not found"
-// @Router /backups/{backup_id} [get]
+// REMOVED: @Router /backups/{backup_id} [get]
 func (h *ExtendedHandlers) GetBackup(w http.ResponseWriter, r *http.Request) {
 	backupID := chi.URLParam(r, "backup_id")
 	backup := h.backup.GetBackup(backupID)
@@ -668,7 +668,7 @@ func (h *ExtendedHandlers) GetBackup(w http.ResponseWriter, r *http.Request) {
 // @Param request body models.BackupCreateRequest false "Backup options"
 // @Success 200 {object} models.BackupInfo "Created backup"
 // @Failure 500 {object} ErrorResponse "Failed to create backup"
-// @Router /backups [post]
+// REMOVED: @Router /backups [post]
 func (h *ExtendedHandlers) CreateBackup(w http.ResponseWriter, r *http.Request) {
 	var req models.BackupCreateRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
@@ -699,7 +699,7 @@ func (h *ExtendedHandlers) CreateBackup(w http.ResponseWriter, r *http.Request) 
 // @Param description query string false "Backup description"
 // @Success 200 {object} models.BackupInfo "Created backup"
 // @Failure 500 {object} ErrorResponse "Failed to create backup"
-// @Router /backups/quick [post]
+// REMOVED: @Router /backups/quick [post]
 func (h *ExtendedHandlers) QuickBackup(w http.ResponseWriter, r *http.Request) {
 	backupType := r.URL.Query().Get("backup_type")
 	if backupType == "" {
@@ -730,7 +730,7 @@ func (h *ExtendedHandlers) QuickBackup(w http.ResponseWriter, r *http.Request) {
 // @Success 200 {object} models.SuccessResponse "Backup restored"
 // @Failure 400 {object} ErrorResponse "Confirmation required"
 // @Failure 500 {object} ErrorResponse "Failed to restore backup"
-// @Router /backups/{backup_id}/restore [post]
+// REMOVED: @Router /backups/{backup_id}/restore [post]
 func (h *ExtendedHandlers) RestoreBackup(w http.ResponseWriter, r *http.Request) {
 	backupID := chi.URLParam(r, "backup_id")
 	confirm := r.URL.Query().Get("confirm") == "true"
@@ -759,7 +759,7 @@ func (h *ExtendedHandlers) RestoreBackup(w http.ResponseWriter, r *http.Request)
 // @Param backup_id path string true "Backup ID"
 // @Success 200 {object} models.SuccessResponse "Backup deleted"
 // @Failure 404 {object} ErrorResponse "Backup not found"
-// @Router /backups/{backup_id} [delete]
+// REMOVED: @Router /backups/{backup_id} [delete]
 func (h *ExtendedHandlers) DeleteBackup(w http.ResponseWriter, r *http.Request) {
 	backupID := chi.URLParam(r, "backup_id")
 	result := h.backup.DeleteBackup(backupID)
@@ -779,7 +779,7 @@ func (h *ExtendedHandlers) DeleteBackup(w http.ResponseWriter, r *http.Request) 
 // @Param backup_id path string true "Backup ID"
 // @Success 200 {file} binary "Backup file"
 // @Failure 404 {object} ErrorResponse "Backup not found"
-// @Router /backups/{backup_id}/download [get]
+// REMOVED: @Router /backups/{backup_id}/download [get]
 func (h *ExtendedHandlers) DownloadBackup(w http.ResponseWriter, r *http.Request) {
 	backupID := chi.URLParam(r, "backup_id")
 	backup := h.backup.GetBackup(backupID)
@@ -806,7 +806,7 @@ func (h *ExtendedHandlers) DownloadBackup(w http.ResponseWriter, r *http.Request
 // @Produce json
 // @Security BearerAuth
 // @Success 200 {object} map[string]interface{} "Backup statistics"
-// @Router /backups/stats [get]
+// REMOVED: @Router /backups/stats [get]
 func (h *ExtendedHandlers) GetBackupStats(w http.ResponseWriter, r *http.Request) {
 	stats := h.backup.GetStats()
 	writeJSON(w, http.StatusOK, stats)
@@ -1527,7 +1527,7 @@ func (h *ExtendedHandlers) SetCharging(w http.ResponseWriter, r *http.Request) {
 // @Produce json
 // @Security BearerAuth
 // @Success 200 {object} map[string]interface{} "SMB server status"
-// @Router /smb/status [get]
+// REMOVED: @Router /smb/status [get]
 func (h *ExtendedHandlers) GetSMBStatus(w http.ResponseWriter, r *http.Request) {
 	status := h.storage.GetSMBStatus()
 	writeJSON(w, http.StatusOK, status)
@@ -1541,7 +1541,7 @@ func (h *ExtendedHandlers) GetSMBStatus(w http.ResponseWriter, r *http.Request) 
 // @Security BearerAuth
 // @Success 200 {object} map[string]interface{} "SMB shares"
 // @Failure 500 {object} ErrorResponse "Failed to get shares"
-// @Router /smb/shares [get]
+// REMOVED: @Router /smb/shares [get]
 func (h *ExtendedHandlers) GetSMBShares(w http.ResponseWriter, r *http.Request) {
 	shares, err := h.storage.GetSMBShares()
 	if err != nil {
@@ -1565,7 +1565,7 @@ func (h *ExtendedHandlers) GetSMBShares(w http.ResponseWriter, r *http.Request) 
 // @Success 200 {object} managers.SMBShare "SMB share details"
 // @Failure 404 {object} ErrorResponse "Share not found"
 // @Failure 500 {object} ErrorResponse "Failed to get share"
-// @Router /smb/shares/{name} [get]
+// REMOVED: @Router /smb/shares/{name} [get]
 func (h *ExtendedHandlers) GetSMBShare(w http.ResponseWriter, r *http.Request) {
 	name := chi.URLParam(r, "name")
 
@@ -1596,7 +1596,7 @@ func (h *ExtendedHandlers) GetSMBShare(w http.ResponseWriter, r *http.Request) {
 // @Success 201 {object} map[string]interface{} "Share created"
 // @Failure 400 {object} ErrorResponse "Invalid request body"
 // @Failure 500 {object} ErrorResponse "Failed to create share"
-// @Router /smb/shares [post]
+// REMOVED: @Router /smb/shares [post]
 func (h *ExtendedHandlers) CreateSMBShare(w http.ResponseWriter, r *http.Request) {
 	var share managers.SMBShare
 	if err := json.NewDecoder(r.Body).Decode(&share); err != nil {
@@ -1628,7 +1628,7 @@ func (h *ExtendedHandlers) CreateSMBShare(w http.ResponseWriter, r *http.Request
 // @Success 200 {object} map[string]interface{} "Share updated"
 // @Failure 400 {object} ErrorResponse "Invalid request body"
 // @Failure 500 {object} ErrorResponse "Failed to update share"
-// @Router /smb/shares/{name} [put]
+// REMOVED: @Router /smb/shares/{name} [put]
 func (h *ExtendedHandlers) UpdateSMBShare(w http.ResponseWriter, r *http.Request) {
 	name := chi.URLParam(r, "name")
 
@@ -1658,7 +1658,7 @@ func (h *ExtendedHandlers) UpdateSMBShare(w http.ResponseWriter, r *http.Request
 // @Param name path string true "Share name"
 // @Success 200 {object} map[string]interface{} "Share deleted"
 // @Failure 500 {object} ErrorResponse "Failed to delete share"
-// @Router /smb/shares/{name} [delete]
+// REMOVED: @Router /smb/shares/{name} [delete]
 func (h *ExtendedHandlers) DeleteSMBShare(w http.ResponseWriter, r *http.Request) {
 	name := chi.URLParam(r, "name")
 

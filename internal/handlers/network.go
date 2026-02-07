@@ -234,19 +234,6 @@ func (h *NetworkHandler) GetAvailableModes(w http.ResponseWriter, r *http.Reques
 // WiFi Management
 // =============================================================================
 
-// ScanWiFi godoc
-// @Summary Scan WiFi networks
-// @Description Scans for available WiFi networks in range
-// @Tags Network
-// @Produce json
-// @Security BearerAuth
-// @Success 200 {object} map[string]interface{} "Available WiFi networks"
-// @Failure 500 {object} ErrorResponse "Failed to scan networks"
-// @Router /network/wifi/scan [get]
-func (h *NetworkHandler) ScanWiFi(w http.ResponseWriter, r *http.Request) {
-	h.ScanWiFiNetworks(w, r)
-}
-
 // ScanWiFiNetworks godoc
 // @Summary Scan WiFi networks
 // @Description Scans for available WiFi networks in range
@@ -286,22 +273,6 @@ func (h *NetworkHandler) GetWiFiStatus(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	writeJSON(w, http.StatusOK, status)
-}
-
-// ConnectWiFi godoc
-// @Summary Connect to WiFi network
-// @Description Connects to a WiFi network as a client
-// @Tags Network
-// @Accept json
-// @Produce json
-// @Security BearerAuth
-// @Param request body object true "WiFi credentials" example({"ssid": "MyNetwork", "password": "secret"})
-// @Success 200 {object} map[string]interface{} "Connection successful"
-// @Failure 400 {object} ErrorResponse "Invalid request or missing SSID"
-// @Failure 500 {object} ErrorResponse "Failed to connect"
-// @Router /network/wifi/connect [post]
-func (h *NetworkHandler) ConnectWiFi(w http.ResponseWriter, r *http.Request) {
-	h.ConnectToWiFi(w, r)
 }
 
 // ConnectToWiFi godoc
@@ -500,22 +471,6 @@ func (h *NetworkHandler) StopAP(w http.ResponseWriter, r *http.Request) {
 		"success": true,
 		"message": "Access point stopped",
 	})
-}
-
-// ConfigureAP godoc
-// @Summary Configure access point
-// @Description Updates access point configuration
-// @Tags Network
-// @Accept json
-// @Produce json
-// @Security BearerAuth
-// @Param config body object true "AP configuration"
-// @Success 200 {object} map[string]interface{} "AP configured"
-// @Failure 400 {object} ErrorResponse "Invalid configuration"
-// @Failure 500 {object} ErrorResponse "Failed to configure AP"
-// @Router /network/ap/config [put]
-func (h *NetworkHandler) ConfigureAP(w http.ResponseWriter, r *http.Request) {
-	h.UpdateAPConfig(w, r)
 }
 
 // RestartAP godoc

@@ -1,3 +1,6 @@
+// DEAD CODE — ComposeManager is not used in production.
+// Retained for test coverage (orchestrator_test.go references ComposeTransformer).
+// TODO: Remove once Swarm migration is complete and tests are updated.
 package managers
 
 import (

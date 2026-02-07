@@ -616,13 +616,6 @@ func (s *SwarmManager) getReplicaStatusWithContext(ctx context.Context, svc swar
 	return fmt.Sprintf("%d/%d", running, desired)
 }
 
-// getReplicaStatus is kept for backward compatibility but uses the context version
-func (s *SwarmManager) getReplicaStatus(svc swarm.Service) string {
-	ctx, cancel := context.WithTimeout(s.ctx, 5*time.Second)
-	defer cancel()
-	return s.getReplicaStatusWithContext(ctx, svc)
-}
-
 func (s *SwarmManager) formatPorts(ports []swarm.PortConfig) string {
 	if len(ports) == 0 {
 		return ""
