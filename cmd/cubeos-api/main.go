@@ -368,6 +368,9 @@ func main() {
 
 	r.Use(chimw.Timeout(60 * time.Second))
 
+	// Global body size limit: 10MB (prevents OOM from oversized requests)
+	r.Use(middleware.MaxBodySize(10 * 1024 * 1024))
+
 	// Public routes
 	r.Get("/health", h.Health)
 

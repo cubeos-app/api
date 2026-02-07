@@ -165,7 +165,9 @@ func (h *SetupHandler) GetDNSProviders(w http.ResponseWriter, r *http.Request) {
 func (h *SetupHandler) ValidateConfig(w http.ResponseWriter, r *http.Request) {
 	var cfg models.SetupConfig
 	if err := json.NewDecoder(r.Body).Decode(&cfg); err != nil {
-		http.Error(w, `{"error":"invalid request body"}`, http.StatusBadRequest)
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusBadRequest)
+		json.NewEncoder(w).Encode(map[string]string{"error": "invalid request body"})
 		return
 	}
 
@@ -187,12 +189,16 @@ func (h *SetupHandler) ValidateConfig(w http.ResponseWriter, r *http.Request) {
 func (h *SetupHandler) ApplyConfig(w http.ResponseWriter, r *http.Request) {
 	var cfg models.SetupConfig
 	if err := json.NewDecoder(r.Body).Decode(&cfg); err != nil {
-		http.Error(w, `{"error":"invalid request body"}`, http.StatusBadRequest)
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusBadRequest)
+		json.NewEncoder(w).Encode(map[string]string{"error": "invalid request body"})
 		return
 	}
 
 	if err := h.manager.ApplySetupConfig(&cfg); err != nil {
-		http.Error(w, `{"error":"`+err.Error()+`"}`, http.StatusInternalServerError)
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusInternalServerError)
+		json.NewEncoder(w).Encode(map[string]string{"error": err.Error()})
 		return
 	}
 
@@ -215,7 +221,9 @@ func (h *SetupHandler) ApplyConfig(w http.ResponseWriter, r *http.Request) {
 func (h *SetupHandler) ResetSetup(w http.ResponseWriter, r *http.Request) {
 	// This should be protected by admin auth in production
 	if err := h.manager.ResetSetup(); err != nil {
-		http.Error(w, `{"error":"`+err.Error()+`"}`, http.StatusInternalServerError)
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusInternalServerError)
+		json.NewEncoder(w).Encode(map[string]string{"error": err.Error()})
 		return
 	}
 
@@ -237,7 +245,9 @@ func (h *SetupHandler) SkipSetup(w http.ResponseWriter, r *http.Request) {
 	// Apply default config to mark setup complete
 	defaults := h.manager.GenerateDefaultConfig()
 	if err := h.manager.MarkSetupComplete(defaults); err != nil {
-		http.Error(w, `{"error":"`+err.Error()+`"}`, http.StatusInternalServerError)
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusInternalServerError)
+		json.NewEncoder(w).Encode(map[string]string{"error": err.Error()})
 		return
 	}
 

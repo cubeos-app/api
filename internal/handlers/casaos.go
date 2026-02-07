@@ -4,7 +4,9 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"net"
 	"net/http"
+	"net/url"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -233,7 +235,15 @@ func (h *CasaOSHandler) PreviewManifest(w http.ResponseWriter, r *http.Request) 
 
 	// If URL provided, fetch manifest
 	if req.URL != "" && manifestContent == "" {
-		resp, err := http.Get(req.URL)
+		// SSRF protection: only allow HTTPS URLs to known public hosts
+		if err := validateManifestURL(req.URL); err != nil {
+			w.WriteHeader(http.StatusBadRequest)
+			json.NewEncoder(w).Encode(map[string]string{"error": fmt.Sprintf("invalid URL: %v", err)})
+			return
+		}
+
+		client := &http.Client{Timeout: 15 * time.Second}
+		resp, err := client.Get(req.URL)
 		if err != nil {
 			w.WriteHeader(http.StatusBadRequest)
 			json.NewEncoder(w).Encode(map[string]string{"error": fmt.Sprintf("failed to fetch URL: %v", err)})
@@ -241,10 +251,18 @@ func (h *CasaOSHandler) PreviewManifest(w http.ResponseWriter, r *http.Request) 
 		}
 		defer resp.Body.Close()
 
-		bodyBytes, err := io.ReadAll(resp.Body)
+		// Limit response body to 5MB to prevent resource exhaustion
+		const maxManifestSize = 5 * 1024 * 1024
+		limitedReader := io.LimitReader(resp.Body, maxManifestSize+1)
+		bodyBytes, err := io.ReadAll(limitedReader)
 		if err != nil {
 			w.WriteHeader(http.StatusBadRequest)
 			json.NewEncoder(w).Encode(map[string]string{"error": "failed to read response"})
+			return
+		}
+		if len(bodyBytes) > maxManifestSize {
+			w.WriteHeader(http.StatusBadRequest)
+			json.NewEncoder(w).Encode(map[string]string{"error": "remote manifest exceeds 5MB size limit"})
 			return
 		}
 		manifestContent = string(bodyBytes)
@@ -796,4 +814,42 @@ func sanitizeAppName(name string) string {
 
 	// Remove leading/trailing dashes
 	return strings.Trim(result.String(), "-")
+}
+
+// validateManifestURL checks that a URL is safe to fetch (SSRF protection).
+// Only HTTPS URLs to known CasaOS-related hosts are allowed.
+func validateManifestURL(rawURL string) error {
+	parsed, err := url.Parse(rawURL)
+	if err != nil {
+		return fmt.Errorf("malformed URL")
+	}
+
+	// Only allow HTTPS
+	if parsed.Scheme != "https" {
+		return fmt.Errorf("only HTTPS URLs are allowed")
+	}
+
+	host := strings.ToLower(parsed.Hostname())
+
+	// Reject IP addresses (prevent internal network access)
+	if net.ParseIP(host) != nil {
+		return fmt.Errorf("IP addresses are not allowed, use a hostname")
+	}
+
+	// Allowlist of trusted domains for manifest fetching
+	allowedDomains := []string{
+		"github.com",
+		"raw.githubusercontent.com",
+		"gitlab.com",
+		"codeberg.org",
+		"gitea.com",
+	}
+
+	for _, domain := range allowedDomains {
+		if host == domain || strings.HasSuffix(host, "."+domain) {
+			return nil
+		}
+	}
+
+	return fmt.Errorf("domain %q is not in the allowed list for manifest fetching", host)
 }

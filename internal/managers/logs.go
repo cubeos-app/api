@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"os"
 	"os/exec"
+	"path/filepath"
 	"regexp"
 	"strconv"
 	"strings"
@@ -545,15 +546,30 @@ func (m *LogManager) GetBootLogs(bootID int, lines int) []models.LogEntry {
 
 // ReadLogFile reads from a traditional log file
 func (m *LogManager) ReadLogFile(path string, lines int, grep string) ([]string, error) {
-	// Security check - only allow /var/log
-	if !strings.HasPrefix(path, "/var/log/") && !strings.HasPrefix(path, "/host/var/log/") {
-		return nil, fmt.Errorf("only /var/log/ access allowed")
+	// Security: clean the path to resolve any ".." traversal attempts
+	cleanPath := filepath.Clean(path)
+
+	// Allowlist of permitted log directories
+	allowedPrefixes := []string{"/var/log/", "/host/var/log/"}
+	allowed := false
+	for _, prefix := range allowedPrefixes {
+		if strings.HasPrefix(cleanPath, prefix) {
+			allowed = true
+			break
+		}
+	}
+	if !allowed {
+		return nil, fmt.Errorf("access denied: only /var/log/ paths are allowed")
 	}
 
 	// Try host-mounted path first
-	actualPath := path
-	if _, err := os.Stat(path); os.IsNotExist(err) {
-		actualPath = "/host" + path
+	actualPath := cleanPath
+	if _, err := os.Stat(cleanPath); os.IsNotExist(err) {
+		actualPath = filepath.Clean("/host" + cleanPath)
+		// Re-validate after prepending /host
+		if !strings.HasPrefix(actualPath, "/host/var/log/") {
+			return nil, fmt.Errorf("access denied: only /var/log/ paths are allowed")
+		}
 	}
 
 	file, err := os.Open(actualPath)

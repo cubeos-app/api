@@ -285,6 +285,12 @@ func (m *BackupManager) RestoreBackup(backupID string, restartServices bool) (*m
 
 	tarReader := tar.NewReader(gzReader)
 
+	// Allowed restore target prefixes
+	allowedRestorePrefixes := []string{"/cubeos/", "/etc/hostapd/", "/etc/dnsmasq.conf", "/etc/netplan/"}
+
+	// Maximum single file size during restore: 500MB
+	const maxRestoreFileSize int64 = 500 * 1024 * 1024
+
 	// Extract files
 	for {
 		header, err := tarReader.Next()
@@ -295,28 +301,49 @@ func (m *BackupManager) RestoreBackup(backupID string, restartServices bool) (*m
 			return &models.SuccessResponse{Status: "error", Message: err.Error()}, err
 		}
 
-		// Security: don't extract outside expected paths
-		if strings.Contains(header.Name, "..") {
+		// Security: clean the path and validate against allowed prefixes
+		target := filepath.Clean("/" + header.Name)
+
+		// Reject any path that still contains ".." after cleaning
+		if strings.Contains(target, "..") {
 			continue
 		}
 
-		// Create directories
-		target := "/" + header.Name
+		// Validate target is within allowed restore paths
+		allowed := false
+		for _, prefix := range allowedRestorePrefixes {
+			if strings.HasPrefix(target, prefix) {
+				allowed = true
+				break
+			}
+		}
+		if !allowed {
+			continue
+		}
+
 		if header.Typeflag == tar.TypeDir {
 			os.MkdirAll(target, 0755)
+			continue
+		}
+
+		// Skip excessively large files
+		if header.Size > maxRestoreFileSize {
 			continue
 		}
 
 		// Create parent directory
 		os.MkdirAll(filepath.Dir(target), 0755)
 
-		// Extract file
+		// Extract file with size-limited copy
 		outFile, err := os.Create(target)
 		if err != nil {
 			continue
 		}
 
-		io.Copy(outFile, tarReader)
+		if _, err := io.Copy(outFile, io.LimitReader(tarReader, maxRestoreFileSize)); err != nil {
+			outFile.Close()
+			continue
+		}
 		outFile.Close()
 		os.Chmod(target, os.FileMode(header.Mode))
 	}
