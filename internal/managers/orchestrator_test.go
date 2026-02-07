@@ -283,6 +283,81 @@ func TestSchemaCreation(t *testing.T) {
 			wifi_client_interface TEXT DEFAULT 'wlan1',
 			updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
 		);
+
+		CREATE TABLE IF NOT EXISTS app_health (
+			id INTEGER PRIMARY KEY AUTOINCREMENT,
+			app_id INTEGER UNIQUE NOT NULL,
+			check_endpoint TEXT DEFAULT '',
+			check_interval INTEGER DEFAULT 30,
+			check_timeout INTEGER DEFAULT 10,
+			max_retries INTEGER DEFAULT 3,
+			alert_after INTEGER DEFAULT 300,
+			FOREIGN KEY (app_id) REFERENCES apps(id) ON DELETE CASCADE
+		);
+
+		CREATE TABLE IF NOT EXISTS vpn_configs (
+			id INTEGER PRIMARY KEY AUTOINCREMENT,
+			name TEXT UNIQUE NOT NULL,
+			type TEXT NOT NULL,
+			config_path TEXT NOT NULL,
+			is_active BOOLEAN DEFAULT FALSE,
+			auto_connect BOOLEAN DEFAULT FALSE,
+			created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+			updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
+		);
+
+		CREATE TABLE IF NOT EXISTS mounts (
+			id INTEGER PRIMARY KEY AUTOINCREMENT,
+			name TEXT UNIQUE NOT NULL,
+			type TEXT NOT NULL,
+			remote_path TEXT NOT NULL,
+			local_path TEXT NOT NULL,
+			username TEXT DEFAULT '',
+			password TEXT DEFAULT '',
+			options TEXT DEFAULT '',
+			auto_mount BOOLEAN DEFAULT FALSE,
+			is_mounted BOOLEAN DEFAULT FALSE,
+			created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+		);
+
+		CREATE TABLE IF NOT EXISTS backups (
+			id INTEGER PRIMARY KEY AUTOINCREMENT,
+			name TEXT UNIQUE NOT NULL,
+			destination TEXT NOT NULL,
+			include_apps TEXT DEFAULT '*',
+			schedule TEXT DEFAULT '',
+			retention_days INTEGER DEFAULT 30,
+			last_run DATETIME,
+			last_status TEXT DEFAULT '',
+			created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+		);
+
+		CREATE TABLE IF NOT EXISTS users (
+			id INTEGER PRIMARY KEY AUTOINCREMENT,
+			username TEXT UNIQUE NOT NULL,
+			password_hash TEXT NOT NULL,
+			email TEXT DEFAULT '',
+			role TEXT DEFAULT 'admin',
+			last_login DATETIME,
+			created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+			updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
+		);
+
+		CREATE TABLE IF NOT EXISTS preferences (
+			key TEXT PRIMARY KEY,
+			value TEXT NOT NULL,
+			updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
+		);
+
+		CREATE TABLE IF NOT EXISTS nodes (
+			id TEXT PRIMARY KEY,
+			hostname TEXT NOT NULL,
+			role TEXT DEFAULT 'worker',
+			status TEXT DEFAULT 'unknown',
+			ip_address TEXT,
+			joined_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+			last_seen DATETIME DEFAULT CURRENT_TIMESTAMP
+		);
 	`
 
 	_, err = db.Exec(schema)
@@ -291,7 +366,7 @@ func TestSchemaCreation(t *testing.T) {
 	}
 
 	// Verify tables exist
-	tables := []string{"apps", "port_allocations", "fqdns", "profiles", "profile_apps", "system_state", "network_config"}
+	tables := []string{"apps", "port_allocations", "fqdns", "profiles", "profile_apps", "system_state", "network_config", "app_health", "vpn_configs", "mounts", "backups", "users", "preferences", "nodes"}
 	for _, table := range tables {
 		var name string
 		err := db.QueryRow(`SELECT name FROM sqlite_master WHERE type='table' AND name=?`, table).Scan(&name)
@@ -835,6 +910,81 @@ func setupTestDB(t *testing.T) *sql.DB {
 			wifi_ap_interface TEXT DEFAULT 'wlan0',
 			wifi_client_interface TEXT DEFAULT 'wlan1',
 			updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
+		);
+
+		CREATE TABLE IF NOT EXISTS app_health (
+			id INTEGER PRIMARY KEY AUTOINCREMENT,
+			app_id INTEGER UNIQUE NOT NULL,
+			check_endpoint TEXT DEFAULT '',
+			check_interval INTEGER DEFAULT 30,
+			check_timeout INTEGER DEFAULT 10,
+			max_retries INTEGER DEFAULT 3,
+			alert_after INTEGER DEFAULT 300,
+			FOREIGN KEY (app_id) REFERENCES apps(id) ON DELETE CASCADE
+		);
+
+		CREATE TABLE IF NOT EXISTS vpn_configs (
+			id INTEGER PRIMARY KEY AUTOINCREMENT,
+			name TEXT UNIQUE NOT NULL,
+			type TEXT NOT NULL,
+			config_path TEXT NOT NULL,
+			is_active BOOLEAN DEFAULT FALSE,
+			auto_connect BOOLEAN DEFAULT FALSE,
+			created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+			updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
+		);
+
+		CREATE TABLE IF NOT EXISTS mounts (
+			id INTEGER PRIMARY KEY AUTOINCREMENT,
+			name TEXT UNIQUE NOT NULL,
+			type TEXT NOT NULL,
+			remote_path TEXT NOT NULL,
+			local_path TEXT NOT NULL,
+			username TEXT DEFAULT '',
+			password TEXT DEFAULT '',
+			options TEXT DEFAULT '',
+			auto_mount BOOLEAN DEFAULT FALSE,
+			is_mounted BOOLEAN DEFAULT FALSE,
+			created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+		);
+
+		CREATE TABLE IF NOT EXISTS backups (
+			id INTEGER PRIMARY KEY AUTOINCREMENT,
+			name TEXT UNIQUE NOT NULL,
+			destination TEXT NOT NULL,
+			include_apps TEXT DEFAULT '*',
+			schedule TEXT DEFAULT '',
+			retention_days INTEGER DEFAULT 30,
+			last_run DATETIME,
+			last_status TEXT DEFAULT '',
+			created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+		);
+
+		CREATE TABLE IF NOT EXISTS users (
+			id INTEGER PRIMARY KEY AUTOINCREMENT,
+			username TEXT UNIQUE NOT NULL,
+			password_hash TEXT NOT NULL,
+			email TEXT DEFAULT '',
+			role TEXT DEFAULT 'admin',
+			last_login DATETIME,
+			created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+			updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
+		);
+
+		CREATE TABLE IF NOT EXISTS preferences (
+			key TEXT PRIMARY KEY,
+			value TEXT NOT NULL,
+			updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
+		);
+
+		CREATE TABLE IF NOT EXISTS nodes (
+			id TEXT PRIMARY KEY,
+			hostname TEXT NOT NULL,
+			role TEXT DEFAULT 'worker',
+			status TEXT DEFAULT 'unknown',
+			ip_address TEXT,
+			joined_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+			last_seen DATETIME DEFAULT CURRENT_TIMESTAMP
 		);
 
 		-- Seed system state

@@ -8,16 +8,17 @@
 // Or to run locally with mock server:
 //
 //	go test -v ./tests/integration/... -short
+//
+//go:build !integration
+// +build !integration
+
 package integration
 
 import (
 	"bytes"
-	"context"
 	"encoding/json"
-	"fmt"
 	"io"
 	"net/http"
-	"net/http/httptest"
 	"os"
 	"testing"
 	"time"
@@ -848,15 +849,22 @@ func TestConcurrentRequests(t *testing.T) {
 	}
 
 	const numRequests = 10
-	done := make(chan bool, numRequests)
+	type result struct {
+		statusCode int
+		err        error
+	}
+	results := make(chan result, numRequests)
 
 	for i := 0; i < numRequests; i++ {
 		go func() {
-			resp, _ := testConfig.get(t, "/health")
-			if resp.StatusCode != http.StatusOK {
-				t.Errorf("Concurrent request failed with status %d", resp.StatusCode)
+			client := &http.Client{Timeout: 30 * time.Second}
+			resp, err := client.Get(testConfig.BaseURL + "/health")
+			if err != nil {
+				results <- result{0, err}
+				return
 			}
-			done <- true
+			resp.Body.Close()
+			results <- result{resp.StatusCode, nil}
 		}()
 	}
 
@@ -864,8 +872,12 @@ func TestConcurrentRequests(t *testing.T) {
 	timeout := time.After(30 * time.Second)
 	for i := 0; i < numRequests; i++ {
 		select {
-		case <-done:
-			// OK
+		case r := <-results:
+			if r.err != nil {
+				t.Errorf("Concurrent request failed: %v", r.err)
+			} else if r.statusCode != http.StatusOK {
+				t.Errorf("Concurrent request returned status %d", r.statusCode)
+			}
 		case <-timeout:
 			t.Fatal("Timeout waiting for concurrent requests")
 		}

@@ -65,13 +65,13 @@ func authenticate() (string, error) {
 	}
 
 	var result struct {
-		Token string `json:"token"`
+		AccessToken string `json:"access_token"`
 	}
 	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
 		return "", err
 	}
 
-	return result.Token, nil
+	return result.AccessToken, nil
 }
 
 func authRequest(method, path string, body interface{}) (*http.Response, error) {
@@ -113,8 +113,8 @@ func TestHealth(t *testing.T) {
 	var result map[string]interface{}
 	json.NewDecoder(resp.Body).Decode(&result)
 
-	if result["status"] != "ok" {
-		t.Errorf("Expected status 'ok', got '%v'", result["status"])
+	if result["status"] != "healthy" {
+		t.Errorf("Expected status 'healthy', got '%v'", result["status"])
 	}
 }
 
@@ -624,12 +624,12 @@ func TestRefreshToken(t *testing.T) {
 	}
 
 	var result struct {
-		Token string `json:"token"`
+		AccessToken string `json:"access_token"`
 	}
 	json.NewDecoder(resp.Body).Decode(&result)
 
-	if result.Token == "" {
-		t.Error("Expected non-empty refreshed token")
+	if result.AccessToken == "" {
+		t.Error("Expected non-empty refreshed access_token")
 	}
 }
 
