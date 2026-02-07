@@ -8,6 +8,7 @@ import (
 	"net/http"
 	"net/url"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"strings"
 	"time"
@@ -50,8 +51,11 @@ func (h *RegistryHandler) Routes() chi.Router {
 	r := chi.NewRouter()
 
 	r.Get("/status", h.GetStatus)
+	r.Post("/init", h.InitRegistry)
+	r.Post("/cache", h.CacheImage)
 	r.Get("/images", h.ListImages)
 	r.Get("/images/{name}/tags", h.GetImageTags)
+	r.Delete("/images/{name}/tags/{tag}", h.DeleteImageTag)
 	r.Delete("/images/{name}", h.DeleteImage)
 	r.Post("/cleanup", h.CleanupRegistry)
 	r.Get("/disk-usage", h.GetDiskUsage)
@@ -115,6 +119,217 @@ func (h *RegistryHandler) GetStatus(w http.ResponseWriter, r *http.Request) {
 	status.DiskUsageStr = registryFormatBytes(status.DiskUsage)
 
 	registryWriteJSON(w, http.StatusOK, status)
+}
+
+// InitRegistryRequest is the optional request body for registry initialization.
+type InitRegistryRequest struct {
+	StoragePath string `json:"storage_path,omitempty"` // Override default storage path
+}
+
+// InitRegistry godoc
+// @Summary Initialize local Docker registry
+// @Description Starts the local Docker registry container if it is not already running. Creates the storage directory and deploys the registry service.
+// @Tags Registry
+// @Accept json
+// @Produce json
+// @Security BearerAuth
+// @Param request body InitRegistryRequest false "Optional initialization parameters"
+// @Success 200 {object} map[string]interface{} "success: true, already_running or started, url"
+// @Failure 500 {object} ErrorResponse "Failed to initialize registry"
+// @Router /registry/init [post]
+func (h *RegistryHandler) InitRegistry(w http.ResponseWriter, r *http.Request) {
+	// Check if registry is already running
+	resp, err := h.httpClient.Get(h.registryURL + "/v2/")
+	if err == nil {
+		defer resp.Body.Close()
+		if resp.StatusCode == http.StatusOK || resp.StatusCode == http.StatusUnauthorized {
+			registryWriteJSON(w, http.StatusOK, map[string]interface{}{
+				"success":         true,
+				"already_running": true,
+				"url":             h.registryURL,
+				"message":         "Registry is already running",
+			})
+			return
+		}
+	}
+
+	// Ensure storage directory exists
+	if err := os.MkdirAll(h.registryPath, 0755); err != nil {
+		registryWriteError(w, http.StatusInternalServerError, "Failed to create registry storage directory: "+err.Error())
+		return
+	}
+
+	// Start registry container using docker CLI
+	// Use docker run with restart policy for resilience
+	cmd := exec.CommandContext(r.Context(), "docker", "run", "-d",
+		"--name", "cubeos-registry",
+		"--restart", "unless-stopped",
+		"-p", "5000:5000",
+		"-v", h.registryPath+":/var/lib/registry",
+		"-e", "REGISTRY_STORAGE_DELETE_ENABLED=true",
+		"registry:2",
+	)
+	output, err := cmd.CombinedOutput()
+	if err != nil {
+		outputStr := strings.TrimSpace(string(output))
+		// If container already exists but is stopped, try to start it
+		if strings.Contains(outputStr, "already in use") {
+			startCmd := exec.CommandContext(r.Context(), "docker", "start", "cubeos-registry")
+			if startOut, startErr := startCmd.CombinedOutput(); startErr != nil {
+				registryWriteError(w, http.StatusInternalServerError,
+					fmt.Sprintf("Failed to start existing registry: %s", strings.TrimSpace(string(startOut))))
+				return
+			}
+		} else {
+			registryWriteError(w, http.StatusInternalServerError,
+				fmt.Sprintf("Failed to start registry: %s", outputStr))
+			return
+		}
+	}
+
+	// Wait briefly for registry to become available
+	for i := 0; i < 10; i++ {
+		time.Sleep(500 * time.Millisecond)
+		if checkResp, checkErr := h.httpClient.Get(h.registryURL + "/v2/"); checkErr == nil {
+			checkResp.Body.Close()
+			if checkResp.StatusCode == http.StatusOK || checkResp.StatusCode == http.StatusUnauthorized {
+				break
+			}
+		}
+	}
+
+	registryWriteJSON(w, http.StatusOK, map[string]interface{}{
+		"success": true,
+		"started": true,
+		"url":     h.registryURL,
+		"message": "Registry started successfully",
+	})
+}
+
+// CacheImageRequest is the request body for caching a remote image.
+type CacheImageRequest struct {
+	Image string `json:"image"` // Full image reference (e.g. "nginx:latest", "ghcr.io/org/repo:tag")
+}
+
+// CacheImage godoc
+// @Summary Cache a remote image to local registry
+// @Description Pulls a remote Docker image, retags it for the local registry, and pushes it. This enables offline installation of the image.
+// @Tags Registry
+// @Accept json
+// @Produce json
+// @Security BearerAuth
+// @Param request body CacheImageRequest true "Image to cache"
+// @Success 200 {object} map[string]interface{} "success: true, image, local_image, message"
+// @Failure 400 {object} ErrorResponse "Missing image reference"
+// @Failure 500 {object} ErrorResponse "Failed to pull, tag, or push image"
+// @Router /registry/cache [post]
+func (h *RegistryHandler) CacheImage(w http.ResponseWriter, r *http.Request) {
+	var req CacheImageRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil || req.Image == "" {
+		registryWriteError(w, http.StatusBadRequest, "Image reference is required (e.g. {\"image\": \"nginx:latest\"})")
+		return
+	}
+
+	imageRef := req.Image
+
+	// Derive local registry image name
+	// e.g. "nginx:latest" -> "10.42.24.1:5000/nginx:latest"
+	// e.g. "ghcr.io/org/repo:v1" -> "10.42.24.1:5000/org/repo:v1"
+	registryHost := strings.TrimPrefix(h.registryURL, "http://")
+	registryHost = strings.TrimPrefix(registryHost, "https://")
+
+	// Strip the original registry host if present
+	localName := imageRef
+	if parts := strings.SplitN(imageRef, "/", 2); len(parts) == 2 && strings.Contains(parts[0], ".") {
+		// Has a registry host prefix (e.g. ghcr.io/org/repo:tag)
+		localName = parts[1]
+	}
+	localImage := registryHost + "/" + localName
+
+	// Step 1: Pull the remote image
+	pullCmd := exec.CommandContext(r.Context(), "docker", "pull", imageRef)
+	if output, err := pullCmd.CombinedOutput(); err != nil {
+		registryWriteError(w, http.StatusInternalServerError,
+			fmt.Sprintf("Failed to pull image %s: %s", imageRef, strings.TrimSpace(string(output))))
+		return
+	}
+
+	// Step 2: Tag for local registry
+	tagCmd := exec.CommandContext(r.Context(), "docker", "tag", imageRef, localImage)
+	if output, err := tagCmd.CombinedOutput(); err != nil {
+		registryWriteError(w, http.StatusInternalServerError,
+			fmt.Sprintf("Failed to tag image: %s", strings.TrimSpace(string(output))))
+		return
+	}
+
+	// Step 3: Push to local registry
+	pushCmd := exec.CommandContext(r.Context(), "docker", "push", localImage)
+	if output, err := pushCmd.CombinedOutput(); err != nil {
+		registryWriteError(w, http.StatusInternalServerError,
+			fmt.Sprintf("Failed to push to local registry: %s", strings.TrimSpace(string(output))))
+		return
+	}
+
+	registryWriteJSON(w, http.StatusOK, map[string]interface{}{
+		"success":     true,
+		"image":       imageRef,
+		"local_image": localImage,
+		"message":     fmt.Sprintf("Image %s cached to local registry as %s", imageRef, localImage),
+	})
+}
+
+// DeleteImageTag godoc
+// @Summary Delete a specific image tag
+// @Description Deletes a specific tag of an image from the local registry. Requires garbage collection to reclaim disk space.
+// @Tags Registry
+// @Produce json
+// @Security BearerAuth
+// @Param name path string true "Image name (e.g., nginx or library/nginx)"
+// @Param tag path string true "Tag to delete (e.g., latest, v1.0)"
+// @Success 200 {object} map[string]interface{} "success: true, message"
+// @Failure 404 {object} ErrorResponse "Image or tag not found"
+// @Failure 500 {object} ErrorResponse "Failed to delete tag"
+// @Router /registry/images/{name}/tags/{tag} [delete]
+func (h *RegistryHandler) DeleteImageTag(w http.ResponseWriter, r *http.Request) {
+	name := chi.URLParam(r, "name")
+	tag := chi.URLParam(r, "tag")
+
+	if name == "" || tag == "" {
+		registryWriteError(w, http.StatusBadRequest, "Image name and tag are required")
+		return
+	}
+
+	// Get manifest digest for this tag
+	digest, err := h.getManifestDigest(name, tag)
+	if err != nil {
+		registryWriteError(w, http.StatusNotFound, "Image or tag not found: "+err.Error())
+		return
+	}
+
+	// Delete by digest
+	deleteURL := fmt.Sprintf("%s/v2/%s/manifests/%s", h.registryURL, url.PathEscape(name), url.PathEscape(digest))
+	req2, err := http.NewRequest("DELETE", deleteURL, nil)
+	if err != nil {
+		registryWriteError(w, http.StatusInternalServerError, "Failed to create delete request: "+err.Error())
+		return
+	}
+
+	resp, err := h.httpClient.Do(req2)
+	if err != nil {
+		registryWriteError(w, http.StatusInternalServerError, "Failed to delete tag: "+err.Error())
+		return
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusAccepted && resp.StatusCode != http.StatusOK {
+		registryWriteError(w, http.StatusInternalServerError, fmt.Sprintf("Registry returned status %d", resp.StatusCode))
+		return
+	}
+
+	registryWriteJSON(w, http.StatusOK, map[string]interface{}{
+		"success": true,
+		"message": fmt.Sprintf("Deleted %s:%s", name, tag),
+	})
 }
 
 // RegistryImage represents an image in the registry.

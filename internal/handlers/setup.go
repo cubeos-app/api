@@ -46,6 +46,9 @@ func (h *SetupHandler) Routes() chi.Router {
 	// Skip setup wizard
 	r.Post("/skip", h.SkipSetup)
 
+	// Mark setup as complete (lightweight alternative to /apply)
+	r.Post("/complete", h.CompleteSetup)
+
 	return r
 }
 
@@ -256,6 +259,42 @@ func (h *SetupHandler) SkipSetup(w http.ResponseWriter, r *http.Request) {
 		"success": true,
 		"message": "Setup skipped, using default configuration",
 		"skipped": true,
+	})
+}
+
+// CompleteSetup godoc
+// @Summary Mark setup as complete
+// @Description Marks the first-boot setup wizard as complete. This is a lightweight endpoint that the dashboard calls after the user finishes all wizard steps. Unlike /apply, it does not reconfigure system components — it simply flags setup as done.
+// @Tags Setup
+// @Produce json
+// @Success 200 {object} map[string]interface{} "success: true, message"
+// @Failure 500 {object} ErrorResponse "Failed to complete setup"
+// @Router /setup/complete [post]
+func (h *SetupHandler) CompleteSetup(w http.ResponseWriter, r *http.Request) {
+	// If setup is already complete, return success idempotently
+	if h.manager.IsSetupComplete() {
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(map[string]interface{}{
+			"success":          true,
+			"already_complete": true,
+			"message":          "Setup was already complete",
+		})
+		return
+	}
+
+	// Mark setup as complete using current/default config
+	defaults := h.manager.GenerateDefaultConfig()
+	if err := h.manager.MarkSetupComplete(defaults); err != nil {
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusInternalServerError)
+		json.NewEncoder(w).Encode(map[string]string{"error": err.Error()})
+		return
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(map[string]interface{}{
+		"success": true,
+		"message": "Setup marked as complete",
 	})
 }
 

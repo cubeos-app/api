@@ -980,6 +980,17 @@ func (o *Orchestrator) ApplyProfile(ctx context.Context, name string) (*models.A
 	}, nil
 }
 
+// SetProfileApp enables or disables an app within a profile.
+// Uses INSERT OR REPLACE to handle both new associations and updates.
+func (o *Orchestrator) SetProfileApp(ctx context.Context, profileID, appID int64, enabled bool) error {
+	_, err := o.db.ExecContext(ctx, `
+		INSERT INTO profile_apps (profile_id, app_id, enabled)
+		VALUES (?, ?, ?)
+		ON CONFLICT (profile_id, app_id) DO UPDATE SET enabled = excluded.enabled
+	`, profileID, appID, enabled)
+	return err
+}
+
 // loadProfileApps loads the apps associated with a profile.
 func (o *Orchestrator) loadProfileApps(ctx context.Context, profile *models.Profile) error {
 	rows, err := o.db.QueryContext(ctx, `

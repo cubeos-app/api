@@ -3,6 +3,7 @@ package handlers
 
 import (
 	"encoding/json"
+	"fmt"
 	"net/http"
 	"strconv"
 
@@ -28,6 +29,7 @@ func (h *PortsHandler) Routes() chi.Router {
 	r := chi.NewRouter()
 
 	r.Get("/", h.ListPorts)
+	r.Get("/available", h.GetAvailablePort)
 	r.Post("/", h.AddPort)
 	r.Get("/stats", h.GetPortStats)
 	r.Get("/reserved", h.GetReservedPorts)
@@ -59,6 +61,87 @@ func (h *PortsHandler) ListPorts(w http.ResponseWriter, r *http.Request) {
 		"ports": allocations,
 		"stats": stats,
 	})
+}
+
+// GetAvailablePort godoc
+// @Summary Get next available port
+// @Description Returns the next available (unallocated) port in the specified range type. Range types: infrastructure (6000-6009), platform (6010-6019), network (6020-6029), ai (6030-6039), user (6100-6999).
+// @Tags Ports
+// @Produce json
+// @Security BearerAuth
+// @Param type query string false "Port range type (default: user)" Enums(infrastructure, platform, network, ai, user)
+// @Success 200 {object} map[string]interface{} "port: available port number, type: range type"
+// @Failure 404 {object} ErrorResponse "No available ports in range"
+// @Failure 500 {object} ErrorResponse "Failed to find available port"
+// @Router /ports/available [get]
+func (h *PortsHandler) GetAvailablePort(w http.ResponseWriter, r *http.Request) {
+	portType := r.URL.Query().Get("type")
+	if portType == "" {
+		portType = "user"
+	}
+
+	// Define port ranges per type
+	ranges := map[string][2]int{
+		"infrastructure": {6000, 6009},
+		"platform":       {6010, 6019},
+		"network":        {6020, 6029},
+		"ai":             {6030, 6039},
+		"user":           {managers.UserPortMin, managers.UserPortMax},
+	}
+
+	portRange, ok := ranges[portType]
+	if !ok {
+		writeError(w, http.StatusBadRequest, "Invalid port type. Must be one of: infrastructure, platform, network, ai, user")
+		return
+	}
+
+	// For "user" range, use the optimized PortManager method
+	if portType == "user" {
+		port, err := h.portManager.AllocateUserPort()
+		if err != nil {
+			writeError(w, http.StatusNotFound, "No available ports in user range: "+err.Error())
+			return
+		}
+		// We allocated a port, but we only wanted to find one — deallocate it
+		// so this is a pure query (the caller will allocate explicitly via POST /ports)
+		_ = h.portManager.DeallocatePort(port, "tcp")
+
+		writeJSON(w, http.StatusOK, map[string]interface{}{
+			"port":  port,
+			"type":  portType,
+			"range": fmt.Sprintf("%d-%d", portRange[0], portRange[1]),
+		})
+		return
+	}
+
+	// For system ranges, scan for the first unallocated port
+	allocations, err := h.portManager.GetAllAllocations()
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "Failed to query port allocations: "+err.Error())
+		return
+	}
+
+	allocated := make(map[int]bool)
+	for _, a := range allocations {
+		allocated[a.Port] = true
+	}
+	// Also exclude reserved system ports
+	for port := range managers.ReservedSystemPorts {
+		allocated[port] = true
+	}
+
+	for p := portRange[0]; p <= portRange[1]; p++ {
+		if !allocated[p] {
+			writeJSON(w, http.StatusOK, map[string]interface{}{
+				"port":  p,
+				"type":  portType,
+				"range": fmt.Sprintf("%d-%d", portRange[0], portRange[1]),
+			})
+			return
+		}
+	}
+
+	writeError(w, http.StatusNotFound, fmt.Sprintf("No available ports in %s range (%d-%d)", portType, portRange[0], portRange[1]))
 }
 
 // AddPortRequest is the request body for adding a port allocation.

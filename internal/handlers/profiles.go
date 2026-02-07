@@ -4,6 +4,7 @@ package handlers
 import (
 	"encoding/json"
 	"net/http"
+	"strconv"
 
 	"github.com/go-chi/chi/v5"
 
@@ -31,6 +32,7 @@ func (h *ProfilesHandler) Routes() chi.Router {
 	r.Post("/", h.CreateProfile)
 	r.Get("/{name}", h.GetProfile)
 	r.Post("/{name}/apply", h.ApplyProfile)
+	r.Put("/{name}/apps/{appId}", h.SetProfileApp)
 
 	return r
 }
@@ -139,4 +141,56 @@ func (h *ProfilesHandler) ApplyProfile(w http.ResponseWriter, r *http.Request) {
 	}
 
 	writeJSON(w, http.StatusOK, result)
+}
+
+// SetProfileApp godoc
+// @Summary Enable or disable an app in a profile
+// @Description Sets whether a specific app is enabled or disabled within a deployment profile. Creates the profile-app association if it doesn't exist.
+// @Tags Profiles
+// @Accept json
+// @Produce json
+// @Security BearerAuth
+// @Param name path string true "Profile name"
+// @Param appId path string true "App ID (numeric)"
+// @Param request body models.SetProfileAppRequest true "Enable/disable request"
+// @Success 200 {object} map[string]interface{} "success: true, profile, app_id, enabled"
+// @Failure 400 {object} ErrorResponse "Invalid request body or app ID"
+// @Failure 404 {object} ErrorResponse "Profile not found"
+// @Failure 500 {object} ErrorResponse "Failed to update profile app"
+// @Router /profiles/{name}/apps/{appId} [put]
+func (h *ProfilesHandler) SetProfileApp(w http.ResponseWriter, r *http.Request) {
+	profileName := chi.URLParam(r, "name")
+	appIDStr := chi.URLParam(r, "appId")
+
+	appID, err := strconv.ParseInt(appIDStr, 10, 64)
+	if err != nil {
+		writeError(w, http.StatusBadRequest, "Invalid app ID: must be numeric")
+		return
+	}
+
+	var req models.SetProfileAppRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		writeError(w, http.StatusBadRequest, "Invalid request body")
+		return
+	}
+
+	// Verify profile exists
+	profile, err := h.orchestrator.GetProfile(r.Context(), profileName)
+	if err != nil {
+		writeError(w, http.StatusNotFound, "Profile not found: "+profileName)
+		return
+	}
+
+	// Update profile app via orchestrator
+	if err := h.orchestrator.SetProfileApp(r.Context(), profile.ID, appID, req.Enabled); err != nil {
+		writeError(w, http.StatusInternalServerError, "Failed to update profile app: "+err.Error())
+		return
+	}
+
+	writeJSON(w, http.StatusOK, map[string]interface{}{
+		"success": true,
+		"profile": profileName,
+		"app_id":  appID,
+		"enabled": req.Enabled,
+	})
 }
