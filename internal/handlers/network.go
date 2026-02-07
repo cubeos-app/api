@@ -10,6 +10,7 @@ import (
 
 	"cubeos-api/internal/hal"
 	"cubeos-api/internal/managers"
+	"cubeos-api/internal/models"
 )
 
 // NetworkHandler handles network management endpoints.
@@ -181,18 +182,18 @@ func (h *NetworkHandler) SetNetworkMode(w http.ResponseWriter, r *http.Request) 
 		return
 	}
 
-	var mode managers.NetworkMode
+	var mode models.NetworkMode
 	switch req.Mode {
 	case "offline":
-		mode = managers.NetworkModeOffline
+		mode = models.NetworkModeOffline
 	case "online_eth":
-		mode = managers.NetworkModeOnlineETH
+		mode = models.NetworkModeOnlineETH
 	case "online_wifi":
-		mode = managers.NetworkModeOnlineWiFi
+		mode = models.NetworkModeOnlineWiFi
 	case "server_eth":
-		mode = managers.NetworkModeServerETH
+		mode = models.NetworkModeServerETH
 	case "server_wifi":
-		mode = managers.NetworkModeServerWiFi
+		mode = models.NetworkModeServerWiFi
 	}
 
 	if err := h.network.SetMode(ctx, mode, req.SSID, req.Password); err != nil {
@@ -891,7 +892,7 @@ func (h *NetworkHandler) GetTrafficHistory(w http.ResponseWriter, r *http.Reques
 // @Tags Network
 // @Produce json
 // @Security BearerAuth
-// @Success 200 {object} managers.NetworkConfig "Network configuration"
+// @Success 200 {object} models.NetworkConfig "Network configuration"
 // @Router /network/settings [get]
 func (h *NetworkHandler) GetNetworkSettings(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
@@ -911,7 +912,7 @@ func (h *NetworkHandler) GetNetworkSettings(w http.ResponseWriter, r *http.Reque
 // @Produce json
 // @Security BearerAuth
 // @Param settings body object true "Network settings"
-// @Success 200 {object} managers.NetworkConfig "Updated configuration"
+// @Success 200 {object} models.NetworkConfig "Updated configuration"
 // @Failure 400 {object} ErrorResponse "Invalid request body"
 // @Failure 500 {object} ErrorResponse "Failed to update settings"
 // @Router /network/settings [put]
@@ -1017,7 +1018,7 @@ func (h *NetworkHandler) SetVPNMode(w http.ResponseWriter, r *http.Request) {
 		configID = *req.ConfigID
 	}
 
-	if err := h.network.SetVPNMode(ctx, managers.VPNMode(req.Mode), req.ConfigID); err != nil {
+	if err := h.network.SetVPNMode(ctx, models.VPNMode(req.Mode), req.ConfigID); err != nil {
 		writeError(w, http.StatusInternalServerError, err.Error())
 		return
 	}

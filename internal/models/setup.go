@@ -104,15 +104,7 @@ type DeploymentPurposeInfo struct {
 	Features        []string `json:"features"`
 }
 
-// WiFiScanResult for available networks
-type WiFiScanResult struct {
-	SSID      string `json:"ssid"`
-	BSSID     string `json:"bssid"`
-	Signal    int    `json:"signal"`   // dBm
-	Security  string `json:"security"` // WPA2, WPA3, Open
-	Channel   int    `json:"channel"`
-	Frequency string `json:"frequency"` // 2.4GHz, 5GHz
-}
+// WiFiScanResult was removed — use WiFiNetwork from models/network.go instead.
 
 // SystemRequirements for showing device capabilities
 type SystemRequirements struct {

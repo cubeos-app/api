@@ -10692,7 +10692,7 @@ const docTemplate = `{
                     "200": {
                         "description": "Network configuration",
                         "schema": {
-                            "$ref": "#/definitions/cubeos-api_internal_managers.NetworkConfig"
+                            "$ref": "#/definitions/cubeos-api_internal_models.NetworkConfig"
                         }
                     }
                 }
@@ -10729,7 +10729,7 @@ const docTemplate = `{
                     "200": {
                         "description": "Updated configuration",
                         "schema": {
-                            "$ref": "#/definitions/cubeos-api_internal_managers.NetworkConfig"
+                            "$ref": "#/definitions/cubeos-api_internal_models.NetworkConfig"
                         }
                     },
                     "400": {
@@ -16215,78 +16215,6 @@ const docTemplate = `{
                 }
             }
         },
-        "cubeos-api_internal_managers.NetworkConfig": {
-            "type": "object",
-            "properties": {
-                "ap_channel": {
-                    "type": "integer"
-                },
-                "ap_hidden": {
-                    "type": "boolean"
-                },
-                "ap_ssid": {
-                    "type": "string"
-                },
-                "dhcp_range_end": {
-                    "type": "string"
-                },
-                "dhcp_range_start": {
-                    "type": "string"
-                },
-                "fallback_static_ip": {
-                    "type": "string"
-                },
-                "gateway_ip": {
-                    "type": "string"
-                },
-                "mode": {
-                    "$ref": "#/definitions/cubeos-api_internal_managers.NetworkMode"
-                },
-                "server_mode_warning_dismissed": {
-                    "type": "boolean"
-                },
-                "subnet": {
-                    "type": "string"
-                },
-                "vpn_config_id": {
-                    "type": "integer"
-                },
-                "vpn_mode": {
-                    "$ref": "#/definitions/cubeos-api_internal_managers.VPNMode"
-                },
-                "wifi_ssid": {
-                    "type": "string"
-                }
-            }
-        },
-        "cubeos-api_internal_managers.NetworkMode": {
-            "type": "string",
-            "enum": [
-                "offline",
-                "online_eth",
-                "online_wifi",
-                "server_eth",
-                "server_wifi"
-            ],
-            "x-enum-comments": {
-                "NetworkModeServerETH": "V2: Server mode via Ethernet",
-                "NetworkModeServerWiFi": "V2: Server mode via WiFi"
-            },
-            "x-enum-descriptions": [
-                "",
-                "",
-                "",
-                "V2: Server mode via Ethernet",
-                "V2: Server mode via WiFi"
-            ],
-            "x-enum-varnames": [
-                "NetworkModeOffline",
-                "NetworkModeOnlineETH",
-                "NetworkModeOnlineWiFi",
-                "NetworkModeServerETH",
-                "NetworkModeServerWiFi"
-            ]
-        },
         "cubeos-api_internal_managers.NetworkStatus": {
             "type": "object",
             "properties": {
@@ -16308,7 +16236,7 @@ const docTemplate = `{
                     "type": "boolean"
                 },
                 "mode": {
-                    "$ref": "#/definitions/cubeos-api_internal_managers.NetworkMode"
+                    "$ref": "#/definitions/cubeos-api_internal_models.NetworkMode"
                 },
                 "public_ip": {
                     "description": "V2",
@@ -16332,7 +16260,7 @@ const docTemplate = `{
                     "description": "V2",
                     "allOf": [
                         {
-                            "$ref": "#/definitions/cubeos-api_internal_managers.VPNMode"
+                            "$ref": "#/definitions/cubeos-api_internal_models.VPNMode"
                         }
                     ]
                 }
@@ -16429,21 +16357,6 @@ const docTemplate = `{
                     "type": "string"
                 }
             }
-        },
-        "cubeos-api_internal_managers.VPNMode": {
-            "type": "string",
-            "enum": [
-                "none",
-                "wireguard",
-                "openvpn",
-                "tor"
-            ],
-            "x-enum-varnames": [
-                "VPNModeNone",
-                "VPNModeWireGuard",
-                "VPNModeOpenVPN",
-                "VPNModeTor"
-            ]
         },
         "cubeos-api_internal_models.App": {
             "type": "object",
@@ -17271,6 +17184,107 @@ const docTemplate = `{
                 "MountTypeNFS"
             ]
         },
+        "cubeos-api_internal_models.NetworkConfig": {
+            "type": "object",
+            "properties": {
+                "ap_channel": {
+                    "type": "integer"
+                },
+                "ap_hidden": {
+                    "type": "boolean"
+                },
+                "ap_ssid": {
+                    "description": "Access Point configuration",
+                    "type": "string"
+                },
+                "dhcp_range_end": {
+                    "type": "string"
+                },
+                "dhcp_range_start": {
+                    "type": "string"
+                },
+                "eth_interface": {
+                    "description": "Interfaces",
+                    "type": "string"
+                },
+                "fallback_static_ip": {
+                    "description": "Server mode fallback",
+                    "type": "string"
+                },
+                "gateway_ip": {
+                    "description": "DHCP server configuration (for AP modes)",
+                    "type": "string"
+                },
+                "id": {
+                    "type": "integer"
+                },
+                "mode": {
+                    "$ref": "#/definitions/cubeos-api_internal_models.NetworkMode"
+                },
+                "server_mode_warning_dismissed": {
+                    "description": "UX state",
+                    "type": "boolean"
+                },
+                "subnet": {
+                    "type": "string"
+                },
+                "updated_at": {
+                    "type": "string"
+                },
+                "vpn_config_id": {
+                    "type": "integer"
+                },
+                "vpn_mode": {
+                    "description": "VPN overlay",
+                    "allOf": [
+                        {
+                            "$ref": "#/definitions/cubeos-api_internal_models.VPNMode"
+                        }
+                    ]
+                },
+                "wifi_ap_interface": {
+                    "type": "string"
+                },
+                "wifi_client_interface": {
+                    "type": "string"
+                },
+                "wifi_ssid": {
+                    "description": "WiFi client credentials (for online_wifi and server_wifi)",
+                    "type": "string"
+                }
+            }
+        },
+        "cubeos-api_internal_models.NetworkMode": {
+            "type": "string",
+            "enum": [
+                "offline",
+                "online_eth",
+                "online_wifi",
+                "server_eth",
+                "server_wifi"
+            ],
+            "x-enum-comments": {
+                "NetworkModeOffline": "AP only, no internet",
+                "NetworkModeOnlineETH": "AP + NAT via eth0",
+                "NetworkModeOnlineWiFi": "AP + NAT via USB dongle",
+                "NetworkModeServerETH": "No AP, eth0 DHCP client",
+                "NetworkModeServerWiFi": "No AP, wlan0 WiFi client"
+            },
+            "x-enum-descriptions": [
+                "AP only, no internet",
+                "AP + NAT via eth0",
+                "AP + NAT via USB dongle",
+                "No AP, eth0 DHCP client",
+                "No AP, wlan0 WiFi client"
+            ],
+            "x-enum-varnames": [
+                "NetworkModeOffline",
+                "NetworkModeOnlineETH",
+                "NetworkModeOnlineWiFi",
+                "NetworkModeServerETH",
+                "NetworkModeServerWiFi"
+            ]
+        },
         "cubeos-api_internal_models.Port": {
             "type": "object",
             "properties": {
@@ -17960,6 +17974,21 @@ const docTemplate = `{
                 }
             }
         },
+        "cubeos-api_internal_models.VPNMode": {
+            "type": "string",
+            "enum": [
+                "none",
+                "wireguard",
+                "openvpn",
+                "tor"
+            ],
+            "x-enum-varnames": [
+                "VPNModeNone",
+                "VPNModeWireGuard",
+                "VPNModeOpenVPN",
+                "VPNModeTor"
+            ]
+        },
         "cubeos-api_internal_models.VPNStatus": {
             "type": "object",
             "properties": {
@@ -18558,15 +18587,13 @@ const docTemplate = `{
             "type": "object",
             "properties": {
                 "code": {
-                    "type": "integer",
-                    "example": 500
+                    "type": "integer"
                 },
-                "details": {
+                "detail": {
                     "type": "string"
                 },
                 "error": {
-                    "type": "string",
-                    "example": "Something went wrong"
+                    "type": "string"
                 }
             }
         },

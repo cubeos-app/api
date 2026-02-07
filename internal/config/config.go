@@ -42,7 +42,6 @@ type Config struct {
 	DnsmasqLeases string
 
 	// Service Ports (from env)
-	APIPort       int
 	DashboardPort int
 	NPMPort       int
 	PiholePort    int
@@ -201,7 +200,6 @@ func Load() *Config {
 		DnsmasqLeases: getEnvOptional("DNSMASQ_LEASES", "/var/lib/misc/dnsmasq.leases"),
 
 		// Service Ports - REQUIRED
-		APIPort:       mustGetEnvInt("API_PORT"),
 		DashboardPort: mustGetEnvInt("DASHBOARD_PORT"),
 		NPMPort:       mustGetEnvInt("NPM_PORT"),
 		PiholePort:    mustGetEnvInt("PIHOLE_PORT"),

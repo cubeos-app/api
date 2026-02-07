@@ -45,7 +45,12 @@ type StoreApp struct {
 	ManifestPath  string            `json:"-"`
 }
 
-// InstalledApp represents an installed app
+// InstalledApp represents an installed app.
+//
+// Deprecated: This model and its backing `installed_apps` table are legacy from
+// the pre-Swarm architecture. New code should use the unified `App` model in
+// models/app.go and the `apps` table. The AppStore manager still uses this type
+// and should be migrated in FS-05 (App Lifecycle fixes).
 type InstalledApp struct {
 	ID          string         `json:"id" db:"id"`
 	StoreID     string         `json:"store_id,omitempty" db:"store_id"`

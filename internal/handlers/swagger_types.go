@@ -1,9 +1,10 @@
 package handlers
 
-// ErrorResponse represents an API error response
+import "cubeos-api/internal/models"
+
+// ErrorResponse is a type alias for Swagger annotation resolution.
+// The canonical definition lives in models.ErrorResponse.
+// Previously this file had a separate struct with a field name mismatch
+// (Details vs Detail). The alias ensures a single source of truth.
 // @Description API error response
-type ErrorResponse struct {
-	Error   string `json:"error" example:"Something went wrong"`
-	Code    int    `json:"code,omitempty" example:"500"`
-	Details string `json:"details,omitempty"`
-}
+type ErrorResponse = models.ErrorResponse

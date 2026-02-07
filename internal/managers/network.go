@@ -21,26 +21,8 @@ import (
 	"github.com/jmoiron/sqlx"
 )
 
-// NetworkMode represents the network operating mode (V2: 5 modes)
-type NetworkMode string
-
-const (
-	NetworkModeOffline    NetworkMode = "offline"
-	NetworkModeOnlineETH  NetworkMode = "online_eth"
-	NetworkModeOnlineWiFi NetworkMode = "online_wifi"
-	NetworkModeServerETH  NetworkMode = "server_eth"  // V2: Server mode via Ethernet
-	NetworkModeServerWiFi NetworkMode = "server_wifi" // V2: Server mode via WiFi
-)
-
-// VPNMode represents the VPN overlay mode (V2)
-type VPNMode string
-
-const (
-	VPNModeNone      VPNMode = "none"
-	VPNModeWireGuard VPNMode = "wireguard"
-	VPNModeOpenVPN   VPNMode = "openvpn"
-	VPNModeTor       VPNMode = "tor"
-)
+// NetworkMode, VPNMode, WiFiNetwork, and NetworkConfig types are defined in
+// models/network.go — this package uses them via the models import.
 
 // Default interface names - can be overridden via environment
 const (
@@ -50,25 +32,17 @@ const (
 	DefaultFallbackIP          = "192.168.1.242"   // V2: Server mode fallback
 )
 
-// WiFiNetwork represents a scanned WiFi network
-type WiFiNetwork struct {
-	SSID      string `json:"ssid"`
-	BSSID     string `json:"bssid"`
-	Signal    int    `json:"signal"`
-	Frequency int    `json:"frequency"`
-	Security  string `json:"security"`
-	Channel   int    `json:"channel"`
-}
+// WiFiNetwork is defined in models/network.go
 
 // NetworkStatus represents the current network status (V2: extended)
 type NetworkStatus struct {
-	Mode       NetworkMode        `json:"mode"`
+	Mode       models.NetworkMode        `json:"mode"`
 	Internet   bool               `json:"internet"`
 	AP         *AccessPointStatus `json:"ap,omitempty"`
 	Upstream   *UpstreamStatus    `json:"upstream,omitempty"`
 	Subnet     string             `json:"subnet"`
 	GatewayIP  string             `json:"gateway_ip"`
-	VPNMode    VPNMode            `json:"vpn_mode"`              // V2
+	VPNMode    models.VPNMode            `json:"vpn_mode"`              // V2
 	VPNActive  bool               `json:"vpn_active"`            // V2
 	VPNConfig  string             `json:"vpn_config,omitempty"`  // V2: Active config name
 	PublicIP   string             `json:"public_ip,omitempty"`   // V2
@@ -94,32 +68,15 @@ type UpstreamStatus struct {
 	SSID      string `json:"ssid,omitempty"`
 }
 
-// NetworkConfig represents persisted network configuration (V2: extended)
-type NetworkConfig struct {
-	Mode                       NetworkMode `db:"mode" json:"mode"`
-	VPNMode                    VPNMode     `db:"vpn_mode" json:"vpn_mode"`
-	VPNConfigID                *int64      `db:"vpn_config_id" json:"vpn_config_id,omitempty"`
-	WiFiSSID                   string      `db:"wifi_ssid" json:"wifi_ssid"`
-	WiFiPassword               string      `db:"wifi_password" json:"-"` // Never expose
-	GatewayIP                  string      `db:"gateway_ip" json:"gateway_ip"`
-	Subnet                     string      `db:"subnet" json:"subnet"`
-	DHCPRangeStart             string      `db:"dhcp_range_start" json:"dhcp_range_start"`
-	DHCPRangeEnd               string      `db:"dhcp_range_end" json:"dhcp_range_end"`
-	FallbackStaticIP           string      `db:"fallback_static_ip" json:"fallback_static_ip"`
-	APSSID                     string      `db:"ap_ssid" json:"ap_ssid"`
-	APPassword                 string      `db:"ap_password" json:"-"` // Never expose
-	APChannel                  int         `db:"ap_channel" json:"ap_channel"`
-	APHidden                   bool        `db:"ap_hidden" json:"ap_hidden"`
-	ServerModeWarningDismissed bool        `db:"server_mode_warning_dismissed" json:"server_mode_warning_dismissed"`
-}
+// NetworkConfig is defined in models/network.go
 
 // NetworkManager handles network mode and WiFi operations via HAL (V2: extended)
 type NetworkManager struct {
 	cfg                 *config.Config
 	hal                 *hal.Client
 	db                  *sqlx.DB
-	currentMode         NetworkMode
-	currentVPNMode      VPNMode // V2
+	currentMode         models.NetworkMode
+	currentVPNMode      models.VPNMode // V2
 	apInterface         string
 	wanInterface        string
 	wifiClientInterface string
@@ -159,10 +116,10 @@ func NewNetworkManager(cfg *config.Config, halClient *hal.Client, db *sqlx.DB) *
 }
 
 // loadConfigFromDB loads the network mode and VPN mode from database (V2)
-func loadConfigFromDB(db *sqlx.DB) (NetworkMode, VPNMode) {
+func loadConfigFromDB(db *sqlx.DB) (models.NetworkMode, models.VPNMode) {
 	if db == nil {
 		log.Printf("NetworkManager: no database connection, defaulting to offline")
-		return NetworkModeOffline, VPNModeNone
+		return models.NetworkModeOffline, models.VPNModeNone
 	}
 
 	var mode, vpnMode string
@@ -173,44 +130,44 @@ func loadConfigFromDB(db *sqlx.DB) (NetworkMode, VPNMode) {
 		} else {
 			log.Printf("NetworkManager: failed to load config from database: %v", err)
 		}
-		return NetworkModeOffline, VPNModeNone
+		return models.NetworkModeOffline, models.VPNModeNone
 	}
 
 	return parseNetworkMode(mode), parseVPNMode(vpnMode)
 }
 
-// parseNetworkMode converts string to NetworkMode (V2: includes SERVER modes)
-func parseNetworkMode(mode string) NetworkMode {
-	switch NetworkMode(mode) {
-	case NetworkModeOnlineETH:
-		return NetworkModeOnlineETH
-	case NetworkModeOnlineWiFi:
-		return NetworkModeOnlineWiFi
-	case NetworkModeServerETH:
-		return NetworkModeServerETH
-	case NetworkModeServerWiFi:
-		return NetworkModeServerWiFi
+// parseNetworkMode converts string to models.NetworkMode (V2: includes SERVER modes)
+func parseNetworkMode(mode string) models.NetworkMode {
+	switch models.NetworkMode(mode) {
+	case models.NetworkModeOnlineETH:
+		return models.NetworkModeOnlineETH
+	case models.NetworkModeOnlineWiFi:
+		return models.NetworkModeOnlineWiFi
+	case models.NetworkModeServerETH:
+		return models.NetworkModeServerETH
+	case models.NetworkModeServerWiFi:
+		return models.NetworkModeServerWiFi
 	default:
-		return NetworkModeOffline
+		return models.NetworkModeOffline
 	}
 }
 
-// parseVPNMode converts string to VPNMode (V2)
-func parseVPNMode(mode string) VPNMode {
-	switch VPNMode(mode) {
-	case VPNModeWireGuard:
-		return VPNModeWireGuard
-	case VPNModeOpenVPN:
-		return VPNModeOpenVPN
-	case VPNModeTor:
-		return VPNModeTor
+// parseVPNMode converts string to models.VPNMode (V2)
+func parseVPNMode(mode string) models.VPNMode {
+	switch models.VPNMode(mode) {
+	case models.VPNModeWireGuard:
+		return models.VPNModeWireGuard
+	case models.VPNModeOpenVPN:
+		return models.VPNModeOpenVPN
+	case models.VPNModeTor:
+		return models.VPNModeTor
 	default:
-		return VPNModeNone
+		return models.VPNModeNone
 	}
 }
 
 // saveConfigToDB persists the network config to database (V2: extended)
-func (m *NetworkManager) saveConfigToDB(mode NetworkMode, vpnMode VPNMode, wifiSSID string) {
+func (m *NetworkManager) saveConfigToDB(mode models.NetworkMode, vpnMode models.VPNMode, wifiSSID string) {
 	if m.db == nil {
 		return
 	}
@@ -272,7 +229,7 @@ func (m *NetworkManager) GetStatus(ctx context.Context) (*NetworkStatus, error) 
 
 	// Find upstream interface based on mode
 	switch m.currentMode {
-	case NetworkModeOnlineETH, NetworkModeServerETH:
+	case models.NetworkModeOnlineETH, models.NetworkModeServerETH:
 		for _, iface := range interfaces {
 			if iface.Name == m.wanInterface && len(iface.IPv4Addresses) > 0 {
 				status.Upstream = &UpstreamStatus{
@@ -283,7 +240,7 @@ func (m *NetworkManager) GetStatus(ctx context.Context) (*NetworkStatus, error) 
 				break
 			}
 		}
-	case NetworkModeOnlineWiFi, NetworkModeServerWiFi:
+	case models.NetworkModeOnlineWiFi, models.NetworkModeServerWiFi:
 		for _, iface := range interfaces {
 			if iface.Name == m.wifiClientInterface && len(iface.IPv4Addresses) > 0 {
 				status.Upstream = &UpstreamStatus{
@@ -297,7 +254,7 @@ func (m *NetworkManager) GetStatus(ctx context.Context) (*NetworkStatus, error) 
 	}
 
 	// V2: Check VPN status
-	if m.currentVPNMode != VPNModeNone {
+	if m.currentVPNMode != models.VPNModeNone {
 		vpnStatus, err := m.hal.GetVPNStatus(ctx)
 		if err == nil && vpnStatus != nil {
 			status.VPNActive = vpnStatus.WireGuard.Active || vpnStatus.OpenVPN.Active
@@ -341,13 +298,13 @@ func (m *NetworkManager) checkInternetConnectivity() bool {
 
 // IsServerMode returns true if current mode is a server mode (V2)
 func (m *NetworkManager) IsServerMode() bool {
-	return m.currentMode == NetworkModeServerETH || m.currentMode == NetworkModeServerWiFi
+	return m.currentMode == models.NetworkModeServerETH || m.currentMode == models.NetworkModeServerWiFi
 }
 
 // HasInternet returns true if current mode has internet capability (V2)
 func (m *NetworkManager) HasInternet() bool {
 	switch m.currentMode {
-	case NetworkModeOnlineETH, NetworkModeOnlineWiFi, NetworkModeServerETH, NetworkModeServerWiFi:
+	case models.NetworkModeOnlineETH, models.NetworkModeOnlineWiFi, models.NetworkModeServerETH, models.NetworkModeServerWiFi:
 		return true
 	default:
 		return false
@@ -360,32 +317,32 @@ func (m *NetworkManager) HasAP() bool {
 }
 
 // GetCurrentMode returns the current network mode
-func (m *NetworkManager) GetCurrentMode() NetworkMode {
+func (m *NetworkManager) GetCurrentMode() models.NetworkMode {
 	return m.currentMode
 }
 
 // GetCurrentVPNMode returns the current VPN mode (V2)
-func (m *NetworkManager) GetCurrentVPNMode() VPNMode {
+func (m *NetworkManager) GetCurrentVPNMode() models.VPNMode {
 	return m.currentVPNMode
 }
 
 // SetMode changes the network operating mode (V2: supports 5 modes)
-func (m *NetworkManager) SetMode(ctx context.Context, mode NetworkMode, wifiSSID, wifiPassword string) error {
+func (m *NetworkManager) SetMode(ctx context.Context, mode models.NetworkMode, wifiSSID, wifiPassword string) error {
 	var err error
 
 	switch mode {
-	case NetworkModeOffline:
+	case models.NetworkModeOffline:
 		err = m.setOfflineMode(ctx)
-	case NetworkModeOnlineETH:
+	case models.NetworkModeOnlineETH:
 		err = m.setOnlineETHMode(ctx)
-	case NetworkModeOnlineWiFi:
+	case models.NetworkModeOnlineWiFi:
 		if wifiSSID == "" {
 			return fmt.Errorf("wifi SSID required for ONLINE_WIFI mode")
 		}
 		err = m.setOnlineWiFiMode(ctx, wifiSSID, wifiPassword)
-	case NetworkModeServerETH:
+	case models.NetworkModeServerETH:
 		err = m.setServerETHMode(ctx)
-	case NetworkModeServerWiFi:
+	case models.NetworkModeServerWiFi:
 		if wifiSSID == "" {
 			return fmt.Errorf("wifi SSID required for SERVER_WIFI mode")
 		}
@@ -399,9 +356,9 @@ func (m *NetworkManager) SetMode(ctx context.Context, mode NetworkMode, wifiSSID
 	}
 
 	// If switching to mode without internet, disable VPN
-	if !m.HasInternet() && m.currentVPNMode != VPNModeNone {
+	if !m.HasInternet() && m.currentVPNMode != models.VPNModeNone {
 		log.Printf("NetworkManager: disabling VPN because mode has no internet")
-		_ = m.SetVPNMode(ctx, VPNModeNone, nil)
+		_ = m.SetVPNMode(ctx, models.VPNModeNone, nil)
 	}
 
 	// Persist to database
@@ -411,21 +368,21 @@ func (m *NetworkManager) SetMode(ctx context.Context, mode NetworkMode, wifiSSID
 }
 
 // SetVPNMode changes the VPN overlay mode (V2)
-func (m *NetworkManager) SetVPNMode(ctx context.Context, mode VPNMode, configID *int64) error {
+func (m *NetworkManager) SetVPNMode(ctx context.Context, mode models.VPNMode, configID *int64) error {
 	// VPN requires internet
-	if mode != VPNModeNone && !m.HasInternet() {
+	if mode != models.VPNModeNone && !m.HasInternet() {
 		return fmt.Errorf("VPN requires a network mode with internet access")
 	}
 
 	// Stop current VPN if active
-	if m.currentVPNMode != VPNModeNone {
+	if m.currentVPNMode != models.VPNModeNone {
 		if err := m.stopVPN(ctx); err != nil {
 			log.Printf("NetworkManager: failed to stop current VPN: %v", err)
 		}
 	}
 
 	// Start new VPN if not none
-	if mode != VPNModeNone {
+	if mode != models.VPNModeNone {
 		if err := m.startVPN(ctx, mode, configID); err != nil {
 			return fmt.Errorf("failed to start VPN: %w", err)
 		}
@@ -437,9 +394,9 @@ func (m *NetworkManager) SetVPNMode(ctx context.Context, mode VPNMode, configID 
 }
 
 // startVPN starts the specified VPN (V2)
-func (m *NetworkManager) startVPN(ctx context.Context, mode VPNMode, configID *int64) error {
+func (m *NetworkManager) startVPN(ctx context.Context, mode models.VPNMode, configID *int64) error {
 	switch mode {
-	case VPNModeWireGuard:
+	case models.VPNModeWireGuard:
 		configName := "wg0"
 		if configID != nil {
 			// Look up config name from database
@@ -450,7 +407,7 @@ func (m *NetworkManager) startVPN(ctx context.Context, mode VPNMode, configID *i
 			}
 		}
 		return m.hal.StartWireGuard(ctx, configName)
-	case VPNModeOpenVPN:
+	case models.VPNModeOpenVPN:
 		configName := "client"
 		if configID != nil {
 			var name string
@@ -460,7 +417,7 @@ func (m *NetworkManager) startVPN(ctx context.Context, mode VPNMode, configID *i
 			}
 		}
 		return m.hal.StartOpenVPN(ctx, configName)
-	case VPNModeTor:
+	case models.VPNModeTor:
 		return m.hal.StartTor(ctx)
 	default:
 		return nil
@@ -470,11 +427,11 @@ func (m *NetworkManager) startVPN(ctx context.Context, mode VPNMode, configID *i
 // stopVPN stops the current VPN (V2)
 func (m *NetworkManager) stopVPN(ctx context.Context) error {
 	switch m.currentVPNMode {
-	case VPNModeWireGuard:
+	case models.VPNModeWireGuard:
 		return m.hal.StopWireGuard(ctx, "wg0")
-	case VPNModeOpenVPN:
+	case models.VPNModeOpenVPN:
 		return m.hal.StopOpenVPN(ctx, "client")
-	case VPNModeTor:
+	case models.VPNModeTor:
 		return m.hal.StopTor(ctx)
 	default:
 		return nil
@@ -488,7 +445,7 @@ func (m *NetworkManager) setOfflineMode(ctx context.Context) error {
 	_ = m.hal.DisableIPForward(ctx)
 
 	// Disconnect any upstream WiFi
-	if m.currentMode == NetworkModeOnlineWiFi || m.currentMode == NetworkModeServerWiFi {
+	if m.currentMode == models.NetworkModeOnlineWiFi || m.currentMode == models.NetworkModeServerWiFi {
 		_ = m.hal.DisconnectWiFi(ctx, m.wifiClientInterface)
 	}
 
@@ -499,7 +456,7 @@ func (m *NetworkManager) setOfflineMode(ctx context.Context) error {
 		}
 	}
 
-	m.currentMode = NetworkModeOffline
+	m.currentMode = models.NetworkModeOffline
 	return nil
 }
 
@@ -533,7 +490,7 @@ func (m *NetworkManager) setOnlineETHMode(ctx context.Context) error {
 		return fmt.Errorf("failed to enable NAT: %w", err)
 	}
 
-	m.currentMode = NetworkModeOnlineETH
+	m.currentMode = models.NetworkModeOnlineETH
 	return nil
 }
 
@@ -576,7 +533,7 @@ func (m *NetworkManager) setOnlineWiFiMode(ctx context.Context, ssid, password s
 		return fmt.Errorf("failed to enable NAT: %w", err)
 	}
 
-	m.currentMode = NetworkModeOnlineWiFi
+	m.currentMode = models.NetworkModeOnlineWiFi
 	return nil
 }
 
@@ -611,7 +568,7 @@ func (m *NetworkManager) setServerETHMode(ctx context.Context) error {
 	// Wait for network
 	time.Sleep(3 * time.Second)
 
-	m.currentMode = NetworkModeServerETH
+	m.currentMode = models.NetworkModeServerETH
 	return nil
 }
 
@@ -649,17 +606,17 @@ func (m *NetworkManager) setServerWiFiMode(ctx context.Context, ssid, password s
 		}
 	}
 
-	m.currentMode = NetworkModeServerWiFi
+	m.currentMode = models.NetworkModeServerWiFi
 	return nil
 }
 
 // ScanWiFiNetworks scans for available WiFi networks
-func (m *NetworkManager) ScanWiFiNetworks(ctx context.Context) ([]WiFiNetwork, error) {
+func (m *NetworkManager) ScanWiFiNetworks(ctx context.Context) ([]models.WiFiNetwork, error) {
 	// Determine which interface to scan with
 	scanInterface := m.wifiClientInterface
 
 	// For SERVER_WIFI mode or when USB dongle not available, use wlan0
-	if m.currentMode == NetworkModeServerWiFi {
+	if m.currentMode == models.NetworkModeServerWiFi {
 		scanInterface = m.apInterface
 	}
 
@@ -677,9 +634,9 @@ func (m *NetworkManager) ScanWiFiNetworks(ctx context.Context) ([]WiFiNetwork, e
 		}
 	}
 
-	var result []WiFiNetwork
+	var result []models.WiFiNetwork
 	for _, n := range networks {
-		result = append(result, WiFiNetwork{
+		result = append(result, models.WiFiNetwork{
 			SSID:      n.SSID,
 			BSSID:     n.BSSID,
 			Signal:    n.Signal,
@@ -695,7 +652,7 @@ func (m *NetworkManager) ScanWiFiNetworks(ctx context.Context) ([]WiFiNetwork, e
 func (m *NetworkManager) ConnectToWiFi(ctx context.Context, ssid, password string) error {
 	// For regular modes, use USB dongle. For SERVER_WIFI, use wlan0
 	iface := m.wifiClientInterface
-	if m.currentMode == NetworkModeServerWiFi {
+	if m.currentMode == models.NetworkModeServerWiFi {
 		iface = m.apInterface
 	}
 
@@ -705,7 +662,7 @@ func (m *NetworkManager) ConnectToWiFi(ctx context.Context, ssid, password strin
 // DisconnectWiFi disconnects from upstream WiFi
 func (m *NetworkManager) DisconnectWiFi(ctx context.Context) error {
 	iface := m.wifiClientInterface
-	if m.currentMode == NetworkModeServerWiFi {
+	if m.currentMode == models.NetworkModeServerWiFi {
 		iface = m.apInterface
 	}
 	return m.hal.DisconnectWiFi(ctx, iface)
@@ -729,17 +686,17 @@ func (m *NetworkManager) DetectWiFiClientInterface(ctx context.Context) (string,
 }
 
 // GetNetworkConfig returns the persisted network configuration (V2)
-func (m *NetworkManager) GetNetworkConfig(ctx context.Context) (*NetworkConfig, error) {
+func (m *NetworkManager) GetNetworkConfig(ctx context.Context) (*models.NetworkConfig, error) {
 	if m.db == nil {
-		return &NetworkConfig{
-			Mode:      NetworkModeOffline,
-			VPNMode:   VPNModeNone,
+		return &models.NetworkConfig{
+			Mode:      models.NetworkModeOffline,
+			VPNMode:   models.VPNModeNone,
 			GatewayIP: "10.42.24.1",
 			Subnet:    "10.42.24.0/24",
 		}, nil
 	}
 
-	var cfg NetworkConfig
+	var cfg models.NetworkConfig
 	err := m.db.Get(&cfg, `
 		SELECT mode, COALESCE(vpn_mode, 'none') as vpn_mode, vpn_config_id,
 		       wifi_ssid, COALESCE(gateway_ip, '10.42.24.1') as gateway_ip,
@@ -754,9 +711,9 @@ func (m *NetworkManager) GetNetworkConfig(ctx context.Context) (*NetworkConfig, 
 		FROM network_config WHERE id = 1`)
 	if err != nil {
 		if err == sql.ErrNoRows {
-			return &NetworkConfig{
-				Mode:      NetworkModeOffline,
-				VPNMode:   VPNModeNone,
+			return &models.NetworkConfig{
+				Mode:      models.NetworkModeOffline,
+				VPNMode:   models.VPNModeNone,
 				GatewayIP: "10.42.24.1",
 				Subnet:    "10.42.24.0/24",
 			}, nil
@@ -767,7 +724,7 @@ func (m *NetworkManager) GetNetworkConfig(ctx context.Context) (*NetworkConfig, 
 }
 
 // UpdateNetworkConfig updates network configuration (V2)
-func (m *NetworkManager) UpdateNetworkConfig(ctx context.Context, cfg *NetworkConfig) error {
+func (m *NetworkManager) UpdateNetworkConfig(ctx context.Context, cfg *models.NetworkConfig) error {
 	if m.db == nil {
 		return fmt.Errorf("database not available")
 	}
@@ -837,9 +794,9 @@ func (m *NetworkManager) GetAPClients(ctx context.Context) ([]models.APClient, e
 
 // IsValidMode checks if a mode string is valid (V2)
 func IsValidMode(mode string) bool {
-	switch NetworkMode(mode) {
-	case NetworkModeOffline, NetworkModeOnlineETH, NetworkModeOnlineWiFi,
-		NetworkModeServerETH, NetworkModeServerWiFi:
+	switch models.NetworkMode(mode) {
+	case models.NetworkModeOffline, models.NetworkModeOnlineETH, models.NetworkModeOnlineWiFi,
+		models.NetworkModeServerETH, models.NetworkModeServerWiFi:
 		return true
 	default:
 		return false
@@ -848,8 +805,8 @@ func IsValidMode(mode string) bool {
 
 // IsValidVPNMode checks if a VPN mode string is valid (V2)
 func IsValidVPNMode(mode string) bool {
-	switch VPNMode(mode) {
-	case VPNModeNone, VPNModeWireGuard, VPNModeOpenVPN, VPNModeTor:
+	switch models.VPNMode(mode) {
+	case models.VPNModeNone, models.VPNModeWireGuard, models.VPNModeOpenVPN, models.VPNModeTor:
 		return true
 	default:
 		return false
@@ -1028,7 +985,7 @@ func (m *NetworkManager) GetWiFiStatus(ctx context.Context) (*WiFiStatus, error)
 
 	// Determine which interface to check
 	iface := m.wifiClientInterface
-	if m.currentMode == NetworkModeServerWiFi {
+	if m.currentMode == models.NetworkModeServerWiFi {
 		iface = m.apInterface
 		status.Interface = m.apInterface
 	}

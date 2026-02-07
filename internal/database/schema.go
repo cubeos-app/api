@@ -331,7 +331,10 @@ CREATE TABLE IF NOT EXISTS app_stores (
 );
 
 -- =============================================================================
--- INSTALLED_APPS: Apps installed from app stores (legacy, AppStore manager)
+-- INSTALLED_APPS: Apps installed from app stores
+-- DEPRECATED: Legacy table from pre-Swarm architecture. New installs should use
+-- the unified 'apps' table. This table is retained for AppStore manager
+-- compatibility and will be migrated/removed in FS-05.
 -- =============================================================================
 CREATE TABLE IF NOT EXISTS installed_apps (
     id              TEXT PRIMARY KEY,

@@ -989,58 +989,6 @@ definitions:
       ssl_forced:
         type: boolean
     type: object
-  cubeos-api_internal_managers.NetworkConfig:
-    properties:
-      ap_channel:
-        type: integer
-      ap_hidden:
-        type: boolean
-      ap_ssid:
-        type: string
-      dhcp_range_end:
-        type: string
-      dhcp_range_start:
-        type: string
-      fallback_static_ip:
-        type: string
-      gateway_ip:
-        type: string
-      mode:
-        $ref: '#/definitions/cubeos-api_internal_managers.NetworkMode'
-      server_mode_warning_dismissed:
-        type: boolean
-      subnet:
-        type: string
-      vpn_config_id:
-        type: integer
-      vpn_mode:
-        $ref: '#/definitions/cubeos-api_internal_managers.VPNMode'
-      wifi_ssid:
-        type: string
-    type: object
-  cubeos-api_internal_managers.NetworkMode:
-    enum:
-    - offline
-    - online_eth
-    - online_wifi
-    - server_eth
-    - server_wifi
-    type: string
-    x-enum-comments:
-      NetworkModeServerETH: 'V2: Server mode via Ethernet'
-      NetworkModeServerWiFi: 'V2: Server mode via WiFi'
-    x-enum-descriptions:
-    - ""
-    - ""
-    - ""
-    - 'V2: Server mode via Ethernet'
-    - 'V2: Server mode via WiFi'
-    x-enum-varnames:
-    - NetworkModeOffline
-    - NetworkModeOnlineETH
-    - NetworkModeOnlineWiFi
-    - NetworkModeServerETH
-    - NetworkModeServerWiFi
   cubeos-api_internal_managers.NetworkStatus:
     properties:
       ap:
@@ -1056,7 +1004,7 @@ definitions:
         description: 'V2: True for SERVER_* modes'
         type: boolean
       mode:
-        $ref: '#/definitions/cubeos-api_internal_managers.NetworkMode'
+        $ref: '#/definitions/cubeos-api_internal_models.NetworkMode'
       public_ip:
         description: V2
         type: string
@@ -1072,7 +1020,7 @@ definitions:
         type: string
       vpn_mode:
         allOf:
-        - $ref: '#/definitions/cubeos-api_internal_managers.VPNMode'
+        - $ref: '#/definitions/cubeos-api_internal_models.VPNMode'
         description: V2
     type: object
   cubeos-api_internal_managers.SMARTAttribute:
@@ -1136,18 +1084,6 @@ definitions:
         description: '"ethernet" or "wifi"'
         type: string
     type: object
-  cubeos-api_internal_managers.VPNMode:
-    enum:
-    - none
-    - wireguard
-    - openvpn
-    - tor
-    type: string
-    x-enum-varnames:
-    - VPNModeNone
-    - VPNModeWireGuard
-    - VPNModeOpenVPN
-    - VPNModeTor
   cubeos-api_internal_models.App:
     properties:
       category:
@@ -1703,6 +1639,79 @@ definitions:
     x-enum-varnames:
     - MountTypeSMB
     - MountTypeNFS
+  cubeos-api_internal_models.NetworkConfig:
+    properties:
+      ap_channel:
+        type: integer
+      ap_hidden:
+        type: boolean
+      ap_ssid:
+        description: Access Point configuration
+        type: string
+      dhcp_range_end:
+        type: string
+      dhcp_range_start:
+        type: string
+      eth_interface:
+        description: Interfaces
+        type: string
+      fallback_static_ip:
+        description: Server mode fallback
+        type: string
+      gateway_ip:
+        description: DHCP server configuration (for AP modes)
+        type: string
+      id:
+        type: integer
+      mode:
+        $ref: '#/definitions/cubeos-api_internal_models.NetworkMode'
+      server_mode_warning_dismissed:
+        description: UX state
+        type: boolean
+      subnet:
+        type: string
+      updated_at:
+        type: string
+      vpn_config_id:
+        type: integer
+      vpn_mode:
+        allOf:
+        - $ref: '#/definitions/cubeos-api_internal_models.VPNMode'
+        description: VPN overlay
+      wifi_ap_interface:
+        type: string
+      wifi_client_interface:
+        type: string
+      wifi_ssid:
+        description: WiFi client credentials (for online_wifi and server_wifi)
+        type: string
+    type: object
+  cubeos-api_internal_models.NetworkMode:
+    enum:
+    - offline
+    - online_eth
+    - online_wifi
+    - server_eth
+    - server_wifi
+    type: string
+    x-enum-comments:
+      NetworkModeOffline: AP only, no internet
+      NetworkModeOnlineETH: AP + NAT via eth0
+      NetworkModeOnlineWiFi: AP + NAT via USB dongle
+      NetworkModeServerETH: No AP, eth0 DHCP client
+      NetworkModeServerWiFi: No AP, wlan0 WiFi client
+    x-enum-descriptions:
+    - AP only, no internet
+    - AP + NAT via eth0
+    - AP + NAT via USB dongle
+    - No AP, eth0 DHCP client
+    - No AP, wlan0 WiFi client
+    x-enum-varnames:
+    - NetworkModeOffline
+    - NetworkModeOnlineETH
+    - NetworkModeOnlineWiFi
+    - NetworkModeServerETH
+    - NetworkModeServerWiFi
   cubeos-api_internal_models.Port:
     properties:
       app_id:
@@ -2165,6 +2174,18 @@ definitions:
       updated_at:
         type: string
     type: object
+  cubeos-api_internal_models.VPNMode:
+    enum:
+    - none
+    - wireguard
+    - openvpn
+    - tor
+    type: string
+    x-enum-varnames:
+    - VPNModeNone
+    - VPNModeWireGuard
+    - VPNModeOpenVPN
+    - VPNModeTor
   cubeos-api_internal_models.VPNStatus:
     properties:
       config_name:
@@ -2560,12 +2581,10 @@ definitions:
     description: API error response
     properties:
       code:
-        example: 500
         type: integer
-      details:
+      detail:
         type: string
       error:
-        example: Something went wrong
         type: string
     type: object
   internal_handlers.FQDN:
@@ -9853,7 +9872,7 @@ paths:
         "200":
           description: Network configuration
           schema:
-            $ref: '#/definitions/cubeos-api_internal_managers.NetworkConfig'
+            $ref: '#/definitions/cubeos-api_internal_models.NetworkConfig'
       security:
       - BearerAuth: []
       summary: Get network settings
@@ -9876,7 +9895,7 @@ paths:
         "200":
           description: Updated configuration
           schema:
-            $ref: '#/definitions/cubeos-api_internal_managers.NetworkConfig'
+            $ref: '#/definitions/cubeos-api_internal_models.NetworkConfig'
         "400":
           description: Invalid request body
           schema:
