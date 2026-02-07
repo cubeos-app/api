@@ -320,7 +320,7 @@ func (h *Handlers) GetTemperature(w http.ResponseWriter, r *http.Request) {
 // @Tags System
 // @Produce json
 // @Security BearerAuth
-// @Param delay query int false "Delay in seconds before reboot" default(0)
+// @Param delay query int false "Delay in minutes before reboot" default(0)
 // @Success 200 {object} models.SuccessResponse "Reboot scheduled"
 // @Failure 500 {object} ErrorResponse "Failed to schedule reboot"
 // @Router /system/reboot [post]
@@ -340,7 +340,7 @@ func (h *Handlers) Reboot(w http.ResponseWriter, r *http.Request) {
 // @Tags System
 // @Produce json
 // @Security BearerAuth
-// @Param delay query int false "Delay in seconds before shutdown" default(0)
+// @Param delay query int false "Delay in minutes before shutdown" default(0)
 // @Success 200 {object} models.SuccessResponse "Shutdown scheduled"
 // @Failure 500 {object} ErrorResponse "Failed to schedule shutdown"
 // @Router /system/shutdown [post]

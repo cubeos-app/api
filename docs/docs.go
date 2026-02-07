@@ -11922,7 +11922,7 @@ const docTemplate = `{
                     }
                 }
             },
-            "put": {
+            "post": {
                 "security": [
                     {
                         "BearerAuth": []
@@ -12087,7 +12087,7 @@ const docTemplate = `{
                 }
             }
         },
-        "/processes/stats": {
+        "/processes/stats/summary": {
             "get": {
                 "security": [
                     {
@@ -13907,7 +13907,7 @@ const docTemplate = `{
                     {
                         "type": "integer",
                         "default": 0,
-                        "description": "Delay in seconds before reboot",
+                        "description": "Delay in minutes before reboot",
                         "name": "delay",
                         "in": "query"
                     }
@@ -13947,7 +13947,7 @@ const docTemplate = `{
                     {
                         "type": "integer",
                         "default": 0,
-                        "description": "Delay in seconds before shutdown",
+                        "description": "Delay in minutes before shutdown",
                         "name": "delay",
                         "in": "query"
                     }

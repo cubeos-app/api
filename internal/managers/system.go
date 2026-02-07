@@ -7,7 +7,6 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
-	"regexp"
 	"runtime"
 	"strconv"
 	"strings"
@@ -50,8 +49,18 @@ func (m *SystemManager) GetHostname() string {
 }
 
 // GetOSInfo returns OS name and version
+// Tries /host/etc/os-release first to get host OS when running in a container
 func (m *SystemManager) GetOSInfo() (name string, version string) {
-	data, err := os.ReadFile("/etc/os-release")
+	var data []byte
+	var err error
+
+	// Try host filesystem first (mounted from host into container)
+	for _, path := range []string{"/host/etc/os-release", "/etc/os-release"} {
+		data, err = os.ReadFile(path)
+		if err == nil {
+			break
+		}
+	}
 	if err != nil {
 		return runtime.GOOS, ""
 	}
@@ -213,8 +222,9 @@ func (m *SystemManager) GetSystemInfo() *models.SystemInfo {
 }
 
 // GetCPUPercent returns current CPU usage percentage
+// Uses 500ms sampling interval for reliable measurement (100ms was too short)
 func (m *SystemManager) GetCPUPercent() float64 {
-	percentages, err := cpu.Percent(100*time.Millisecond, false)
+	percentages, err := cpu.Percent(500*time.Millisecond, false)
 	if err != nil || len(percentages) == 0 {
 		return 0
 	}
@@ -266,12 +276,17 @@ func (m *SystemManager) GetTemperature() *models.Temperature {
 		}
 	}
 
-	// Try vcgencmd for GPU temp (Raspberry Pi)
-	if output, err := exec.Command("vcgencmd", "measure_temp").Output(); err == nil {
-		re := regexp.MustCompile(`temp=(\d+\.?\d*)`)
-		if matches := re.FindStringSubmatch(string(output)); len(matches) > 1 {
-			if temp, err := strconv.ParseFloat(matches[1], 64); err == nil {
-				result.GPUTempC = temp
+	// GPU temperature: read from secondary thermal zone if available
+	// (vcgencmd doesn't work inside containers)
+	gpuThermalPaths := []string{
+		"/sys/class/thermal/thermal_zone1/temp",
+		"/host/sys/class/thermal/thermal_zone1/temp",
+	}
+	for _, path := range gpuThermalPaths {
+		if data, err := os.ReadFile(path); err == nil {
+			if temp, err := strconv.ParseInt(strings.TrimSpace(string(data)), 10, 64); err == nil {
+				result.GPUTempC = float64(temp) / 1000.0
+				break
 			}
 		}
 	}
@@ -290,15 +305,8 @@ func (m *SystemManager) GetTemperature() *models.Temperature {
 		}
 	}
 
-	// Fall back to vcgencmd
-	if throttleValue == 0 {
-		if output, err := exec.Command("vcgencmd", "get_throttled").Output(); err == nil {
-			parts := strings.Split(strings.TrimSpace(string(output)), "=")
-			if len(parts) == 2 {
-				throttleValue, _ = strconv.ParseInt(strings.TrimPrefix(parts[1], "0x"), 16, 64)
-			}
-		}
-	}
+	// Note: vcgencmd fallback removed — it doesn't work inside containers.
+	// Throttle status is only available via sysfs paths above.
 
 	result.ThrottleFlags = fmt.Sprintf("0x%x", throttleValue)
 	result.UnderVoltage = throttleValue&0x1 != 0
@@ -582,6 +590,33 @@ func (m *SystemManager) GetNetworkInterfaces() []models.NetworkInterface {
 	return result
 }
 
+// detectRootDevice reads /proc/mounts (or host mount) to find the actual root device and filesystem type
+func (m *SystemManager) detectRootDevice() (device, fstype string) {
+	// Defaults
+	device = "/dev/mmcblk0p2"
+	fstype = "ext4"
+
+	// Try host mounts first, then container mounts
+	for _, mountPath := range []string{"/host/proc/mounts", "/proc/mounts"} {
+		data, err := os.ReadFile(mountPath)
+		if err != nil {
+			continue
+		}
+		scanner := bufio.NewScanner(strings.NewReader(string(data)))
+		for scanner.Scan() {
+			fields := strings.Fields(scanner.Text())
+			if len(fields) >= 3 && fields[1] == "/" {
+				// Skip overlay/tmpfs — those are container roots
+				if fields[2] == "overlay" || fields[2] == "tmpfs" {
+					continue
+				}
+				return fields[0], fields[2]
+			}
+		}
+	}
+	return
+}
+
 // GetDisks returns all mounted disks with usage statistics
 func (m *SystemManager) GetDisks() []models.DiskInfo {
 	var result []models.DiskInfo
@@ -595,10 +630,11 @@ func (m *SystemManager) GetDisks() []models.DiskInfo {
 	}
 
 	if err == nil {
+		rootDev, rootFS := m.detectRootDevice()
 		result = append(result, models.DiskInfo{
-			Device:      "/dev/mmcblk0p2",
+			Device:      rootDev,
 			Mountpoint:  "/",
-			FSType:      "ext4",
+			FSType:      rootFS,
 			TotalBytes:  usage.Total,
 			UsedBytes:   usage.Used,
 			FreeBytes:   usage.Free,

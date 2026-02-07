@@ -946,7 +946,7 @@ func (h *ExtendedHandlers) TerminateProcess(w http.ResponseWriter, r *http.Reque
 // @Produce json
 // @Security BearerAuth
 // @Success 200 {object} map[string]interface{} "Process statistics"
-// @Router /processes/stats [get]
+// @Router /processes/stats/summary [get]
 func (h *ExtendedHandlers) GetProcessStats(w http.ResponseWriter, r *http.Request) {
 	stats := h.processes.GetProcessStats()
 	writeJSON(w, http.StatusOK, stats)
@@ -1261,7 +1261,7 @@ func (h *ExtendedHandlers) GetPreferences(w http.ResponseWriter, r *http.Request
 // @Success 200 {object} map[string]interface{} "Updated preferences"
 // @Failure 400 {object} ErrorResponse "Invalid request body"
 // @Failure 500 {object} ErrorResponse "Failed to save preferences"
-// @Router /preferences [put]
+// @Router /preferences [post]
 func (h *ExtendedHandlers) SetPreferences(w http.ResponseWriter, r *http.Request) {
 	var update models.PreferencesUpdate
 	if err := json.NewDecoder(r.Body).Decode(&update); err != nil {

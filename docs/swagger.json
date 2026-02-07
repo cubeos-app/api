@@ -11916,7 +11916,7 @@
                     }
                 }
             },
-            "put": {
+            "post": {
                 "security": [
                     {
                         "BearerAuth": []
@@ -12081,7 +12081,7 @@
                 }
             }
         },
-        "/processes/stats": {
+        "/processes/stats/summary": {
             "get": {
                 "security": [
                     {
@@ -13901,7 +13901,7 @@
                     {
                         "type": "integer",
                         "default": 0,
-                        "description": "Delay in seconds before reboot",
+                        "description": "Delay in minutes before reboot",
                         "name": "delay",
                         "in": "query"
                     }
@@ -13941,7 +13941,7 @@
                     {
                         "type": "integer",
                         "default": 0,
-                        "description": "Delay in seconds before shutdown",
+                        "description": "Delay in minutes before shutdown",
                         "name": "delay",
                         "in": "query"
                     }
