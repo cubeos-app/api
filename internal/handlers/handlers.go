@@ -481,7 +481,7 @@ func (h *Handlers) GetTimezones(w http.ResponseWriter, r *http.Request) {
 // @Failure 500 {object} ErrorResponse "Failed to get clients"
 // @Router /clients [get]
 func (h *Handlers) GetConnectedClients(w http.ResponseWriter, r *http.Request) {
-	clients, err := h.network.GetConnectedClients()
+	clients, err := h.network.GetConnectedClients(r.Context())
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, err.Error())
 		return
@@ -502,7 +502,7 @@ func (h *Handlers) GetConnectedClients(w http.ResponseWriter, r *http.Request) {
 // @Success 200 {object} map[string]interface{} "Client count"
 // @Router /clients/count [get]
 func (h *Handlers) GetClientCount(w http.ResponseWriter, r *http.Request) {
-	clients, _ := h.network.GetConnectedClients()
+	clients, _ := h.network.GetConnectedClients(r.Context())
 	writeJSON(w, http.StatusOK, map[string]interface{}{
 		"count":     len(clients),
 		"timestamp": time.Now(),

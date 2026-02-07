@@ -1,6 +1,7 @@
 package managers
 
 import (
+	"context"
 	"sync"
 	"time"
 
@@ -74,7 +75,7 @@ func (m *MonitoringManager) GetHistory(minutes int) []models.StatsSnapshot {
 func (m *MonitoringManager) GetCurrentStats() map[string]interface{} {
 	stats := m.system.GetStats()
 	interfaces := m.system.GetNetworkInterfaces()
-	clients, _ := m.network.GetConnectedClients()
+	clients, _ := m.network.GetConnectedClients(context.Background())
 
 	// Build network traffic summary
 	networkTraffic := make(map[string]map[string]interface{})

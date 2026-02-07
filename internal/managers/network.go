@@ -30,6 +30,7 @@ const (
 	DefaultWANInterface        = "eth0"
 	DefaultWiFiClientInterface = "wlxccbabdb4dd07" // USB dongle
 	DefaultFallbackIP          = "192.168.1.242"   // V2: Server mode fallback
+	DefaultFallbackGateway     = "192.168.1.1"     // V2: Server mode fallback gateway
 )
 
 // WiFiNetwork is defined in models/network.go
@@ -82,6 +83,7 @@ type NetworkManager struct {
 	wifiClientInterface string
 	apSSID              string
 	fallbackIP          string // V2
+	fallbackGateway     string // V2: Gateway for static fallback
 }
 
 // NewNetworkManager creates a new network manager (V2: loads VPN mode too)
@@ -96,6 +98,7 @@ func NewNetworkManager(cfg *config.Config, halClient *hal.Client, db *sqlx.DB) *
 	wifiClientIface := getEnvOrDefault("CUBEOS_WIFI_CLIENT_INTERFACE", DefaultWiFiClientInterface)
 	apSSID := getEnvOrDefault("CUBEOS_AP_SSID", "CubeOS")
 	fallbackIP := getEnvOrDefault("CUBEOS_FALLBACK_IP", DefaultFallbackIP)
+	fallbackGateway := getEnvOrDefault("CUBEOS_FALLBACK_GATEWAY", DefaultFallbackGateway)
 
 	// Load mode and VPN from database
 	mode, vpnMode := loadConfigFromDB(db)
@@ -112,6 +115,7 @@ func NewNetworkManager(cfg *config.Config, halClient *hal.Client, db *sqlx.DB) *
 		wifiClientInterface: wifiClientIface,
 		apSSID:              apSSID,
 		fallbackIP:          fallbackIP,
+		fallbackGateway:     fallbackGateway,
 	}
 }
 
@@ -193,6 +197,45 @@ func getEnvOrDefault(key, defaultVal string) string {
 		return val
 	}
 	return defaultVal
+}
+
+// isValidDNSAddress validates a DNS server address (IPv4 or IPv6)
+func isValidDNSAddress(addr string) bool {
+	// Simple validation: must have at least one dot (IPv4) or colon (IPv6)
+	// and must not contain dangerous characters
+	if addr == "" {
+		return false
+	}
+	// Check for valid IPv4 format (basic check)
+	parts := strings.Split(addr, ".")
+	if len(parts) == 4 {
+		for _, p := range parts {
+			if len(p) == 0 || len(p) > 3 {
+				return false
+			}
+			for _, c := range p {
+				if c < '0' || c > '9' {
+					return false
+				}
+			}
+			var num int
+			if _, err := fmt.Sscanf(p, "%d", &num); err != nil || num < 0 || num > 255 {
+				return false
+			}
+		}
+		return true
+	}
+	// Check for IPv6 (contains colons)
+	if strings.Contains(addr, ":") {
+		// Basic IPv6 validation: only hex digits, colons, and dots (for mapped)
+		for _, c := range addr {
+			if !((c >= '0' && c <= '9') || (c >= 'a' && c <= 'f') || (c >= 'A' && c <= 'F') || c == ':' || c == '.') {
+				return false
+			}
+		}
+		return true
+	}
+	return false
 }
 
 // GetStatus returns the current network status (V2: extended with VPN and server info)
@@ -558,9 +601,9 @@ func (m *NetworkManager) setServerETHMode(ctx context.Context) error {
 
 	// Request DHCP
 	if err := m.hal.RequestDHCP(ctx, m.wanInterface); err != nil {
-		log.Printf("NetworkManager: DHCP request failed, using fallback IP %s: %v", m.fallbackIP, err)
-		// Fall back to static IP
-		if err := m.hal.SetStaticIP(ctx, m.wanInterface, m.fallbackIP, "255.255.255.0"); err != nil {
+		log.Printf("NetworkManager: DHCP request failed, using fallback IP %s (gw %s): %v", m.fallbackIP, m.fallbackGateway, err)
+		// Fall back to static IP with proper gateway
+		if err := m.hal.SetStaticIP(ctx, m.wanInterface, m.fallbackIP, m.fallbackGateway); err != nil {
 			return fmt.Errorf("failed to set fallback IP: %w", err)
 		}
 	}
@@ -600,8 +643,8 @@ func (m *NetworkManager) setServerWiFiMode(ctx context.Context, ssid, password s
 	// Verify we got an IP
 	iface, err := m.hal.GetInterface(ctx, m.apInterface)
 	if err != nil || len(iface.IPv4Addresses) == 0 {
-		log.Printf("NetworkManager: no IP assigned, using fallback %s", m.fallbackIP)
-		if err := m.hal.SetStaticIP(ctx, m.apInterface, m.fallbackIP, "255.255.255.0"); err != nil {
+		log.Printf("NetworkManager: no IP assigned, using fallback %s (gw %s)", m.fallbackIP, m.fallbackGateway)
+		if err := m.hal.SetStaticIP(ctx, m.apInterface, m.fallbackIP, m.fallbackGateway); err != nil {
 			return fmt.Errorf("failed to set fallback IP: %w", err)
 		}
 	}
@@ -691,8 +734,8 @@ func (m *NetworkManager) GetNetworkConfig(ctx context.Context) (*models.NetworkC
 		return &models.NetworkConfig{
 			Mode:      models.NetworkModeOffline,
 			VPNMode:   models.VPNModeNone,
-			GatewayIP: "10.42.24.1",
-			Subnet:    "10.42.24.0/24",
+			GatewayIP: models.DefaultGatewayIP,
+			Subnet:    models.DefaultSubnet,
 		}, nil
 	}
 
@@ -714,8 +757,8 @@ func (m *NetworkManager) GetNetworkConfig(ctx context.Context) (*models.NetworkC
 			return &models.NetworkConfig{
 				Mode:      models.NetworkModeOffline,
 				VPNMode:   models.VPNModeNone,
-				GatewayIP: "10.42.24.1",
-				Subnet:    "10.42.24.0/24",
+				GatewayIP: models.DefaultGatewayIP,
+				Subnet:    models.DefaultSubnet,
 			}, nil
 		}
 		return nil, err
@@ -814,8 +857,8 @@ func IsValidVPNMode(mode string) bool {
 }
 
 // GetConnectedClients returns connected AP clients (alias for monitoring)
-func (m *NetworkManager) GetConnectedClients() ([]models.APClient, error) {
-	return m.GetAPClients(context.Background())
+func (m *NetworkManager) GetConnectedClients(ctx context.Context) ([]models.APClient, error) {
+	return m.GetAPClients(ctx)
 }
 
 // APConfig represents WiFi Access Point configuration
@@ -828,23 +871,60 @@ type APConfig struct {
 
 // GetAPConfig returns current AP configuration
 func (m *NetworkManager) GetAPConfig(ctx context.Context) (*APConfig, error) {
-	// Try to get from hostapd config or return defaults
-	config := &APConfig{
-		SSID:    "CubeOS",
-		Channel: 7,
-		Hidden:  false,
+	// Try to read from database first
+	if m.db != nil {
+		var apSSID string
+		var apChannel int
+		var apHidden bool
+		err := m.db.QueryRowContext(ctx,
+			`SELECT COALESCE(ap_ssid, 'CubeOS'), COALESCE(ap_channel, 7), COALESCE(ap_hidden, 0) 
+			 FROM network_config WHERE id = 1`).Scan(&apSSID, &apChannel, &apHidden)
+		if err == nil {
+			return &APConfig{
+				SSID:    apSSID,
+				Channel: apChannel,
+				Hidden:  apHidden,
+			}, nil
+		}
+		// Fall through to defaults on error (including sql.ErrNoRows)
+		if err != sql.ErrNoRows {
+			log.Printf("NetworkManager: failed to read AP config from DB: %v", err)
+		}
 	}
 
-	// Try to read from environment or config
-
-	return config, nil
+	// Fallback to defaults from environment/config
+	return &APConfig{
+		SSID:    m.apSSID,
+		Channel: 7,
+		Hidden:  false,
+	}, nil
 }
 
 // UpdateAPConfig updates AP configuration
+// Note: Runtime hostapd changes require HAL support (not yet available).
+// Config is persisted to DB and will take effect on next AP restart.
 func (m *NetworkManager) UpdateAPConfig(ctx context.Context, ssid, password string, channel int, hidden bool) error {
-	// TODO: Implement actual hostapd config update via HAL
-	// For now, this is a stub that would need HAL support
-	return fmt.Errorf("AP configuration update not yet implemented")
+	if m.db == nil {
+		return fmt.Errorf("AP configuration update not yet implemented: no database available")
+	}
+
+	// Persist the config to database — it will take effect on next AP restart
+	_, err := m.db.ExecContext(ctx, `
+		INSERT INTO network_config (id, ap_ssid, ap_password, ap_channel, ap_hidden, updated_at)
+		VALUES (1, ?, ?, ?, ?, CURRENT_TIMESTAMP)
+		ON CONFLICT(id) DO UPDATE SET
+			ap_ssid = excluded.ap_ssid,
+			ap_password = CASE WHEN excluded.ap_password = '' THEN network_config.ap_password ELSE excluded.ap_password END,
+			ap_channel = excluded.ap_channel,
+			ap_hidden = excluded.ap_hidden,
+			updated_at = CURRENT_TIMESTAMP`,
+		ssid, password, channel, hidden)
+	if err != nil {
+		return fmt.Errorf("failed to persist AP config: %w", err)
+	}
+
+	log.Printf("NetworkManager: AP config updated (ssid=%s, channel=%d, hidden=%v) — will apply on next AP restart", ssid, channel, hidden)
+	return nil
 }
 
 // IsServerModeWarningDismissed checks if server mode warning has been dismissed
@@ -878,9 +958,9 @@ type DNSConfig struct {
 // GetDNSConfig returns the current DNS configuration
 func (m *NetworkManager) GetDNSConfig(ctx context.Context) (*DNSConfig, error) {
 	config := &DNSConfig{
-		PrimaryDNS:   "10.42.24.1", // Pi-hole default
+		PrimaryDNS:   models.DefaultGatewayIP, // Pi-hole default
 		SecondaryDNS: "",
-		DNSServers:   []string{"10.42.24.1"},
+		DNSServers:   []string{models.DefaultGatewayIP},
 	}
 
 	// Try to read from /etc/resolv.conf
@@ -929,6 +1009,14 @@ func (m *NetworkManager) SetDNSConfig(ctx context.Context, cfg *DNSConfig) error
 
 	if cfg.PrimaryDNS == "" {
 		return fmt.Errorf("primary DNS server is required")
+	}
+
+	// Validate DNS server addresses
+	if !isValidDNSAddress(cfg.PrimaryDNS) {
+		return fmt.Errorf("invalid primary DNS server address: %s", cfg.PrimaryDNS)
+	}
+	if cfg.SecondaryDNS != "" && !isValidDNSAddress(cfg.SecondaryDNS) {
+		return fmt.Errorf("invalid secondary DNS server address: %s", cfg.SecondaryDNS)
 	}
 
 	// Build resolv.conf content

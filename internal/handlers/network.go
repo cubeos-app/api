@@ -404,7 +404,7 @@ func (h *NetworkHandler) GetAPStatus(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	clients, _ := h.network.GetConnectedClients()
+	clients, _ := h.network.GetConnectedClients(ctx)
 	var hostapdRunning bool
 	if h.halClient != nil {
 		status, err := h.halClient.GetServiceStatus(ctx, "hostapd")
@@ -510,7 +510,8 @@ func (h *NetworkHandler) RestartAP(w http.ResponseWriter, r *http.Request) {
 // @Failure 500 {object} ErrorResponse "Failed to get clients"
 // @Router /network/wifi/ap/clients [get]
 func (h *NetworkHandler) GetAPClients(w http.ResponseWriter, r *http.Request) {
-	clients, err := h.network.GetConnectedClients()
+	ctx := r.Context()
+	clients, err := h.network.GetConnectedClients(ctx)
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, err.Error())
 		return
@@ -619,6 +620,7 @@ func (h *NetworkHandler) GetAPConfig(w http.ResponseWriter, r *http.Request) {
 // @Success 200 {object} map[string]interface{} "Configuration updated"
 // @Failure 400 {object} ErrorResponse "Invalid configuration"
 // @Failure 500 {object} ErrorResponse "Failed to update config"
+// @Failure 501 {object} ErrorResponse "Not implemented — HAL support required"
 // @Router /network/ap/config [put]
 func (h *NetworkHandler) UpdateAPConfig(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
@@ -646,6 +648,11 @@ func (h *NetworkHandler) UpdateAPConfig(w http.ResponseWriter, r *http.Request) 
 	}
 
 	if err := h.network.UpdateAPConfig(ctx, req.SSID, req.Password, req.Channel, req.Hidden); err != nil {
+		// Check if this is a "not implemented" error from the manager
+		if strings.Contains(err.Error(), "not yet implemented") || strings.Contains(err.Error(), "not implemented") {
+			writeError(w, http.StatusNotImplemented, "AP configuration update requires HAL support which is not yet available")
+			return
+		}
 		writeError(w, http.StatusInternalServerError, err.Error())
 		return
 	}
@@ -1091,39 +1098,23 @@ func getModeDescription(mode string) string {
 // DNS Configuration
 // =============================================================================
 
-// DNSConfig represents DNS configuration
-type DNSConfig struct {
-	Servers   []string `json:"servers"`
-	Search    []string `json:"search,omitempty"`
-	UseCustom bool     `json:"use_custom"`
-}
-
 // GetDNSConfig godoc
 // @Summary Get DNS configuration
 // @Description Returns current DNS server configuration
 // @Tags Network
 // @Produce json
 // @Security BearerAuth
-// @Success 200 {object} DNSConfig "DNS configuration"
+// @Success 200 {object} managers.DNSConfig "DNS configuration"
 // @Failure 500 {object} ErrorResponse "Failed to get DNS config"
 // @Router /network/dns [get]
 func (h *NetworkHandler) GetDNSConfig(w http.ResponseWriter, r *http.Request) {
-	// Read from /etc/resolv.conf or Pi-hole config
-	// For CubeOS, DNS typically goes through Pi-hole at 10.42.24.1
-	config := DNSConfig{
-		Servers:   []string{"10.42.24.1"},
-		Search:    []string{"cubeos.cube"},
-		UseCustom: false,
+	ctx := r.Context()
+	config, err := h.network.GetDNSConfig(ctx)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "Failed to get DNS config: "+err.Error())
+		return
 	}
-
 	writeJSON(w, http.StatusOK, config)
-}
-
-// SetDNSConfigRequest represents a request to set DNS config
-type SetDNSConfigRequest struct {
-	Servers   []string `json:"servers"`
-	Search    []string `json:"search,omitempty"`
-	UseCustom bool     `json:"use_custom"`
 }
 
 // SetDNSConfig godoc
@@ -1133,33 +1124,53 @@ type SetDNSConfigRequest struct {
 // @Accept json
 // @Produce json
 // @Security BearerAuth
-// @Param request body SetDNSConfigRequest true "DNS configuration"
+// @Param request body managers.DNSConfig true "DNS configuration"
 // @Success 200 {object} map[string]interface{} "success, config"
 // @Failure 400 {object} ErrorResponse "Invalid request"
 // @Failure 500 {object} ErrorResponse "Failed to set DNS config"
 // @Router /network/dns [post]
 func (h *NetworkHandler) SetDNSConfig(w http.ResponseWriter, r *http.Request) {
-	var req SetDNSConfigRequest
+	ctx := r.Context()
+
+	var req managers.DNSConfig
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		writeError(w, http.StatusBadRequest, "Invalid request body")
 		return
 	}
 
-	if len(req.Servers) == 0 {
-		writeError(w, http.StatusBadRequest, "At least one DNS server is required")
+	if req.PrimaryDNS == "" && len(req.DNSServers) == 0 {
+		writeError(w, http.StatusBadRequest, "At least one DNS server is required (primary_dns or dns_servers)")
 		return
 	}
 
-	// TODO: Implement actual DNS configuration change
-	// This would typically update /etc/resolv.conf or Pi-hole upstream
+	// If only dns_servers provided, use first as primary
+	if req.PrimaryDNS == "" && len(req.DNSServers) > 0 {
+		req.PrimaryDNS = req.DNSServers[0]
+		if len(req.DNSServers) > 1 {
+			req.SecondaryDNS = req.DNSServers[1]
+		}
+	}
+
+	if err := h.network.SetDNSConfig(ctx, &req); err != nil {
+		writeError(w, http.StatusInternalServerError, "Failed to set DNS config: "+err.Error())
+		return
+	}
+
+	// Read back current config to confirm
+	current, err := h.network.GetDNSConfig(ctx)
+	if err != nil {
+		// Write succeeded but read-back failed — still report success
+		writeJSON(w, http.StatusOK, map[string]interface{}{
+			"success": true,
+			"config":  req,
+			"message": "DNS configuration updated",
+		})
+		return
+	}
 
 	writeJSON(w, http.StatusOK, map[string]interface{}{
 		"success": true,
-		"config": DNSConfig{
-			Servers:   req.Servers,
-			Search:    req.Search,
-			UseCustom: req.UseCustom,
-		},
+		"config":  current,
 		"message": "DNS configuration updated",
 	})
 }

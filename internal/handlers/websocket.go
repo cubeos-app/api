@@ -122,7 +122,7 @@ func (m *WSManager) StartBroadcasting(interval time.Duration, stopCh <-chan stru
 func (m *WSManager) buildStatsMessage() map[string]interface{} {
 	sysStats := m.system.GetStats()
 	interfaces := m.system.GetNetworkInterfaces()
-	clients, _ := m.network.GetConnectedClients()
+	clients, _ := m.network.GetConnectedClients(context.Background())
 
 	// Build network traffic summary
 	networkTraffic := make(map[string]map[string]interface{})
