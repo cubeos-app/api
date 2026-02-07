@@ -10,6 +10,8 @@ import (
 	"strings"
 	"time"
 
+	"cubeos-api/internal/models"
+
 	"github.com/docker/docker/api/types"
 	"github.com/docker/docker/api/types/container"
 	"github.com/docker/docker/api/types/filters"
@@ -67,7 +69,7 @@ type SwarmConfig struct {
 // DefaultSwarmConfig returns the default Swarm configuration for CubeOS.
 func DefaultSwarmConfig() SwarmConfig {
 	return SwarmConfig{
-		AdvertiseAddr:    "10.42.24.1",
+		AdvertiseAddr:    models.DefaultGatewayIP,
 		TaskHistoryLimit: 1,
 		ListenAddr:       "0.0.0.0:2377",
 	}
@@ -128,7 +130,7 @@ func (s *SwarmManager) Init(cfg SwarmConfig) error {
 
 	// Set defaults
 	if cfg.AdvertiseAddr == "" {
-		cfg.AdvertiseAddr = "10.42.24.1"
+		cfg.AdvertiseAddr = models.DefaultGatewayIP
 	}
 	if cfg.ListenAddr == "" {
 		cfg.ListenAddr = "0.0.0.0:2377"

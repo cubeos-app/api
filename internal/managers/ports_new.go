@@ -144,6 +144,9 @@ func (p *PortManager) findGapInUserRange() (int, error) {
 		}
 		allocated[port] = true
 	}
+	if err := rows.Err(); err != nil {
+		return 0, fmt.Errorf("failed to iterate port allocations: %w", err)
+	}
 
 	// Find first gap
 	for port := UserPortMin; port <= UserPortMax; port++ {
@@ -288,6 +291,9 @@ func (p *PortManager) GetAppPorts(appID int64) ([]int, error) {
 		}
 		ports = append(ports, port)
 	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("failed to iterate ports: %w", err)
+	}
 	return ports, nil
 }
 
@@ -316,6 +322,9 @@ func (p *PortManager) GetAllAllocations() ([]models.PortAllocation, error) {
 			continue
 		}
 		allocations = append(allocations, alloc)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("failed to iterate allocations: %w", err)
 	}
 	return allocations, nil
 }

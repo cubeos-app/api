@@ -6,6 +6,7 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
+	"log"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -364,7 +365,7 @@ func (m *SetupManager) ApplySetupConfig(cfg *models.SetupConfig) error {
 	if cfg.NPMAdminEmail != "" && cfg.NPMAdminPassword != "" {
 		if err := m.configureNPM(cfg.NPMAdminEmail, cfg.NPMAdminPassword); err != nil {
 			// Log but don't fail - NPM might not be running yet
-			fmt.Printf("Warning: Failed to configure NPM: %v\n", err)
+			log.Printf("Warning: Failed to configure NPM: %v", err)
 		}
 	}
 	m.updateStep(9)

@@ -108,6 +108,10 @@ func (h *FQDNsHandler) ListFQDNs(w http.ResponseWriter, r *http.Request) {
 		}
 		fqdns = append(fqdns, f)
 	}
+	if err := rows.Err(); err != nil {
+		fqdnRespondError(w, http.StatusInternalServerError, fmt.Sprintf("Failed to iterate FQDNs: %v", err))
+		return
+	}
 
 	// Get stats
 	var total int

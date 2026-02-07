@@ -13,6 +13,8 @@ import (
 	"strings"
 	"time"
 
+	"cubeos-api/internal/models"
+
 	"github.com/go-chi/chi/v5"
 )
 
@@ -24,14 +26,14 @@ type RegistryHandler struct {
 }
 
 // NewRegistryHandler creates a new RegistryHandler instance.
-// For Swarm containers, use 10.42.24.1:5000 (gateway IP) not localhost:5000
+// For Swarm containers, use the gateway IP (not localhost:5000)
 // because containers in overlay network cannot reach localhost on the host.
 func NewRegistryHandler(registryURL, registryPath string) *RegistryHandler {
 	if registryURL == "" {
 		// Check env var first, then fall back to gateway IP (works from inside Swarm overlay)
 		registryURL = os.Getenv("REGISTRY_URL")
 		if registryURL == "" {
-			registryURL = "http://10.42.24.1:5000"
+			registryURL = "http://" + models.DefaultGatewayIP + ":5000"
 		}
 	}
 	if registryPath == "" {

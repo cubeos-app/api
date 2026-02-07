@@ -8,6 +8,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"log"
 	"net"
 	"net/http"
 	"os"
@@ -125,6 +126,9 @@ func (m *AppStoreManager) loadStores() {
 		store.CreatedAt, _ = time.Parse(time.RFC3339, createdAt)
 		m.stores[store.ID] = &store
 	}
+	if err := rows.Err(); err != nil {
+		log.Printf("Warning: error iterating app stores: %v", err)
+	}
 
 	// Add default stores if none exist
 	if len(m.stores) == 0 {
@@ -153,6 +157,9 @@ func (m *AppStoreManager) loadInstalledApps() {
 		app.InstalledAt, _ = time.Parse(time.RFC3339, installedAt)
 		app.UpdatedAt, _ = time.Parse(time.RFC3339, updatedAt)
 		m.installed[app.ID] = &app
+	}
+	if err := rows.Err(); err != nil {
+		log.Printf("Warning: error iterating installed apps: %v", err)
 	}
 }
 
@@ -685,7 +692,7 @@ func (m *AppStoreManager) InstallApp(req *models.AppInstallRequest) (*models.Ins
 	// Create NPM proxy host for FQDN access (non-fatal)
 	var npmProxyID int
 	if proxyID, err := m.addNPMProxyHost(req.AppName, appFQDN, appPort, "http", true); err != nil {
-		fmt.Printf("Warning: Failed to create NPM proxy for %s: %v\n", appFQDN, err)
+		log.Printf("Warning: Failed to create NPM proxy for %s: %v", appFQDN, err)
 	} else {
 		npmProxyID = proxyID
 	}
@@ -693,7 +700,7 @@ func (m *AppStoreManager) InstallApp(req *models.AppInstallRequest) (*models.Ins
 	// Create Pi-hole DNS entry for FQDN (non-fatal)
 	if m.pihole != nil {
 		if err := m.pihole.AddEntry(appFQDN, m.gatewayIP); err != nil {
-			fmt.Printf("Warning: Failed to add DNS entry for %s: %v\n", appFQDN, err)
+			log.Printf("Warning: Failed to add DNS entry for %s: %v", appFQDN, err)
 		}
 	}
 
@@ -1060,14 +1067,14 @@ func (m *AppStoreManager) RemoveApp(appID string, deleteData bool) error {
 	m.db.db.QueryRow(`SELECT npm_proxy_id FROM installed_apps WHERE id = ?`, appID).Scan(&npmProxyID)
 	if npmProxyID > 0 {
 		if err := m.removeNPMProxyHost(npmProxyID); err != nil {
-			fmt.Printf("Warning: Failed to remove NPM proxy: %v\n", err)
+			log.Printf("Warning: Failed to remove NPM proxy: %v", err)
 		}
 	}
 
 	// Remove DNS entry via PiholeManager
 	appFQDN := fmt.Sprintf("%s.%s", appID, m.baseDomain)
 	if err := m.removePiholeDNS(appFQDN); err != nil {
-		fmt.Printf("Warning: Failed to remove DNS entry for %s: %v\n", appFQDN, err)
+		log.Printf("Warning: Failed to remove DNS entry for %s: %v", appFQDN, err)
 	}
 
 	ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
@@ -1190,7 +1197,7 @@ func (m *AppStoreManager) initNPMToken() {
 
 	token, err := m.getNPMToken(creds)
 	if err != nil {
-		fmt.Printf("Warning: Failed to get NPM token: %v\n", err)
+		log.Printf("Warning: Failed to get NPM token: %v", err)
 		return
 	}
 
@@ -1198,7 +1205,7 @@ func (m *AppStoreManager) initNPMToken() {
 	m.npmToken = token
 	m.mu.Unlock()
 
-	fmt.Println("NPM API token acquired successfully")
+	log.Println("NPM API token acquired successfully")
 }
 
 // getNPMToken requests a token from NPM API

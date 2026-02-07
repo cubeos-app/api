@@ -134,11 +134,14 @@
 package main
 
 import (
+	"context"
 	"fmt"
 	"log"
 	"net/http"
 	"os"
+	"os/signal"
 	"strings"
+	"syscall"
 	"time"
 
 	"github.com/go-chi/chi/v5"
@@ -212,7 +215,7 @@ func main() {
 	// HAL runs on host network at port 6005, accessible from container via host IP
 	halURL := os.Getenv("HAL_URL")
 	if halURL == "" {
-		halURL = "http://10.42.24.1:6005"
+		halURL = hal.DefaultHALURL
 	}
 	halClient := hal.NewClient(halURL)
 	log.Printf("HAL client initialized (endpoint: %s)", halURL)
@@ -645,15 +648,39 @@ func main() {
 	// Legacy /api routes removed — all endpoints are under /api/v1.
 	// Dashboard and clients should use /api/v1/{resource} exclusively.
 
-	// Start server
+	// Start server with graceful shutdown
 	addr := fmt.Sprintf("%s:%d", cfg.Host, cfg.Port)
-	log.Printf("API listening on %s", addr)
-	log.Printf("Swagger UI: http://%s/api/v1/docs/index.html", addr)
-	log.Printf("HAL endpoints: /hardware, /hal/storage, /communication, /media, /hal/logs")
-
-	if err := http.ListenAndServe(addr, r); err != nil {
-		log.Fatalf("Server failed: %v", err)
+	srv := &http.Server{
+		Addr:              addr,
+		Handler:           r,
+		ReadHeaderTimeout: 10 * time.Second,
 	}
+
+	// Channel to listen for shutdown signals
+	quit := make(chan os.Signal, 1)
+	signal.Notify(quit, syscall.SIGINT, syscall.SIGTERM)
+
+	go func() {
+		log.Printf("API listening on %s", addr)
+		log.Printf("Swagger UI: http://%s/api/v1/docs/index.html", addr)
+		log.Printf("HAL endpoints: /hardware, /hal/storage, /communication, /media, /hal/logs")
+		if err := srv.ListenAndServe(); err != nil && err != http.ErrServerClosed {
+			log.Fatalf("Server failed: %v", err)
+		}
+	}()
+
+	// Block until signal received
+	sig := <-quit
+	log.Printf("Received signal %s, shutting down gracefully...", sig)
+
+	// Give active connections 15 seconds to finish
+	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
+	defer cancel()
+
+	if err := srv.Shutdown(ctx); err != nil {
+		log.Fatalf("Server forced to shutdown: %v", err)
+	}
+	log.Println("Server stopped")
 }
 
 // unavailableHandler returns a chi router that responds with 503 for all routes.

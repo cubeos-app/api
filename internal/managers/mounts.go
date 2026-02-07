@@ -93,6 +93,9 @@ func (m *MountsManager) ListMounts(ctx context.Context) ([]Mount, error) {
 		mount.IsMounted = m.checkMountStatus(mount.LocalPath)
 		mounts = append(mounts, mount)
 	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("failed to iterate mounts: %w", err)
+	}
 
 	return mounts, nil
 }
