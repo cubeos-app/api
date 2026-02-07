@@ -18,6 +18,14 @@ type AppStoreHandler struct {
 	npmManager *managers.NPMManager
 }
 
+// writeJSONError writes a safe JSON error response, preventing JSON injection
+// from untrusted error message content.
+func writeJSONError(w http.ResponseWriter, msg string, status int) {
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(status)
+	json.NewEncoder(w).Encode(map[string]string{"error": msg})
+}
+
 // NewAppStoreHandler creates a new app store handler
 func NewAppStoreHandler(manager *managers.AppStoreManager, npmManager *managers.NPMManager) *AppStoreHandler {
 	return &AppStoreHandler{manager: manager, npmManager: npmManager}
@@ -124,7 +132,7 @@ func (h *AppStoreHandler) RegisterStore(w http.ResponseWriter, r *http.Request) 
 
 	store, err := h.manager.RegisterStore(req.URL, req.Name, req.Description)
 	if err != nil {
-		http.Error(w, `{"error":"`+err.Error()+`"}`, http.StatusInternalServerError)
+		writeJSONError(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
 
@@ -167,7 +175,7 @@ func (h *AppStoreHandler) GetStore(w http.ResponseWriter, r *http.Request) {
 func (h *AppStoreHandler) RemoveStore(w http.ResponseWriter, r *http.Request) {
 	storeID := chi.URLParam(r, "storeID")
 	if err := h.manager.RemoveStore(storeID); err != nil {
-		http.Error(w, `{"error":"`+err.Error()+`"}`, http.StatusInternalServerError)
+		writeJSONError(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
 	w.WriteHeader(http.StatusNoContent)
@@ -186,7 +194,7 @@ func (h *AppStoreHandler) RemoveStore(w http.ResponseWriter, r *http.Request) {
 func (h *AppStoreHandler) SyncStore(w http.ResponseWriter, r *http.Request) {
 	storeID := chi.URLParam(r, "storeID")
 	if err := h.manager.SyncStore(storeID); err != nil {
-		http.Error(w, `{"error":"`+err.Error()+`"}`, http.StatusInternalServerError)
+		writeJSONError(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
 
@@ -209,7 +217,7 @@ func (h *AppStoreHandler) SyncStore(w http.ResponseWriter, r *http.Request) {
 // @Router /appstore/stores/sync [post]
 func (h *AppStoreHandler) SyncAllStores(w http.ResponseWriter, r *http.Request) {
 	if err := h.manager.SyncAllStores(); err != nil {
-		http.Error(w, `{"error":"`+err.Error()+`"}`, http.StatusInternalServerError)
+		writeJSONError(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
 
@@ -452,7 +460,7 @@ func (h *AppStoreHandler) InstallApp(w http.ResponseWriter, r *http.Request) {
 
 	app, err := h.manager.InstallApp(&req)
 	if err != nil {
-		http.Error(w, `{"error":"`+err.Error()+`"}`, http.StatusInternalServerError)
+		writeJSONError(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
 
@@ -495,7 +503,7 @@ func (h *AppStoreHandler) RemoveApp(w http.ResponseWriter, r *http.Request) {
 	deleteData := r.URL.Query().Get("delete_data") == "true"
 
 	if err := h.manager.RemoveApp(appID, deleteData); err != nil {
-		http.Error(w, `{"error":"`+err.Error()+`"}`, http.StatusInternalServerError)
+		writeJSONError(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
 
@@ -515,7 +523,7 @@ func (h *AppStoreHandler) RemoveApp(w http.ResponseWriter, r *http.Request) {
 func (h *AppStoreHandler) StartApp(w http.ResponseWriter, r *http.Request) {
 	appID := chi.URLParam(r, "appID")
 	if err := h.manager.StartApp(appID); err != nil {
-		http.Error(w, `{"error":"`+err.Error()+`"}`, http.StatusInternalServerError)
+		writeJSONError(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
 	json.NewEncoder(w).Encode(map[string]interface{}{"success": true})
@@ -534,7 +542,7 @@ func (h *AppStoreHandler) StartApp(w http.ResponseWriter, r *http.Request) {
 func (h *AppStoreHandler) StopApp(w http.ResponseWriter, r *http.Request) {
 	appID := chi.URLParam(r, "appID")
 	if err := h.manager.StopApp(appID); err != nil {
-		http.Error(w, `{"error":"`+err.Error()+`"}`, http.StatusInternalServerError)
+		writeJSONError(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
 	json.NewEncoder(w).Encode(map[string]interface{}{"success": true})
@@ -553,7 +561,7 @@ func (h *AppStoreHandler) StopApp(w http.ResponseWriter, r *http.Request) {
 func (h *AppStoreHandler) RestartApp(w http.ResponseWriter, r *http.Request) {
 	appID := chi.URLParam(r, "appID")
 	if err := h.manager.RestartApp(appID); err != nil {
-		http.Error(w, `{"error":"`+err.Error()+`"}`, http.StatusInternalServerError)
+		writeJSONError(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
 	json.NewEncoder(w).Encode(map[string]interface{}{"success": true})
@@ -597,7 +605,7 @@ func (h *AppStoreHandler) AppAction(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if err != nil {
-		http.Error(w, `{"error":"`+err.Error()+`"}`, http.StatusInternalServerError)
+		writeJSONError(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
 
@@ -623,7 +631,7 @@ func (h *AppStoreHandler) GetAppConfig(w http.ResponseWriter, r *http.Request) {
 
 	config, err := h.manager.GetAppConfig(appID, false)
 	if err != nil {
-		http.Error(w, `{"error":"`+err.Error()+`"}`, http.StatusNotFound)
+		writeJSONError(w, err.Error(), http.StatusNotFound)
 		return
 	}
 
@@ -657,7 +665,7 @@ func (h *AppStoreHandler) UpdateAppConfig(w http.ResponseWriter, r *http.Request
 	}
 
 	if err := h.manager.UpdateAppConfig(appID, false, req.ComposeYAML, req.EnvContent); err != nil {
-		http.Error(w, `{"error":"`+err.Error()+`"}`, http.StatusInternalServerError)
+		writeJSONError(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
 
@@ -681,7 +689,7 @@ func (h *AppStoreHandler) ApplyAppConfig(w http.ResponseWriter, r *http.Request)
 	appID := chi.URLParam(r, "appID")
 
 	if err := h.manager.RestartAppWithConfig(appID, false); err != nil {
-		http.Error(w, `{"error":"`+err.Error()+`"}`, http.StatusInternalServerError)
+		writeJSONError(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
 
@@ -706,7 +714,7 @@ func (h *AppStoreHandler) GetConfigBackups(w http.ResponseWriter, r *http.Reques
 
 	backups, err := h.manager.GetConfigBackups(appID, false)
 	if err != nil {
-		http.Error(w, `{"error":"`+err.Error()+`"}`, http.StatusInternalServerError)
+		writeJSONError(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
 
@@ -731,7 +739,7 @@ func (h *AppStoreHandler) RestoreConfigBackup(w http.ResponseWriter, r *http.Req
 	backup := chi.URLParam(r, "backup")
 
 	if err := h.manager.RestoreConfigBackup(appID, false, backup); err != nil {
-		http.Error(w, `{"error":"`+err.Error()+`"}`, http.StatusInternalServerError)
+		writeJSONError(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
 
@@ -757,7 +765,7 @@ func (h *AppStoreHandler) RestoreConfigBackup(w http.ResponseWriter, r *http.Req
 func (h *AppStoreHandler) ListCoreApps(w http.ResponseWriter, r *http.Request) {
 	apps, err := h.manager.ListCoreApps()
 	if err != nil {
-		http.Error(w, `{"error":"`+err.Error()+`"}`, http.StatusInternalServerError)
+		writeJSONError(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
 
@@ -782,7 +790,7 @@ func (h *AppStoreHandler) GetCoreAppConfig(w http.ResponseWriter, r *http.Reques
 
 	config, err := h.manager.GetAppConfig(appID, true)
 	if err != nil {
-		http.Error(w, `{"error":"`+err.Error()+`"}`, http.StatusNotFound)
+		writeJSONError(w, err.Error(), http.StatusNotFound)
 		return
 	}
 
@@ -825,7 +833,7 @@ func (h *AppStoreHandler) UpdateCoreAppConfig(w http.ResponseWriter, r *http.Req
 	}
 
 	if err := h.manager.UpdateAppConfig(appID, true, req.ComposeYAML, req.EnvContent); err != nil {
-		http.Error(w, `{"error":"`+err.Error()+`"}`, http.StatusInternalServerError)
+		writeJSONError(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
 
@@ -856,18 +864,22 @@ func (h *AppStoreHandler) ApplyCoreAppConfig(w http.ResponseWriter, r *http.Requ
 		ConfirmDangerous bool `json:"confirm_dangerous"`
 	}
 
-	if err := json.NewDecoder(r.Body).Decode(&req); err == nil {
-		if !req.ConfirmDangerous {
-			http.Error(w, `{"error":"You must set confirm_dangerous=true to restart a core app"}`, http.StatusBadRequest)
-			return
-		}
-	}
-
-	if err := h.manager.RestartAppWithConfig(appID, true); err != nil {
-		http.Error(w, `{"error":"`+err.Error()+`"}`, http.StatusInternalServerError)
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		writeJSONError(w, "invalid request body", http.StatusBadRequest)
 		return
 	}
 
+	if !req.ConfirmDangerous {
+		writeJSONError(w, "You must set confirm_dangerous=true to restart a core app", http.StatusBadRequest)
+		return
+	}
+
+	if err := h.manager.RestartAppWithConfig(appID, true); err != nil {
+		writeJSONError(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+
+	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(map[string]interface{}{
 		"success": true,
 		"message": "Core app restarted with new configuration",
@@ -889,7 +901,7 @@ func (h *AppStoreHandler) GetCoreConfigBackups(w http.ResponseWriter, r *http.Re
 
 	backups, err := h.manager.GetConfigBackups(appID, true)
 	if err != nil {
-		http.Error(w, `{"error":"`+err.Error()+`"}`, http.StatusInternalServerError)
+		writeJSONError(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
 
@@ -914,7 +926,7 @@ func (h *AppStoreHandler) RestoreCoreConfigBackup(w http.ResponseWriter, r *http
 	backup := chi.URLParam(r, "backup")
 
 	if err := h.manager.RestoreConfigBackup(appID, true, backup); err != nil {
-		http.Error(w, `{"error":"`+err.Error()+`"}`, http.StatusInternalServerError)
+		writeJSONError(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
 

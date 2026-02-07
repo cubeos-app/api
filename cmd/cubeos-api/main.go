@@ -234,7 +234,12 @@ func main() {
 
 	// Create App Store manager
 	dbMgr := managers.NewDatabaseManager(db.DB)
-	appStoreMgr := managers.NewAppStoreManager(cfg, dbMgr, cfg.DataDir)
+
+	// Create PiholeManager early so it can be used by AppStoreManager
+	piholeMgr := managers.NewPiholeManager(cfg, "/cubeos")
+	log.Printf("PiholeManager initialized")
+
+	appStoreMgr := managers.NewAppStoreManager(cfg, dbMgr, cfg.DataDir, piholeMgr)
 
 	// Create Orchestrator for unified app management (Sprint 3)
 	orchestrator, err := managers.NewOrchestrator(managers.OrchestratorConfig{
@@ -314,9 +319,7 @@ func main() {
 	// Create Ports, FQDNs, and Registry handlers (Sprint 4)
 	portsHandler := handlers.NewPortsHandler(portMgr)
 
-	// Create PiholeManager for FQDN DNS management
-	piholeMgr := managers.NewPiholeManager(cfg, "/cubeos")
-	log.Printf("PiholeManager initialized")
+	// PiholeManager already created earlier (used by AppStoreManager)
 
 	fqdnsHandler := handlers.NewFQDNsHandler(db.DB, npmMgr, piholeMgr)
 	registryURL := os.Getenv("REGISTRY_URL")

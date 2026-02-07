@@ -29,6 +29,7 @@ import (
 // AppStoreManager handles app store and installed app operations
 type AppStoreManager struct {
 	db           *DatabaseManager
+	pihole       *PiholeManager
 	dataPath     string
 	cachePath    string
 	appsPath     string // /cubeos/apps - user apps, freely removable
@@ -45,7 +46,7 @@ type AppStoreManager struct {
 }
 
 // NewAppStoreManager creates a new app store manager with centralized config
-func NewAppStoreManager(cfg *config.Config, db *DatabaseManager, dataPath string) *AppStoreManager {
+func NewAppStoreManager(cfg *config.Config, db *DatabaseManager, dataPath string, pihole *PiholeManager) *AppStoreManager {
 	// Directory structure:
 	// /cubeos/coreapps/ - NPM, Pi-hole, dashboard (system critical)
 	// /cubeos/apps/{app}/appconfig/ - docker-compose.yml, .env
@@ -60,6 +61,7 @@ func NewAppStoreManager(cfg *config.Config, db *DatabaseManager, dataPath string
 
 	m := &AppStoreManager{
 		db:           db,
+		pihole:       pihole,
 		dataPath:     dataPath,
 		cachePath:    cachePath,
 		appsPath:     appsPath,
@@ -92,6 +94,8 @@ func (m *AppStoreManager) initDB() {
 	migrations := []string{
 		// Migration: Add npm_proxy_id if table already exists without it
 		`ALTER TABLE installed_apps ADD COLUMN npm_proxy_id INTEGER DEFAULT 0`,
+		// Migration: Add deploy_mode to track stack vs compose deployment
+		`ALTER TABLE installed_apps ADD COLUMN deploy_mode TEXT DEFAULT 'compose'`,
 	}
 
 	for _, q := range migrations {
@@ -599,7 +603,8 @@ func (m *AppStoreManager) GetScreenshotPath(storeID, appName string, index int) 
 	return filepath.Join(appsDir, appName, fmt.Sprintf("screenshot-%d.png", index))
 }
 
-// InstallApp installs an app from the store
+// InstallApp installs an app from the store using Docker Swarm stack deploy.
+// It also creates an NPM proxy host and Pi-hole DNS entry for FQDN access.
 func (m *AppStoreManager) InstallApp(req *models.AppInstallRequest) (*models.InstalledApp, error) {
 	storeApp := m.GetApp(req.StoreID, req.AppName)
 	if storeApp == nil {
@@ -626,6 +631,9 @@ func (m *AppStoreManager) InstallApp(req *models.AppInstallRequest) (*models.Ins
 	os.MkdirAll(appConfig, 0755)
 	os.MkdirAll(appData, 0755)
 
+	// Allocate a port in the user app range (6100-6999)
+	allocatedPort := m.findAvailablePort(6100)
+
 	// Process manifest with variable substitution
 	processedManifest := m.processManifest(string(manifestData), req.AppName, appData, req)
 
@@ -635,22 +643,26 @@ func (m *AppStoreManager) InstallApp(req *models.AppInstallRequest) (*models.Ins
 		return nil, fmt.Errorf("failed to write compose file: %w", err)
 	}
 
-	// Pull images
-	pullCmd := exec.Command("docker", "compose", "-f", composePath, "pull")
-	pullCmd.Dir = appConfig
-	if output, err := pullCmd.CombinedOutput(); err != nil {
-		return nil, fmt.Errorf("docker pull failed: %s", string(output))
+	// Deploy as Swarm stack instead of docker compose
+	// --resolve-image=never is critical for ARM64 compatibility
+	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Minute)
+	defer cancel()
+
+	deployCmd := exec.CommandContext(ctx, "docker", "stack", "deploy",
+		"-c", composePath,
+		"--resolve-image=never",
+		req.AppName,
+	)
+	deployCmd.Dir = appConfig
+	if output, err := deployCmd.CombinedOutput(); err != nil {
+		// Cleanup on failure
+		os.RemoveAll(appBase)
+		return nil, fmt.Errorf("stack deploy failed: %s", string(output))
 	}
 
-	// Start containers
-	upCmd := exec.Command("docker", "compose", "-f", composePath, "up", "-d")
-	upCmd.Dir = appConfig
-	if output, err := upCmd.CombinedOutput(); err != nil {
-		return nil, fmt.Errorf("docker compose up failed: %s", string(output))
-	}
-
-	// Build WebUI URL
+	// Build WebUI URL using configured gateway IP (not hardcoded)
 	webUI := ""
+	appPort := 0
 	if storeApp.PortMap != "" {
 		scheme := storeApp.Scheme
 		if scheme == "" {
@@ -660,7 +672,29 @@ func (m *AppStoreManager) InstallApp(req *models.AppInstallRequest) (*models.Ins
 		if index == "" {
 			index = "/"
 		}
-		webUI = fmt.Sprintf("%s://192.168.42.1:%s%s", scheme, storeApp.PortMap, index)
+		webUI = fmt.Sprintf("%s://%s:%s%s", scheme, m.gatewayIP, storeApp.PortMap, index)
+		fmt.Sscanf(storeApp.PortMap, "%d", &appPort)
+	}
+	if appPort == 0 {
+		appPort = allocatedPort
+	}
+
+	// Build FQDN for this app
+	appFQDN := fmt.Sprintf("%s.%s", req.AppName, m.baseDomain)
+
+	// Create NPM proxy host for FQDN access (non-fatal)
+	var npmProxyID int
+	if proxyID, err := m.addNPMProxyHost(req.AppName, appFQDN, appPort, "http", true); err != nil {
+		fmt.Printf("Warning: Failed to create NPM proxy for %s: %v\n", appFQDN, err)
+	} else {
+		npmProxyID = proxyID
+	}
+
+	// Create Pi-hole DNS entry for FQDN (non-fatal)
+	if m.pihole != nil {
+		if err := m.pihole.AddEntry(appFQDN, m.gatewayIP); err != nil {
+			fmt.Printf("Warning: Failed to add DNS entry for %s: %v\n", appFQDN, err)
+		}
 	}
 
 	// Get title
@@ -670,6 +704,11 @@ func (m *AppStoreManager) InstallApp(req *models.AppInstallRequest) (*models.Ins
 		if title == "" {
 			title = storeApp.Name
 		}
+	}
+
+	// If we have a FQDN, prefer it as the WebUI URL
+	if appFQDN != "" && webUI != "" {
+		webUI = fmt.Sprintf("http://%s", appFQDN)
 	}
 
 	// Create installed app record
@@ -691,14 +730,15 @@ func (m *AppStoreManager) InstallApp(req *models.AppInstallRequest) (*models.Ins
 		UpdatedAt:   time.Now(),
 	}
 
-	// Save to database
+	// Save to database (with deploy_mode = 'stack' for new Swarm installs)
 	_, err = m.db.db.Exec(`INSERT INTO installed_apps 
-		(id, store_id, store_app_id, name, title, description, icon, category, version, status, webui, compose_file, data_path, installed_at, updated_at)
-		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+		(id, store_id, store_app_id, name, title, description, icon, category, version, status, webui, compose_file, data_path, installed_at, updated_at, npm_proxy_id, deploy_mode)
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
 		installed.ID, installed.StoreID, installed.StoreAppID, installed.Name, installed.Title,
 		installed.Description, installed.Icon, installed.Category, installed.Version,
 		installed.Status, installed.WebUI, installed.ComposeFile, installed.DataPath,
-		installed.InstalledAt.Format(time.RFC3339), installed.UpdatedAt.Format(time.RFC3339))
+		installed.InstalledAt.Format(time.RFC3339), installed.UpdatedAt.Format(time.RFC3339),
+		npmProxyID, "stack")
 	if err != nil {
 		return nil, fmt.Errorf("failed to save app record: %w", err)
 	}
@@ -756,7 +796,12 @@ func (m *AppStoreManager) processManifest(manifest, appID, dataDir string, req *
 }
 
 func (m *AppStoreManager) findAvailablePort(start int) int {
-	for port := start; port < start+1000; port++ {
+	// User apps should be in range 6100-6999
+	end := 6999
+	if start < 6100 {
+		start = 6100
+	}
+	for port := start; port <= end; port++ {
 		ln, err := net.Listen("tcp", fmt.Sprintf(":%d", port))
 		if err == nil {
 			ln.Close()
@@ -801,6 +846,40 @@ func (m *AppStoreManager) refreshAppStatus(app *models.InstalledApp) {
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
 
+	deployMode := m.getDeployMode(app.ID)
+
+	if deployMode == "stack" {
+		// Swarm stack: check services via docker stack ps
+		cmd := exec.CommandContext(ctx, "docker", "stack", "ps", app.ID, "--format", "{{.CurrentState}}", "--no-trunc")
+		output, err := cmd.Output()
+		if err != nil {
+			app.Status = "stopped"
+			return
+		}
+
+		lines := strings.Split(strings.TrimSpace(string(output)), "\n")
+		if len(lines) == 0 || lines[0] == "" {
+			app.Status = "stopped"
+			return
+		}
+
+		running := false
+		for _, line := range lines {
+			if strings.HasPrefix(strings.ToLower(line), "running") {
+				running = true
+				break
+			}
+		}
+
+		if running {
+			app.Status = "running"
+		} else {
+			app.Status = "stopped"
+		}
+		return
+	}
+
+	// Legacy compose mode
 	cmd := exec.CommandContext(ctx, "docker", "compose", "-f", app.ComposeFile, "ps", "--format", "json")
 	output, err := cmd.Output()
 	if err != nil {
@@ -864,6 +943,16 @@ func getString(m map[string]interface{}, key string) string {
 	return ""
 }
 
+// getDeployMode returns the deploy mode for an installed app
+func (m *AppStoreManager) getDeployMode(appID string) string {
+	var mode string
+	err := m.db.db.QueryRow(`SELECT COALESCE(deploy_mode, 'compose') FROM installed_apps WHERE id = ?`, appID).Scan(&mode)
+	if err != nil {
+		return "compose" // default to compose for legacy apps
+	}
+	return mode
+}
+
 // StartApp starts an installed app
 func (m *AppStoreManager) StartApp(appID string) error {
 	app := m.GetInstalledApp(appID)
@@ -871,9 +960,25 @@ func (m *AppStoreManager) StartApp(appID string) error {
 		return fmt.Errorf("app not found: %s", appID)
 	}
 
-	cmd := exec.Command("docker", "compose", "-f", app.ComposeFile, "start")
-	if output, err := cmd.CombinedOutput(); err != nil {
-		return fmt.Errorf("start failed: %s", string(output))
+	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Minute)
+	defer cancel()
+
+	if m.getDeployMode(appID) == "stack" {
+		// Swarm stack: redeploy
+		cmd := exec.CommandContext(ctx, "docker", "stack", "deploy",
+			"-c", app.ComposeFile,
+			"--resolve-image=never",
+			appID,
+		)
+		if output, err := cmd.CombinedOutput(); err != nil {
+			return fmt.Errorf("stack deploy failed: %s", string(output))
+		}
+	} else {
+		// Legacy compose mode
+		cmd := exec.CommandContext(ctx, "docker", "compose", "-f", app.ComposeFile, "start")
+		if output, err := cmd.CombinedOutput(); err != nil {
+			return fmt.Errorf("start failed: %s", string(output))
+		}
 	}
 
 	app.Status = "running"
@@ -888,9 +993,21 @@ func (m *AppStoreManager) StopApp(appID string) error {
 		return fmt.Errorf("app not found: %s", appID)
 	}
 
-	cmd := exec.Command("docker", "compose", "-f", app.ComposeFile, "stop")
-	if output, err := cmd.CombinedOutput(); err != nil {
-		return fmt.Errorf("stop failed: %s", string(output))
+	ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
+	defer cancel()
+
+	if m.getDeployMode(appID) == "stack" {
+		// Swarm stack: remove the stack (preserves data, can redeploy to start)
+		cmd := exec.CommandContext(ctx, "docker", "stack", "rm", appID)
+		if output, err := cmd.CombinedOutput(); err != nil {
+			return fmt.Errorf("stack rm failed: %s", string(output))
+		}
+	} else {
+		// Legacy compose mode
+		cmd := exec.CommandContext(ctx, "docker", "compose", "-f", app.ComposeFile, "stop")
+		if output, err := cmd.CombinedOutput(); err != nil {
+			return fmt.Errorf("stop failed: %s", string(output))
+		}
 	}
 
 	app.Status = "stopped"
@@ -905,9 +1022,25 @@ func (m *AppStoreManager) RestartApp(appID string) error {
 		return fmt.Errorf("app not found: %s", appID)
 	}
 
-	cmd := exec.Command("docker", "compose", "-f", app.ComposeFile, "restart")
-	if output, err := cmd.CombinedOutput(); err != nil {
-		return fmt.Errorf("restart failed: %s", string(output))
+	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Minute)
+	defer cancel()
+
+	if m.getDeployMode(appID) == "stack" {
+		// Swarm stack: force update redeploys all services
+		cmd := exec.CommandContext(ctx, "docker", "stack", "deploy",
+			"-c", app.ComposeFile,
+			"--resolve-image=never",
+			appID,
+		)
+		if output, err := cmd.CombinedOutput(); err != nil {
+			return fmt.Errorf("stack redeploy failed: %s", string(output))
+		}
+	} else {
+		// Legacy compose mode
+		cmd := exec.CommandContext(ctx, "docker", "compose", "-f", app.ComposeFile, "restart")
+		if output, err := cmd.CombinedOutput(); err != nil {
+			return fmt.Errorf("restart failed: %s", string(output))
+		}
 	}
 
 	app.Status = "running"
@@ -931,13 +1064,25 @@ func (m *AppStoreManager) RemoveApp(appID string, deleteData bool) error {
 		}
 	}
 
-	// Remove DNS entry
+	// Remove DNS entry via PiholeManager
 	appFQDN := fmt.Sprintf("%s.%s", appID, m.baseDomain)
-	m.removePiholeDNS(appFQDN)
+	if err := m.removePiholeDNS(appFQDN); err != nil {
+		fmt.Printf("Warning: Failed to remove DNS entry for %s: %v\n", appFQDN, err)
+	}
+
+	ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
+	defer cancel()
 
 	// Stop and remove containers
-	cmd := exec.Command("docker", "compose", "-f", app.ComposeFile, "down", "--rmi", "all", "-v")
-	cmd.CombinedOutput() // Ignore errors
+	if m.getDeployMode(appID) == "stack" {
+		// Swarm stack: remove the stack
+		cmd := exec.CommandContext(ctx, "docker", "stack", "rm", appID)
+		cmd.CombinedOutput() // Best-effort
+	} else {
+		// Legacy compose mode
+		cmd := exec.CommandContext(ctx, "docker", "compose", "-f", app.ComposeFile, "down", "--rmi", "all", "-v")
+		cmd.CombinedOutput() // Best-effort
+	}
 
 	// Get base app directory (parent of appconfig)
 	appConfigDir := filepath.Dir(app.ComposeFile)
@@ -1088,19 +1233,19 @@ func (m *AppStoreManager) getNPMToken(creds NPMCredentials) (string, error) {
 	return tokenResp.Token, nil
 }
 
-// addNPMProxyHost creates a proxy host in NPM for an app
-func (m *AppStoreManager) addNPMProxyHost(appName, fqdn string, port int, scheme string, websocket bool) error {
+// addNPMProxyHost creates a proxy host in NPM for an app and returns the proxy host ID
+func (m *AppStoreManager) addNPMProxyHost(appName, fqdn string, port int, scheme string, websocket bool) (int, error) {
 	m.mu.RLock()
 	token := m.npmToken
 	m.mu.RUnlock()
 
 	if token == "" {
-		return fmt.Errorf("NPM API token not available")
+		return 0, fmt.Errorf("NPM API token not available")
 	}
 
 	proxyHost := NPMProxyHost{
 		DomainNames:           []string{fqdn},
-		ForwardHost:           "127.0.0.1",
+		ForwardHost:           m.gatewayIP,
 		ForwardPort:           port,
 		ForwardScheme:         scheme,
 		SSLForced:             false, // User can enable later
@@ -1116,7 +1261,7 @@ func (m *AppStoreManager) addNPMProxyHost(appName, fqdn string, port int, scheme
 
 	req, err := http.NewRequest("POST", m.npmAPIURL+"/nginx/proxy-hosts", strings.NewReader(string(jsonData)))
 	if err != nil {
-		return err
+		return 0, err
 	}
 
 	req.Header.Set("Authorization", "Bearer "+token)
@@ -1125,23 +1270,22 @@ func (m *AppStoreManager) addNPMProxyHost(appName, fqdn string, port int, scheme
 	client := &http.Client{Timeout: 30 * time.Second}
 	resp, err := client.Do(req)
 	if err != nil {
-		return err
+		return 0, err
 	}
 	defer resp.Body.Close()
 
 	if resp.StatusCode != http.StatusOK && resp.StatusCode != http.StatusCreated {
 		body, _ := io.ReadAll(resp.Body)
-		return fmt.Errorf("NPM API error %d: %s", resp.StatusCode, string(body))
+		return 0, fmt.Errorf("NPM API error %d: %s", resp.StatusCode, string(body))
 	}
 
-	// Store the proxy host ID for later removal
+	// Parse the response to get the proxy host ID
 	var result NPMProxyHost
-	if err := json.NewDecoder(resp.Body).Decode(&result); err == nil {
-		// Save proxy host ID to database
-		m.db.db.Exec(`UPDATE installed_apps SET npm_proxy_id = ? WHERE id = ?`, result.ID, appName)
+	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
+		return 0, fmt.Errorf("failed to parse NPM response: %w", err)
 	}
 
-	return nil
+	return result.ID, nil
 }
 
 // removeNPMProxyHost removes a proxy host from NPM
@@ -1334,26 +1478,52 @@ func (m *AppStoreManager) UpdateAppConfig(appID string, isCoreApp bool, composeY
 
 // RestartAppWithConfig restarts an app after config change
 func (m *AppStoreManager) RestartAppWithConfig(appID string, isCoreApp bool) error {
-	var appPath string
+	var appPath, configPath string
 	if isCoreApp {
+		// Core apps: /cubeos/coreapps/{app}/docker-compose.yml (flat)
 		appPath = filepath.Join(m.coreAppsPath, appID)
+		configPath = appPath
 	} else {
+		// User apps: /cubeos/apps/{app}/appconfig/docker-compose.yml (nested)
 		appPath = filepath.Join(m.appsPath, appID)
+		configPath = filepath.Join(appPath, "appconfig")
+		// Fallback to flat structure for legacy apps
+		if _, err := os.Stat(filepath.Join(configPath, "docker-compose.yml")); os.IsNotExist(err) {
+			configPath = appPath
+		}
 	}
 
-	composePath := filepath.Join(appPath, "docker-compose.yml")
-	envPath := filepath.Join(appPath, ".env")
+	composePath := filepath.Join(configPath, "docker-compose.yml")
+	envPath := filepath.Join(configPath, ".env")
 
-	// Stop containers
-	stopCmd := exec.Command("docker", "compose", "-f", composePath, "--env-file", envPath, "down")
-	stopCmd.Dir = appPath
+	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Minute)
+	defer cancel()
+
+	// Check deploy mode for user apps
+	deployMode := m.getDeployMode(appID)
+	if !isCoreApp && deployMode == "stack" {
+		// Swarm stack: redeploy with updated config
+		cmd := exec.CommandContext(ctx, "docker", "stack", "deploy",
+			"-c", composePath,
+			"--resolve-image=never",
+			appID,
+		)
+		cmd.Dir = configPath
+		if output, err := cmd.CombinedOutput(); err != nil {
+			return fmt.Errorf("failed to redeploy stack: %s", string(output))
+		}
+		return nil
+	}
+
+	// Compose mode (core apps and legacy user apps)
+	stopCmd := exec.CommandContext(ctx, "docker", "compose", "-f", composePath, "--env-file", envPath, "down")
+	stopCmd.Dir = configPath
 	if output, err := stopCmd.CombinedOutput(); err != nil {
 		return fmt.Errorf("failed to stop: %s", string(output))
 	}
 
-	// Start containers
-	startCmd := exec.Command("docker", "compose", "-f", composePath, "--env-file", envPath, "up", "-d")
-	startCmd.Dir = appPath
+	startCmd := exec.CommandContext(ctx, "docker", "compose", "-f", composePath, "--env-file", envPath, "up", "-d")
+	startCmd.Dir = configPath
 	if output, err := startCmd.CombinedOutput(); err != nil {
 		return fmt.Errorf("failed to start: %s", string(output))
 	}
@@ -1386,14 +1556,19 @@ func (m *AppStoreManager) ListCoreApps() ([]AppConfig, error) {
 
 // GetConfigBackups returns available backups for an app
 func (m *AppStoreManager) GetConfigBackups(appID string, isCoreApp bool) ([]string, error) {
-	var appPath string
+	var configPath string
 	if isCoreApp {
-		appPath = filepath.Join(m.coreAppsPath, appID)
+		configPath = filepath.Join(m.coreAppsPath, appID)
 	} else {
-		appPath = filepath.Join(m.appsPath, appID)
+		// User apps store backups in appconfig/.backups
+		configPath = filepath.Join(m.appsPath, appID, "appconfig")
+		// Fallback to flat structure for legacy apps
+		if _, err := os.Stat(configPath); os.IsNotExist(err) {
+			configPath = filepath.Join(m.appsPath, appID)
+		}
 	}
 
-	backupDir := filepath.Join(appPath, ".backups")
+	backupDir := filepath.Join(configPath, ".backups")
 	entries, err := os.ReadDir(backupDir)
 	if err != nil {
 		return nil, nil // No backups yet
@@ -1411,36 +1586,44 @@ func (m *AppStoreManager) GetConfigBackups(appID string, isCoreApp bool) ([]stri
 
 // RestoreConfigBackup restores a config backup
 func (m *AppStoreManager) RestoreConfigBackup(appID string, isCoreApp bool, backupName string) error {
-	var appPath string
+	var configPath string
 	if isCoreApp {
-		appPath = filepath.Join(m.coreAppsPath, appID)
+		configPath = filepath.Join(m.coreAppsPath, appID)
 	} else {
-		appPath = filepath.Join(m.appsPath, appID)
+		// User apps store backups in appconfig/.backups, restore to appconfig/
+		configPath = filepath.Join(m.appsPath, appID, "appconfig")
+		// Fallback to flat structure for legacy apps
+		if _, err := os.Stat(configPath); os.IsNotExist(err) {
+			configPath = filepath.Join(m.appsPath, appID)
+		}
 	}
 
-	backupDir := filepath.Join(appPath, ".backups", backupName)
+	backupDir := filepath.Join(configPath, ".backups", backupName)
 	if _, err := os.Stat(backupDir); os.IsNotExist(err) {
 		return fmt.Errorf("backup not found: %s", backupName)
 	}
 
-	// Restore compose file
+	// Restore compose file to configPath (not appPath)
 	if data, err := os.ReadFile(filepath.Join(backupDir, "docker-compose.yml")); err == nil {
-		os.WriteFile(filepath.Join(appPath, "docker-compose.yml"), data, 0644)
+		if err := os.WriteFile(filepath.Join(configPath, "docker-compose.yml"), data, 0644); err != nil {
+			return fmt.Errorf("failed to restore docker-compose.yml: %w", err)
+		}
 	}
 
-	// Restore env file
+	// Restore env file to configPath
 	if data, err := os.ReadFile(filepath.Join(backupDir, ".env")); err == nil {
-		os.WriteFile(filepath.Join(appPath, ".env"), data, 0644)
+		if err := os.WriteFile(filepath.Join(configPath, ".env"), data, 0644); err != nil {
+			return fmt.Errorf("failed to restore .env: %w", err)
+		}
 	}
 
 	return nil
 }
 
-// removePiholeDNS removes DNS entry from Pi-hole
+// removePiholeDNS removes DNS entry from Pi-hole via PiholeManager
 func (m *AppStoreManager) removePiholeDNS(fqdn string) error {
-	// TODO: Implement Pi-hole API integration
-	// This will call Pi-hole API to remove local DNS record
-	// For now, this is a stub that logs the intention
-	fmt.Printf("Would remove Pi-hole DNS entry: %s\n", fqdn)
-	return nil
+	if m.pihole == nil {
+		return fmt.Errorf("PiholeManager not configured")
+	}
+	return m.pihole.RemoveEntry(fqdn)
 }
