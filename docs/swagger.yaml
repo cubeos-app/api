@@ -1465,6 +1465,16 @@ definitions:
     x-enum-varnames:
     - DeployModeStack
     - DeployModeCompose
+  cubeos-api_internal_models.ErrorResponse:
+    description: API error response
+    properties:
+      code:
+        type: integer
+      detail:
+        type: string
+      error:
+        type: string
+    type: object
   cubeos-api_internal_models.FQDN:
     properties:
       app_id:
@@ -2348,46 +2358,6 @@ definitions:
           $ref: '#/definitions/cubeos-api_internal_hal.AudioDevice'
         type: array
     type: object
-  internal_handlers.Backup:
-    properties:
-      apps:
-        items:
-          type: string
-        type: array
-      created_at:
-        type: string
-      description:
-        type: string
-      id:
-        type: string
-      name:
-        type: string
-      path:
-        type: string
-      size:
-        type: integer
-      size_human:
-        type: string
-      status:
-        description: completed, failed, in-progress
-        type: string
-      type:
-        description: full, incremental, config-only
-        type: string
-    type: object
-  internal_handlers.BackupStats:
-    properties:
-      last_backup:
-        type: string
-      oldest_backup:
-        type: string
-      total_backups:
-        type: integer
-      total_size:
-        type: integer
-      total_size_human:
-        type: string
-    type: object
   internal_handlers.BluetoothScanRequest:
     properties:
       duration:
@@ -2477,21 +2447,6 @@ definitions:
       older_than_days:
         description: Delete tags older than N days
         type: integer
-    type: object
-  internal_handlers.CreateBackupRequest:
-    properties:
-      apps:
-        description: specific apps to backup, empty = all
-        items:
-          type: string
-        type: array
-      description:
-        type: string
-      name:
-        type: string
-      type:
-        description: full, incremental, config-only
-        type: string
     type: object
   internal_handlers.CreateFQDNRequest:
     properties:
@@ -4398,24 +4353,18 @@ paths:
       - Auth
   /backups:
     get:
-      description: Returns a list of all available backups
-      parameters:
-      - description: Filter by backup type (full, incremental, config-only)
-        in: query
-        name: type
-        type: string
+      description: Returns a list of all available backups with total size
       produces:
       - application/json
       responses:
         "200":
-          description: backups array, count
+          description: Backup list
           schema:
-            additionalProperties: true
-            type: object
+            $ref: '#/definitions/cubeos-api_internal_models.BackupListResponse'
         "500":
           description: Failed to list backups
           schema:
-            $ref: '#/definitions/internal_handlers.ErrorResponse'
+            $ref: '#/definitions/cubeos-api_internal_models.ErrorResponse'
       security:
       - BearerAuth: []
       summary: List all backups
@@ -4429,24 +4378,19 @@ paths:
       - description: Backup configuration
         in: body
         name: request
-        required: true
         schema:
-          $ref: '#/definitions/internal_handlers.CreateBackupRequest'
+          $ref: '#/definitions/cubeos-api_internal_models.BackupCreateRequest'
       produces:
       - application/json
       responses:
-        "202":
-          description: Backup started
+        "200":
+          description: Backup created
           schema:
-            $ref: '#/definitions/internal_handlers.Backup'
-        "400":
-          description: Invalid request
-          schema:
-            $ref: '#/definitions/internal_handlers.ErrorResponse'
+            $ref: '#/definitions/cubeos-api_internal_models.SuccessResponse'
         "500":
           description: Failed to create backup
           schema:
-            $ref: '#/definitions/internal_handlers.ErrorResponse'
+            $ref: '#/definitions/cubeos-api_internal_models.ErrorResponse'
       security:
       - BearerAuth: []
       summary: Create a new backup
@@ -4454,7 +4398,7 @@ paths:
       - Backups
   /backups/{backup_id}:
     delete:
-      description: Permanently deletes a backup file
+      description: Permanently deletes a backup file and its metadata
       parameters:
       - description: Backup ID
         in: path
@@ -4465,18 +4409,13 @@ paths:
       - application/json
       responses:
         "200":
-          description: success, message
+          description: Backup deleted
           schema:
-            additionalProperties: true
-            type: object
+            $ref: '#/definitions/cubeos-api_internal_models.SuccessResponse'
         "404":
           description: Backup not found
           schema:
-            $ref: '#/definitions/internal_handlers.ErrorResponse'
-        "500":
-          description: Failed to delete backup
-          schema:
-            $ref: '#/definitions/internal_handlers.ErrorResponse'
+            $ref: '#/definitions/cubeos-api_internal_models.ErrorResponse'
       security:
       - BearerAuth: []
       summary: Delete a backup
@@ -4496,15 +4435,11 @@ paths:
         "200":
           description: Backup details
           schema:
-            $ref: '#/definitions/internal_handlers.Backup'
+            $ref: '#/definitions/cubeos-api_internal_models.BackupInfo'
         "404":
           description: Backup not found
           schema:
-            $ref: '#/definitions/internal_handlers.ErrorResponse'
-        "500":
-          description: Failed to get backup
-          schema:
-            $ref: '#/definitions/internal_handlers.ErrorResponse'
+            $ref: '#/definitions/cubeos-api_internal_models.ErrorResponse'
       security:
       - BearerAuth: []
       summary: Get backup details
@@ -4512,7 +4447,7 @@ paths:
       - Backups
   /backups/{backup_id}/download:
     get:
-      description: Downloads a backup file
+      description: Downloads a backup file as a gzip archive
       parameters:
       - description: Backup ID
         in: path
@@ -4520,7 +4455,7 @@ paths:
         required: true
         type: string
       produces:
-      - application/octet-stream
+      - application/gzip
       responses:
         "200":
           description: Backup file
@@ -4529,11 +4464,7 @@ paths:
         "404":
           description: Backup not found
           schema:
-            $ref: '#/definitions/internal_handlers.ErrorResponse'
-        "500":
-          description: Failed to download backup
-          schema:
-            $ref: '#/definitions/internal_handlers.ErrorResponse'
+            $ref: '#/definitions/cubeos-api_internal_models.ErrorResponse'
       security:
       - BearerAuth: []
       summary: Download a backup
@@ -4541,29 +4472,44 @@ paths:
       - Backups
   /backups/{backup_id}/restore:
     post:
-      description: Restores the system from a backup (requires reboot)
+      description: Restores the system from a backup. Requires confirm=true query
+        parameter.
       parameters:
       - description: Backup ID
         in: path
         name: backup_id
         required: true
         type: string
+      - description: Confirmation flag
+        example: true
+        in: query
+        name: confirm
+        required: true
+        type: boolean
+      - default: true
+        description: Restart services after restore
+        in: query
+        name: restart_services
+        type: boolean
       produces:
       - application/json
       responses:
-        "202":
-          description: status, message
+        "200":
+          description: Backup restored
           schema:
-            additionalProperties: true
-            type: object
+            $ref: '#/definitions/cubeos-api_internal_models.SuccessResponse'
+        "400":
+          description: Confirmation required
+          schema:
+            $ref: '#/definitions/cubeos-api_internal_models.ErrorResponse'
         "404":
           description: Backup not found
           schema:
-            $ref: '#/definitions/internal_handlers.ErrorResponse'
+            $ref: '#/definitions/cubeos-api_internal_models.ErrorResponse'
         "500":
           description: Failed to restore backup
           schema:
-            $ref: '#/definitions/internal_handlers.ErrorResponse'
+            $ref: '#/definitions/cubeos-api_internal_models.ErrorResponse'
       security:
       - BearerAuth: []
       summary: Restore from a backup
@@ -4571,18 +4517,29 @@ paths:
       - Backups
   /backups/quick:
     post:
-      description: Creates a quick backup with default settings (config-only, auto-named)
+      description: Creates a quick backup with default settings (config-only, compressed,
+        auto-named)
+      parameters:
+      - default: config
+        description: Backup type
+        in: query
+        name: backup_type
+        type: string
+      - description: Backup description
+        in: query
+        name: description
+        type: string
       produces:
       - application/json
       responses:
-        "202":
-          description: Backup started
+        "200":
+          description: Backup created
           schema:
-            $ref: '#/definitions/internal_handlers.Backup'
+            $ref: '#/definitions/cubeos-api_internal_models.SuccessResponse'
         "500":
           description: Failed to create backup
           schema:
-            $ref: '#/definitions/internal_handlers.ErrorResponse'
+            $ref: '#/definitions/cubeos-api_internal_models.ErrorResponse'
       security:
       - BearerAuth: []
       summary: Create a quick backup
@@ -4591,18 +4548,19 @@ paths:
   /backups/stats:
     get:
       description: Returns statistics about backups including total count, size, and
-        dates
+        breakdown by type
       produces:
       - application/json
       responses:
         "200":
           description: Backup statistics
           schema:
-            $ref: '#/definitions/internal_handlers.BackupStats'
+            additionalProperties: true
+            type: object
         "500":
           description: Failed to get backup stats
           schema:
-            $ref: '#/definitions/internal_handlers.ErrorResponse'
+            $ref: '#/definitions/cubeos-api_internal_models.ErrorResponse'
       security:
       - BearerAuth: []
       summary: Get backup statistics

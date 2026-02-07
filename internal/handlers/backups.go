@@ -3,23 +3,22 @@ package handlers
 import (
 	"encoding/json"
 	"net/http"
-	"time"
 
 	"github.com/go-chi/chi/v5"
+
+	"cubeos-api/internal/managers"
+	"cubeos-api/internal/models"
 )
 
 // BackupsHandler handles backup management endpoints
 type BackupsHandler struct {
-	backupDir string
+	backup *managers.BackupManager
 }
 
-// NewBackupsHandler creates a new backups handler
-func NewBackupsHandler(backupDir string) *BackupsHandler {
-	if backupDir == "" {
-		backupDir = "/cubeos/backups"
-	}
+// NewBackupsHandler creates a new backups handler wired to the BackupManager
+func NewBackupsHandler(backup *managers.BackupManager) *BackupsHandler {
 	return &BackupsHandler{
-		backupDir: backupDir,
+		backup: backup,
 	}
 }
 
@@ -39,53 +38,24 @@ func (h *BackupsHandler) Routes() chi.Router {
 	return r
 }
 
-// Backup represents a backup entry
-type Backup struct {
-	ID          string    `json:"id"`
-	Name        string    `json:"name"`
-	Description string    `json:"description,omitempty"`
-	Type        string    `json:"type"` // full, incremental, config-only
-	Size        int64     `json:"size"`
-	SizeHuman   string    `json:"size_human"`
-	Path        string    `json:"path"`
-	CreatedAt   time.Time `json:"created_at"`
-	Apps        []string  `json:"apps,omitempty"`
-	Status      string    `json:"status"` // completed, failed, in-progress
-}
-
-// BackupStats represents backup statistics
-type BackupStats struct {
-	TotalBackups   int    `json:"total_backups"`
-	TotalSize      int64  `json:"total_size"`
-	TotalSizeHuman string `json:"total_size_human"`
-	LastBackup     string `json:"last_backup,omitempty"`
-	OldestBackup   string `json:"oldest_backup,omitempty"`
-}
-
 // ListBackups godoc
 // @Summary List all backups
-// @Description Returns a list of all available backups
+// @Description Returns a list of all available backups with total size
 // @Tags Backups
 // @Produce json
 // @Security BearerAuth
-// @Param type query string false "Filter by backup type (full, incremental, config-only)"
-// @Success 200 {object} map[string]interface{} "backups array, count"
-// @Failure 500 {object} ErrorResponse "Failed to list backups"
+// @Success 200 {object} models.BackupListResponse "Backup list"
+// @Failure 500 {object} models.ErrorResponse "Failed to list backups"
 // @Router /backups [get]
 func (h *BackupsHandler) ListBackups(w http.ResponseWriter, r *http.Request) {
-	// TODO: Implement backup listing from backup directory
-	writeJSON(w, http.StatusOK, map[string]interface{}{
-		"backups": []Backup{},
-		"count":   0,
-	})
-}
+	backups := h.backup.ListBackups()
+	totalSize := h.backup.GetTotalSize()
 
-// CreateBackupRequest represents a backup creation request
-type CreateBackupRequest struct {
-	Name        string   `json:"name,omitempty"`
-	Description string   `json:"description,omitempty"`
-	Type        string   `json:"type,omitempty"` // full, incremental, config-only
-	Apps        []string `json:"apps,omitempty"` // specific apps to backup, empty = all
+	writeJSON(w, http.StatusOK, models.BackupListResponse{
+		Backups:        backups,
+		TotalCount:     len(backups),
+		TotalSizeBytes: totalSize,
+	})
 }
 
 // CreateBackup godoc
@@ -95,57 +65,71 @@ type CreateBackupRequest struct {
 // @Accept json
 // @Produce json
 // @Security BearerAuth
-// @Param request body CreateBackupRequest true "Backup configuration"
-// @Success 202 {object} Backup "Backup started"
-// @Failure 400 {object} ErrorResponse "Invalid request"
-// @Failure 500 {object} ErrorResponse "Failed to create backup"
+// @Param request body models.BackupCreateRequest false "Backup configuration"
+// @Success 200 {object} models.SuccessResponse "Backup created"
+// @Failure 500 {object} models.ErrorResponse "Failed to create backup"
 // @Router /backups [post]
 func (h *BackupsHandler) CreateBackup(w http.ResponseWriter, r *http.Request) {
-	var req CreateBackupRequest
+	var req models.BackupCreateRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		writeError(w, http.StatusBadRequest, "Invalid request body")
+		// Use defaults on decode failure
+		req.Type = "config"
+		req.Compress = true
+	}
+
+	if req.Type == "" {
+		req.Type = "config"
+	}
+
+	result, err := h.backup.CreateBackup(req.Type, req.Description, req.IncludeDockerVolumes, req.Compress)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, err.Error())
 		return
 	}
-
-	// Set defaults
-	if req.Type == "" {
-		req.Type = "full"
-	}
-
-	// TODO: Implement backup creation
-	writeError(w, http.StatusNotImplemented, "Backup creation not yet implemented")
+	writeJSON(w, http.StatusOK, result)
 }
 
 // GetBackupStats godoc
 // @Summary Get backup statistics
-// @Description Returns statistics about backups including total count, size, and dates
+// @Description Returns statistics about backups including total count, size, and breakdown by type
 // @Tags Backups
 // @Produce json
 // @Security BearerAuth
-// @Success 200 {object} BackupStats "Backup statistics"
-// @Failure 500 {object} ErrorResponse "Failed to get backup stats"
+// @Success 200 {object} map[string]interface{} "Backup statistics"
+// @Failure 500 {object} models.ErrorResponse "Failed to get backup stats"
 // @Router /backups/stats [get]
 func (h *BackupsHandler) GetBackupStats(w http.ResponseWriter, r *http.Request) {
-	// TODO: Calculate stats from backup directory
-	writeJSON(w, http.StatusOK, BackupStats{
-		TotalBackups:   0,
-		TotalSize:      0,
-		TotalSizeHuman: "0 B",
-	})
+	stats := h.backup.GetStats()
+	writeJSON(w, http.StatusOK, stats)
 }
 
 // QuickBackup godoc
 // @Summary Create a quick backup
-// @Description Creates a quick backup with default settings (config-only, auto-named)
+// @Description Creates a quick backup with default settings (config-only, compressed, auto-named)
 // @Tags Backups
 // @Produce json
 // @Security BearerAuth
-// @Success 202 {object} Backup "Backup started"
-// @Failure 500 {object} ErrorResponse "Failed to create backup"
+// @Param backup_type query string false "Backup type" default(config)
+// @Param description query string false "Backup description"
+// @Success 200 {object} models.SuccessResponse "Backup created"
+// @Failure 500 {object} models.ErrorResponse "Failed to create backup"
 // @Router /backups/quick [post]
 func (h *BackupsHandler) QuickBackup(w http.ResponseWriter, r *http.Request) {
-	// TODO: Implement quick backup
-	writeError(w, http.StatusNotImplemented, "Quick backup not yet implemented")
+	backupType := r.URL.Query().Get("backup_type")
+	if backupType == "" {
+		backupType = "config"
+	}
+	description := r.URL.Query().Get("description")
+	if description == "" {
+		description = "Quick " + backupType + " backup"
+	}
+
+	result, err := h.backup.CreateBackup(backupType, description, false, true)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+	writeJSON(w, http.StatusOK, result)
 }
 
 // GetBackup godoc
@@ -155,9 +139,8 @@ func (h *BackupsHandler) QuickBackup(w http.ResponseWriter, r *http.Request) {
 // @Produce json
 // @Security BearerAuth
 // @Param backup_id path string true "Backup ID"
-// @Success 200 {object} Backup "Backup details"
-// @Failure 404 {object} ErrorResponse "Backup not found"
-// @Failure 500 {object} ErrorResponse "Failed to get backup"
+// @Success 200 {object} models.BackupInfo "Backup details"
+// @Failure 404 {object} models.ErrorResponse "Backup not found"
 // @Router /backups/{backup_id} [get]
 func (h *BackupsHandler) GetBackup(w http.ResponseWriter, r *http.Request) {
 	backupID := chi.URLParam(r, "backup_id")
@@ -166,20 +149,23 @@ func (h *BackupsHandler) GetBackup(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// TODO: Look up backup
-	writeError(w, http.StatusNotFound, "Backup not found: "+backupID)
+	backup := h.backup.GetBackup(backupID)
+	if backup == nil {
+		writeError(w, http.StatusNotFound, "Backup not found")
+		return
+	}
+	writeJSON(w, http.StatusOK, backup)
 }
 
 // DeleteBackup godoc
 // @Summary Delete a backup
-// @Description Permanently deletes a backup file
+// @Description Permanently deletes a backup file and its metadata
 // @Tags Backups
 // @Produce json
 // @Security BearerAuth
 // @Param backup_id path string true "Backup ID"
-// @Success 200 {object} map[string]interface{} "success, message"
-// @Failure 404 {object} ErrorResponse "Backup not found"
-// @Failure 500 {object} ErrorResponse "Failed to delete backup"
+// @Success 200 {object} models.SuccessResponse "Backup deleted"
+// @Failure 404 {object} models.ErrorResponse "Backup not found"
 // @Router /backups/{backup_id} [delete]
 func (h *BackupsHandler) DeleteBackup(w http.ResponseWriter, r *http.Request) {
 	backupID := chi.URLParam(r, "backup_id")
@@ -188,20 +174,23 @@ func (h *BackupsHandler) DeleteBackup(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// TODO: Implement backup deletion
-	writeError(w, http.StatusNotImplemented, "Backup deletion not yet implemented")
+	result := h.backup.DeleteBackup(backupID)
+	if result.Status == "error" {
+		writeError(w, http.StatusNotFound, result.Message)
+		return
+	}
+	writeJSON(w, http.StatusOK, result)
 }
 
 // DownloadBackup godoc
 // @Summary Download a backup
-// @Description Downloads a backup file
+// @Description Downloads a backup file as a gzip archive
 // @Tags Backups
-// @Produce application/octet-stream
+// @Produce application/gzip
 // @Security BearerAuth
 // @Param backup_id path string true "Backup ID"
 // @Success 200 {file} binary "Backup file"
-// @Failure 404 {object} ErrorResponse "Backup not found"
-// @Failure 500 {object} ErrorResponse "Failed to download backup"
+// @Failure 404 {object} models.ErrorResponse "Backup not found"
 // @Router /backups/{backup_id}/download [get]
 func (h *BackupsHandler) DownloadBackup(w http.ResponseWriter, r *http.Request) {
 	backupID := chi.URLParam(r, "backup_id")
@@ -210,20 +199,36 @@ func (h *BackupsHandler) DownloadBackup(w http.ResponseWriter, r *http.Request) 
 		return
 	}
 
-	// TODO: Implement backup download
-	writeError(w, http.StatusNotImplemented, "Backup download not yet implemented")
+	backup := h.backup.GetBackup(backupID)
+	if backup == nil {
+		writeError(w, http.StatusNotFound, "Backup not found")
+		return
+	}
+
+	filePath := h.backup.GetBackupFilePath(backupID)
+	if filePath == "" {
+		writeError(w, http.StatusNotFound, "Backup file not found")
+		return
+	}
+
+	w.Header().Set("Content-Disposition", "attachment; filename="+backup.Filename)
+	w.Header().Set("Content-Type", "application/gzip")
+	http.ServeFile(w, r, filePath)
 }
 
 // RestoreBackup godoc
 // @Summary Restore from a backup
-// @Description Restores the system from a backup (requires reboot)
+// @Description Restores the system from a backup. Requires confirm=true query parameter.
 // @Tags Backups
 // @Produce json
 // @Security BearerAuth
 // @Param backup_id path string true "Backup ID"
-// @Success 202 {object} map[string]interface{} "status, message"
-// @Failure 404 {object} ErrorResponse "Backup not found"
-// @Failure 500 {object} ErrorResponse "Failed to restore backup"
+// @Param confirm query bool true "Confirmation flag" example(true)
+// @Param restart_services query bool false "Restart services after restore" default(true)
+// @Success 200 {object} models.SuccessResponse "Backup restored"
+// @Failure 400 {object} models.ErrorResponse "Confirmation required"
+// @Failure 404 {object} models.ErrorResponse "Backup not found"
+// @Failure 500 {object} models.ErrorResponse "Failed to restore backup"
 // @Router /backups/{backup_id}/restore [post]
 func (h *BackupsHandler) RestoreBackup(w http.ResponseWriter, r *http.Request) {
 	backupID := chi.URLParam(r, "backup_id")
@@ -232,6 +237,18 @@ func (h *BackupsHandler) RestoreBackup(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// TODO: Implement backup restoration
-	writeError(w, http.StatusNotImplemented, "Backup restoration not yet implemented")
+	confirm := r.URL.Query().Get("confirm") == "true"
+	if !confirm {
+		writeError(w, http.StatusBadRequest, "Set confirm=true to restore")
+		return
+	}
+
+	restartServices := r.URL.Query().Get("restart_services") != "false"
+
+	result, err := h.backup.RestoreBackup(backupID, restartServices)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+	writeJSON(w, http.StatusOK, result)
 }

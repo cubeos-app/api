@@ -133,8 +133,8 @@ func (h *VPNHandler) AddConfig(w http.ResponseWriter, r *http.Request) {
 		vpnRespondError(w, http.StatusBadRequest, "MISSING_NAME", "Configuration name is required")
 		return
 	}
-	if req.Type == "" {
-		vpnRespondError(w, http.StatusBadRequest, "MISSING_TYPE", "VPN type is required (wireguard or openvpn)")
+	if req.Type != managers.VPNTypeWireGuard && req.Type != managers.VPNTypeOpenVPN {
+		vpnRespondError(w, http.StatusBadRequest, "INVALID_TYPE", "VPN type must be 'wireguard' or 'openvpn'")
 		return
 	}
 	if req.Config == "" {

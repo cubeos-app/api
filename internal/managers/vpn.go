@@ -10,6 +10,7 @@ import (
 	"encoding/base64"
 	"fmt"
 	"io"
+	"net"
 	"net/http"
 	"os"
 	"path/filepath"
@@ -316,7 +317,7 @@ func (m *VPNManager) GetPublicIP(ctx context.Context) (string, error) {
 			continue
 		}
 
-		body, err := io.ReadAll(resp.Body)
+		body, err := io.ReadAll(io.LimitReader(resp.Body, 256))
 		resp.Body.Close()
 		if err != nil {
 			lastErr = fmt.Errorf("failed to read response from %s: %w", svc, err)
@@ -344,29 +345,9 @@ func (m *VPNManager) GetPublicIP(ctx context.Context) (string, error) {
 	return "", fmt.Errorf("no public IP services available")
 }
 
-// isValidIP performs basic validation that the string looks like an IPv4 or IPv6 address
+// isValidIP validates that the string is an IPv4 or IPv6 address
 func isValidIP(ip string) bool {
-	// Simple validation - check for dots (IPv4) or colons (IPv6)
-	if strings.Count(ip, ".") == 3 {
-		// Looks like IPv4 - check each octet is numeric
-		parts := strings.Split(ip, ".")
-		for _, part := range parts {
-			if len(part) == 0 || len(part) > 3 {
-				return false
-			}
-			for _, c := range part {
-				if c < '0' || c > '9' {
-					return false
-				}
-			}
-		}
-		return true
-	}
-	if strings.Contains(ip, ":") {
-		// Looks like IPv6 - basic check
-		return len(ip) >= 2 && len(ip) <= 45
-	}
-	return false
+	return net.ParseIP(ip) != nil
 }
 
 // WireGuard-specific methods

@@ -357,9 +357,9 @@ func main() {
 	smbHandler := handlers.NewSMBHandler(storageMgr)
 	log.Printf("SMBHandler initialized")
 
-	// Create Backups handler
-	backupsHandler := handlers.NewBackupsHandler("/cubeos/backups")
-	log.Printf("BackupsHandler initialized")
+	// Create Backups handler (wired to BackupManager)
+	backupsHandler := handlers.NewBackupsHandler(backupMgr)
+	log.Printf("BackupsHandler initialized (wired to BackupManager)")
 
 	// Create router
 	r := chi.NewRouter()

@@ -2185,7 +2185,7 @@ const docTemplate = `{
                         "BearerAuth": []
                     }
                 ],
-                "description": "Returns a list of all available backups",
+                "description": "Returns a list of all available backups with total size",
                 "produces": [
                     "application/json"
                 ],
@@ -2193,26 +2193,17 @@ const docTemplate = `{
                     "Backups"
                 ],
                 "summary": "List all backups",
-                "parameters": [
-                    {
-                        "type": "string",
-                        "description": "Filter by backup type (full, incremental, config-only)",
-                        "name": "type",
-                        "in": "query"
-                    }
-                ],
                 "responses": {
                     "200": {
-                        "description": "backups array, count",
+                        "description": "Backup list",
                         "schema": {
-                            "type": "object",
-                            "additionalProperties": true
+                            "$ref": "#/definitions/cubeos-api_internal_models.BackupListResponse"
                         }
                     },
                     "500": {
                         "description": "Failed to list backups",
                         "schema": {
-                            "$ref": "#/definitions/internal_handlers.ErrorResponse"
+                            "$ref": "#/definitions/cubeos-api_internal_models.ErrorResponse"
                         }
                     }
                 }
@@ -2239,29 +2230,22 @@ const docTemplate = `{
                         "description": "Backup configuration",
                         "name": "request",
                         "in": "body",
-                        "required": true,
                         "schema": {
-                            "$ref": "#/definitions/internal_handlers.CreateBackupRequest"
+                            "$ref": "#/definitions/cubeos-api_internal_models.BackupCreateRequest"
                         }
                     }
                 ],
                 "responses": {
-                    "202": {
-                        "description": "Backup started",
+                    "200": {
+                        "description": "Backup created",
                         "schema": {
-                            "$ref": "#/definitions/internal_handlers.Backup"
-                        }
-                    },
-                    "400": {
-                        "description": "Invalid request",
-                        "schema": {
-                            "$ref": "#/definitions/internal_handlers.ErrorResponse"
+                            "$ref": "#/definitions/cubeos-api_internal_models.SuccessResponse"
                         }
                     },
                     "500": {
                         "description": "Failed to create backup",
                         "schema": {
-                            "$ref": "#/definitions/internal_handlers.ErrorResponse"
+                            "$ref": "#/definitions/cubeos-api_internal_models.ErrorResponse"
                         }
                     }
                 }
@@ -2274,7 +2258,7 @@ const docTemplate = `{
                         "BearerAuth": []
                     }
                 ],
-                "description": "Creates a quick backup with default settings (config-only, auto-named)",
+                "description": "Creates a quick backup with default settings (config-only, compressed, auto-named)",
                 "produces": [
                     "application/json"
                 ],
@@ -2282,17 +2266,32 @@ const docTemplate = `{
                     "Backups"
                 ],
                 "summary": "Create a quick backup",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "default": "config",
+                        "description": "Backup type",
+                        "name": "backup_type",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "description": "Backup description",
+                        "name": "description",
+                        "in": "query"
+                    }
+                ],
                 "responses": {
-                    "202": {
-                        "description": "Backup started",
+                    "200": {
+                        "description": "Backup created",
                         "schema": {
-                            "$ref": "#/definitions/internal_handlers.Backup"
+                            "$ref": "#/definitions/cubeos-api_internal_models.SuccessResponse"
                         }
                     },
                     "500": {
                         "description": "Failed to create backup",
                         "schema": {
-                            "$ref": "#/definitions/internal_handlers.ErrorResponse"
+                            "$ref": "#/definitions/cubeos-api_internal_models.ErrorResponse"
                         }
                     }
                 }
@@ -2305,7 +2304,7 @@ const docTemplate = `{
                         "BearerAuth": []
                     }
                 ],
-                "description": "Returns statistics about backups including total count, size, and dates",
+                "description": "Returns statistics about backups including total count, size, and breakdown by type",
                 "produces": [
                     "application/json"
                 ],
@@ -2317,13 +2316,14 @@ const docTemplate = `{
                     "200": {
                         "description": "Backup statistics",
                         "schema": {
-                            "$ref": "#/definitions/internal_handlers.BackupStats"
+                            "type": "object",
+                            "additionalProperties": true
                         }
                     },
                     "500": {
                         "description": "Failed to get backup stats",
                         "schema": {
-                            "$ref": "#/definitions/internal_handlers.ErrorResponse"
+                            "$ref": "#/definitions/cubeos-api_internal_models.ErrorResponse"
                         }
                     }
                 }
@@ -2357,19 +2357,13 @@ const docTemplate = `{
                     "200": {
                         "description": "Backup details",
                         "schema": {
-                            "$ref": "#/definitions/internal_handlers.Backup"
+                            "$ref": "#/definitions/cubeos-api_internal_models.BackupInfo"
                         }
                     },
                     "404": {
                         "description": "Backup not found",
                         "schema": {
-                            "$ref": "#/definitions/internal_handlers.ErrorResponse"
-                        }
-                    },
-                    "500": {
-                        "description": "Failed to get backup",
-                        "schema": {
-                            "$ref": "#/definitions/internal_handlers.ErrorResponse"
+                            "$ref": "#/definitions/cubeos-api_internal_models.ErrorResponse"
                         }
                     }
                 }
@@ -2380,7 +2374,7 @@ const docTemplate = `{
                         "BearerAuth": []
                     }
                 ],
-                "description": "Permanently deletes a backup file",
+                "description": "Permanently deletes a backup file and its metadata",
                 "produces": [
                     "application/json"
                 ],
@@ -2399,22 +2393,15 @@ const docTemplate = `{
                 ],
                 "responses": {
                     "200": {
-                        "description": "success, message",
+                        "description": "Backup deleted",
                         "schema": {
-                            "type": "object",
-                            "additionalProperties": true
+                            "$ref": "#/definitions/cubeos-api_internal_models.SuccessResponse"
                         }
                     },
                     "404": {
                         "description": "Backup not found",
                         "schema": {
-                            "$ref": "#/definitions/internal_handlers.ErrorResponse"
-                        }
-                    },
-                    "500": {
-                        "description": "Failed to delete backup",
-                        "schema": {
-                            "$ref": "#/definitions/internal_handlers.ErrorResponse"
+                            "$ref": "#/definitions/cubeos-api_internal_models.ErrorResponse"
                         }
                     }
                 }
@@ -2427,9 +2414,9 @@ const docTemplate = `{
                         "BearerAuth": []
                     }
                 ],
-                "description": "Downloads a backup file",
+                "description": "Downloads a backup file as a gzip archive",
                 "produces": [
-                    "application/octet-stream"
+                    "application/gzip"
                 ],
                 "tags": [
                     "Backups"
@@ -2454,13 +2441,7 @@ const docTemplate = `{
                     "404": {
                         "description": "Backup not found",
                         "schema": {
-                            "$ref": "#/definitions/internal_handlers.ErrorResponse"
-                        }
-                    },
-                    "500": {
-                        "description": "Failed to download backup",
-                        "schema": {
-                            "$ref": "#/definitions/internal_handlers.ErrorResponse"
+                            "$ref": "#/definitions/cubeos-api_internal_models.ErrorResponse"
                         }
                     }
                 }
@@ -2473,7 +2454,7 @@ const docTemplate = `{
                         "BearerAuth": []
                     }
                 ],
-                "description": "Restores the system from a backup (requires reboot)",
+                "description": "Restores the system from a backup. Requires confirm=true query parameter.",
                 "produces": [
                     "application/json"
                 ],
@@ -2488,26 +2469,46 @@ const docTemplate = `{
                         "name": "backup_id",
                         "in": "path",
                         "required": true
+                    },
+                    {
+                        "type": "boolean",
+                        "example": true,
+                        "description": "Confirmation flag",
+                        "name": "confirm",
+                        "in": "query",
+                        "required": true
+                    },
+                    {
+                        "type": "boolean",
+                        "default": true,
+                        "description": "Restart services after restore",
+                        "name": "restart_services",
+                        "in": "query"
                     }
                 ],
                 "responses": {
-                    "202": {
-                        "description": "status, message",
+                    "200": {
+                        "description": "Backup restored",
                         "schema": {
-                            "type": "object",
-                            "additionalProperties": true
+                            "$ref": "#/definitions/cubeos-api_internal_models.SuccessResponse"
+                        }
+                    },
+                    "400": {
+                        "description": "Confirmation required",
+                        "schema": {
+                            "$ref": "#/definitions/cubeos-api_internal_models.ErrorResponse"
                         }
                     },
                     "404": {
                         "description": "Backup not found",
                         "schema": {
-                            "$ref": "#/definitions/internal_handlers.ErrorResponse"
+                            "$ref": "#/definitions/cubeos-api_internal_models.ErrorResponse"
                         }
                     },
                     "500": {
                         "description": "Failed to restore backup",
                         "schema": {
-                            "$ref": "#/definitions/internal_handlers.ErrorResponse"
+                            "$ref": "#/definitions/cubeos-api_internal_models.ErrorResponse"
                         }
                     }
                 }
@@ -16867,6 +16868,21 @@ const docTemplate = `{
                 "DeployModeCompose"
             ]
         },
+        "cubeos-api_internal_models.ErrorResponse": {
+            "description": "API error response",
+            "type": "object",
+            "properties": {
+                "code": {
+                    "type": "integer"
+                },
+                "detail": {
+                    "type": "string"
+                },
+                "error": {
+                    "type": "string"
+                }
+            }
+        },
         "cubeos-api_internal_models.FQDN": {
             "type": "object",
             "properties": {
@@ -18185,66 +18201,6 @@ const docTemplate = `{
                 }
             }
         },
-        "internal_handlers.Backup": {
-            "type": "object",
-            "properties": {
-                "apps": {
-                    "type": "array",
-                    "items": {
-                        "type": "string"
-                    }
-                },
-                "created_at": {
-                    "type": "string"
-                },
-                "description": {
-                    "type": "string"
-                },
-                "id": {
-                    "type": "string"
-                },
-                "name": {
-                    "type": "string"
-                },
-                "path": {
-                    "type": "string"
-                },
-                "size": {
-                    "type": "integer"
-                },
-                "size_human": {
-                    "type": "string"
-                },
-                "status": {
-                    "description": "completed, failed, in-progress",
-                    "type": "string"
-                },
-                "type": {
-                    "description": "full, incremental, config-only",
-                    "type": "string"
-                }
-            }
-        },
-        "internal_handlers.BackupStats": {
-            "type": "object",
-            "properties": {
-                "last_backup": {
-                    "type": "string"
-                },
-                "oldest_backup": {
-                    "type": "string"
-                },
-                "total_backups": {
-                    "type": "integer"
-                },
-                "total_size": {
-                    "type": "integer"
-                },
-                "total_size_human": {
-                    "type": "string"
-                }
-            }
-        },
         "internal_handlers.BluetoothScanRequest": {
             "type": "object",
             "properties": {
@@ -18377,28 +18333,6 @@ const docTemplate = `{
                 "older_than_days": {
                     "description": "Delete tags older than N days",
                     "type": "integer"
-                }
-            }
-        },
-        "internal_handlers.CreateBackupRequest": {
-            "type": "object",
-            "properties": {
-                "apps": {
-                    "description": "specific apps to backup, empty = all",
-                    "type": "array",
-                    "items": {
-                        "type": "string"
-                    }
-                },
-                "description": {
-                    "type": "string"
-                },
-                "name": {
-                    "type": "string"
-                },
-                "type": {
-                    "description": "full, incremental, config-only",
-                    "type": "string"
                 }
             }
         },

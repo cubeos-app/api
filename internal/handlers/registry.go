@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"net/url"
 	"os"
 	"path/filepath"
 	"strings"
@@ -26,8 +27,11 @@ type RegistryHandler struct {
 // because containers in overlay network cannot reach localhost on the host.
 func NewRegistryHandler(registryURL, registryPath string) *RegistryHandler {
 	if registryURL == "" {
-		// Default to gateway IP - works from inside Swarm overlay network
-		registryURL = "http://10.42.24.1:5000"
+		// Check env var first, then fall back to gateway IP (works from inside Swarm overlay)
+		registryURL = os.Getenv("REGISTRY_URL")
+		if registryURL == "" {
+			registryURL = "http://10.42.24.1:5000"
+		}
 	}
 	if registryPath == "" {
 		registryPath = "/cubeos/data/registry"
@@ -229,8 +233,12 @@ func (h *RegistryHandler) DeleteImage(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Delete by digest
-	deleteURL := fmt.Sprintf("%s/v2/%s/manifests/%s", h.registryURL, name, digest)
-	req, _ := http.NewRequest("DELETE", deleteURL, nil)
+	deleteURL := fmt.Sprintf("%s/v2/%s/manifests/%s", h.registryURL, url.PathEscape(name), url.PathEscape(digest))
+	req, err := http.NewRequest("DELETE", deleteURL, nil)
+	if err != nil {
+		registryWriteError(w, http.StatusInternalServerError, "Failed to create delete request: "+err.Error())
+		return
+	}
 
 	resp, err := h.httpClient.Do(req)
 	if err != nil {
@@ -357,8 +365,8 @@ func (h *RegistryHandler) getImageList() ([]string, error) {
 }
 
 func (h *RegistryHandler) getImageTags(name string) ([]string, error) {
-	url := fmt.Sprintf("%s/v2/%s/tags/list", h.registryURL, name)
-	resp, err := h.httpClient.Get(url)
+	tagURL := fmt.Sprintf("%s/v2/%s/tags/list", h.registryURL, url.PathEscape(name))
+	resp, err := h.httpClient.Get(tagURL)
 	if err != nil {
 		return nil, err
 	}
@@ -379,8 +387,11 @@ func (h *RegistryHandler) getImageTags(name string) ([]string, error) {
 }
 
 func (h *RegistryHandler) getManifestDigest(name, tag string) (string, error) {
-	url := fmt.Sprintf("%s/v2/%s/manifests/%s", h.registryURL, name, tag)
-	req, _ := http.NewRequest("GET", url, nil)
+	manifestURL := fmt.Sprintf("%s/v2/%s/manifests/%s", h.registryURL, url.PathEscape(name), url.PathEscape(tag))
+	req, err := http.NewRequest("GET", manifestURL, nil)
+	if err != nil {
+		return "", fmt.Errorf("failed to create request: %w", err)
+	}
 	req.Header.Set("Accept", "application/vnd.docker.distribution.manifest.v2+json")
 
 	resp, err := h.httpClient.Do(req)
@@ -395,15 +406,24 @@ func (h *RegistryHandler) getManifestDigest(name, tag string) (string, error) {
 
 	digest := resp.Header.Get("Docker-Content-Digest")
 	if digest == "" {
-		// Read body and parse
-		body, _ := io.ReadAll(resp.Body)
+		// Fall back to parsing the manifest body
+		body, err := io.ReadAll(io.LimitReader(resp.Body, 1<<20)) // 1 MB limit
+		if err != nil {
+			return "", fmt.Errorf("failed to read manifest body: %w", err)
+		}
 		var manifest struct {
 			Config struct {
 				Digest string `json:"digest"`
 			} `json:"config"`
 		}
-		json.Unmarshal(body, &manifest)
+		if err := json.Unmarshal(body, &manifest); err != nil {
+			return "", fmt.Errorf("failed to parse manifest: %w", err)
+		}
 		digest = manifest.Config.Digest
+	}
+
+	if digest == "" {
+		return "", fmt.Errorf("no digest found for %s:%s", name, tag)
 	}
 
 	return digest, nil
