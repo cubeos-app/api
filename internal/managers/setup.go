@@ -42,9 +42,11 @@ func NewSetupManager(cfg *config.Config, db *sql.DB) *SetupManager {
 	return m
 }
 
-// initDB creates required tables
+// initDB creates setup-specific tables.
+// Core tables (users, etc.) are created by database.InitSchema() — do NOT create them here.
 func (m *SetupManager) initDB() {
 	queries := []string{
+		// setup_status and system_config are also in schema.go but CREATE IF NOT EXISTS is idempotent
 		`CREATE TABLE IF NOT EXISTS setup_status (
 			id INTEGER PRIMARY KEY CHECK (id = 1),
 			is_complete INTEGER DEFAULT 0,
@@ -52,15 +54,6 @@ func (m *SetupManager) initDB() {
 			started_at DATETIME,
 			completed_at DATETIME,
 			config_json TEXT
-		)`,
-		`CREATE TABLE IF NOT EXISTS users (
-			id INTEGER PRIMARY KEY AUTOINCREMENT,
-			username TEXT UNIQUE NOT NULL,
-			password_hash TEXT NOT NULL,
-			email TEXT,
-			role TEXT DEFAULT 'admin',
-			created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-			last_login DATETIME
 		)`,
 		`CREATE TABLE IF NOT EXISTS system_config (
 			key TEXT PRIMARY KEY,

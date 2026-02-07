@@ -174,18 +174,16 @@ func main() {
 	db := sqlx.NewDb(rawDB, "sqlite")
 	defer db.Close()
 
-	// Initialize database schema
-	if err := initDB(db); err != nil {
+	// Initialize database schema + run migrations (single source of truth: database/schema.go)
+	log.Printf("Initializing database schema and running migrations...")
+	if err := database.MigrateAndSeed(db.DB); err != nil {
 		log.Fatalf("Failed to initialize database: %v", err)
 	}
+	log.Printf("Database schema and migrations completed successfully")
 
-	// Run database migrations (Sprint 2+)
-	log.Printf("Running database migrations...")
-	if err := database.MigrateAndSeed(db.DB); err != nil {
-		log.Printf("Warning: Migration failed: %v", err)
-		// Continue - migrations are not critical for basic operation
-	} else {
-		log.Printf("Database migrations completed successfully")
+	// Seed default admin user (after schema is created)
+	if err := seedDefaultAdmin(db); err != nil {
+		log.Printf("Warning: Failed to seed admin user: %v", err)
 	}
 
 	// Create Docker manager
@@ -613,45 +611,15 @@ func main() {
 	}
 }
 
-func initDB(db *sqlx.DB) error {
-	schema := `
-	CREATE TABLE IF NOT EXISTS users (
-		id INTEGER PRIMARY KEY AUTOINCREMENT,
-		username TEXT UNIQUE NOT NULL,
-		password_hash TEXT NOT NULL,
-		role TEXT DEFAULT 'user',
-		created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-		updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
-	);
-	
-	CREATE INDEX IF NOT EXISTS idx_users_username ON users(username);
-	
-	CREATE TABLE IF NOT EXISTS settings (
-		key TEXT PRIMARY KEY,
-		value TEXT,
-		updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
-	);
-	
-	CREATE TABLE IF NOT EXISTS service_states (
-		name TEXT PRIMARY KEY,
-		enabled BOOLEAN DEFAULT TRUE,
-		reason TEXT,
-		updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
-	);
-	`
-
-	_, err := db.Exec(schema)
-	if err != nil {
-		return err
-	}
-
-	// Create default admin user if not exists
+// seedDefaultAdmin creates a default admin user if none exists.
+// Table creation is handled by database.InitSchema() — do NOT create tables here.
+func seedDefaultAdmin(db *sqlx.DB) error {
 	var count int
-	db.Get(&count, "SELECT COUNT(*) FROM users WHERE username = 'admin'")
+	if err := db.Get(&count, "SELECT COUNT(*) FROM users WHERE username = 'admin'"); err != nil {
+		return fmt.Errorf("failed to check admin user: %w", err)
+	}
 	if count == 0 {
-		// Generate hash for default password: cubeos
-		defaultPassword := "cubeos"
-		hash, err := bcrypt.GenerateFromPassword([]byte(defaultPassword), bcrypt.DefaultCost)
+		hash, err := bcrypt.GenerateFromPassword([]byte("cubeos"), bcrypt.DefaultCost)
 		if err != nil {
 			return fmt.Errorf("failed to hash default password: %w", err)
 		}
@@ -663,7 +631,7 @@ func initDB(db *sqlx.DB) error {
 		if err != nil {
 			return err
 		}
-		log.Println("Created default admin user (password: cubeos)")
+		log.Println("Created default admin user (change password on first login)")
 	}
 
 	return nil

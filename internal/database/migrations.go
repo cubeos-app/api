@@ -4,6 +4,7 @@ package database
 import (
 	"database/sql"
 	"fmt"
+	"strings"
 
 	"github.com/rs/zerolog/log"
 )
@@ -254,6 +255,98 @@ var migrations = []Migration{
 			return nil
 		},
 	},
+
+	// Version 9: Add missing network_config columns + users table columns
+	// The NetworkManager queries 12+ columns that weren't in the original schema
+	{
+		Version:     9,
+		Description: "Add missing network_config columns (VPN, DHCP, AP) and users columns (email, last_login)",
+		Up: func(db *sql.DB) error {
+			// network_config columns needed by NetworkManager
+			netColumns := []struct {
+				name         string
+				definition   string
+				defaultValue string
+			}{
+				{"vpn_mode", "TEXT", "'none'"},
+				{"vpn_config_id", "INTEGER", "NULL"},
+				{"gateway_ip", "TEXT", "'10.42.24.1'"},
+				{"subnet", "TEXT", "'10.42.24.0/24'"},
+				{"dhcp_range_start", "TEXT", "'10.42.24.10'"},
+				{"dhcp_range_end", "TEXT", "'10.42.24.250'"},
+				{"fallback_static_ip", "TEXT", "'192.168.1.242'"},
+				{"ap_ssid", "TEXT", "'CubeOS'"},
+				{"ap_password", "TEXT", "''"},
+				{"ap_channel", "INTEGER", "7"},
+				{"ap_hidden", "BOOLEAN", "FALSE"},
+				{"server_mode_warning_dismissed", "BOOLEAN", "FALSE"},
+			}
+
+			for _, col := range netColumns {
+				query := fmt.Sprintf("ALTER TABLE network_config ADD COLUMN %s %s DEFAULT %s",
+					col.name, col.definition, col.defaultValue)
+				_, err := db.Exec(query)
+				if err != nil && !isDuplicateColumnError(err) {
+					return fmt.Errorf("failed to add network_config.%s: %w", col.name, err)
+				}
+			}
+
+			// users table columns needed by setup.go and models.User
+			usersColumns := []struct {
+				name         string
+				definition   string
+				defaultValue string
+			}{
+				{"email", "TEXT", "''"},
+				{"last_login", "DATETIME", "NULL"},
+			}
+
+			for _, col := range usersColumns {
+				query := fmt.Sprintf("ALTER TABLE users ADD COLUMN %s %s DEFAULT %s",
+					col.name, col.definition, col.defaultValue)
+				_, err := db.Exec(query)
+				if err != nil && !isDuplicateColumnError(err) {
+					return fmt.Errorf("failed to add users.%s: %w", col.name, err)
+				}
+			}
+
+			// Ensure all new tables exist (for databases created before schema.go included them)
+			newTables := []string{
+				`CREATE TABLE IF NOT EXISTS settings (
+					key TEXT PRIMARY KEY, value TEXT, updated_at DATETIME DEFAULT CURRENT_TIMESTAMP)`,
+				`CREATE TABLE IF NOT EXISTS service_states (
+					name TEXT PRIMARY KEY, enabled BOOLEAN DEFAULT TRUE, reason TEXT, updated_at DATETIME DEFAULT CURRENT_TIMESTAMP)`,
+				`CREATE TABLE IF NOT EXISTS app_stores (
+					id TEXT PRIMARY KEY, name TEXT NOT NULL, url TEXT NOT NULL UNIQUE, description TEXT,
+					author TEXT, app_count INTEGER DEFAULT 0, last_sync DATETIME, enabled INTEGER DEFAULT 1,
+					created_at DATETIME DEFAULT CURRENT_TIMESTAMP)`,
+				`CREATE TABLE IF NOT EXISTS installed_apps (
+					id TEXT PRIMARY KEY, store_id TEXT, store_app_id TEXT, name TEXT NOT NULL,
+					title TEXT, description TEXT, icon TEXT, category TEXT, version TEXT,
+					status TEXT DEFAULT 'stopped', webui TEXT, compose_file TEXT, data_path TEXT,
+					npm_proxy_id INTEGER DEFAULT 0, installed_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+					updated_at DATETIME DEFAULT CURRENT_TIMESTAMP)`,
+				`CREATE INDEX IF NOT EXISTS idx_installed_apps_name ON installed_apps(name)`,
+				`CREATE TABLE IF NOT EXISTS setup_status (
+					id INTEGER PRIMARY KEY CHECK (id = 1), is_complete INTEGER DEFAULT 0,
+					current_step INTEGER DEFAULT 0, started_at DATETIME, completed_at DATETIME, config_json TEXT)`,
+				`CREATE TABLE IF NOT EXISTS system_config (
+					key TEXT PRIMARY KEY, value TEXT, updated_at DATETIME DEFAULT CURRENT_TIMESTAMP)`,
+			}
+
+			for _, q := range newTables {
+				if _, err := db.Exec(q); err != nil {
+					log.Warn().Err(err).Msg("Failed to create table in migration 9")
+				}
+			}
+
+			// Seed setup_status if empty
+			db.Exec(`INSERT OR IGNORE INTO setup_status (id, is_complete, current_step) VALUES (1, 0, 0)`)
+
+			log.Info().Msg("Migration 9: Added missing network_config, users columns, and new tables")
+			return nil
+		},
+	},
 }
 
 // isDuplicateColumnError checks if an error is a "duplicate column" error
@@ -267,16 +360,7 @@ func isDuplicateColumnError(err error) bool {
 
 // contains checks if a string contains a substring (case-insensitive)
 func contains(s, substr string) bool {
-	return len(s) >= len(substr) && (s == substr || len(s) > 0 && containsImpl(s, substr))
-}
-
-func containsImpl(s, substr string) bool {
-	for i := 0; i <= len(s)-len(substr); i++ {
-		if s[i:i+len(substr)] == substr {
-			return true
-		}
-	}
-	return false
+	return strings.Contains(strings.ToLower(s), strings.ToLower(substr))
 }
 
 // Migrate runs all pending database migrations.
@@ -351,6 +435,12 @@ func DropAllTables(db *sql.DB) error {
 		"users",
 		"preferences",
 		"nodes",
+		"settings",
+		"service_states",
+		"app_stores",
+		"installed_apps",
+		"setup_status",
+		"system_config",
 	}
 
 	for _, table := range tables {
@@ -413,8 +503,19 @@ func TableExists(db *sql.DB, tableName string) (bool, error) {
 }
 
 // GetTableCount returns the number of rows in a table.
+// tableName is validated against sqlite_master to prevent SQL injection.
 func GetTableCount(db *sql.DB, tableName string) (int, error) {
+	// Validate table exists (prevents SQL injection via table name)
+	exists, err := TableExists(db, tableName)
+	if err != nil {
+		return 0, fmt.Errorf("failed to validate table %q: %w", tableName, err)
+	}
+	if !exists {
+		return 0, fmt.Errorf("table %q does not exist", tableName)
+	}
+
 	var count int
-	err := db.QueryRow(fmt.Sprintf("SELECT COUNT(*) FROM %s", tableName)).Scan(&count)
+	// Safe: tableName validated against sqlite_master above
+	err = db.QueryRow(fmt.Sprintf("SELECT COUNT(*) FROM %q", tableName)).Scan(&count)
 	return count, err
 }

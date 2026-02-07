@@ -83,45 +83,19 @@ func NewAppStoreManager(cfg *config.Config, db *DatabaseManager, dataPath string
 	return m
 }
 
-// initDB creates database tables
+// initDB ensures app store tables exist.
+// Core table creation is handled by database.InitSchema().
+// CREATE IF NOT EXISTS is idempotent, so this is safe as a fallback.
 func (m *AppStoreManager) initDB() {
-	queries := []string{
-		`CREATE TABLE IF NOT EXISTS app_stores (
-			id TEXT PRIMARY KEY,
-			name TEXT NOT NULL,
-			url TEXT NOT NULL UNIQUE,
-			description TEXT,
-			author TEXT,
-			app_count INTEGER DEFAULT 0,
-			last_sync DATETIME,
-			enabled INTEGER DEFAULT 1,
-			created_at DATETIME DEFAULT CURRENT_TIMESTAMP
-		)`,
-		`CREATE TABLE IF NOT EXISTS installed_apps (
-			id TEXT PRIMARY KEY,
-			store_id TEXT,
-			store_app_id TEXT,
-			name TEXT NOT NULL,
-			title TEXT,
-			description TEXT,
-			icon TEXT,
-			category TEXT,
-			version TEXT,
-			status TEXT DEFAULT 'stopped',
-			webui TEXT,
-			compose_file TEXT,
-			data_path TEXT,
-			npm_proxy_id INTEGER DEFAULT 0,
-			installed_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-			updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
-		)`,
-		`CREATE INDEX IF NOT EXISTS idx_installed_apps_name ON installed_apps(name)`,
-		// Migration: Add npm_proxy_id if table already exists
+	// Tables are now defined in database/schema.go.
+	// Only add migration-style column additions here for backward compatibility.
+	migrations := []string{
+		// Migration: Add npm_proxy_id if table already exists without it
 		`ALTER TABLE installed_apps ADD COLUMN npm_proxy_id INTEGER DEFAULT 0`,
 	}
 
-	for _, q := range queries {
-		m.db.db.Exec(q)
+	for _, q := range migrations {
+		m.db.db.Exec(q) // Ignore errors (column may already exist)
 	}
 }
 

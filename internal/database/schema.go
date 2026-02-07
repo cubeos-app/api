@@ -9,7 +9,7 @@ import (
 )
 
 // CurrentSchemaVersion tracks the database schema version for migrations.
-const CurrentSchemaVersion = 1
+const CurrentSchemaVersion = 9
 
 // Schema defines the unified CubeOS database schema.
 // Design Principles:
@@ -171,12 +171,38 @@ CREATE TABLE IF NOT EXISTS app_health (
 -- =============================================================================
 CREATE TABLE IF NOT EXISTS network_config (
     id              INTEGER PRIMARY KEY CHECK (id = 1),  -- Single row
-    mode            TEXT DEFAULT 'offline',         -- 'offline' | 'online_eth' | 'online_wifi'
-    wifi_ssid       TEXT DEFAULT '',                -- Upstream WiFi SSID (for online_wifi)
+    mode            TEXT DEFAULT 'offline',         -- 'offline' | 'online_eth' | 'online_wifi' | 'server_eth' | 'server_wifi'
+    
+    -- VPN overlay (V2)
+    vpn_mode        TEXT DEFAULT 'none',            -- 'none' | 'wireguard' | 'openvpn' | 'tor'
+    vpn_config_id   INTEGER DEFAULT NULL,           -- FK to vpn_configs (nullable)
+    
+    -- WiFi client credentials (for online_wifi and server_wifi)
+    wifi_ssid       TEXT DEFAULT '',                -- Upstream WiFi SSID
     wifi_password   TEXT DEFAULT '',                -- Encrypted or reference to secrets.env
+    
+    -- Interfaces
     eth_interface   TEXT DEFAULT 'eth0',
     wifi_ap_interface TEXT DEFAULT 'wlan0',
     wifi_client_interface TEXT DEFAULT 'wlan1',     -- USB dongle
+    
+    -- DHCP server configuration (for AP modes)
+    gateway_ip      TEXT DEFAULT '10.42.24.1',
+    subnet          TEXT DEFAULT '10.42.24.0/24',
+    dhcp_range_start TEXT DEFAULT '10.42.24.10',
+    dhcp_range_end  TEXT DEFAULT '10.42.24.250',
+    
+    -- Server mode fallback
+    fallback_static_ip TEXT DEFAULT '192.168.1.242',
+    
+    -- Access Point configuration
+    ap_ssid         TEXT DEFAULT 'CubeOS',
+    ap_password     TEXT DEFAULT '',
+    ap_channel      INTEGER DEFAULT 7,
+    ap_hidden       BOOLEAN DEFAULT FALSE,
+    
+    -- UX state
+    server_mode_warning_dismissed BOOLEAN DEFAULT FALSE,
     
     updated_at      DATETIME DEFAULT CURRENT_TIMESTAMP
 );
@@ -237,11 +263,15 @@ CREATE TABLE IF NOT EXISTS users (
     id              INTEGER PRIMARY KEY AUTOINCREMENT,
     username        TEXT UNIQUE NOT NULL,
     password_hash   TEXT NOT NULL,
+    email           TEXT DEFAULT '',                -- Optional email address
     role            TEXT DEFAULT 'admin',           -- 'admin' | 'user' | 'readonly'
+    last_login      DATETIME,                      -- Last successful login
     
     created_at      DATETIME DEFAULT CURRENT_TIMESTAMP,
     updated_at      DATETIME DEFAULT CURRENT_TIMESTAMP
 );
+
+CREATE INDEX IF NOT EXISTS idx_users_username ON users(username);
 
 -- =============================================================================
 -- PREFERENCES: User/system preferences
@@ -264,6 +294,85 @@ CREATE TABLE IF NOT EXISTS nodes (
     
     joined_at       DATETIME DEFAULT CURRENT_TIMESTAMP,
     last_seen       DATETIME DEFAULT CURRENT_TIMESTAMP
+);
+
+-- =============================================================================
+-- SETTINGS: Key-value settings (legacy, used by main.go initDB)
+-- =============================================================================
+CREATE TABLE IF NOT EXISTS settings (
+    key             TEXT PRIMARY KEY,
+    value           TEXT,
+    updated_at      DATETIME DEFAULT CURRENT_TIMESTAMP
+);
+
+-- =============================================================================
+-- SERVICE_STATES: Enabled/disabled state for system services
+-- =============================================================================
+CREATE TABLE IF NOT EXISTS service_states (
+    name            TEXT PRIMARY KEY,
+    enabled         BOOLEAN DEFAULT TRUE,
+    reason          TEXT,
+    updated_at      DATETIME DEFAULT CURRENT_TIMESTAMP
+);
+
+-- =============================================================================
+-- APP_STORES: Registered app store sources
+-- =============================================================================
+CREATE TABLE IF NOT EXISTS app_stores (
+    id              TEXT PRIMARY KEY,
+    name            TEXT NOT NULL,
+    url             TEXT NOT NULL UNIQUE,
+    description     TEXT,
+    author          TEXT,
+    app_count       INTEGER DEFAULT 0,
+    last_sync       DATETIME,
+    enabled         INTEGER DEFAULT 1,
+    created_at      DATETIME DEFAULT CURRENT_TIMESTAMP
+);
+
+-- =============================================================================
+-- INSTALLED_APPS: Apps installed from app stores (legacy, AppStore manager)
+-- =============================================================================
+CREATE TABLE IF NOT EXISTS installed_apps (
+    id              TEXT PRIMARY KEY,
+    store_id        TEXT,
+    store_app_id    TEXT,
+    name            TEXT NOT NULL,
+    title           TEXT,
+    description     TEXT,
+    icon            TEXT,
+    category        TEXT,
+    version         TEXT,
+    status          TEXT DEFAULT 'stopped',
+    webui           TEXT,
+    compose_file    TEXT,
+    data_path       TEXT,
+    npm_proxy_id    INTEGER DEFAULT 0,
+    installed_at    DATETIME DEFAULT CURRENT_TIMESTAMP,
+    updated_at      DATETIME DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE INDEX IF NOT EXISTS idx_installed_apps_name ON installed_apps(name);
+
+-- =============================================================================
+-- SETUP_STATUS: First-boot setup wizard state
+-- =============================================================================
+CREATE TABLE IF NOT EXISTS setup_status (
+    id              INTEGER PRIMARY KEY CHECK (id = 1),
+    is_complete     INTEGER DEFAULT 0,
+    current_step    INTEGER DEFAULT 0,
+    started_at      DATETIME,
+    completed_at    DATETIME,
+    config_json     TEXT
+);
+
+-- =============================================================================
+-- SYSTEM_CONFIG: System configuration key-value store (setup manager)
+-- =============================================================================
+CREATE TABLE IF NOT EXISTS system_config (
+    key             TEXT PRIMARY KEY,
+    value           TEXT,
+    updated_at      DATETIME DEFAULT CURRENT_TIMESTAMP
 );
 `
 
@@ -288,12 +397,17 @@ INSERT OR IGNORE INTO system_state (key, value) VALUES
     ('domain', 'cubeos.cube'),
     ('gateway_ip', '10.42.24.1'),
     ('subnet', '10.42.24.0/24'),
-    ('schema_version', '1');
+    ('schema_version', '9');
 
 -- =============================================================================
 -- DEFAULT NETWORK CONFIG
 -- =============================================================================
 INSERT OR IGNORE INTO network_config (id, mode) VALUES (1, 'offline');
+
+-- =============================================================================
+-- SETUP STATUS
+-- =============================================================================
+INSERT OR IGNORE INTO setup_status (id, is_complete, current_step) VALUES (1, 0, 0);
 `
 
 // InitSchema initializes the database schema.

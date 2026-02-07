@@ -27,9 +27,11 @@ func Open(dbPath string) (*sql.DB, error) {
 		return nil, fmt.Errorf("failed to open database: %w", err)
 	}
 
-	// Configure connection pool (SQLite handles this differently but it's good practice)
-	db.SetMaxOpenConns(1) // SQLite only supports one writer at a time
-	db.SetMaxIdleConns(1)
+	// Configure connection pool
+	// WAL mode allows concurrent readers, so we can have multiple open connections.
+	// SQLite still serializes writes, but reads proceed in parallel.
+	db.SetMaxOpenConns(4)
+	db.SetMaxIdleConns(2)
 
 	// Test connection
 	if err := db.Ping(); err != nil {

@@ -7,13 +7,14 @@ import "time"
 // =============================================================================
 
 type User struct {
-	ID           int64     `db:"id" json:"id"`
-	Username     string    `db:"username" json:"username"`
-	PasswordHash string    `db:"password_hash" json:"-"`
-	Role         string    `db:"role" json:"role"`
-	CreatedAt    time.Time `db:"created_at" json:"created_at"`
-	UpdatedAt    time.Time `db:"updated_at" json:"updated_at"`
-	Email        string    `db:"email" json:"email"`
+	ID           int64      `db:"id" json:"id"`
+	Username     string     `db:"username" json:"username"`
+	PasswordHash string     `db:"password_hash" json:"-"`
+	Email        string     `db:"email" json:"email,omitempty"`
+	Role         string     `db:"role" json:"role"`
+	LastLogin    *time.Time `db:"last_login" json:"last_login,omitempty"`
+	CreatedAt    time.Time  `db:"created_at" json:"created_at"`
+	UpdatedAt    time.Time  `db:"updated_at" json:"updated_at"`
 }
 
 type LoginRequest struct {
