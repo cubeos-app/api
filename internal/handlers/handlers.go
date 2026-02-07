@@ -65,11 +65,10 @@ func writeError(w http.ResponseWriter, status int, message string) {
 
 // Health godoc
 // @Summary Health check
-// @Description Returns API health status, version, and uptime
+// @Description Returns API health status, version, and uptime. NOTE: This endpoint is at root GET /health (outside /api/v1 BasePath), no auth required.
 // @Tags Health
 // @Produce json
 // @Success 200 {object} models.HealthResponse "Health status"
-// @Router /health [get]
 func (h *Handlers) Health(w http.ResponseWriter, r *http.Request) {
 	uptime := time.Since(h.startTime).Seconds()
 	writeJSON(w, http.StatusOK, models.HealthResponse{

@@ -64,7 +64,7 @@ const docTemplate = `{
                     "500": {
                         "description": "Failed to list apps",
                         "schema": {
-                            "$ref": "#/definitions/handlers.ErrorResponse"
+                            "$ref": "#/definitions/internal_handlers.ErrorResponse"
                         }
                     }
                 }
@@ -93,7 +93,7 @@ const docTemplate = `{
                         "in": "body",
                         "required": true,
                         "schema": {
-                            "$ref": "#/definitions/models.InstallAppRequest"
+                            "$ref": "#/definitions/cubeos-api_internal_models.InstallAppRequest"
                         }
                     }
                 ],
@@ -101,19 +101,19 @@ const docTemplate = `{
                     "201": {
                         "description": "Installed app details",
                         "schema": {
-                            "$ref": "#/definitions/models.App"
+                            "$ref": "#/definitions/cubeos-api_internal_models.App"
                         }
                     },
                     "400": {
                         "description": "Invalid request or missing name",
                         "schema": {
-                            "$ref": "#/definitions/handlers.ErrorResponse"
+                            "$ref": "#/definitions/internal_handlers.ErrorResponse"
                         }
                     },
                     "500": {
                         "description": "Failed to install app",
                         "schema": {
-                            "$ref": "#/definitions/handlers.ErrorResponse"
+                            "$ref": "#/definitions/internal_handlers.ErrorResponse"
                         }
                     }
                 }
@@ -147,19 +147,19 @@ const docTemplate = `{
                     "200": {
                         "description": "App details",
                         "schema": {
-                            "$ref": "#/definitions/models.App"
+                            "$ref": "#/definitions/cubeos-api_internal_models.App"
                         }
                     },
                     "404": {
                         "description": "App not found",
                         "schema": {
-                            "$ref": "#/definitions/handlers.ErrorResponse"
+                            "$ref": "#/definitions/internal_handlers.ErrorResponse"
                         }
                     },
                     "500": {
                         "description": "Database error",
                         "schema": {
-                            "$ref": "#/definitions/handlers.ErrorResponse"
+                            "$ref": "#/definitions/internal_handlers.ErrorResponse"
                         }
                     }
                 }
@@ -205,13 +205,13 @@ const docTemplate = `{
                     "404": {
                         "description": "App not found",
                         "schema": {
-                            "$ref": "#/definitions/handlers.ErrorResponse"
+                            "$ref": "#/definitions/internal_handlers.ErrorResponse"
                         }
                     },
                     "500": {
                         "description": "Failed to uninstall app",
                         "schema": {
-                            "$ref": "#/definitions/handlers.ErrorResponse"
+                            "$ref": "#/definitions/internal_handlers.ErrorResponse"
                         }
                     }
                 }
@@ -252,7 +252,7 @@ const docTemplate = `{
                     "500": {
                         "description": "Failed to disable app",
                         "schema": {
-                            "$ref": "#/definitions/handlers.ErrorResponse"
+                            "$ref": "#/definitions/internal_handlers.ErrorResponse"
                         }
                     }
                 }
@@ -293,7 +293,7 @@ const docTemplate = `{
                     "500": {
                         "description": "Failed to enable app",
                         "schema": {
-                            "$ref": "#/definitions/handlers.ErrorResponse"
+                            "$ref": "#/definitions/internal_handlers.ErrorResponse"
                         }
                     }
                 }
@@ -347,7 +347,7 @@ const docTemplate = `{
                     "500": {
                         "description": "Failed to get logs",
                         "schema": {
-                            "$ref": "#/definitions/handlers.ErrorResponse"
+                            "$ref": "#/definitions/internal_handlers.ErrorResponse"
                         }
                     }
                 }
@@ -388,7 +388,7 @@ const docTemplate = `{
                     "500": {
                         "description": "Failed to restart app",
                         "schema": {
-                            "$ref": "#/definitions/handlers.ErrorResponse"
+                            "$ref": "#/definitions/internal_handlers.ErrorResponse"
                         }
                     }
                 }
@@ -429,7 +429,7 @@ const docTemplate = `{
                     "500": {
                         "description": "Failed to start app",
                         "schema": {
-                            "$ref": "#/definitions/handlers.ErrorResponse"
+                            "$ref": "#/definitions/internal_handlers.ErrorResponse"
                         }
                     }
                 }
@@ -470,7 +470,7 @@ const docTemplate = `{
                     "500": {
                         "description": "Failed to stop app",
                         "schema": {
-                            "$ref": "#/definitions/handlers.ErrorResponse"
+                            "$ref": "#/definitions/internal_handlers.ErrorResponse"
                         }
                     }
                 }
@@ -523,13 +523,13 @@ const docTemplate = `{
                     "400": {
                         "description": "Invalid request body",
                         "schema": {
-                            "$ref": "#/definitions/handlers.ErrorResponse"
+                            "$ref": "#/definitions/internal_handlers.ErrorResponse"
                         }
                     },
                     "500": {
                         "description": "Failed to configure Tor",
                         "schema": {
-                            "$ref": "#/definitions/handlers.ErrorResponse"
+                            "$ref": "#/definitions/internal_handlers.ErrorResponse"
                         }
                     }
                 }
@@ -582,13 +582,13 @@ const docTemplate = `{
                     "400": {
                         "description": "Invalid request body",
                         "schema": {
-                            "$ref": "#/definitions/handlers.ErrorResponse"
+                            "$ref": "#/definitions/internal_handlers.ErrorResponse"
                         }
                     },
                     "500": {
                         "description": "Failed to configure VPN",
                         "schema": {
-                            "$ref": "#/definitions/handlers.ErrorResponse"
+                            "$ref": "#/definitions/internal_handlers.ErrorResponse"
                         }
                     }
                 }
@@ -692,7 +692,7 @@ const docTemplate = `{
                     "500": {
                         "description": "Failed to list core apps",
                         "schema": {
-                            "$ref": "#/definitions/handlers.ErrorResponse"
+                            "$ref": "#/definitions/internal_handlers.ErrorResponse"
                         }
                     }
                 }
@@ -733,7 +733,7 @@ const docTemplate = `{
                     "404": {
                         "description": "Core app not found",
                         "schema": {
-                            "$ref": "#/definitions/handlers.ErrorResponse"
+                            "$ref": "#/definitions/internal_handlers.ErrorResponse"
                         }
                     }
                 }
@@ -784,13 +784,13 @@ const docTemplate = `{
                     "400": {
                         "description": "Missing confirm_dangerous or invalid request",
                         "schema": {
-                            "$ref": "#/definitions/handlers.ErrorResponse"
+                            "$ref": "#/definitions/internal_handlers.ErrorResponse"
                         }
                     },
                     "500": {
                         "description": "Update failed",
                         "schema": {
-                            "$ref": "#/definitions/handlers.ErrorResponse"
+                            "$ref": "#/definitions/internal_handlers.ErrorResponse"
                         }
                     }
                 }
@@ -842,13 +842,13 @@ const docTemplate = `{
                     "400": {
                         "description": "Missing confirm_dangerous",
                         "schema": {
-                            "$ref": "#/definitions/handlers.ErrorResponse"
+                            "$ref": "#/definitions/internal_handlers.ErrorResponse"
                         }
                     },
                     "500": {
                         "description": "Apply failed",
                         "schema": {
-                            "$ref": "#/definitions/handlers.ErrorResponse"
+                            "$ref": "#/definitions/internal_handlers.ErrorResponse"
                         }
                     }
                 }
@@ -889,7 +889,7 @@ const docTemplate = `{
                     "500": {
                         "description": "Failed to list backups",
                         "schema": {
-                            "$ref": "#/definitions/handlers.ErrorResponse"
+                            "$ref": "#/definitions/internal_handlers.ErrorResponse"
                         }
                     }
                 }
@@ -937,7 +937,7 @@ const docTemplate = `{
                     "500": {
                         "description": "Restore failed",
                         "schema": {
-                            "$ref": "#/definitions/handlers.ErrorResponse"
+                            "$ref": "#/definitions/internal_handlers.ErrorResponse"
                         }
                     }
                 }
@@ -992,7 +992,7 @@ const docTemplate = `{
                         "in": "body",
                         "required": true,
                         "schema": {
-                            "$ref": "#/definitions/models.AppInstallRequest"
+                            "$ref": "#/definitions/cubeos-api_internal_models.AppInstallRequest"
                         }
                     }
                 ],
@@ -1000,19 +1000,19 @@ const docTemplate = `{
                     "201": {
                         "description": "Installed app details",
                         "schema": {
-                            "$ref": "#/definitions/models.InstalledApp"
+                            "$ref": "#/definitions/cubeos-api_internal_models.InstalledApp"
                         }
                     },
                     "400": {
                         "description": "Invalid request, missing fields, or invalid app name",
                         "schema": {
-                            "$ref": "#/definitions/handlers.ErrorResponse"
+                            "$ref": "#/definitions/internal_handlers.ErrorResponse"
                         }
                     },
                     "500": {
                         "description": "Installation failed",
                         "schema": {
-                            "$ref": "#/definitions/handlers.ErrorResponse"
+                            "$ref": "#/definitions/internal_handlers.ErrorResponse"
                         }
                     }
                 }
@@ -1046,13 +1046,13 @@ const docTemplate = `{
                     "200": {
                         "description": "Installed app details",
                         "schema": {
-                            "$ref": "#/definitions/models.InstalledApp"
+                            "$ref": "#/definitions/cubeos-api_internal_models.InstalledApp"
                         }
                     },
                     "404": {
                         "description": "App not found",
                         "schema": {
-                            "$ref": "#/definitions/handlers.ErrorResponse"
+                            "$ref": "#/definitions/internal_handlers.ErrorResponse"
                         }
                     }
                 }
@@ -1090,7 +1090,7 @@ const docTemplate = `{
                     "500": {
                         "description": "Removal failed",
                         "schema": {
-                            "$ref": "#/definitions/handlers.ErrorResponse"
+                            "$ref": "#/definitions/internal_handlers.ErrorResponse"
                         }
                     }
                 }
@@ -1128,7 +1128,7 @@ const docTemplate = `{
                         "in": "body",
                         "required": true,
                         "schema": {
-                            "$ref": "#/definitions/models.AppActionRequest"
+                            "$ref": "#/definitions/cubeos-api_internal_models.AppActionRequest"
                         }
                     }
                 ],
@@ -1145,13 +1145,13 @@ const docTemplate = `{
                     "400": {
                         "description": "Invalid request or action",
                         "schema": {
-                            "$ref": "#/definitions/handlers.ErrorResponse"
+                            "$ref": "#/definitions/internal_handlers.ErrorResponse"
                         }
                     },
                     "500": {
                         "description": "Action failed",
                         "schema": {
-                            "$ref": "#/definitions/handlers.ErrorResponse"
+                            "$ref": "#/definitions/internal_handlers.ErrorResponse"
                         }
                     }
                 }
@@ -1192,7 +1192,7 @@ const docTemplate = `{
                     "404": {
                         "description": "App not found",
                         "schema": {
-                            "$ref": "#/definitions/handlers.ErrorResponse"
+                            "$ref": "#/definitions/internal_handlers.ErrorResponse"
                         }
                     }
                 }
@@ -1243,13 +1243,13 @@ const docTemplate = `{
                     "400": {
                         "description": "Invalid request",
                         "schema": {
-                            "$ref": "#/definitions/handlers.ErrorResponse"
+                            "$ref": "#/definitions/internal_handlers.ErrorResponse"
                         }
                     },
                     "500": {
                         "description": "Update failed",
                         "schema": {
-                            "$ref": "#/definitions/handlers.ErrorResponse"
+                            "$ref": "#/definitions/internal_handlers.ErrorResponse"
                         }
                     }
                 }
@@ -1290,7 +1290,7 @@ const docTemplate = `{
                     "500": {
                         "description": "Apply failed",
                         "schema": {
-                            "$ref": "#/definitions/handlers.ErrorResponse"
+                            "$ref": "#/definitions/internal_handlers.ErrorResponse"
                         }
                     }
                 }
@@ -1331,7 +1331,7 @@ const docTemplate = `{
                     "500": {
                         "description": "Failed to list backups",
                         "schema": {
-                            "$ref": "#/definitions/handlers.ErrorResponse"
+                            "$ref": "#/definitions/internal_handlers.ErrorResponse"
                         }
                     }
                 }
@@ -1379,7 +1379,7 @@ const docTemplate = `{
                     "500": {
                         "description": "Restore failed",
                         "schema": {
-                            "$ref": "#/definitions/handlers.ErrorResponse"
+                            "$ref": "#/definitions/internal_handlers.ErrorResponse"
                         }
                     }
                 }
@@ -1422,7 +1422,7 @@ const docTemplate = `{
                     "500": {
                         "description": "Restart failed",
                         "schema": {
-                            "$ref": "#/definitions/handlers.ErrorResponse"
+                            "$ref": "#/definitions/internal_handlers.ErrorResponse"
                         }
                     }
                 }
@@ -1465,7 +1465,7 @@ const docTemplate = `{
                     "500": {
                         "description": "Start failed",
                         "schema": {
-                            "$ref": "#/definitions/handlers.ErrorResponse"
+                            "$ref": "#/definitions/internal_handlers.ErrorResponse"
                         }
                     }
                 }
@@ -1508,7 +1508,7 @@ const docTemplate = `{
                     "500": {
                         "description": "Stop failed",
                         "schema": {
-                            "$ref": "#/definitions/handlers.ErrorResponse"
+                            "$ref": "#/definitions/internal_handlers.ErrorResponse"
                         }
                     }
                 }
@@ -1540,7 +1540,7 @@ const docTemplate = `{
                     "500": {
                         "description": "Failed to fetch proxy hosts",
                         "schema": {
-                            "$ref": "#/definitions/handlers.ErrorResponse"
+                            "$ref": "#/definitions/internal_handlers.ErrorResponse"
                         }
                     }
                 }
@@ -1603,19 +1603,19 @@ const docTemplate = `{
                     "201": {
                         "description": "Created store object",
                         "schema": {
-                            "$ref": "#/definitions/models.AppStore"
+                            "$ref": "#/definitions/cubeos-api_internal_models.AppStore"
                         }
                     },
                     "400": {
                         "description": "Invalid request or missing URL",
                         "schema": {
-                            "$ref": "#/definitions/handlers.ErrorResponse"
+                            "$ref": "#/definitions/internal_handlers.ErrorResponse"
                         }
                     },
                     "500": {
                         "description": "Failed to register store",
                         "schema": {
-                            "$ref": "#/definitions/handlers.ErrorResponse"
+                            "$ref": "#/definitions/internal_handlers.ErrorResponse"
                         }
                     }
                 }
@@ -1647,7 +1647,7 @@ const docTemplate = `{
                     "500": {
                         "description": "Sync failed",
                         "schema": {
-                            "$ref": "#/definitions/handlers.ErrorResponse"
+                            "$ref": "#/definitions/internal_handlers.ErrorResponse"
                         }
                     }
                 }
@@ -1681,13 +1681,13 @@ const docTemplate = `{
                     "200": {
                         "description": "Store details",
                         "schema": {
-                            "$ref": "#/definitions/models.AppStore"
+                            "$ref": "#/definitions/cubeos-api_internal_models.AppStore"
                         }
                     },
                     "404": {
                         "description": "Store not found",
                         "schema": {
-                            "$ref": "#/definitions/handlers.ErrorResponse"
+                            "$ref": "#/definitions/internal_handlers.ErrorResponse"
                         }
                     }
                 }
@@ -1719,7 +1719,7 @@ const docTemplate = `{
                     "500": {
                         "description": "Failed to remove store",
                         "schema": {
-                            "$ref": "#/definitions/handlers.ErrorResponse"
+                            "$ref": "#/definitions/internal_handlers.ErrorResponse"
                         }
                     }
                 }
@@ -1760,13 +1760,13 @@ const docTemplate = `{
                     "200": {
                         "description": "App details",
                         "schema": {
-                            "$ref": "#/definitions/models.StoreApp"
+                            "$ref": "#/definitions/cubeos-api_internal_models.StoreApp"
                         }
                     },
                     "404": {
                         "description": "App not found",
                         "schema": {
-                            "$ref": "#/definitions/handlers.ErrorResponse"
+                            "$ref": "#/definitions/internal_handlers.ErrorResponse"
                         }
                     }
                 }
@@ -1861,13 +1861,13 @@ const docTemplate = `{
                     "200": {
                         "description": "App manifest",
                         "schema": {
-                            "$ref": "#/definitions/models.CasaOSManifest"
+                            "$ref": "#/definitions/cubeos-api_internal_models.CasaOSManifest"
                         }
                     },
                     "404": {
                         "description": "Manifest not found",
                         "schema": {
-                            "$ref": "#/definitions/handlers.ErrorResponse"
+                            "$ref": "#/definitions/internal_handlers.ErrorResponse"
                         }
                     }
                 }
@@ -1968,7 +1968,7 @@ const docTemplate = `{
                     "500": {
                         "description": "Sync failed",
                         "schema": {
-                            "$ref": "#/definitions/handlers.ErrorResponse"
+                            "$ref": "#/definitions/internal_handlers.ErrorResponse"
                         }
                     }
                 }
@@ -1994,7 +1994,7 @@ const docTemplate = `{
                         "in": "body",
                         "required": true,
                         "schema": {
-                            "$ref": "#/definitions/models.LoginRequest"
+                            "$ref": "#/definitions/cubeos-api_internal_models.LoginRequest"
                         }
                     }
                 ],
@@ -2002,25 +2002,25 @@ const docTemplate = `{
                     "200": {
                         "description": "Login successful",
                         "schema": {
-                            "$ref": "#/definitions/models.LoginResponse"
+                            "$ref": "#/definitions/cubeos-api_internal_models.LoginResponse"
                         }
                     },
                     "400": {
                         "description": "Invalid request body",
                         "schema": {
-                            "$ref": "#/definitions/handlers.ErrorResponse"
+                            "$ref": "#/definitions/internal_handlers.ErrorResponse"
                         }
                     },
                     "401": {
                         "description": "Invalid credentials",
                         "schema": {
-                            "$ref": "#/definitions/handlers.ErrorResponse"
+                            "$ref": "#/definitions/internal_handlers.ErrorResponse"
                         }
                     },
                     "500": {
                         "description": "Server error",
                         "schema": {
-                            "$ref": "#/definitions/handlers.ErrorResponse"
+                            "$ref": "#/definitions/internal_handlers.ErrorResponse"
                         }
                     }
                 }
@@ -2045,7 +2045,7 @@ const docTemplate = `{
                     "200": {
                         "description": "Logout successful",
                         "schema": {
-                            "$ref": "#/definitions/models.SuccessResponse"
+                            "$ref": "#/definitions/cubeos-api_internal_models.SuccessResponse"
                         }
                     }
                 }
@@ -2077,7 +2077,7 @@ const docTemplate = `{
                     "401": {
                         "description": "Invalid token",
                         "schema": {
-                            "$ref": "#/definitions/handlers.ErrorResponse"
+                            "$ref": "#/definitions/internal_handlers.ErrorResponse"
                         }
                     }
                 }
@@ -2108,7 +2108,7 @@ const docTemplate = `{
                         "in": "body",
                         "required": true,
                         "schema": {
-                            "$ref": "#/definitions/models.ChangePasswordRequest"
+                            "$ref": "#/definitions/cubeos-api_internal_models.ChangePasswordRequest"
                         }
                     }
                 ],
@@ -2116,25 +2116,25 @@ const docTemplate = `{
                     "200": {
                         "description": "Password changed successfully",
                         "schema": {
-                            "$ref": "#/definitions/models.SuccessResponse"
+                            "$ref": "#/definitions/cubeos-api_internal_models.SuccessResponse"
                         }
                     },
                     "400": {
                         "description": "Invalid request body",
                         "schema": {
-                            "$ref": "#/definitions/handlers.ErrorResponse"
+                            "$ref": "#/definitions/internal_handlers.ErrorResponse"
                         }
                     },
                     "401": {
                         "description": "Invalid token or current password incorrect",
                         "schema": {
-                            "$ref": "#/definitions/handlers.ErrorResponse"
+                            "$ref": "#/definitions/internal_handlers.ErrorResponse"
                         }
                     },
                     "500": {
                         "description": "Server error",
                         "schema": {
-                            "$ref": "#/definitions/handlers.ErrorResponse"
+                            "$ref": "#/definitions/internal_handlers.ErrorResponse"
                         }
                     }
                 }
@@ -2166,13 +2166,13 @@ const docTemplate = `{
                     "401": {
                         "description": "Invalid token",
                         "schema": {
-                            "$ref": "#/definitions/handlers.ErrorResponse"
+                            "$ref": "#/definitions/internal_handlers.ErrorResponse"
                         }
                     },
                     "500": {
                         "description": "Failed to generate token",
                         "schema": {
-                            "$ref": "#/definitions/handlers.ErrorResponse"
+                            "$ref": "#/definitions/internal_handlers.ErrorResponse"
                         }
                     }
                 }
@@ -2212,7 +2212,7 @@ const docTemplate = `{
                     "500": {
                         "description": "Failed to list backups",
                         "schema": {
-                            "$ref": "#/definitions/handlers.ErrorResponse"
+                            "$ref": "#/definitions/internal_handlers.ErrorResponse"
                         }
                     }
                 }
@@ -2241,7 +2241,7 @@ const docTemplate = `{
                         "in": "body",
                         "required": true,
                         "schema": {
-                            "$ref": "#/definitions/handlers.CreateBackupRequest"
+                            "$ref": "#/definitions/internal_handlers.CreateBackupRequest"
                         }
                     }
                 ],
@@ -2249,19 +2249,19 @@ const docTemplate = `{
                     "202": {
                         "description": "Backup started",
                         "schema": {
-                            "$ref": "#/definitions/handlers.Backup"
+                            "$ref": "#/definitions/internal_handlers.Backup"
                         }
                     },
                     "400": {
                         "description": "Invalid request",
                         "schema": {
-                            "$ref": "#/definitions/handlers.ErrorResponse"
+                            "$ref": "#/definitions/internal_handlers.ErrorResponse"
                         }
                     },
                     "500": {
                         "description": "Failed to create backup",
                         "schema": {
-                            "$ref": "#/definitions/handlers.ErrorResponse"
+                            "$ref": "#/definitions/internal_handlers.ErrorResponse"
                         }
                     }
                 }
@@ -2286,13 +2286,13 @@ const docTemplate = `{
                     "202": {
                         "description": "Backup started",
                         "schema": {
-                            "$ref": "#/definitions/handlers.Backup"
+                            "$ref": "#/definitions/internal_handlers.Backup"
                         }
                     },
                     "500": {
                         "description": "Failed to create backup",
                         "schema": {
-                            "$ref": "#/definitions/handlers.ErrorResponse"
+                            "$ref": "#/definitions/internal_handlers.ErrorResponse"
                         }
                     }
                 }
@@ -2317,13 +2317,13 @@ const docTemplate = `{
                     "200": {
                         "description": "Backup statistics",
                         "schema": {
-                            "$ref": "#/definitions/handlers.BackupStats"
+                            "$ref": "#/definitions/internal_handlers.BackupStats"
                         }
                     },
                     "500": {
                         "description": "Failed to get backup stats",
                         "schema": {
-                            "$ref": "#/definitions/handlers.ErrorResponse"
+                            "$ref": "#/definitions/internal_handlers.ErrorResponse"
                         }
                     }
                 }
@@ -2357,19 +2357,19 @@ const docTemplate = `{
                     "200": {
                         "description": "Backup details",
                         "schema": {
-                            "$ref": "#/definitions/handlers.Backup"
+                            "$ref": "#/definitions/internal_handlers.Backup"
                         }
                     },
                     "404": {
                         "description": "Backup not found",
                         "schema": {
-                            "$ref": "#/definitions/handlers.ErrorResponse"
+                            "$ref": "#/definitions/internal_handlers.ErrorResponse"
                         }
                     },
                     "500": {
                         "description": "Failed to get backup",
                         "schema": {
-                            "$ref": "#/definitions/handlers.ErrorResponse"
+                            "$ref": "#/definitions/internal_handlers.ErrorResponse"
                         }
                     }
                 }
@@ -2408,13 +2408,13 @@ const docTemplate = `{
                     "404": {
                         "description": "Backup not found",
                         "schema": {
-                            "$ref": "#/definitions/handlers.ErrorResponse"
+                            "$ref": "#/definitions/internal_handlers.ErrorResponse"
                         }
                     },
                     "500": {
                         "description": "Failed to delete backup",
                         "schema": {
-                            "$ref": "#/definitions/handlers.ErrorResponse"
+                            "$ref": "#/definitions/internal_handlers.ErrorResponse"
                         }
                     }
                 }
@@ -2454,13 +2454,13 @@ const docTemplate = `{
                     "404": {
                         "description": "Backup not found",
                         "schema": {
-                            "$ref": "#/definitions/handlers.ErrorResponse"
+                            "$ref": "#/definitions/internal_handlers.ErrorResponse"
                         }
                     },
                     "500": {
                         "description": "Failed to download backup",
                         "schema": {
-                            "$ref": "#/definitions/handlers.ErrorResponse"
+                            "$ref": "#/definitions/internal_handlers.ErrorResponse"
                         }
                     }
                 }
@@ -2501,13 +2501,13 @@ const docTemplate = `{
                     "404": {
                         "description": "Backup not found",
                         "schema": {
-                            "$ref": "#/definitions/handlers.ErrorResponse"
+                            "$ref": "#/definitions/internal_handlers.ErrorResponse"
                         }
                     },
                     "500": {
                         "description": "Failed to restore backup",
                         "schema": {
-                            "$ref": "#/definitions/handlers.ErrorResponse"
+                            "$ref": "#/definitions/internal_handlers.ErrorResponse"
                         }
                     }
                 }
@@ -2538,7 +2538,7 @@ const docTemplate = `{
                         "in": "body",
                         "required": true,
                         "schema": {
-                            "$ref": "#/definitions/handlers.ImportRequest"
+                            "$ref": "#/definitions/internal_handlers.ImportRequest"
                         }
                     }
                 ],
@@ -2546,25 +2546,25 @@ const docTemplate = `{
                     "200": {
                         "description": "Import result with app details, paths, and status",
                         "schema": {
-                            "$ref": "#/definitions/handlers.ImportResponse"
+                            "$ref": "#/definitions/internal_handlers.ImportResponse"
                         }
                     },
                     "400": {
                         "description": "Invalid request, missing fields, invalid manifest, or invalid app name",
                         "schema": {
-                            "$ref": "#/definitions/handlers.ImportResponse"
+                            "$ref": "#/definitions/internal_handlers.ImportResponse"
                         }
                     },
                     "409": {
                         "description": "App already exists",
                         "schema": {
-                            "$ref": "#/definitions/handlers.ImportResponse"
+                            "$ref": "#/definitions/internal_handlers.ImportResponse"
                         }
                     },
                     "500": {
                         "description": "Failed to create app files",
                         "schema": {
-                            "$ref": "#/definitions/handlers.ImportResponse"
+                            "$ref": "#/definitions/internal_handlers.ImportResponse"
                         }
                     }
                 }
@@ -2595,7 +2595,7 @@ const docTemplate = `{
                         "in": "body",
                         "required": true,
                         "schema": {
-                            "$ref": "#/definitions/handlers.PreviewRequest"
+                            "$ref": "#/definitions/internal_handlers.PreviewRequest"
                         }
                     }
                 ],
@@ -2603,13 +2603,13 @@ const docTemplate = `{
                     "200": {
                         "description": "Parsed manifest preview with validation results",
                         "schema": {
-                            "$ref": "#/definitions/handlers.PreviewResponse"
+                            "$ref": "#/definitions/internal_handlers.PreviewResponse"
                         }
                     },
                     "400": {
                         "description": "Invalid request, failed to fetch URL, or missing manifest",
                         "schema": {
-                            "$ref": "#/definitions/handlers.ErrorResponse"
+                            "$ref": "#/definitions/internal_handlers.ErrorResponse"
                         }
                     }
                 }
@@ -2666,7 +2666,7 @@ const docTemplate = `{
                         "in": "body",
                         "required": true,
                         "schema": {
-                            "$ref": "#/definitions/handlers.ChatRequest"
+                            "$ref": "#/definitions/internal_handlers.ChatRequest"
                         }
                     }
                 ],
@@ -2674,25 +2674,25 @@ const docTemplate = `{
                     "200": {
                         "description": "AI response with optional documentation sources",
                         "schema": {
-                            "$ref": "#/definitions/handlers.ChatResponse"
+                            "$ref": "#/definitions/internal_handlers.ChatResponse"
                         }
                     },
                     "400": {
                         "description": "Invalid request or missing message",
                         "schema": {
-                            "$ref": "#/definitions/handlers.ErrorResponse"
+                            "$ref": "#/definitions/internal_handlers.ErrorResponse"
                         }
                     },
                     "500": {
                         "description": "Failed to parse AI response",
                         "schema": {
-                            "$ref": "#/definitions/handlers.ErrorResponse"
+                            "$ref": "#/definitions/internal_handlers.ErrorResponse"
                         }
                     },
                     "503": {
                         "description": "AI service unavailable (Ollama not running)",
                         "schema": {
-                            "$ref": "#/definitions/handlers.ErrorResponse"
+                            "$ref": "#/definitions/internal_handlers.ErrorResponse"
                         }
                     }
                 }
@@ -2726,7 +2726,7 @@ const docTemplate = `{
                     "503": {
                         "description": "Failed to pull model (Ollama unavailable)",
                         "schema": {
-                            "$ref": "#/definitions/handlers.ErrorResponse"
+                            "$ref": "#/definitions/internal_handlers.ErrorResponse"
                         }
                     }
                 }
@@ -2751,7 +2751,7 @@ const docTemplate = `{
                     "200": {
                         "description": "Chat service status",
                         "schema": {
-                            "$ref": "#/definitions/handlers.ChatStatusResponse"
+                            "$ref": "#/definitions/internal_handlers.ChatStatusResponse"
                         }
                     }
                 }
@@ -2782,7 +2782,7 @@ const docTemplate = `{
                         "in": "body",
                         "required": true,
                         "schema": {
-                            "$ref": "#/definitions/handlers.ChatRequest"
+                            "$ref": "#/definitions/internal_handlers.ChatRequest"
                         }
                     }
                 ],
@@ -2796,13 +2796,13 @@ const docTemplate = `{
                     "400": {
                         "description": "Invalid request or missing message",
                         "schema": {
-                            "$ref": "#/definitions/handlers.ErrorResponse"
+                            "$ref": "#/definitions/internal_handlers.ErrorResponse"
                         }
                     },
                     "500": {
                         "description": "Streaming not supported",
                         "schema": {
-                            "$ref": "#/definitions/handlers.ErrorResponse"
+                            "$ref": "#/definitions/internal_handlers.ErrorResponse"
                         }
                     }
                 }
@@ -2834,7 +2834,7 @@ const docTemplate = `{
                     "500": {
                         "description": "Failed to get clients",
                         "schema": {
-                            "$ref": "#/definitions/handlers.ErrorResponse"
+                            "$ref": "#/definitions/internal_handlers.ErrorResponse"
                         }
                     }
                 }
@@ -2894,13 +2894,13 @@ const docTemplate = `{
                     "200": {
                         "description": "Client blocked",
                         "schema": {
-                            "$ref": "#/definitions/models.SuccessResponse"
+                            "$ref": "#/definitions/cubeos-api_internal_models.SuccessResponse"
                         }
                     },
                     "501": {
                         "description": "Not implemented",
                         "schema": {
-                            "$ref": "#/definitions/handlers.ErrorResponse"
+                            "$ref": "#/definitions/internal_handlers.ErrorResponse"
                         }
                     }
                 }
@@ -2934,13 +2934,13 @@ const docTemplate = `{
                     "200": {
                         "description": "Client unblocked",
                         "schema": {
-                            "$ref": "#/definitions/models.SuccessResponse"
+                            "$ref": "#/definitions/cubeos-api_internal_models.SuccessResponse"
                         }
                     },
                     "501": {
                         "description": "Not implemented",
                         "schema": {
-                            "$ref": "#/definitions/handlers.ErrorResponse"
+                            "$ref": "#/definitions/internal_handlers.ErrorResponse"
                         }
                     }
                 }
@@ -2968,19 +2968,19 @@ const docTemplate = `{
                     "200": {
                         "description": "OK",
                         "schema": {
-                            "$ref": "#/definitions/hal.BluetoothStatus"
+                            "$ref": "#/definitions/cubeos-api_internal_hal.BluetoothStatus"
                         }
                     },
                     "500": {
                         "description": "Failed to get Bluetooth status",
                         "schema": {
-                            "$ref": "#/definitions/handlers.ErrorResponse"
+                            "$ref": "#/definitions/internal_handlers.ErrorResponse"
                         }
                     },
                     "503": {
                         "description": "HAL unavailable",
                         "schema": {
-                            "$ref": "#/definitions/handlers.ErrorResponse"
+                            "$ref": "#/definitions/internal_handlers.ErrorResponse"
                         }
                     }
                 }
@@ -3018,25 +3018,25 @@ const docTemplate = `{
                     "200": {
                         "description": "OK",
                         "schema": {
-                            "$ref": "#/definitions/handlers.SuccessResponse"
+                            "$ref": "#/definitions/internal_handlers.SuccessResponse"
                         }
                     },
                     "400": {
                         "description": "Address required",
                         "schema": {
-                            "$ref": "#/definitions/handlers.ErrorResponse"
+                            "$ref": "#/definitions/internal_handlers.ErrorResponse"
                         }
                     },
                     "500": {
                         "description": "Failed to connect",
                         "schema": {
-                            "$ref": "#/definitions/handlers.ErrorResponse"
+                            "$ref": "#/definitions/internal_handlers.ErrorResponse"
                         }
                     },
                     "503": {
                         "description": "HAL unavailable",
                         "schema": {
-                            "$ref": "#/definitions/handlers.ErrorResponse"
+                            "$ref": "#/definitions/internal_handlers.ErrorResponse"
                         }
                     }
                 }
@@ -3064,19 +3064,19 @@ const docTemplate = `{
                     "200": {
                         "description": "OK",
                         "schema": {
-                            "$ref": "#/definitions/hal.BluetoothDevicesResponse"
+                            "$ref": "#/definitions/cubeos-api_internal_hal.BluetoothDevicesResponse"
                         }
                     },
                     "500": {
                         "description": "Failed to list Bluetooth devices",
                         "schema": {
-                            "$ref": "#/definitions/handlers.ErrorResponse"
+                            "$ref": "#/definitions/internal_handlers.ErrorResponse"
                         }
                     },
                     "503": {
                         "description": "HAL unavailable",
                         "schema": {
-                            "$ref": "#/definitions/handlers.ErrorResponse"
+                            "$ref": "#/definitions/internal_handlers.ErrorResponse"
                         }
                     }
                 }
@@ -3114,25 +3114,25 @@ const docTemplate = `{
                     "200": {
                         "description": "OK",
                         "schema": {
-                            "$ref": "#/definitions/handlers.SuccessResponse"
+                            "$ref": "#/definitions/internal_handlers.SuccessResponse"
                         }
                     },
                     "400": {
                         "description": "Address required",
                         "schema": {
-                            "$ref": "#/definitions/handlers.ErrorResponse"
+                            "$ref": "#/definitions/internal_handlers.ErrorResponse"
                         }
                     },
                     "500": {
                         "description": "Failed to remove",
                         "schema": {
-                            "$ref": "#/definitions/handlers.ErrorResponse"
+                            "$ref": "#/definitions/internal_handlers.ErrorResponse"
                         }
                     },
                     "503": {
                         "description": "HAL unavailable",
                         "schema": {
-                            "$ref": "#/definitions/handlers.ErrorResponse"
+                            "$ref": "#/definitions/internal_handlers.ErrorResponse"
                         }
                     }
                 }
@@ -3170,25 +3170,25 @@ const docTemplate = `{
                     "200": {
                         "description": "OK",
                         "schema": {
-                            "$ref": "#/definitions/handlers.SuccessResponse"
+                            "$ref": "#/definitions/internal_handlers.SuccessResponse"
                         }
                     },
                     "400": {
                         "description": "Address required",
                         "schema": {
-                            "$ref": "#/definitions/handlers.ErrorResponse"
+                            "$ref": "#/definitions/internal_handlers.ErrorResponse"
                         }
                     },
                     "500": {
                         "description": "Failed to disconnect",
                         "schema": {
-                            "$ref": "#/definitions/handlers.ErrorResponse"
+                            "$ref": "#/definitions/internal_handlers.ErrorResponse"
                         }
                     },
                     "503": {
                         "description": "HAL unavailable",
                         "schema": {
-                            "$ref": "#/definitions/handlers.ErrorResponse"
+                            "$ref": "#/definitions/internal_handlers.ErrorResponse"
                         }
                     }
                 }
@@ -3226,25 +3226,25 @@ const docTemplate = `{
                     "200": {
                         "description": "OK",
                         "schema": {
-                            "$ref": "#/definitions/handlers.SuccessResponse"
+                            "$ref": "#/definitions/internal_handlers.SuccessResponse"
                         }
                     },
                     "400": {
                         "description": "Address required",
                         "schema": {
-                            "$ref": "#/definitions/handlers.ErrorResponse"
+                            "$ref": "#/definitions/internal_handlers.ErrorResponse"
                         }
                     },
                     "500": {
                         "description": "Failed to pair",
                         "schema": {
-                            "$ref": "#/definitions/handlers.ErrorResponse"
+                            "$ref": "#/definitions/internal_handlers.ErrorResponse"
                         }
                     },
                     "503": {
                         "description": "HAL unavailable",
                         "schema": {
-                            "$ref": "#/definitions/handlers.ErrorResponse"
+                            "$ref": "#/definitions/internal_handlers.ErrorResponse"
                         }
                     }
                 }
@@ -3272,19 +3272,19 @@ const docTemplate = `{
                     "200": {
                         "description": "OK",
                         "schema": {
-                            "$ref": "#/definitions/handlers.SuccessResponse"
+                            "$ref": "#/definitions/internal_handlers.SuccessResponse"
                         }
                     },
                     "500": {
                         "description": "Failed to power off Bluetooth",
                         "schema": {
-                            "$ref": "#/definitions/handlers.ErrorResponse"
+                            "$ref": "#/definitions/internal_handlers.ErrorResponse"
                         }
                     },
                     "503": {
                         "description": "HAL unavailable",
                         "schema": {
-                            "$ref": "#/definitions/handlers.ErrorResponse"
+                            "$ref": "#/definitions/internal_handlers.ErrorResponse"
                         }
                     }
                 }
@@ -3312,19 +3312,19 @@ const docTemplate = `{
                     "200": {
                         "description": "OK",
                         "schema": {
-                            "$ref": "#/definitions/handlers.SuccessResponse"
+                            "$ref": "#/definitions/internal_handlers.SuccessResponse"
                         }
                     },
                     "500": {
                         "description": "Failed to power on Bluetooth",
                         "schema": {
-                            "$ref": "#/definitions/handlers.ErrorResponse"
+                            "$ref": "#/definitions/internal_handlers.ErrorResponse"
                         }
                     },
                     "503": {
                         "description": "HAL unavailable",
                         "schema": {
-                            "$ref": "#/definitions/handlers.ErrorResponse"
+                            "$ref": "#/definitions/internal_handlers.ErrorResponse"
                         }
                     }
                 }
@@ -3354,7 +3354,7 @@ const docTemplate = `{
                         "name": "request",
                         "in": "body",
                         "schema": {
-                            "$ref": "#/definitions/handlers.BluetoothScanRequest"
+                            "$ref": "#/definitions/internal_handlers.BluetoothScanRequest"
                         }
                     }
                 ],
@@ -3362,25 +3362,25 @@ const docTemplate = `{
                     "200": {
                         "description": "OK",
                         "schema": {
-                            "$ref": "#/definitions/handlers.SuccessResponse"
+                            "$ref": "#/definitions/internal_handlers.SuccessResponse"
                         }
                     },
                     "400": {
                         "description": "Invalid request",
                         "schema": {
-                            "$ref": "#/definitions/handlers.ErrorResponse"
+                            "$ref": "#/definitions/internal_handlers.ErrorResponse"
                         }
                     },
                     "500": {
                         "description": "Failed to start scan",
                         "schema": {
-                            "$ref": "#/definitions/handlers.ErrorResponse"
+                            "$ref": "#/definitions/internal_handlers.ErrorResponse"
                         }
                     },
                     "503": {
                         "description": "HAL unavailable",
                         "schema": {
-                            "$ref": "#/definitions/handlers.ErrorResponse"
+                            "$ref": "#/definitions/internal_handlers.ErrorResponse"
                         }
                     }
                 }
@@ -3408,19 +3408,19 @@ const docTemplate = `{
                     "200": {
                         "description": "OK",
                         "schema": {
-                            "$ref": "#/definitions/hal.CellularModemsResponse"
+                            "$ref": "#/definitions/cubeos-api_internal_hal.CellularModemsResponse"
                         }
                     },
                     "500": {
                         "description": "Failed to list cellular modems",
                         "schema": {
-                            "$ref": "#/definitions/handlers.ErrorResponse"
+                            "$ref": "#/definitions/internal_handlers.ErrorResponse"
                         }
                     },
                     "503": {
                         "description": "HAL unavailable",
                         "schema": {
-                            "$ref": "#/definitions/handlers.ErrorResponse"
+                            "$ref": "#/definitions/internal_handlers.ErrorResponse"
                         }
                     }
                 }
@@ -3448,19 +3448,19 @@ const docTemplate = `{
                     "200": {
                         "description": "OK",
                         "schema": {
-                            "$ref": "#/definitions/hal.AndroidTetheringStatus"
+                            "$ref": "#/definitions/cubeos-api_internal_hal.AndroidTetheringStatus"
                         }
                     },
                     "500": {
                         "description": "Failed to get status",
                         "schema": {
-                            "$ref": "#/definitions/handlers.ErrorResponse"
+                            "$ref": "#/definitions/internal_handlers.ErrorResponse"
                         }
                     },
                     "503": {
                         "description": "HAL unavailable",
                         "schema": {
-                            "$ref": "#/definitions/handlers.ErrorResponse"
+                            "$ref": "#/definitions/internal_handlers.ErrorResponse"
                         }
                     }
                 }
@@ -3488,19 +3488,19 @@ const docTemplate = `{
                     "200": {
                         "description": "OK",
                         "schema": {
-                            "$ref": "#/definitions/handlers.SuccessResponse"
+                            "$ref": "#/definitions/internal_handlers.SuccessResponse"
                         }
                     },
                     "500": {
                         "description": "Failed to disable tethering",
                         "schema": {
-                            "$ref": "#/definitions/handlers.ErrorResponse"
+                            "$ref": "#/definitions/internal_handlers.ErrorResponse"
                         }
                     },
                     "503": {
                         "description": "HAL unavailable",
                         "schema": {
-                            "$ref": "#/definitions/handlers.ErrorResponse"
+                            "$ref": "#/definitions/internal_handlers.ErrorResponse"
                         }
                     }
                 }
@@ -3528,19 +3528,19 @@ const docTemplate = `{
                     "200": {
                         "description": "OK",
                         "schema": {
-                            "$ref": "#/definitions/handlers.SuccessResponse"
+                            "$ref": "#/definitions/internal_handlers.SuccessResponse"
                         }
                     },
                     "500": {
                         "description": "Failed to enable tethering",
                         "schema": {
-                            "$ref": "#/definitions/handlers.ErrorResponse"
+                            "$ref": "#/definitions/internal_handlers.ErrorResponse"
                         }
                     },
                     "503": {
                         "description": "HAL unavailable",
                         "schema": {
-                            "$ref": "#/definitions/handlers.ErrorResponse"
+                            "$ref": "#/definitions/internal_handlers.ErrorResponse"
                         }
                     }
                 }
@@ -3568,19 +3568,19 @@ const docTemplate = `{
                     "200": {
                         "description": "OK",
                         "schema": {
-                            "$ref": "#/definitions/hal.CellularStatus"
+                            "$ref": "#/definitions/cubeos-api_internal_hal.CellularStatus"
                         }
                     },
                     "500": {
                         "description": "Failed to get cellular status",
                         "schema": {
-                            "$ref": "#/definitions/handlers.ErrorResponse"
+                            "$ref": "#/definitions/internal_handlers.ErrorResponse"
                         }
                     },
                     "503": {
                         "description": "HAL unavailable",
                         "schema": {
-                            "$ref": "#/definitions/handlers.ErrorResponse"
+                            "$ref": "#/definitions/internal_handlers.ErrorResponse"
                         }
                     }
                 }
@@ -3619,7 +3619,7 @@ const docTemplate = `{
                         "in": "body",
                         "required": true,
                         "schema": {
-                            "$ref": "#/definitions/handlers.CellularConnectRequest"
+                            "$ref": "#/definitions/internal_handlers.CellularConnectRequest"
                         }
                     }
                 ],
@@ -3627,25 +3627,25 @@ const docTemplate = `{
                     "200": {
                         "description": "OK",
                         "schema": {
-                            "$ref": "#/definitions/handlers.SuccessResponse"
+                            "$ref": "#/definitions/internal_handlers.SuccessResponse"
                         }
                     },
                     "400": {
                         "description": "Invalid request",
                         "schema": {
-                            "$ref": "#/definitions/handlers.ErrorResponse"
+                            "$ref": "#/definitions/internal_handlers.ErrorResponse"
                         }
                     },
                     "500": {
                         "description": "Failed to connect",
                         "schema": {
-                            "$ref": "#/definitions/handlers.ErrorResponse"
+                            "$ref": "#/definitions/internal_handlers.ErrorResponse"
                         }
                     },
                     "503": {
                         "description": "HAL unavailable",
                         "schema": {
-                            "$ref": "#/definitions/handlers.ErrorResponse"
+                            "$ref": "#/definitions/internal_handlers.ErrorResponse"
                         }
                     }
                 }
@@ -3683,25 +3683,25 @@ const docTemplate = `{
                     "200": {
                         "description": "OK",
                         "schema": {
-                            "$ref": "#/definitions/handlers.SuccessResponse"
+                            "$ref": "#/definitions/internal_handlers.SuccessResponse"
                         }
                     },
                     "400": {
                         "description": "Invalid modem index",
                         "schema": {
-                            "$ref": "#/definitions/handlers.ErrorResponse"
+                            "$ref": "#/definitions/internal_handlers.ErrorResponse"
                         }
                     },
                     "500": {
                         "description": "Failed to disconnect",
                         "schema": {
-                            "$ref": "#/definitions/handlers.ErrorResponse"
+                            "$ref": "#/definitions/internal_handlers.ErrorResponse"
                         }
                     },
                     "503": {
                         "description": "HAL unavailable",
                         "schema": {
-                            "$ref": "#/definitions/handlers.ErrorResponse"
+                            "$ref": "#/definitions/internal_handlers.ErrorResponse"
                         }
                     }
                 }
@@ -3739,25 +3739,25 @@ const docTemplate = `{
                     "200": {
                         "description": "OK",
                         "schema": {
-                            "$ref": "#/definitions/hal.CellularSignal"
+                            "$ref": "#/definitions/cubeos-api_internal_hal.CellularSignal"
                         }
                     },
                     "400": {
                         "description": "Invalid modem index",
                         "schema": {
-                            "$ref": "#/definitions/handlers.ErrorResponse"
+                            "$ref": "#/definitions/internal_handlers.ErrorResponse"
                         }
                     },
                     "500": {
                         "description": "Failed to get signal",
                         "schema": {
-                            "$ref": "#/definitions/handlers.ErrorResponse"
+                            "$ref": "#/definitions/internal_handlers.ErrorResponse"
                         }
                     },
                     "503": {
                         "description": "HAL unavailable",
                         "schema": {
-                            "$ref": "#/definitions/handlers.ErrorResponse"
+                            "$ref": "#/definitions/internal_handlers.ErrorResponse"
                         }
                     }
                 }
@@ -3785,19 +3785,19 @@ const docTemplate = `{
                     "200": {
                         "description": "OK",
                         "schema": {
-                            "$ref": "#/definitions/hal.GPSDevicesResponse"
+                            "$ref": "#/definitions/cubeos-api_internal_hal.GPSDevicesResponse"
                         }
                     },
                     "500": {
                         "description": "Failed to list GPS devices",
                         "schema": {
-                            "$ref": "#/definitions/handlers.ErrorResponse"
+                            "$ref": "#/definitions/internal_handlers.ErrorResponse"
                         }
                     },
                     "503": {
                         "description": "HAL unavailable",
                         "schema": {
-                            "$ref": "#/definitions/handlers.ErrorResponse"
+                            "$ref": "#/definitions/internal_handlers.ErrorResponse"
                         }
                     }
                 }
@@ -3842,25 +3842,25 @@ const docTemplate = `{
                     "200": {
                         "description": "OK",
                         "schema": {
-                            "$ref": "#/definitions/hal.GPSPosition"
+                            "$ref": "#/definitions/cubeos-api_internal_hal.GPSPosition"
                         }
                     },
                     "400": {
                         "description": "Port required",
                         "schema": {
-                            "$ref": "#/definitions/handlers.ErrorResponse"
+                            "$ref": "#/definitions/internal_handlers.ErrorResponse"
                         }
                     },
                     "500": {
                         "description": "Failed to get GPS position",
                         "schema": {
-                            "$ref": "#/definitions/handlers.ErrorResponse"
+                            "$ref": "#/definitions/internal_handlers.ErrorResponse"
                         }
                     },
                     "503": {
                         "description": "HAL unavailable",
                         "schema": {
-                            "$ref": "#/definitions/handlers.ErrorResponse"
+                            "$ref": "#/definitions/internal_handlers.ErrorResponse"
                         }
                     }
                 }
@@ -3898,25 +3898,25 @@ const docTemplate = `{
                     "200": {
                         "description": "OK",
                         "schema": {
-                            "$ref": "#/definitions/hal.GPSStatus"
+                            "$ref": "#/definitions/cubeos-api_internal_hal.GPSStatus"
                         }
                     },
                     "400": {
                         "description": "Port required",
                         "schema": {
-                            "$ref": "#/definitions/handlers.ErrorResponse"
+                            "$ref": "#/definitions/internal_handlers.ErrorResponse"
                         }
                     },
                     "500": {
                         "description": "Failed to get GPS status",
                         "schema": {
-                            "$ref": "#/definitions/handlers.ErrorResponse"
+                            "$ref": "#/definitions/internal_handlers.ErrorResponse"
                         }
                     },
                     "503": {
                         "description": "HAL unavailable",
                         "schema": {
-                            "$ref": "#/definitions/handlers.ErrorResponse"
+                            "$ref": "#/definitions/internal_handlers.ErrorResponse"
                         }
                     }
                 }
@@ -3954,25 +3954,25 @@ const docTemplate = `{
                     "200": {
                         "description": "OK",
                         "schema": {
-                            "$ref": "#/definitions/handlers.SuccessResponse"
+                            "$ref": "#/definitions/internal_handlers.SuccessResponse"
                         }
                     },
                     "400": {
                         "description": "Port required",
                         "schema": {
-                            "$ref": "#/definitions/handlers.ErrorResponse"
+                            "$ref": "#/definitions/internal_handlers.ErrorResponse"
                         }
                     },
                     "500": {
                         "description": "Failed to check mailbox",
                         "schema": {
-                            "$ref": "#/definitions/handlers.ErrorResponse"
+                            "$ref": "#/definitions/internal_handlers.ErrorResponse"
                         }
                     },
                     "503": {
                         "description": "HAL unavailable",
                         "schema": {
-                            "$ref": "#/definitions/handlers.ErrorResponse"
+                            "$ref": "#/definitions/internal_handlers.ErrorResponse"
                         }
                     }
                 }
@@ -4010,25 +4010,25 @@ const docTemplate = `{
                     "200": {
                         "description": "OK",
                         "schema": {
-                            "$ref": "#/definitions/hal.IridiumMessagesResponse"
+                            "$ref": "#/definitions/cubeos-api_internal_hal.IridiumMessagesResponse"
                         }
                     },
                     "400": {
                         "description": "Port required",
                         "schema": {
-                            "$ref": "#/definitions/handlers.ErrorResponse"
+                            "$ref": "#/definitions/internal_handlers.ErrorResponse"
                         }
                     },
                     "500": {
                         "description": "Failed to get messages",
                         "schema": {
-                            "$ref": "#/definitions/handlers.ErrorResponse"
+                            "$ref": "#/definitions/internal_handlers.ErrorResponse"
                         }
                     },
                     "503": {
                         "description": "HAL unavailable",
                         "schema": {
-                            "$ref": "#/definitions/handlers.ErrorResponse"
+                            "$ref": "#/definitions/internal_handlers.ErrorResponse"
                         }
                     }
                 }
@@ -4067,7 +4067,7 @@ const docTemplate = `{
                         "in": "body",
                         "required": true,
                         "schema": {
-                            "$ref": "#/definitions/handlers.IridiumSBDRequest"
+                            "$ref": "#/definitions/internal_handlers.IridiumSBDRequest"
                         }
                     }
                 ],
@@ -4075,25 +4075,25 @@ const docTemplate = `{
                     "200": {
                         "description": "OK",
                         "schema": {
-                            "$ref": "#/definitions/handlers.SuccessResponse"
+                            "$ref": "#/definitions/internal_handlers.SuccessResponse"
                         }
                     },
                     "400": {
                         "description": "Invalid request",
                         "schema": {
-                            "$ref": "#/definitions/handlers.ErrorResponse"
+                            "$ref": "#/definitions/internal_handlers.ErrorResponse"
                         }
                     },
                     "500": {
                         "description": "Failed to send SBD",
                         "schema": {
-                            "$ref": "#/definitions/handlers.ErrorResponse"
+                            "$ref": "#/definitions/internal_handlers.ErrorResponse"
                         }
                     },
                     "503": {
                         "description": "HAL unavailable",
                         "schema": {
-                            "$ref": "#/definitions/handlers.ErrorResponse"
+                            "$ref": "#/definitions/internal_handlers.ErrorResponse"
                         }
                     }
                 }
@@ -4131,25 +4131,25 @@ const docTemplate = `{
                     "200": {
                         "description": "OK",
                         "schema": {
-                            "$ref": "#/definitions/hal.IridiumSignal"
+                            "$ref": "#/definitions/cubeos-api_internal_hal.IridiumSignal"
                         }
                     },
                     "400": {
                         "description": "Port required",
                         "schema": {
-                            "$ref": "#/definitions/handlers.ErrorResponse"
+                            "$ref": "#/definitions/internal_handlers.ErrorResponse"
                         }
                     },
                     "500": {
                         "description": "Failed to get signal",
                         "schema": {
-                            "$ref": "#/definitions/handlers.ErrorResponse"
+                            "$ref": "#/definitions/internal_handlers.ErrorResponse"
                         }
                     },
                     "503": {
                         "description": "HAL unavailable",
                         "schema": {
-                            "$ref": "#/definitions/handlers.ErrorResponse"
+                            "$ref": "#/definitions/internal_handlers.ErrorResponse"
                         }
                     }
                 }
@@ -4187,25 +4187,25 @@ const docTemplate = `{
                     "200": {
                         "description": "OK",
                         "schema": {
-                            "$ref": "#/definitions/hal.IridiumStatus"
+                            "$ref": "#/definitions/cubeos-api_internal_hal.IridiumStatus"
                         }
                     },
                     "400": {
                         "description": "Port required",
                         "schema": {
-                            "$ref": "#/definitions/handlers.ErrorResponse"
+                            "$ref": "#/definitions/internal_handlers.ErrorResponse"
                         }
                     },
                     "500": {
                         "description": "Failed to get status",
                         "schema": {
-                            "$ref": "#/definitions/handlers.ErrorResponse"
+                            "$ref": "#/definitions/internal_handlers.ErrorResponse"
                         }
                     },
                     "503": {
                         "description": "HAL unavailable",
                         "schema": {
-                            "$ref": "#/definitions/handlers.ErrorResponse"
+                            "$ref": "#/definitions/internal_handlers.ErrorResponse"
                         }
                     }
                 }
@@ -4244,7 +4244,7 @@ const docTemplate = `{
                         "in": "body",
                         "required": true,
                         "schema": {
-                            "$ref": "#/definitions/handlers.MeshtasticChannelRequest"
+                            "$ref": "#/definitions/internal_handlers.MeshtasticChannelRequest"
                         }
                     }
                 ],
@@ -4252,25 +4252,25 @@ const docTemplate = `{
                     "200": {
                         "description": "OK",
                         "schema": {
-                            "$ref": "#/definitions/handlers.SuccessResponse"
+                            "$ref": "#/definitions/internal_handlers.SuccessResponse"
                         }
                     },
                     "400": {
                         "description": "Invalid request",
                         "schema": {
-                            "$ref": "#/definitions/handlers.ErrorResponse"
+                            "$ref": "#/definitions/internal_handlers.ErrorResponse"
                         }
                     },
                     "500": {
                         "description": "Failed to set channel",
                         "schema": {
-                            "$ref": "#/definitions/handlers.ErrorResponse"
+                            "$ref": "#/definitions/internal_handlers.ErrorResponse"
                         }
                     },
                     "503": {
                         "description": "HAL unavailable",
                         "schema": {
-                            "$ref": "#/definitions/handlers.ErrorResponse"
+                            "$ref": "#/definitions/internal_handlers.ErrorResponse"
                         }
                     }
                 }
@@ -4309,7 +4309,7 @@ const docTemplate = `{
                         "in": "body",
                         "required": true,
                         "schema": {
-                            "$ref": "#/definitions/handlers.MeshtasticMessageRequest"
+                            "$ref": "#/definitions/internal_handlers.MeshtasticMessageRequest"
                         }
                     }
                 ],
@@ -4317,25 +4317,25 @@ const docTemplate = `{
                     "200": {
                         "description": "OK",
                         "schema": {
-                            "$ref": "#/definitions/handlers.SuccessResponse"
+                            "$ref": "#/definitions/internal_handlers.SuccessResponse"
                         }
                     },
                     "400": {
                         "description": "Invalid request",
                         "schema": {
-                            "$ref": "#/definitions/handlers.ErrorResponse"
+                            "$ref": "#/definitions/internal_handlers.ErrorResponse"
                         }
                     },
                     "500": {
                         "description": "Failed to send message",
                         "schema": {
-                            "$ref": "#/definitions/handlers.ErrorResponse"
+                            "$ref": "#/definitions/internal_handlers.ErrorResponse"
                         }
                     },
                     "503": {
                         "description": "HAL unavailable",
                         "schema": {
-                            "$ref": "#/definitions/handlers.ErrorResponse"
+                            "$ref": "#/definitions/internal_handlers.ErrorResponse"
                         }
                     }
                 }
@@ -4373,25 +4373,25 @@ const docTemplate = `{
                     "200": {
                         "description": "OK",
                         "schema": {
-                            "$ref": "#/definitions/hal.MeshtasticNodesResponse"
+                            "$ref": "#/definitions/cubeos-api_internal_hal.MeshtasticNodesResponse"
                         }
                     },
                     "400": {
                         "description": "Port required",
                         "schema": {
-                            "$ref": "#/definitions/handlers.ErrorResponse"
+                            "$ref": "#/definitions/internal_handlers.ErrorResponse"
                         }
                     },
                     "500": {
                         "description": "Failed to get nodes",
                         "schema": {
-                            "$ref": "#/definitions/handlers.ErrorResponse"
+                            "$ref": "#/definitions/internal_handlers.ErrorResponse"
                         }
                     },
                     "503": {
                         "description": "HAL unavailable",
                         "schema": {
-                            "$ref": "#/definitions/handlers.ErrorResponse"
+                            "$ref": "#/definitions/internal_handlers.ErrorResponse"
                         }
                     }
                 }
@@ -4429,25 +4429,25 @@ const docTemplate = `{
                     "200": {
                         "description": "OK",
                         "schema": {
-                            "$ref": "#/definitions/hal.MeshtasticStatus"
+                            "$ref": "#/definitions/cubeos-api_internal_hal.MeshtasticStatus"
                         }
                     },
                     "400": {
                         "description": "Port required",
                         "schema": {
-                            "$ref": "#/definitions/handlers.ErrorResponse"
+                            "$ref": "#/definitions/internal_handlers.ErrorResponse"
                         }
                     },
                     "500": {
                         "description": "Failed to get status",
                         "schema": {
-                            "$ref": "#/definitions/handlers.ErrorResponse"
+                            "$ref": "#/definitions/internal_handlers.ErrorResponse"
                         }
                     },
                     "503": {
                         "description": "HAL unavailable",
                         "schema": {
-                            "$ref": "#/definitions/handlers.ErrorResponse"
+                            "$ref": "#/definitions/internal_handlers.ErrorResponse"
                         }
                     }
                 }
@@ -4479,7 +4479,7 @@ const docTemplate = `{
                     "503": {
                         "description": "Docker not available",
                         "schema": {
-                            "$ref": "#/definitions/handlers.ErrorResponse"
+                            "$ref": "#/definitions/internal_handlers.ErrorResponse"
                         }
                     }
                 }
@@ -4511,7 +4511,7 @@ const docTemplate = `{
                     "503": {
                         "description": "Docker not available",
                         "schema": {
-                            "$ref": "#/definitions/handlers.ErrorResponse"
+                            "$ref": "#/definitions/internal_handlers.ErrorResponse"
                         }
                     }
                 }
@@ -4538,14 +4538,14 @@ const docTemplate = `{
                         "schema": {
                             "type": "array",
                             "items": {
-                                "$ref": "#/definitions/handlers.DocFile"
+                                "$ref": "#/definitions/internal_handlers.DocFile"
                             }
                         }
                     },
                     "500": {
                         "description": "Failed to list docs",
                         "schema": {
-                            "$ref": "#/definitions/handlers.ErrorResponse"
+                            "$ref": "#/definitions/internal_handlers.ErrorResponse"
                         }
                     }
                 }
@@ -4581,14 +4581,14 @@ const docTemplate = `{
                         "schema": {
                             "type": "array",
                             "items": {
-                                "$ref": "#/definitions/handlers.DocFile"
+                                "$ref": "#/definitions/internal_handlers.DocFile"
                             }
                         }
                     },
                     "400": {
                         "description": "Query parameter 'q' required",
                         "schema": {
-                            "$ref": "#/definitions/handlers.ErrorResponse"
+                            "$ref": "#/definitions/internal_handlers.ErrorResponse"
                         }
                     }
                 }
@@ -4615,7 +4615,7 @@ const docTemplate = `{
                         "schema": {
                             "type": "array",
                             "items": {
-                                "$ref": "#/definitions/handlers.DocFile"
+                                "$ref": "#/definitions/internal_handlers.DocFile"
                             }
                         }
                     }
@@ -4649,25 +4649,25 @@ const docTemplate = `{
                     "200": {
                         "description": "Document content with title and path",
                         "schema": {
-                            "$ref": "#/definitions/handlers.DocContent"
+                            "$ref": "#/definitions/internal_handlers.DocContent"
                         }
                     },
                     "400": {
                         "description": "Invalid path (directory traversal attempt)",
                         "schema": {
-                            "$ref": "#/definitions/handlers.ErrorResponse"
+                            "$ref": "#/definitions/internal_handlers.ErrorResponse"
                         }
                     },
                     "404": {
                         "description": "Document not found",
                         "schema": {
-                            "$ref": "#/definitions/handlers.ErrorResponse"
+                            "$ref": "#/definitions/internal_handlers.ErrorResponse"
                         }
                     },
                     "500": {
                         "description": "Failed to read document",
                         "schema": {
-                            "$ref": "#/definitions/handlers.ErrorResponse"
+                            "$ref": "#/definitions/internal_handlers.ErrorResponse"
                         }
                     }
                 }
@@ -4734,7 +4734,7 @@ const docTemplate = `{
                     "400": {
                         "description": "Service name required",
                         "schema": {
-                            "$ref": "#/definitions/handlers.ErrorResponse"
+                            "$ref": "#/definitions/internal_handlers.ErrorResponse"
                         }
                     }
                 }
@@ -4773,7 +4773,7 @@ const docTemplate = `{
                     "400": {
                         "description": "Service name required",
                         "schema": {
-                            "$ref": "#/definitions/handlers.ErrorResponse"
+                            "$ref": "#/definitions/internal_handlers.ErrorResponse"
                         }
                     }
                 }
@@ -4814,7 +4814,7 @@ const docTemplate = `{
                     "400": {
                         "description": "Service name required",
                         "schema": {
-                            "$ref": "#/definitions/handlers.ErrorResponse"
+                            "$ref": "#/definitions/internal_handlers.ErrorResponse"
                         }
                     }
                 }
@@ -4846,13 +4846,13 @@ const docTemplate = `{
                     "500": {
                         "description": "Failed to get forwarding status",
                         "schema": {
-                            "$ref": "#/definitions/handlers.ErrorResponse"
+                            "$ref": "#/definitions/internal_handlers.ErrorResponse"
                         }
                     },
                     "503": {
                         "description": "Firewall service unavailable",
                         "schema": {
-                            "$ref": "#/definitions/handlers.ErrorResponse"
+                            "$ref": "#/definitions/internal_handlers.ErrorResponse"
                         }
                     }
                 }
@@ -4884,13 +4884,13 @@ const docTemplate = `{
                     "500": {
                         "description": "Failed to disable forwarding",
                         "schema": {
-                            "$ref": "#/definitions/handlers.ErrorResponse"
+                            "$ref": "#/definitions/internal_handlers.ErrorResponse"
                         }
                     },
                     "503": {
                         "description": "Firewall service unavailable",
                         "schema": {
-                            "$ref": "#/definitions/handlers.ErrorResponse"
+                            "$ref": "#/definitions/internal_handlers.ErrorResponse"
                         }
                     }
                 }
@@ -4922,13 +4922,13 @@ const docTemplate = `{
                     "500": {
                         "description": "Failed to enable forwarding",
                         "schema": {
-                            "$ref": "#/definitions/handlers.ErrorResponse"
+                            "$ref": "#/definitions/internal_handlers.ErrorResponse"
                         }
                     },
                     "503": {
                         "description": "Firewall service unavailable",
                         "schema": {
-                            "$ref": "#/definitions/handlers.ErrorResponse"
+                            "$ref": "#/definitions/internal_handlers.ErrorResponse"
                         }
                     }
                 }
@@ -4960,13 +4960,13 @@ const docTemplate = `{
                     "500": {
                         "description": "Failed to get IP forward status",
                         "schema": {
-                            "$ref": "#/definitions/handlers.ErrorResponse"
+                            "$ref": "#/definitions/internal_handlers.ErrorResponse"
                         }
                     },
                     "503": {
                         "description": "Firewall service unavailable",
                         "schema": {
-                            "$ref": "#/definitions/handlers.ErrorResponse"
+                            "$ref": "#/definitions/internal_handlers.ErrorResponse"
                         }
                     }
                 }
@@ -4995,7 +4995,7 @@ const docTemplate = `{
                         "in": "body",
                         "required": true,
                         "schema": {
-                            "$ref": "#/definitions/handlers.SetIPForwardRequest"
+                            "$ref": "#/definitions/internal_handlers.SetIPForwardRequest"
                         }
                     }
                 ],
@@ -5010,19 +5010,19 @@ const docTemplate = `{
                     "400": {
                         "description": "Invalid request",
                         "schema": {
-                            "$ref": "#/definitions/handlers.ErrorResponse"
+                            "$ref": "#/definitions/internal_handlers.ErrorResponse"
                         }
                     },
                     "500": {
                         "description": "Failed to set IP forward",
                         "schema": {
-                            "$ref": "#/definitions/handlers.ErrorResponse"
+                            "$ref": "#/definitions/internal_handlers.ErrorResponse"
                         }
                     },
                     "503": {
                         "description": "Firewall service unavailable",
                         "schema": {
-                            "$ref": "#/definitions/handlers.ErrorResponse"
+                            "$ref": "#/definitions/internal_handlers.ErrorResponse"
                         }
                     }
                 }
@@ -5054,13 +5054,13 @@ const docTemplate = `{
                     "500": {
                         "description": "Failed to get NAT status",
                         "schema": {
-                            "$ref": "#/definitions/handlers.ErrorResponse"
+                            "$ref": "#/definitions/internal_handlers.ErrorResponse"
                         }
                     },
                     "503": {
                         "description": "Firewall service unavailable",
                         "schema": {
-                            "$ref": "#/definitions/handlers.ErrorResponse"
+                            "$ref": "#/definitions/internal_handlers.ErrorResponse"
                         }
                     }
                 }
@@ -5092,13 +5092,13 @@ const docTemplate = `{
                     "500": {
                         "description": "Failed to disable NAT",
                         "schema": {
-                            "$ref": "#/definitions/handlers.ErrorResponse"
+                            "$ref": "#/definitions/internal_handlers.ErrorResponse"
                         }
                     },
                     "503": {
                         "description": "Firewall service unavailable",
                         "schema": {
-                            "$ref": "#/definitions/handlers.ErrorResponse"
+                            "$ref": "#/definitions/internal_handlers.ErrorResponse"
                         }
                     }
                 }
@@ -5130,13 +5130,13 @@ const docTemplate = `{
                     "500": {
                         "description": "Failed to enable NAT",
                         "schema": {
-                            "$ref": "#/definitions/handlers.ErrorResponse"
+                            "$ref": "#/definitions/internal_handlers.ErrorResponse"
                         }
                     },
                     "503": {
                         "description": "Firewall service unavailable",
                         "schema": {
-                            "$ref": "#/definitions/handlers.ErrorResponse"
+                            "$ref": "#/definitions/internal_handlers.ErrorResponse"
                         }
                     }
                 }
@@ -5167,7 +5167,7 @@ const docTemplate = `{
                         "in": "body",
                         "required": true,
                         "schema": {
-                            "$ref": "#/definitions/handlers.AllowPortRequest"
+                            "$ref": "#/definitions/internal_handlers.AllowPortRequest"
                         }
                     }
                 ],
@@ -5182,19 +5182,19 @@ const docTemplate = `{
                     "400": {
                         "description": "Invalid port or protocol",
                         "schema": {
-                            "$ref": "#/definitions/handlers.ErrorResponse"
+                            "$ref": "#/definitions/internal_handlers.ErrorResponse"
                         }
                     },
                     "500": {
                         "description": "Failed to allow port",
                         "schema": {
-                            "$ref": "#/definitions/handlers.ErrorResponse"
+                            "$ref": "#/definitions/internal_handlers.ErrorResponse"
                         }
                     },
                     "503": {
                         "description": "Firewall service unavailable",
                         "schema": {
-                            "$ref": "#/definitions/handlers.ErrorResponse"
+                            "$ref": "#/definitions/internal_handlers.ErrorResponse"
                         }
                     }
                 }
@@ -5225,7 +5225,7 @@ const docTemplate = `{
                         "in": "body",
                         "required": true,
                         "schema": {
-                            "$ref": "#/definitions/handlers.AllowPortRequest"
+                            "$ref": "#/definitions/internal_handlers.AllowPortRequest"
                         }
                     }
                 ],
@@ -5240,19 +5240,19 @@ const docTemplate = `{
                     "400": {
                         "description": "Invalid port or protocol",
                         "schema": {
-                            "$ref": "#/definitions/handlers.ErrorResponse"
+                            "$ref": "#/definitions/internal_handlers.ErrorResponse"
                         }
                     },
                     "500": {
                         "description": "Failed to block port",
                         "schema": {
-                            "$ref": "#/definitions/handlers.ErrorResponse"
+                            "$ref": "#/definitions/internal_handlers.ErrorResponse"
                         }
                     },
                     "503": {
                         "description": "Firewall service unavailable",
                         "schema": {
-                            "$ref": "#/definitions/handlers.ErrorResponse"
+                            "$ref": "#/definitions/internal_handlers.ErrorResponse"
                         }
                     }
                 }
@@ -5299,13 +5299,13 @@ const docTemplate = `{
                     "400": {
                         "description": "Invalid port",
                         "schema": {
-                            "$ref": "#/definitions/handlers.ErrorResponse"
+                            "$ref": "#/definitions/internal_handlers.ErrorResponse"
                         }
                     },
                     "503": {
                         "description": "Firewall service unavailable",
                         "schema": {
-                            "$ref": "#/definitions/handlers.ErrorResponse"
+                            "$ref": "#/definitions/internal_handlers.ErrorResponse"
                         }
                     }
                 }
@@ -5337,13 +5337,13 @@ const docTemplate = `{
                     "500": {
                         "description": "Failed to reset firewall",
                         "schema": {
-                            "$ref": "#/definitions/handlers.ErrorResponse"
+                            "$ref": "#/definitions/internal_handlers.ErrorResponse"
                         }
                     },
                     "503": {
                         "description": "Firewall service unavailable",
                         "schema": {
-                            "$ref": "#/definitions/handlers.ErrorResponse"
+                            "$ref": "#/definitions/internal_handlers.ErrorResponse"
                         }
                     }
                 }
@@ -5375,13 +5375,13 @@ const docTemplate = `{
                     "500": {
                         "description": "Failed to restore rules",
                         "schema": {
-                            "$ref": "#/definitions/handlers.ErrorResponse"
+                            "$ref": "#/definitions/internal_handlers.ErrorResponse"
                         }
                     },
                     "503": {
                         "description": "Firewall service unavailable",
                         "schema": {
-                            "$ref": "#/definitions/handlers.ErrorResponse"
+                            "$ref": "#/definitions/internal_handlers.ErrorResponse"
                         }
                     }
                 }
@@ -5427,19 +5427,19 @@ const docTemplate = `{
                     "400": {
                         "description": "Invalid table or chain name",
                         "schema": {
-                            "$ref": "#/definitions/handlers.ErrorResponse"
+                            "$ref": "#/definitions/internal_handlers.ErrorResponse"
                         }
                     },
                     "500": {
                         "description": "Failed to get firewall rules",
                         "schema": {
-                            "$ref": "#/definitions/handlers.ErrorResponse"
+                            "$ref": "#/definitions/internal_handlers.ErrorResponse"
                         }
                     },
                     "503": {
                         "description": "Firewall service unavailable",
                         "schema": {
-                            "$ref": "#/definitions/handlers.ErrorResponse"
+                            "$ref": "#/definitions/internal_handlers.ErrorResponse"
                         }
                     }
                 }
@@ -5468,7 +5468,7 @@ const docTemplate = `{
                         "in": "body",
                         "required": true,
                         "schema": {
-                            "$ref": "#/definitions/handlers.AddRuleRequest"
+                            "$ref": "#/definitions/internal_handlers.AddRuleRequest"
                         }
                     }
                 ],
@@ -5483,19 +5483,19 @@ const docTemplate = `{
                     "400": {
                         "description": "Invalid request or missing chain",
                         "schema": {
-                            "$ref": "#/definitions/handlers.ErrorResponse"
+                            "$ref": "#/definitions/internal_handlers.ErrorResponse"
                         }
                     },
                     "500": {
                         "description": "Failed to add firewall rule",
                         "schema": {
-                            "$ref": "#/definitions/handlers.ErrorResponse"
+                            "$ref": "#/definitions/internal_handlers.ErrorResponse"
                         }
                     },
                     "503": {
                         "description": "Firewall service unavailable",
                         "schema": {
-                            "$ref": "#/definitions/handlers.ErrorResponse"
+                            "$ref": "#/definitions/internal_handlers.ErrorResponse"
                         }
                     }
                 }
@@ -5524,7 +5524,7 @@ const docTemplate = `{
                         "in": "body",
                         "required": true,
                         "schema": {
-                            "$ref": "#/definitions/handlers.AddRuleRequest"
+                            "$ref": "#/definitions/internal_handlers.AddRuleRequest"
                         }
                     }
                 ],
@@ -5539,19 +5539,19 @@ const docTemplate = `{
                     "400": {
                         "description": "Invalid request or missing chain",
                         "schema": {
-                            "$ref": "#/definitions/handlers.ErrorResponse"
+                            "$ref": "#/definitions/internal_handlers.ErrorResponse"
                         }
                     },
                     "500": {
                         "description": "Failed to delete firewall rule",
                         "schema": {
-                            "$ref": "#/definitions/handlers.ErrorResponse"
+                            "$ref": "#/definitions/internal_handlers.ErrorResponse"
                         }
                     },
                     "503": {
                         "description": "Firewall service unavailable",
                         "schema": {
-                            "$ref": "#/definitions/handlers.ErrorResponse"
+                            "$ref": "#/definitions/internal_handlers.ErrorResponse"
                         }
                     }
                 }
@@ -5583,13 +5583,13 @@ const docTemplate = `{
                     "500": {
                         "description": "Failed to save rules",
                         "schema": {
-                            "$ref": "#/definitions/handlers.ErrorResponse"
+                            "$ref": "#/definitions/internal_handlers.ErrorResponse"
                         }
                     },
                     "503": {
                         "description": "Firewall service unavailable",
                         "schema": {
-                            "$ref": "#/definitions/handlers.ErrorResponse"
+                            "$ref": "#/definitions/internal_handlers.ErrorResponse"
                         }
                     }
                 }
@@ -5630,19 +5630,19 @@ const docTemplate = `{
                     "400": {
                         "description": "Unknown service",
                         "schema": {
-                            "$ref": "#/definitions/handlers.ErrorResponse"
+                            "$ref": "#/definitions/internal_handlers.ErrorResponse"
                         }
                     },
                     "500": {
                         "description": "Failed to allow service",
                         "schema": {
-                            "$ref": "#/definitions/handlers.ErrorResponse"
+                            "$ref": "#/definitions/internal_handlers.ErrorResponse"
                         }
                     },
                     "503": {
                         "description": "Firewall service unavailable",
                         "schema": {
-                            "$ref": "#/definitions/handlers.ErrorResponse"
+                            "$ref": "#/definitions/internal_handlers.ErrorResponse"
                         }
                     }
                 }
@@ -5674,13 +5674,13 @@ const docTemplate = `{
                     "500": {
                         "description": "Failed to get firewall status",
                         "schema": {
-                            "$ref": "#/definitions/handlers.ErrorResponse"
+                            "$ref": "#/definitions/internal_handlers.ErrorResponse"
                         }
                     },
                     "503": {
                         "description": "Firewall service unavailable",
                         "schema": {
-                            "$ref": "#/definitions/handlers.ErrorResponse"
+                            "$ref": "#/definitions/internal_handlers.ErrorResponse"
                         }
                     }
                 }
@@ -5712,7 +5712,7 @@ const docTemplate = `{
                     "500": {
                         "description": "Failed to query FQDNs",
                         "schema": {
-                            "$ref": "#/definitions/handlers.ErrorResponse"
+                            "$ref": "#/definitions/internal_handlers.ErrorResponse"
                         }
                     }
                 }
@@ -5741,7 +5741,7 @@ const docTemplate = `{
                         "in": "body",
                         "required": true,
                         "schema": {
-                            "$ref": "#/definitions/handlers.CreateFQDNRequest"
+                            "$ref": "#/definitions/internal_handlers.CreateFQDNRequest"
                         }
                     }
                 ],
@@ -5749,25 +5749,25 @@ const docTemplate = `{
                     "201": {
                         "description": "Created FQDN",
                         "schema": {
-                            "$ref": "#/definitions/handlers.FQDN"
+                            "$ref": "#/definitions/internal_handlers.FQDN"
                         }
                     },
                     "400": {
                         "description": "Invalid request, missing subdomain, invalid port, or app not found",
                         "schema": {
-                            "$ref": "#/definitions/handlers.ErrorResponse"
+                            "$ref": "#/definitions/internal_handlers.ErrorResponse"
                         }
                     },
                     "409": {
                         "description": "FQDN already exists",
                         "schema": {
-                            "$ref": "#/definitions/handlers.ErrorResponse"
+                            "$ref": "#/definitions/internal_handlers.ErrorResponse"
                         }
                     },
                     "500": {
                         "description": "Failed to create FQDN",
                         "schema": {
-                            "$ref": "#/definitions/handlers.ErrorResponse"
+                            "$ref": "#/definitions/internal_handlers.ErrorResponse"
                         }
                     }
                 }
@@ -5801,19 +5801,19 @@ const docTemplate = `{
                     "200": {
                         "description": "FQDN details",
                         "schema": {
-                            "$ref": "#/definitions/handlers.FQDN"
+                            "$ref": "#/definitions/internal_handlers.FQDN"
                         }
                     },
                     "404": {
                         "description": "FQDN not found",
                         "schema": {
-                            "$ref": "#/definitions/handlers.ErrorResponse"
+                            "$ref": "#/definitions/internal_handlers.ErrorResponse"
                         }
                     },
                     "500": {
                         "description": "Failed to query FQDN",
                         "schema": {
-                            "$ref": "#/definitions/handlers.ErrorResponse"
+                            "$ref": "#/definitions/internal_handlers.ErrorResponse"
                         }
                     }
                 }
@@ -5849,7 +5849,7 @@ const docTemplate = `{
                         "in": "body",
                         "required": true,
                         "schema": {
-                            "$ref": "#/definitions/handlers.UpdateFQDNRequest"
+                            "$ref": "#/definitions/internal_handlers.UpdateFQDNRequest"
                         }
                     }
                 ],
@@ -5857,25 +5857,25 @@ const docTemplate = `{
                     "200": {
                         "description": "Updated FQDN",
                         "schema": {
-                            "$ref": "#/definitions/handlers.FQDN"
+                            "$ref": "#/definitions/internal_handlers.FQDN"
                         }
                     },
                     "400": {
                         "description": "Invalid JSON or invalid port",
                         "schema": {
-                            "$ref": "#/definitions/handlers.ErrorResponse"
+                            "$ref": "#/definitions/internal_handlers.ErrorResponse"
                         }
                     },
                     "404": {
                         "description": "FQDN not found",
                         "schema": {
-                            "$ref": "#/definitions/handlers.ErrorResponse"
+                            "$ref": "#/definitions/internal_handlers.ErrorResponse"
                         }
                     },
                     "500": {
                         "description": "Failed to update FQDN",
                         "schema": {
-                            "$ref": "#/definitions/handlers.ErrorResponse"
+                            "$ref": "#/definitions/internal_handlers.ErrorResponse"
                         }
                     }
                 }
@@ -5914,13 +5914,13 @@ const docTemplate = `{
                     "404": {
                         "description": "FQDN not found",
                         "schema": {
-                            "$ref": "#/definitions/handlers.ErrorResponse"
+                            "$ref": "#/definitions/internal_handlers.ErrorResponse"
                         }
                     },
                     "500": {
                         "description": "Failed to delete FQDN",
                         "schema": {
-                            "$ref": "#/definitions/handlers.ErrorResponse"
+                            "$ref": "#/definitions/internal_handlers.ErrorResponse"
                         }
                     }
                 }
@@ -5948,19 +5948,19 @@ const docTemplate = `{
                     "200": {
                         "description": "OK",
                         "schema": {
-                            "$ref": "#/definitions/hal.HardwareLogsResponse"
+                            "$ref": "#/definitions/cubeos-api_internal_hal.HardwareLogsResponse"
                         }
                     },
                     "500": {
                         "description": "Failed to get hardware logs",
                         "schema": {
-                            "$ref": "#/definitions/handlers.ErrorResponse"
+                            "$ref": "#/definitions/internal_handlers.ErrorResponse"
                         }
                     },
                     "503": {
                         "description": "HAL unavailable",
                         "schema": {
-                            "$ref": "#/definitions/handlers.ErrorResponse"
+                            "$ref": "#/definitions/internal_handlers.ErrorResponse"
                         }
                     }
                 }
@@ -6007,25 +6007,25 @@ const docTemplate = `{
                     "200": {
                         "description": "OK",
                         "schema": {
-                            "$ref": "#/definitions/hal.HardwareLogsResponse"
+                            "$ref": "#/definitions/cubeos-api_internal_hal.HardwareLogsResponse"
                         }
                     },
                     "400": {
                         "description": "Category required",
                         "schema": {
-                            "$ref": "#/definitions/handlers.ErrorResponse"
+                            "$ref": "#/definitions/internal_handlers.ErrorResponse"
                         }
                     },
                     "500": {
                         "description": "Failed to get hardware logs",
                         "schema": {
-                            "$ref": "#/definitions/handlers.ErrorResponse"
+                            "$ref": "#/definitions/internal_handlers.ErrorResponse"
                         }
                     },
                     "503": {
                         "description": "HAL unavailable",
                         "schema": {
-                            "$ref": "#/definitions/handlers.ErrorResponse"
+                            "$ref": "#/definitions/internal_handlers.ErrorResponse"
                         }
                     }
                 }
@@ -6083,19 +6083,19 @@ const docTemplate = `{
                     "200": {
                         "description": "OK",
                         "schema": {
-                            "$ref": "#/definitions/hal.LogsResponse"
+                            "$ref": "#/definitions/cubeos-api_internal_hal.LogsResponse"
                         }
                     },
                     "500": {
                         "description": "Failed to get journal logs",
                         "schema": {
-                            "$ref": "#/definitions/handlers.ErrorResponse"
+                            "$ref": "#/definitions/internal_handlers.ErrorResponse"
                         }
                     },
                     "503": {
                         "description": "HAL unavailable",
                         "schema": {
-                            "$ref": "#/definitions/handlers.ErrorResponse"
+                            "$ref": "#/definitions/internal_handlers.ErrorResponse"
                         }
                     }
                 }
@@ -6148,19 +6148,19 @@ const docTemplate = `{
                     "200": {
                         "description": "OK",
                         "schema": {
-                            "$ref": "#/definitions/hal.LogsResponse"
+                            "$ref": "#/definitions/cubeos-api_internal_hal.LogsResponse"
                         }
                     },
                     "500": {
                         "description": "Failed to get kernel logs",
                         "schema": {
-                            "$ref": "#/definitions/handlers.ErrorResponse"
+                            "$ref": "#/definitions/internal_handlers.ErrorResponse"
                         }
                     },
                     "503": {
                         "description": "HAL unavailable",
                         "schema": {
-                            "$ref": "#/definitions/handlers.ErrorResponse"
+                            "$ref": "#/definitions/internal_handlers.ErrorResponse"
                         }
                     }
                 }
@@ -6188,19 +6188,19 @@ const docTemplate = `{
                     "200": {
                         "description": "OK",
                         "schema": {
-                            "$ref": "#/definitions/hal.StorageDevicesResponse"
+                            "$ref": "#/definitions/cubeos-api_internal_hal.StorageDevicesResponse"
                         }
                     },
                     "500": {
                         "description": "Failed to list storage devices",
                         "schema": {
-                            "$ref": "#/definitions/handlers.ErrorResponse"
+                            "$ref": "#/definitions/internal_handlers.ErrorResponse"
                         }
                     },
                     "503": {
                         "description": "HAL unavailable",
                         "schema": {
-                            "$ref": "#/definitions/handlers.ErrorResponse"
+                            "$ref": "#/definitions/internal_handlers.ErrorResponse"
                         }
                     }
                 }
@@ -6238,25 +6238,25 @@ const docTemplate = `{
                     "200": {
                         "description": "OK",
                         "schema": {
-                            "$ref": "#/definitions/hal.StorageDevice"
+                            "$ref": "#/definitions/cubeos-api_internal_hal.StorageDevice"
                         }
                     },
                     "400": {
                         "description": "Device name required",
                         "schema": {
-                            "$ref": "#/definitions/handlers.ErrorResponse"
+                            "$ref": "#/definitions/internal_handlers.ErrorResponse"
                         }
                     },
                     "500": {
                         "description": "Failed to get storage device",
                         "schema": {
-                            "$ref": "#/definitions/handlers.ErrorResponse"
+                            "$ref": "#/definitions/internal_handlers.ErrorResponse"
                         }
                     },
                     "503": {
                         "description": "HAL unavailable",
                         "schema": {
-                            "$ref": "#/definitions/handlers.ErrorResponse"
+                            "$ref": "#/definitions/internal_handlers.ErrorResponse"
                         }
                     }
                 }
@@ -6294,25 +6294,25 @@ const docTemplate = `{
                     "200": {
                         "description": "OK",
                         "schema": {
-                            "$ref": "#/definitions/hal.SMARTInfo"
+                            "$ref": "#/definitions/cubeos-api_internal_hal.SMARTInfo"
                         }
                     },
                     "400": {
                         "description": "Device name required",
                         "schema": {
-                            "$ref": "#/definitions/handlers.ErrorResponse"
+                            "$ref": "#/definitions/internal_handlers.ErrorResponse"
                         }
                     },
                     "500": {
                         "description": "Failed to get SMART data",
                         "schema": {
-                            "$ref": "#/definitions/handlers.ErrorResponse"
+                            "$ref": "#/definitions/internal_handlers.ErrorResponse"
                         }
                     },
                     "503": {
                         "description": "HAL unavailable",
                         "schema": {
-                            "$ref": "#/definitions/handlers.ErrorResponse"
+                            "$ref": "#/definitions/internal_handlers.ErrorResponse"
                         }
                     }
                 }
@@ -6340,19 +6340,19 @@ const docTemplate = `{
                     "200": {
                         "description": "OK",
                         "schema": {
-                            "$ref": "#/definitions/hal.MountsResponse"
+                            "$ref": "#/definitions/cubeos-api_internal_hal.MountsResponse"
                         }
                     },
                     "500": {
                         "description": "Failed to list mounts",
                         "schema": {
-                            "$ref": "#/definitions/handlers.ErrorResponse"
+                            "$ref": "#/definitions/internal_handlers.ErrorResponse"
                         }
                     },
                     "503": {
                         "description": "HAL unavailable",
                         "schema": {
-                            "$ref": "#/definitions/handlers.ErrorResponse"
+                            "$ref": "#/definitions/internal_handlers.ErrorResponse"
                         }
                     }
                 }
@@ -6381,7 +6381,7 @@ const docTemplate = `{
                         "in": "body",
                         "required": true,
                         "schema": {
-                            "$ref": "#/definitions/handlers.UnmountNetworkRequest"
+                            "$ref": "#/definitions/internal_handlers.UnmountNetworkRequest"
                         }
                     }
                 ],
@@ -6389,25 +6389,25 @@ const docTemplate = `{
                     "200": {
                         "description": "OK",
                         "schema": {
-                            "$ref": "#/definitions/handlers.SuccessResponse"
+                            "$ref": "#/definitions/internal_handlers.SuccessResponse"
                         }
                     },
                     "400": {
                         "description": "Path is required",
                         "schema": {
-                            "$ref": "#/definitions/handlers.ErrorResponse"
+                            "$ref": "#/definitions/internal_handlers.ErrorResponse"
                         }
                     },
                     "500": {
                         "description": "Failed to unmount",
                         "schema": {
-                            "$ref": "#/definitions/handlers.ErrorResponse"
+                            "$ref": "#/definitions/internal_handlers.ErrorResponse"
                         }
                     },
                     "503": {
                         "description": "HAL unavailable",
                         "schema": {
-                            "$ref": "#/definitions/handlers.ErrorResponse"
+                            "$ref": "#/definitions/internal_handlers.ErrorResponse"
                         }
                     }
                 }
@@ -6445,25 +6445,25 @@ const docTemplate = `{
                     "200": {
                         "description": "OK",
                         "schema": {
-                            "$ref": "#/definitions/handlers.MountCheckResponse"
+                            "$ref": "#/definitions/internal_handlers.MountCheckResponse"
                         }
                     },
                     "400": {
                         "description": "Path is required",
                         "schema": {
-                            "$ref": "#/definitions/handlers.ErrorResponse"
+                            "$ref": "#/definitions/internal_handlers.ErrorResponse"
                         }
                     },
                     "500": {
                         "description": "Failed to check mount",
                         "schema": {
-                            "$ref": "#/definitions/handlers.ErrorResponse"
+                            "$ref": "#/definitions/internal_handlers.ErrorResponse"
                         }
                     },
                     "503": {
                         "description": "HAL unavailable",
                         "schema": {
-                            "$ref": "#/definitions/handlers.ErrorResponse"
+                            "$ref": "#/definitions/internal_handlers.ErrorResponse"
                         }
                     }
                 }
@@ -6494,7 +6494,7 @@ const docTemplate = `{
                         "in": "body",
                         "required": true,
                         "schema": {
-                            "$ref": "#/definitions/handlers.NFSMountRequest"
+                            "$ref": "#/definitions/internal_handlers.NFSMountRequest"
                         }
                     }
                 ],
@@ -6502,25 +6502,25 @@ const docTemplate = `{
                     "200": {
                         "description": "OK",
                         "schema": {
-                            "$ref": "#/definitions/hal.MountResponse"
+                            "$ref": "#/definitions/cubeos-api_internal_hal.MountResponse"
                         }
                     },
                     "400": {
                         "description": "Invalid request",
                         "schema": {
-                            "$ref": "#/definitions/handlers.ErrorResponse"
+                            "$ref": "#/definitions/internal_handlers.ErrorResponse"
                         }
                     },
                     "500": {
                         "description": "Failed to mount NFS share",
                         "schema": {
-                            "$ref": "#/definitions/handlers.ErrorResponse"
+                            "$ref": "#/definitions/internal_handlers.ErrorResponse"
                         }
                     },
                     "503": {
                         "description": "HAL unavailable",
                         "schema": {
-                            "$ref": "#/definitions/handlers.ErrorResponse"
+                            "$ref": "#/definitions/internal_handlers.ErrorResponse"
                         }
                     }
                 }
@@ -6551,7 +6551,7 @@ const docTemplate = `{
                         "in": "body",
                         "required": true,
                         "schema": {
-                            "$ref": "#/definitions/handlers.SMBMountRequest"
+                            "$ref": "#/definitions/internal_handlers.SMBMountRequest"
                         }
                     }
                 ],
@@ -6559,25 +6559,25 @@ const docTemplate = `{
                     "200": {
                         "description": "OK",
                         "schema": {
-                            "$ref": "#/definitions/hal.MountResponse"
+                            "$ref": "#/definitions/cubeos-api_internal_hal.MountResponse"
                         }
                     },
                     "400": {
                         "description": "Invalid request",
                         "schema": {
-                            "$ref": "#/definitions/handlers.ErrorResponse"
+                            "$ref": "#/definitions/internal_handlers.ErrorResponse"
                         }
                     },
                     "500": {
                         "description": "Failed to mount SMB share",
                         "schema": {
-                            "$ref": "#/definitions/handlers.ErrorResponse"
+                            "$ref": "#/definitions/internal_handlers.ErrorResponse"
                         }
                     },
                     "503": {
                         "description": "HAL unavailable",
                         "schema": {
-                            "$ref": "#/definitions/handlers.ErrorResponse"
+                            "$ref": "#/definitions/internal_handlers.ErrorResponse"
                         }
                     }
                 }
@@ -6608,7 +6608,7 @@ const docTemplate = `{
                         "in": "body",
                         "required": true,
                         "schema": {
-                            "$ref": "#/definitions/handlers.TestMountRequest"
+                            "$ref": "#/definitions/internal_handlers.TestMountRequest"
                         }
                     }
                 ],
@@ -6616,25 +6616,25 @@ const docTemplate = `{
                     "200": {
                         "description": "OK",
                         "schema": {
-                            "$ref": "#/definitions/handlers.SuccessResponse"
+                            "$ref": "#/definitions/internal_handlers.SuccessResponse"
                         }
                     },
                     "400": {
                         "description": "Invalid request",
                         "schema": {
-                            "$ref": "#/definitions/handlers.ErrorResponse"
+                            "$ref": "#/definitions/internal_handlers.ErrorResponse"
                         }
                     },
                     "500": {
                         "description": "Connection test failed",
                         "schema": {
-                            "$ref": "#/definitions/handlers.ErrorResponse"
+                            "$ref": "#/definitions/internal_handlers.ErrorResponse"
                         }
                     },
                     "503": {
                         "description": "HAL unavailable",
                         "schema": {
-                            "$ref": "#/definitions/handlers.ErrorResponse"
+                            "$ref": "#/definitions/internal_handlers.ErrorResponse"
                         }
                     }
                 }
@@ -6662,19 +6662,19 @@ const docTemplate = `{
                     "200": {
                         "description": "OK",
                         "schema": {
-                            "$ref": "#/definitions/hal.StorageUsageResponse"
+                            "$ref": "#/definitions/cubeos-api_internal_hal.StorageUsageResponse"
                         }
                     },
                     "500": {
                         "description": "Failed to get storage usage",
                         "schema": {
-                            "$ref": "#/definitions/handlers.ErrorResponse"
+                            "$ref": "#/definitions/internal_handlers.ErrorResponse"
                         }
                     },
                     "503": {
                         "description": "HAL unavailable",
                         "schema": {
-                            "$ref": "#/definitions/handlers.ErrorResponse"
+                            "$ref": "#/definitions/internal_handlers.ErrorResponse"
                         }
                     }
                 }
@@ -6702,19 +6702,19 @@ const docTemplate = `{
                     "200": {
                         "description": "OK",
                         "schema": {
-                            "$ref": "#/definitions/handlers.USBStorageResponse"
+                            "$ref": "#/definitions/internal_handlers.USBStorageResponse"
                         }
                     },
                     "500": {
                         "description": "Failed to list USB storage",
                         "schema": {
-                            "$ref": "#/definitions/handlers.ErrorResponse"
+                            "$ref": "#/definitions/internal_handlers.ErrorResponse"
                         }
                     },
                     "503": {
                         "description": "HAL unavailable",
                         "schema": {
-                            "$ref": "#/definitions/handlers.ErrorResponse"
+                            "$ref": "#/definitions/internal_handlers.ErrorResponse"
                         }
                     }
                 }
@@ -6762,25 +6762,25 @@ const docTemplate = `{
                     "200": {
                         "description": "OK",
                         "schema": {
-                            "$ref": "#/definitions/handlers.USBDevicesByClassResponse"
+                            "$ref": "#/definitions/internal_handlers.USBDevicesByClassResponse"
                         }
                     },
                     "400": {
                         "description": "Class is required",
                         "schema": {
-                            "$ref": "#/definitions/handlers.ErrorResponse"
+                            "$ref": "#/definitions/internal_handlers.ErrorResponse"
                         }
                     },
                     "500": {
                         "description": "Failed to list USB devices",
                         "schema": {
-                            "$ref": "#/definitions/handlers.ErrorResponse"
+                            "$ref": "#/definitions/internal_handlers.ErrorResponse"
                         }
                     },
                     "503": {
                         "description": "HAL unavailable",
                         "schema": {
-                            "$ref": "#/definitions/handlers.ErrorResponse"
+                            "$ref": "#/definitions/internal_handlers.ErrorResponse"
                         }
                     }
                 }
@@ -6808,19 +6808,19 @@ const docTemplate = `{
                     "200": {
                         "description": "OK",
                         "schema": {
-                            "$ref": "#/definitions/hal.USBDevicesResponse"
+                            "$ref": "#/definitions/cubeos-api_internal_hal.USBDevicesResponse"
                         }
                     },
                     "500": {
                         "description": "Failed to list USB devices",
                         "schema": {
-                            "$ref": "#/definitions/handlers.ErrorResponse"
+                            "$ref": "#/definitions/internal_handlers.ErrorResponse"
                         }
                     },
                     "503": {
                         "description": "HAL unavailable",
                         "schema": {
-                            "$ref": "#/definitions/handlers.ErrorResponse"
+                            "$ref": "#/definitions/internal_handlers.ErrorResponse"
                         }
                     }
                 }
@@ -6848,19 +6848,19 @@ const docTemplate = `{
                     "200": {
                         "description": "OK",
                         "schema": {
-                            "$ref": "#/definitions/handlers.SuccessResponse"
+                            "$ref": "#/definitions/internal_handlers.SuccessResponse"
                         }
                     },
                     "500": {
                         "description": "Failed to rescan USB",
                         "schema": {
-                            "$ref": "#/definitions/handlers.ErrorResponse"
+                            "$ref": "#/definitions/internal_handlers.ErrorResponse"
                         }
                     },
                     "503": {
                         "description": "HAL unavailable",
                         "schema": {
-                            "$ref": "#/definitions/handlers.ErrorResponse"
+                            "$ref": "#/definitions/internal_handlers.ErrorResponse"
                         }
                     }
                 }
@@ -6906,25 +6906,25 @@ const docTemplate = `{
                     "200": {
                         "description": "OK",
                         "schema": {
-                            "$ref": "#/definitions/handlers.SuccessResponse"
+                            "$ref": "#/definitions/internal_handlers.SuccessResponse"
                         }
                     },
                     "400": {
                         "description": "Invalid bus or device number",
                         "schema": {
-                            "$ref": "#/definitions/handlers.ErrorResponse"
+                            "$ref": "#/definitions/internal_handlers.ErrorResponse"
                         }
                     },
                     "500": {
                         "description": "Failed to reset USB device",
                         "schema": {
-                            "$ref": "#/definitions/handlers.ErrorResponse"
+                            "$ref": "#/definitions/internal_handlers.ErrorResponse"
                         }
                     },
                     "503": {
                         "description": "HAL unavailable",
                         "schema": {
-                            "$ref": "#/definitions/handlers.ErrorResponse"
+                            "$ref": "#/definitions/internal_handlers.ErrorResponse"
                         }
                     }
                 }
@@ -6959,13 +6959,13 @@ const docTemplate = `{
                     "500": {
                         "description": "Failed to get USB tree",
                         "schema": {
-                            "$ref": "#/definitions/handlers.ErrorResponse"
+                            "$ref": "#/definitions/internal_handlers.ErrorResponse"
                         }
                     },
                     "503": {
                         "description": "HAL unavailable",
                         "schema": {
-                            "$ref": "#/definitions/handlers.ErrorResponse"
+                            "$ref": "#/definitions/internal_handlers.ErrorResponse"
                         }
                     }
                 }
@@ -7003,25 +7003,25 @@ const docTemplate = `{
                     "200": {
                         "description": "OK",
                         "schema": {
-                            "$ref": "#/definitions/handlers.SuccessResponse"
+                            "$ref": "#/definitions/internal_handlers.SuccessResponse"
                         }
                     },
                     "400": {
                         "description": "Device name required",
                         "schema": {
-                            "$ref": "#/definitions/handlers.ErrorResponse"
+                            "$ref": "#/definitions/internal_handlers.ErrorResponse"
                         }
                     },
                     "500": {
                         "description": "Failed to eject USB storage",
                         "schema": {
-                            "$ref": "#/definitions/handlers.ErrorResponse"
+                            "$ref": "#/definitions/internal_handlers.ErrorResponse"
                         }
                     },
                     "503": {
                         "description": "HAL unavailable",
                         "schema": {
-                            "$ref": "#/definitions/handlers.ErrorResponse"
+                            "$ref": "#/definitions/internal_handlers.ErrorResponse"
                         }
                     }
                 }
@@ -7059,25 +7059,25 @@ const docTemplate = `{
                     "200": {
                         "description": "OK",
                         "schema": {
-                            "$ref": "#/definitions/handlers.MountResultResponse"
+                            "$ref": "#/definitions/internal_handlers.MountResultResponse"
                         }
                     },
                     "400": {
                         "description": "Device name required",
                         "schema": {
-                            "$ref": "#/definitions/handlers.ErrorResponse"
+                            "$ref": "#/definitions/internal_handlers.ErrorResponse"
                         }
                     },
                     "500": {
                         "description": "Failed to mount USB storage",
                         "schema": {
-                            "$ref": "#/definitions/handlers.ErrorResponse"
+                            "$ref": "#/definitions/internal_handlers.ErrorResponse"
                         }
                     },
                     "503": {
                         "description": "HAL unavailable",
                         "schema": {
-                            "$ref": "#/definitions/handlers.ErrorResponse"
+                            "$ref": "#/definitions/internal_handlers.ErrorResponse"
                         }
                     }
                 }
@@ -7115,25 +7115,25 @@ const docTemplate = `{
                     "200": {
                         "description": "OK",
                         "schema": {
-                            "$ref": "#/definitions/handlers.SuccessResponse"
+                            "$ref": "#/definitions/internal_handlers.SuccessResponse"
                         }
                     },
                     "400": {
                         "description": "Device name required",
                         "schema": {
-                            "$ref": "#/definitions/handlers.ErrorResponse"
+                            "$ref": "#/definitions/internal_handlers.ErrorResponse"
                         }
                     },
                     "500": {
                         "description": "Failed to unmount USB storage",
                         "schema": {
-                            "$ref": "#/definitions/handlers.ErrorResponse"
+                            "$ref": "#/definitions/internal_handlers.ErrorResponse"
                         }
                     },
                     "503": {
                         "description": "HAL unavailable",
                         "schema": {
-                            "$ref": "#/definitions/handlers.ErrorResponse"
+                            "$ref": "#/definitions/internal_handlers.ErrorResponse"
                         }
                     }
                 }
@@ -7161,19 +7161,19 @@ const docTemplate = `{
                     "200": {
                         "description": "OK",
                         "schema": {
-                            "$ref": "#/definitions/hal.BatteryStatus"
+                            "$ref": "#/definitions/cubeos-api_internal_hal.BatteryStatus"
                         }
                     },
                     "500": {
                         "description": "Failed to read battery status",
                         "schema": {
-                            "$ref": "#/definitions/handlers.ErrorResponse"
+                            "$ref": "#/definitions/internal_handlers.ErrorResponse"
                         }
                     },
                     "503": {
                         "description": "HAL unavailable",
                         "schema": {
-                            "$ref": "#/definitions/handlers.ErrorResponse"
+                            "$ref": "#/definitions/internal_handlers.ErrorResponse"
                         }
                     }
                 }
@@ -7201,19 +7201,19 @@ const docTemplate = `{
                     "200": {
                         "description": "OK",
                         "schema": {
-                            "$ref": "#/definitions/handlers.SuccessResponse"
+                            "$ref": "#/definitions/internal_handlers.SuccessResponse"
                         }
                     },
                     "500": {
                         "description": "Failed to quick start battery",
                         "schema": {
-                            "$ref": "#/definitions/handlers.ErrorResponse"
+                            "$ref": "#/definitions/internal_handlers.ErrorResponse"
                         }
                     },
                     "503": {
                         "description": "HAL unavailable",
                         "schema": {
-                            "$ref": "#/definitions/handlers.ErrorResponse"
+                            "$ref": "#/definitions/internal_handlers.ErrorResponse"
                         }
                     }
                 }
@@ -7241,19 +7241,19 @@ const docTemplate = `{
                     "200": {
                         "description": "OK",
                         "schema": {
-                            "$ref": "#/definitions/hal.BootConfig"
+                            "$ref": "#/definitions/cubeos-api_internal_hal.BootConfig"
                         }
                     },
                     "500": {
                         "description": "Failed to read boot config",
                         "schema": {
-                            "$ref": "#/definitions/handlers.ErrorResponse"
+                            "$ref": "#/definitions/internal_handlers.ErrorResponse"
                         }
                     },
                     "503": {
                         "description": "HAL unavailable",
                         "schema": {
-                            "$ref": "#/definitions/handlers.ErrorResponse"
+                            "$ref": "#/definitions/internal_handlers.ErrorResponse"
                         }
                     }
                 }
@@ -7284,7 +7284,7 @@ const docTemplate = `{
                         "in": "body",
                         "required": true,
                         "schema": {
-                            "$ref": "#/definitions/handlers.ChargingRequest"
+                            "$ref": "#/definitions/internal_handlers.ChargingRequest"
                         }
                     }
                 ],
@@ -7292,25 +7292,25 @@ const docTemplate = `{
                     "200": {
                         "description": "OK",
                         "schema": {
-                            "$ref": "#/definitions/handlers.SuccessResponse"
+                            "$ref": "#/definitions/internal_handlers.SuccessResponse"
                         }
                     },
                     "400": {
                         "description": "Invalid request",
                         "schema": {
-                            "$ref": "#/definitions/handlers.ErrorResponse"
+                            "$ref": "#/definitions/internal_handlers.ErrorResponse"
                         }
                     },
                     "500": {
                         "description": "Failed to set charging",
                         "schema": {
-                            "$ref": "#/definitions/handlers.ErrorResponse"
+                            "$ref": "#/definitions/internal_handlers.ErrorResponse"
                         }
                     },
                     "503": {
                         "description": "HAL unavailable",
                         "schema": {
-                            "$ref": "#/definitions/handlers.ErrorResponse"
+                            "$ref": "#/definitions/internal_handlers.ErrorResponse"
                         }
                     }
                 }
@@ -7338,19 +7338,19 @@ const docTemplate = `{
                     "200": {
                         "description": "OK",
                         "schema": {
-                            "$ref": "#/definitions/hal.EEPROMInfo"
+                            "$ref": "#/definitions/cubeos-api_internal_hal.EEPROMInfo"
                         }
                     },
                     "500": {
                         "description": "Failed to read EEPROM",
                         "schema": {
-                            "$ref": "#/definitions/handlers.ErrorResponse"
+                            "$ref": "#/definitions/internal_handlers.ErrorResponse"
                         }
                     },
                     "503": {
                         "description": "HAL unavailable",
                         "schema": {
-                            "$ref": "#/definitions/handlers.ErrorResponse"
+                            "$ref": "#/definitions/internal_handlers.ErrorResponse"
                         }
                     }
                 }
@@ -7378,19 +7378,19 @@ const docTemplate = `{
                     "200": {
                         "description": "OK",
                         "schema": {
-                            "$ref": "#/definitions/handlers.GPIOPinsResponse"
+                            "$ref": "#/definitions/internal_handlers.GPIOPinsResponse"
                         }
                     },
                     "500": {
                         "description": "Failed to read GPIO",
                         "schema": {
-                            "$ref": "#/definitions/handlers.ErrorResponse"
+                            "$ref": "#/definitions/internal_handlers.ErrorResponse"
                         }
                     },
                     "503": {
                         "description": "HAL unavailable",
                         "schema": {
-                            "$ref": "#/definitions/handlers.ErrorResponse"
+                            "$ref": "#/definitions/internal_handlers.ErrorResponse"
                         }
                     }
                 }
@@ -7428,25 +7428,25 @@ const docTemplate = `{
                     "200": {
                         "description": "OK",
                         "schema": {
-                            "$ref": "#/definitions/hal.GPIOPin"
+                            "$ref": "#/definitions/cubeos-api_internal_hal.GPIOPin"
                         }
                     },
                     "400": {
                         "description": "Invalid pin number",
                         "schema": {
-                            "$ref": "#/definitions/handlers.ErrorResponse"
+                            "$ref": "#/definitions/internal_handlers.ErrorResponse"
                         }
                     },
                     "500": {
                         "description": "Failed to read GPIO pin",
                         "schema": {
-                            "$ref": "#/definitions/handlers.ErrorResponse"
+                            "$ref": "#/definitions/internal_handlers.ErrorResponse"
                         }
                     },
                     "503": {
                         "description": "HAL unavailable",
                         "schema": {
-                            "$ref": "#/definitions/handlers.ErrorResponse"
+                            "$ref": "#/definitions/internal_handlers.ErrorResponse"
                         }
                     }
                 }
@@ -7483,7 +7483,7 @@ const docTemplate = `{
                         "in": "body",
                         "required": true,
                         "schema": {
-                            "$ref": "#/definitions/handlers.GPIOSetRequest"
+                            "$ref": "#/definitions/internal_handlers.GPIOSetRequest"
                         }
                     }
                 ],
@@ -7491,25 +7491,25 @@ const docTemplate = `{
                     "200": {
                         "description": "OK",
                         "schema": {
-                            "$ref": "#/definitions/handlers.SuccessResponse"
+                            "$ref": "#/definitions/internal_handlers.SuccessResponse"
                         }
                     },
                     "400": {
                         "description": "Invalid request",
                         "schema": {
-                            "$ref": "#/definitions/handlers.ErrorResponse"
+                            "$ref": "#/definitions/internal_handlers.ErrorResponse"
                         }
                     },
                     "500": {
                         "description": "Failed to set GPIO pin",
                         "schema": {
-                            "$ref": "#/definitions/handlers.ErrorResponse"
+                            "$ref": "#/definitions/internal_handlers.ErrorResponse"
                         }
                     },
                     "503": {
                         "description": "HAL unavailable",
                         "schema": {
-                            "$ref": "#/definitions/handlers.ErrorResponse"
+                            "$ref": "#/definitions/internal_handlers.ErrorResponse"
                         }
                     }
                 }
@@ -7548,7 +7548,7 @@ const docTemplate = `{
                         "in": "body",
                         "required": true,
                         "schema": {
-                            "$ref": "#/definitions/handlers.GPIOModeRequest"
+                            "$ref": "#/definitions/internal_handlers.GPIOModeRequest"
                         }
                     }
                 ],
@@ -7556,25 +7556,25 @@ const docTemplate = `{
                     "200": {
                         "description": "OK",
                         "schema": {
-                            "$ref": "#/definitions/handlers.SuccessResponse"
+                            "$ref": "#/definitions/internal_handlers.SuccessResponse"
                         }
                     },
                     "400": {
                         "description": "Invalid request",
                         "schema": {
-                            "$ref": "#/definitions/handlers.ErrorResponse"
+                            "$ref": "#/definitions/internal_handlers.ErrorResponse"
                         }
                     },
                     "500": {
                         "description": "Failed to set GPIO mode",
                         "schema": {
-                            "$ref": "#/definitions/handlers.ErrorResponse"
+                            "$ref": "#/definitions/internal_handlers.ErrorResponse"
                         }
                     },
                     "503": {
                         "description": "HAL unavailable",
                         "schema": {
-                            "$ref": "#/definitions/handlers.ErrorResponse"
+                            "$ref": "#/definitions/internal_handlers.ErrorResponse"
                         }
                     }
                 }
@@ -7602,19 +7602,19 @@ const docTemplate = `{
                     "200": {
                         "description": "OK",
                         "schema": {
-                            "$ref": "#/definitions/handlers.I2CBusesResponse"
+                            "$ref": "#/definitions/internal_handlers.I2CBusesResponse"
                         }
                     },
                     "500": {
                         "description": "Failed to list I2C buses",
                         "schema": {
-                            "$ref": "#/definitions/handlers.ErrorResponse"
+                            "$ref": "#/definitions/internal_handlers.ErrorResponse"
                         }
                     },
                     "503": {
                         "description": "HAL unavailable",
                         "schema": {
-                            "$ref": "#/definitions/handlers.ErrorResponse"
+                            "$ref": "#/definitions/internal_handlers.ErrorResponse"
                         }
                     }
                 }
@@ -7652,25 +7652,25 @@ const docTemplate = `{
                     "200": {
                         "description": "OK",
                         "schema": {
-                            "$ref": "#/definitions/hal.I2CScanResult"
+                            "$ref": "#/definitions/cubeos-api_internal_hal.I2CScanResult"
                         }
                     },
                     "400": {
                         "description": "Invalid bus number",
                         "schema": {
-                            "$ref": "#/definitions/handlers.ErrorResponse"
+                            "$ref": "#/definitions/internal_handlers.ErrorResponse"
                         }
                     },
                     "500": {
                         "description": "Failed to scan I2C bus",
                         "schema": {
-                            "$ref": "#/definitions/handlers.ErrorResponse"
+                            "$ref": "#/definitions/internal_handlers.ErrorResponse"
                         }
                     },
                     "503": {
                         "description": "HAL unavailable",
                         "schema": {
-                            "$ref": "#/definitions/handlers.ErrorResponse"
+                            "$ref": "#/definitions/internal_handlers.ErrorResponse"
                         }
                     }
                 }
@@ -7716,25 +7716,25 @@ const docTemplate = `{
                     "200": {
                         "description": "OK",
                         "schema": {
-                            "$ref": "#/definitions/hal.I2CDevice"
+                            "$ref": "#/definitions/cubeos-api_internal_hal.I2CDevice"
                         }
                     },
                     "400": {
                         "description": "Invalid bus or address",
                         "schema": {
-                            "$ref": "#/definitions/handlers.ErrorResponse"
+                            "$ref": "#/definitions/internal_handlers.ErrorResponse"
                         }
                     },
                     "500": {
                         "description": "Failed to read I2C device",
                         "schema": {
-                            "$ref": "#/definitions/handlers.ErrorResponse"
+                            "$ref": "#/definitions/internal_handlers.ErrorResponse"
                         }
                     },
                     "503": {
                         "description": "HAL unavailable",
                         "schema": {
-                            "$ref": "#/definitions/handlers.ErrorResponse"
+                            "$ref": "#/definitions/internal_handlers.ErrorResponse"
                         }
                     }
                 }
@@ -7762,13 +7762,13 @@ const docTemplate = `{
                     "200": {
                         "description": "OK",
                         "schema": {
-                            "$ref": "#/definitions/handlers.HardwareOverviewResponse"
+                            "$ref": "#/definitions/internal_handlers.HardwareOverviewResponse"
                         }
                     },
                     "503": {
                         "description": "HAL unavailable",
                         "schema": {
-                            "$ref": "#/definitions/handlers.ErrorResponse"
+                            "$ref": "#/definitions/internal_handlers.ErrorResponse"
                         }
                     }
                 }
@@ -7796,19 +7796,19 @@ const docTemplate = `{
                     "200": {
                         "description": "OK",
                         "schema": {
-                            "$ref": "#/definitions/hal.PowerStatus"
+                            "$ref": "#/definitions/cubeos-api_internal_hal.PowerStatus"
                         }
                     },
                     "500": {
                         "description": "Failed to read power status",
                         "schema": {
-                            "$ref": "#/definitions/handlers.ErrorResponse"
+                            "$ref": "#/definitions/internal_handlers.ErrorResponse"
                         }
                     },
                     "503": {
                         "description": "HAL unavailable",
                         "schema": {
-                            "$ref": "#/definitions/handlers.ErrorResponse"
+                            "$ref": "#/definitions/internal_handlers.ErrorResponse"
                         }
                     }
                 }
@@ -7836,19 +7836,19 @@ const docTemplate = `{
                     "200": {
                         "description": "OK",
                         "schema": {
-                            "$ref": "#/definitions/handlers.SuccessResponse"
+                            "$ref": "#/definitions/internal_handlers.SuccessResponse"
                         }
                     },
                     "500": {
                         "description": "Failed to initiate reboot",
                         "schema": {
-                            "$ref": "#/definitions/handlers.ErrorResponse"
+                            "$ref": "#/definitions/internal_handlers.ErrorResponse"
                         }
                     },
                     "503": {
                         "description": "HAL unavailable",
                         "schema": {
-                            "$ref": "#/definitions/handlers.ErrorResponse"
+                            "$ref": "#/definitions/internal_handlers.ErrorResponse"
                         }
                     }
                 }
@@ -7876,19 +7876,19 @@ const docTemplate = `{
                     "200": {
                         "description": "OK",
                         "schema": {
-                            "$ref": "#/definitions/hal.RTCStatus"
+                            "$ref": "#/definitions/cubeos-api_internal_hal.RTCStatus"
                         }
                     },
                     "500": {
                         "description": "Failed to read RTC",
                         "schema": {
-                            "$ref": "#/definitions/handlers.ErrorResponse"
+                            "$ref": "#/definitions/internal_handlers.ErrorResponse"
                         }
                     },
                     "503": {
                         "description": "HAL unavailable",
                         "schema": {
-                            "$ref": "#/definitions/handlers.ErrorResponse"
+                            "$ref": "#/definitions/internal_handlers.ErrorResponse"
                         }
                     }
                 }
@@ -7916,19 +7916,19 @@ const docTemplate = `{
                     "200": {
                         "description": "OK",
                         "schema": {
-                            "$ref": "#/definitions/handlers.SuccessResponse"
+                            "$ref": "#/definitions/internal_handlers.SuccessResponse"
                         }
                     },
                     "500": {
                         "description": "Failed to sync time",
                         "schema": {
-                            "$ref": "#/definitions/handlers.ErrorResponse"
+                            "$ref": "#/definitions/internal_handlers.ErrorResponse"
                         }
                     },
                     "503": {
                         "description": "HAL unavailable",
                         "schema": {
-                            "$ref": "#/definitions/handlers.ErrorResponse"
+                            "$ref": "#/definitions/internal_handlers.ErrorResponse"
                         }
                     }
                 }
@@ -7959,7 +7959,7 @@ const docTemplate = `{
                         "in": "body",
                         "required": true,
                         "schema": {
-                            "$ref": "#/definitions/handlers.WakeAlarmRequest"
+                            "$ref": "#/definitions/internal_handlers.WakeAlarmRequest"
                         }
                     }
                 ],
@@ -7967,25 +7967,25 @@ const docTemplate = `{
                     "200": {
                         "description": "OK",
                         "schema": {
-                            "$ref": "#/definitions/handlers.SuccessResponse"
+                            "$ref": "#/definitions/internal_handlers.SuccessResponse"
                         }
                     },
                     "400": {
                         "description": "Invalid time format",
                         "schema": {
-                            "$ref": "#/definitions/handlers.ErrorResponse"
+                            "$ref": "#/definitions/internal_handlers.ErrorResponse"
                         }
                     },
                     "500": {
                         "description": "Failed to set wake alarm",
                         "schema": {
-                            "$ref": "#/definitions/handlers.ErrorResponse"
+                            "$ref": "#/definitions/internal_handlers.ErrorResponse"
                         }
                     },
                     "503": {
                         "description": "HAL unavailable",
                         "schema": {
-                            "$ref": "#/definitions/handlers.ErrorResponse"
+                            "$ref": "#/definitions/internal_handlers.ErrorResponse"
                         }
                     }
                 }
@@ -8011,19 +8011,19 @@ const docTemplate = `{
                     "200": {
                         "description": "OK",
                         "schema": {
-                            "$ref": "#/definitions/handlers.SuccessResponse"
+                            "$ref": "#/definitions/internal_handlers.SuccessResponse"
                         }
                     },
                     "500": {
                         "description": "Failed to clear wake alarm",
                         "schema": {
-                            "$ref": "#/definitions/handlers.ErrorResponse"
+                            "$ref": "#/definitions/internal_handlers.ErrorResponse"
                         }
                     },
                     "503": {
                         "description": "HAL unavailable",
                         "schema": {
-                            "$ref": "#/definitions/handlers.ErrorResponse"
+                            "$ref": "#/definitions/internal_handlers.ErrorResponse"
                         }
                     }
                 }
@@ -8051,19 +8051,19 @@ const docTemplate = `{
                     "200": {
                         "description": "OK",
                         "schema": {
-                            "$ref": "#/definitions/hal.AllSensorsResponse"
+                            "$ref": "#/definitions/cubeos-api_internal_hal.AllSensorsResponse"
                         }
                     },
                     "500": {
                         "description": "Failed to read sensors",
                         "schema": {
-                            "$ref": "#/definitions/handlers.ErrorResponse"
+                            "$ref": "#/definitions/internal_handlers.ErrorResponse"
                         }
                     },
                     "503": {
                         "description": "HAL unavailable",
                         "schema": {
-                            "$ref": "#/definitions/handlers.ErrorResponse"
+                            "$ref": "#/definitions/internal_handlers.ErrorResponse"
                         }
                     }
                 }
@@ -8091,19 +8091,19 @@ const docTemplate = `{
                     "200": {
                         "description": "OK",
                         "schema": {
-                            "$ref": "#/definitions/handlers.OneWireDevicesResponse"
+                            "$ref": "#/definitions/internal_handlers.OneWireDevicesResponse"
                         }
                     },
                     "500": {
                         "description": "Failed to list 1-Wire devices",
                         "schema": {
-                            "$ref": "#/definitions/handlers.ErrorResponse"
+                            "$ref": "#/definitions/internal_handlers.ErrorResponse"
                         }
                     },
                     "503": {
                         "description": "HAL unavailable",
                         "schema": {
-                            "$ref": "#/definitions/handlers.ErrorResponse"
+                            "$ref": "#/definitions/internal_handlers.ErrorResponse"
                         }
                     }
                 }
@@ -8141,25 +8141,25 @@ const docTemplate = `{
                     "200": {
                         "description": "OK",
                         "schema": {
-                            "$ref": "#/definitions/hal.OneWireDevice"
+                            "$ref": "#/definitions/cubeos-api_internal_hal.OneWireDevice"
                         }
                     },
                     "400": {
                         "description": "Device ID required",
                         "schema": {
-                            "$ref": "#/definitions/handlers.ErrorResponse"
+                            "$ref": "#/definitions/internal_handlers.ErrorResponse"
                         }
                     },
                     "500": {
                         "description": "Failed to read 1-Wire device",
                         "schema": {
-                            "$ref": "#/definitions/handlers.ErrorResponse"
+                            "$ref": "#/definitions/internal_handlers.ErrorResponse"
                         }
                     },
                     "503": {
                         "description": "HAL unavailable",
                         "schema": {
-                            "$ref": "#/definitions/handlers.ErrorResponse"
+                            "$ref": "#/definitions/internal_handlers.ErrorResponse"
                         }
                     }
                 }
@@ -8187,19 +8187,19 @@ const docTemplate = `{
                     "200": {
                         "description": "OK",
                         "schema": {
-                            "$ref": "#/definitions/hal.BME280Reading"
+                            "$ref": "#/definitions/cubeos-api_internal_hal.BME280Reading"
                         }
                     },
                     "500": {
                         "description": "Failed to read BME280",
                         "schema": {
-                            "$ref": "#/definitions/handlers.ErrorResponse"
+                            "$ref": "#/definitions/internal_handlers.ErrorResponse"
                         }
                     },
                     "503": {
                         "description": "HAL unavailable",
                         "schema": {
-                            "$ref": "#/definitions/handlers.ErrorResponse"
+                            "$ref": "#/definitions/internal_handlers.ErrorResponse"
                         }
                     }
                 }
@@ -8237,25 +8237,25 @@ const docTemplate = `{
                     "200": {
                         "description": "OK",
                         "schema": {
-                            "$ref": "#/definitions/hal.ServiceStatus"
+                            "$ref": "#/definitions/cubeos-api_internal_hal.ServiceStatus"
                         }
                     },
                     "400": {
                         "description": "Service name required",
                         "schema": {
-                            "$ref": "#/definitions/handlers.ErrorResponse"
+                            "$ref": "#/definitions/internal_handlers.ErrorResponse"
                         }
                     },
                     "500": {
                         "description": "Failed to get service status",
                         "schema": {
-                            "$ref": "#/definitions/handlers.ErrorResponse"
+                            "$ref": "#/definitions/internal_handlers.ErrorResponse"
                         }
                     },
                     "503": {
                         "description": "HAL unavailable",
                         "schema": {
-                            "$ref": "#/definitions/handlers.ErrorResponse"
+                            "$ref": "#/definitions/internal_handlers.ErrorResponse"
                         }
                     }
                 }
@@ -8293,25 +8293,25 @@ const docTemplate = `{
                     "200": {
                         "description": "OK",
                         "schema": {
-                            "$ref": "#/definitions/handlers.SuccessResponse"
+                            "$ref": "#/definitions/internal_handlers.SuccessResponse"
                         }
                     },
                     "400": {
                         "description": "Service name required",
                         "schema": {
-                            "$ref": "#/definitions/handlers.ErrorResponse"
+                            "$ref": "#/definitions/internal_handlers.ErrorResponse"
                         }
                     },
                     "500": {
                         "description": "Failed to restart service",
                         "schema": {
-                            "$ref": "#/definitions/handlers.ErrorResponse"
+                            "$ref": "#/definitions/internal_handlers.ErrorResponse"
                         }
                     },
                     "503": {
                         "description": "HAL unavailable",
                         "schema": {
-                            "$ref": "#/definitions/handlers.ErrorResponse"
+                            "$ref": "#/definitions/internal_handlers.ErrorResponse"
                         }
                     }
                 }
@@ -8349,25 +8349,25 @@ const docTemplate = `{
                     "200": {
                         "description": "OK",
                         "schema": {
-                            "$ref": "#/definitions/handlers.SuccessResponse"
+                            "$ref": "#/definitions/internal_handlers.SuccessResponse"
                         }
                     },
                     "400": {
                         "description": "Service name required",
                         "schema": {
-                            "$ref": "#/definitions/handlers.ErrorResponse"
+                            "$ref": "#/definitions/internal_handlers.ErrorResponse"
                         }
                     },
                     "500": {
                         "description": "Failed to start service",
                         "schema": {
-                            "$ref": "#/definitions/handlers.ErrorResponse"
+                            "$ref": "#/definitions/internal_handlers.ErrorResponse"
                         }
                     },
                     "503": {
                         "description": "HAL unavailable",
                         "schema": {
-                            "$ref": "#/definitions/handlers.ErrorResponse"
+                            "$ref": "#/definitions/internal_handlers.ErrorResponse"
                         }
                     }
                 }
@@ -8405,25 +8405,25 @@ const docTemplate = `{
                     "200": {
                         "description": "OK",
                         "schema": {
-                            "$ref": "#/definitions/handlers.SuccessResponse"
+                            "$ref": "#/definitions/internal_handlers.SuccessResponse"
                         }
                     },
                     "400": {
                         "description": "Service name required",
                         "schema": {
-                            "$ref": "#/definitions/handlers.ErrorResponse"
+                            "$ref": "#/definitions/internal_handlers.ErrorResponse"
                         }
                     },
                     "500": {
                         "description": "Failed to stop service",
                         "schema": {
-                            "$ref": "#/definitions/handlers.ErrorResponse"
+                            "$ref": "#/definitions/internal_handlers.ErrorResponse"
                         }
                     },
                     "503": {
                         "description": "HAL unavailable",
                         "schema": {
-                            "$ref": "#/definitions/handlers.ErrorResponse"
+                            "$ref": "#/definitions/internal_handlers.ErrorResponse"
                         }
                     }
                 }
@@ -8451,19 +8451,19 @@ const docTemplate = `{
                     "200": {
                         "description": "OK",
                         "schema": {
-                            "$ref": "#/definitions/handlers.SuccessResponse"
+                            "$ref": "#/definitions/internal_handlers.SuccessResponse"
                         }
                     },
                     "500": {
                         "description": "Failed to initiate shutdown",
                         "schema": {
-                            "$ref": "#/definitions/handlers.ErrorResponse"
+                            "$ref": "#/definitions/internal_handlers.ErrorResponse"
                         }
                     },
                     "503": {
                         "description": "HAL unavailable",
                         "schema": {
-                            "$ref": "#/definitions/handlers.ErrorResponse"
+                            "$ref": "#/definitions/internal_handlers.ErrorResponse"
                         }
                     }
                 }
@@ -8491,19 +8491,19 @@ const docTemplate = `{
                     "200": {
                         "description": "OK",
                         "schema": {
-                            "$ref": "#/definitions/hal.TemperatureResponse"
+                            "$ref": "#/definitions/cubeos-api_internal_hal.TemperatureResponse"
                         }
                     },
                     "500": {
                         "description": "Failed to read temperature",
                         "schema": {
-                            "$ref": "#/definitions/handlers.ErrorResponse"
+                            "$ref": "#/definitions/internal_handlers.ErrorResponse"
                         }
                     },
                     "503": {
                         "description": "HAL unavailable",
                         "schema": {
-                            "$ref": "#/definitions/handlers.ErrorResponse"
+                            "$ref": "#/definitions/internal_handlers.ErrorResponse"
                         }
                     }
                 }
@@ -8531,19 +8531,19 @@ const docTemplate = `{
                     "200": {
                         "description": "OK",
                         "schema": {
-                            "$ref": "#/definitions/hal.ThrottleStatus"
+                            "$ref": "#/definitions/cubeos-api_internal_hal.ThrottleStatus"
                         }
                     },
                     "500": {
                         "description": "Failed to read throttle status",
                         "schema": {
-                            "$ref": "#/definitions/handlers.ErrorResponse"
+                            "$ref": "#/definitions/internal_handlers.ErrorResponse"
                         }
                     },
                     "503": {
                         "description": "HAL unavailable",
                         "schema": {
-                            "$ref": "#/definitions/handlers.ErrorResponse"
+                            "$ref": "#/definitions/internal_handlers.ErrorResponse"
                         }
                     }
                 }
@@ -8571,19 +8571,19 @@ const docTemplate = `{
                     "200": {
                         "description": "OK",
                         "schema": {
-                            "$ref": "#/definitions/hal.UPSInfo"
+                            "$ref": "#/definitions/cubeos-api_internal_hal.UPSInfo"
                         }
                     },
                     "500": {
                         "description": "Failed to read UPS info",
                         "schema": {
-                            "$ref": "#/definitions/handlers.ErrorResponse"
+                            "$ref": "#/definitions/internal_handlers.ErrorResponse"
                         }
                     },
                     "503": {
                         "description": "HAL unavailable",
                         "schema": {
-                            "$ref": "#/definitions/handlers.ErrorResponse"
+                            "$ref": "#/definitions/internal_handlers.ErrorResponse"
                         }
                     }
                 }
@@ -8611,19 +8611,19 @@ const docTemplate = `{
                     "200": {
                         "description": "OK",
                         "schema": {
-                            "$ref": "#/definitions/hal.UptimeInfo"
+                            "$ref": "#/definitions/cubeos-api_internal_hal.UptimeInfo"
                         }
                     },
                     "500": {
                         "description": "Failed to read uptime",
                         "schema": {
-                            "$ref": "#/definitions/handlers.ErrorResponse"
+                            "$ref": "#/definitions/internal_handlers.ErrorResponse"
                         }
                     },
                     "503": {
                         "description": "HAL unavailable",
                         "schema": {
-                            "$ref": "#/definitions/handlers.ErrorResponse"
+                            "$ref": "#/definitions/internal_handlers.ErrorResponse"
                         }
                     }
                 }
@@ -8651,19 +8651,19 @@ const docTemplate = `{
                     "200": {
                         "description": "OK",
                         "schema": {
-                            "$ref": "#/definitions/hal.WatchdogInfo"
+                            "$ref": "#/definitions/cubeos-api_internal_hal.WatchdogInfo"
                         }
                     },
                     "500": {
                         "description": "Failed to read watchdog status",
                         "schema": {
-                            "$ref": "#/definitions/handlers.ErrorResponse"
+                            "$ref": "#/definitions/internal_handlers.ErrorResponse"
                         }
                     },
                     "503": {
                         "description": "HAL unavailable",
                         "schema": {
-                            "$ref": "#/definitions/handlers.ErrorResponse"
+                            "$ref": "#/definitions/internal_handlers.ErrorResponse"
                         }
                     }
                 }
@@ -8691,19 +8691,19 @@ const docTemplate = `{
                     "200": {
                         "description": "OK",
                         "schema": {
-                            "$ref": "#/definitions/handlers.SuccessResponse"
+                            "$ref": "#/definitions/internal_handlers.SuccessResponse"
                         }
                     },
                     "500": {
                         "description": "Failed to enable watchdog",
                         "schema": {
-                            "$ref": "#/definitions/handlers.ErrorResponse"
+                            "$ref": "#/definitions/internal_handlers.ErrorResponse"
                         }
                     },
                     "503": {
                         "description": "HAL unavailable",
                         "schema": {
-                            "$ref": "#/definitions/handlers.ErrorResponse"
+                            "$ref": "#/definitions/internal_handlers.ErrorResponse"
                         }
                     }
                 }
@@ -8731,39 +8731,19 @@ const docTemplate = `{
                     "200": {
                         "description": "OK",
                         "schema": {
-                            "$ref": "#/definitions/handlers.SuccessResponse"
+                            "$ref": "#/definitions/internal_handlers.SuccessResponse"
                         }
                     },
                     "500": {
                         "description": "Failed to pet watchdog",
                         "schema": {
-                            "$ref": "#/definitions/handlers.ErrorResponse"
+                            "$ref": "#/definitions/internal_handlers.ErrorResponse"
                         }
                     },
                     "503": {
                         "description": "HAL unavailable",
                         "schema": {
-                            "$ref": "#/definitions/handlers.ErrorResponse"
-                        }
-                    }
-                }
-            }
-        },
-        "/health": {
-            "get": {
-                "description": "Returns API health status, version, and uptime",
-                "produces": [
-                    "application/json"
-                ],
-                "tags": [
-                    "Health"
-                ],
-                "summary": "Health check",
-                "responses": {
-                    "200": {
-                        "description": "Health status",
-                        "schema": {
-                            "$ref": "#/definitions/models.HealthResponse"
+                            "$ref": "#/definitions/internal_handlers.ErrorResponse"
                         }
                     }
                 }
@@ -8859,7 +8839,7 @@ const docTemplate = `{
                     "200": {
                         "description": "Container log entries",
                         "schema": {
-                            "$ref": "#/definitions/models.ContainerLogsResponse"
+                            "$ref": "#/definitions/cubeos-api_internal_models.ContainerLogsResponse"
                         }
                     }
                 }
@@ -8955,13 +8935,13 @@ const docTemplate = `{
                     "400": {
                         "description": "Path parameter required",
                         "schema": {
-                            "$ref": "#/definitions/handlers.ErrorResponse"
+                            "$ref": "#/definitions/internal_handlers.ErrorResponse"
                         }
                     },
                     "403": {
                         "description": "Access denied",
                         "schema": {
-                            "$ref": "#/definitions/handlers.ErrorResponse"
+                            "$ref": "#/definitions/internal_handlers.ErrorResponse"
                         }
                     }
                 }
@@ -9025,7 +9005,7 @@ const docTemplate = `{
                     "200": {
                         "description": "Journal log entries",
                         "schema": {
-                            "$ref": "#/definitions/models.LogsResponse"
+                            "$ref": "#/definitions/cubeos-api_internal_models.LogsResponse"
                         }
                     }
                 }
@@ -9139,7 +9119,7 @@ const docTemplate = `{
                     "200": {
                         "description": "Available log units",
                         "schema": {
-                            "$ref": "#/definitions/models.LogUnitsResponse"
+                            "$ref": "#/definitions/cubeos-api_internal_models.LogUnitsResponse"
                         }
                     }
                 }
@@ -9167,19 +9147,19 @@ const docTemplate = `{
                     "200": {
                         "description": "OK",
                         "schema": {
-                            "$ref": "#/definitions/hal.AudioDevicesResponse"
+                            "$ref": "#/definitions/cubeos-api_internal_hal.AudioDevicesResponse"
                         }
                     },
                     "500": {
                         "description": "Failed to list audio devices",
                         "schema": {
-                            "$ref": "#/definitions/handlers.ErrorResponse"
+                            "$ref": "#/definitions/internal_handlers.ErrorResponse"
                         }
                     },
                     "503": {
                         "description": "HAL unavailable",
                         "schema": {
-                            "$ref": "#/definitions/handlers.ErrorResponse"
+                            "$ref": "#/definitions/internal_handlers.ErrorResponse"
                         }
                     }
                 }
@@ -9207,19 +9187,19 @@ const docTemplate = `{
                     "200": {
                         "description": "OK",
                         "schema": {
-                            "$ref": "#/definitions/handlers.AudioDevicesListResponse"
+                            "$ref": "#/definitions/internal_handlers.AudioDevicesListResponse"
                         }
                     },
                     "500": {
                         "description": "Failed to list capture devices",
                         "schema": {
-                            "$ref": "#/definitions/handlers.ErrorResponse"
+                            "$ref": "#/definitions/internal_handlers.ErrorResponse"
                         }
                     },
                     "503": {
                         "description": "HAL unavailable",
                         "schema": {
-                            "$ref": "#/definitions/handlers.ErrorResponse"
+                            "$ref": "#/definitions/internal_handlers.ErrorResponse"
                         }
                     }
                 }
@@ -9250,7 +9230,7 @@ const docTemplate = `{
                         "in": "body",
                         "required": true,
                         "schema": {
-                            "$ref": "#/definitions/handlers.SetMuteRequest"
+                            "$ref": "#/definitions/internal_handlers.SetMuteRequest"
                         }
                     }
                 ],
@@ -9258,25 +9238,25 @@ const docTemplate = `{
                     "200": {
                         "description": "OK",
                         "schema": {
-                            "$ref": "#/definitions/handlers.SuccessResponse"
+                            "$ref": "#/definitions/internal_handlers.SuccessResponse"
                         }
                     },
                     "400": {
                         "description": "Invalid request",
                         "schema": {
-                            "$ref": "#/definitions/handlers.ErrorResponse"
+                            "$ref": "#/definitions/internal_handlers.ErrorResponse"
                         }
                     },
                     "500": {
                         "description": "Failed to set mute",
                         "schema": {
-                            "$ref": "#/definitions/handlers.ErrorResponse"
+                            "$ref": "#/definitions/internal_handlers.ErrorResponse"
                         }
                     },
                     "503": {
                         "description": "HAL unavailable",
                         "schema": {
-                            "$ref": "#/definitions/handlers.ErrorResponse"
+                            "$ref": "#/definitions/internal_handlers.ErrorResponse"
                         }
                     }
                 }
@@ -9304,19 +9284,19 @@ const docTemplate = `{
                     "200": {
                         "description": "OK",
                         "schema": {
-                            "$ref": "#/definitions/handlers.AudioDevicesListResponse"
+                            "$ref": "#/definitions/internal_handlers.AudioDevicesListResponse"
                         }
                     },
                     "500": {
                         "description": "Failed to list playback devices",
                         "schema": {
-                            "$ref": "#/definitions/handlers.ErrorResponse"
+                            "$ref": "#/definitions/internal_handlers.ErrorResponse"
                         }
                     },
                     "503": {
                         "description": "HAL unavailable",
                         "schema": {
-                            "$ref": "#/definitions/handlers.ErrorResponse"
+                            "$ref": "#/definitions/internal_handlers.ErrorResponse"
                         }
                     }
                 }
@@ -9344,19 +9324,19 @@ const docTemplate = `{
                     "200": {
                         "description": "OK",
                         "schema": {
-                            "$ref": "#/definitions/hal.VolumeInfo"
+                            "$ref": "#/definitions/cubeos-api_internal_hal.VolumeInfo"
                         }
                     },
                     "500": {
                         "description": "Failed to get volume",
                         "schema": {
-                            "$ref": "#/definitions/handlers.ErrorResponse"
+                            "$ref": "#/definitions/internal_handlers.ErrorResponse"
                         }
                     },
                     "503": {
                         "description": "HAL unavailable",
                         "schema": {
-                            "$ref": "#/definitions/handlers.ErrorResponse"
+                            "$ref": "#/definitions/internal_handlers.ErrorResponse"
                         }
                     }
                 }
@@ -9385,7 +9365,7 @@ const docTemplate = `{
                         "in": "body",
                         "required": true,
                         "schema": {
-                            "$ref": "#/definitions/handlers.SetVolumeRequest"
+                            "$ref": "#/definitions/internal_handlers.SetVolumeRequest"
                         }
                     }
                 ],
@@ -9393,25 +9373,25 @@ const docTemplate = `{
                     "200": {
                         "description": "OK",
                         "schema": {
-                            "$ref": "#/definitions/handlers.SuccessResponse"
+                            "$ref": "#/definitions/internal_handlers.SuccessResponse"
                         }
                     },
                     "400": {
                         "description": "Invalid volume",
                         "schema": {
-                            "$ref": "#/definitions/handlers.ErrorResponse"
+                            "$ref": "#/definitions/internal_handlers.ErrorResponse"
                         }
                     },
                     "500": {
                         "description": "Failed to set volume",
                         "schema": {
-                            "$ref": "#/definitions/handlers.ErrorResponse"
+                            "$ref": "#/definitions/internal_handlers.ErrorResponse"
                         }
                     },
                     "503": {
                         "description": "HAL unavailable",
                         "schema": {
-                            "$ref": "#/definitions/handlers.ErrorResponse"
+                            "$ref": "#/definitions/internal_handlers.ErrorResponse"
                         }
                     }
                 }
@@ -9439,19 +9419,19 @@ const docTemplate = `{
                     "200": {
                         "description": "OK",
                         "schema": {
-                            "$ref": "#/definitions/hal.CameraDevicesResponse"
+                            "$ref": "#/definitions/cubeos-api_internal_hal.CameraDevicesResponse"
                         }
                     },
                     "500": {
                         "description": "Failed to list cameras",
                         "schema": {
-                            "$ref": "#/definitions/handlers.ErrorResponse"
+                            "$ref": "#/definitions/internal_handlers.ErrorResponse"
                         }
                     },
                     "503": {
                         "description": "HAL unavailable",
                         "schema": {
-                            "$ref": "#/definitions/handlers.ErrorResponse"
+                            "$ref": "#/definitions/internal_handlers.ErrorResponse"
                         }
                     }
                 }
@@ -9486,19 +9466,19 @@ const docTemplate = `{
                     "404": {
                         "description": "No image captured",
                         "schema": {
-                            "$ref": "#/definitions/handlers.ErrorResponse"
+                            "$ref": "#/definitions/internal_handlers.ErrorResponse"
                         }
                     },
                     "500": {
                         "description": "Failed to get image",
                         "schema": {
-                            "$ref": "#/definitions/handlers.ErrorResponse"
+                            "$ref": "#/definitions/internal_handlers.ErrorResponse"
                         }
                     },
                     "503": {
                         "description": "HAL unavailable",
                         "schema": {
-                            "$ref": "#/definitions/handlers.ErrorResponse"
+                            "$ref": "#/definitions/internal_handlers.ErrorResponse"
                         }
                     }
                 }
@@ -9526,7 +9506,7 @@ const docTemplate = `{
                         "name": "request",
                         "in": "body",
                         "schema": {
-                            "$ref": "#/definitions/handlers.CaptureImageRequest"
+                            "$ref": "#/definitions/internal_handlers.CaptureImageRequest"
                         }
                     }
                 ],
@@ -9534,25 +9514,25 @@ const docTemplate = `{
                     "200": {
                         "description": "OK",
                         "schema": {
-                            "$ref": "#/definitions/handlers.SuccessResponse"
+                            "$ref": "#/definitions/internal_handlers.SuccessResponse"
                         }
                     },
                     "400": {
                         "description": "Invalid request",
                         "schema": {
-                            "$ref": "#/definitions/handlers.ErrorResponse"
+                            "$ref": "#/definitions/internal_handlers.ErrorResponse"
                         }
                     },
                     "500": {
                         "description": "Failed to capture image",
                         "schema": {
-                            "$ref": "#/definitions/handlers.ErrorResponse"
+                            "$ref": "#/definitions/internal_handlers.ErrorResponse"
                         }
                     },
                     "503": {
                         "description": "HAL unavailable",
                         "schema": {
-                            "$ref": "#/definitions/handlers.ErrorResponse"
+                            "$ref": "#/definitions/internal_handlers.ErrorResponse"
                         }
                     }
                 }
@@ -9580,19 +9560,19 @@ const docTemplate = `{
                     "200": {
                         "description": "OK",
                         "schema": {
-                            "$ref": "#/definitions/hal.CameraInfo"
+                            "$ref": "#/definitions/cubeos-api_internal_hal.CameraInfo"
                         }
                     },
                     "500": {
                         "description": "Failed to get camera info",
                         "schema": {
-                            "$ref": "#/definitions/handlers.ErrorResponse"
+                            "$ref": "#/definitions/internal_handlers.ErrorResponse"
                         }
                     },
                     "503": {
                         "description": "HAL unavailable",
                         "schema": {
-                            "$ref": "#/definitions/handlers.ErrorResponse"
+                            "$ref": "#/definitions/internal_handlers.ErrorResponse"
                         }
                     }
                 }
@@ -9620,19 +9600,19 @@ const docTemplate = `{
                     "200": {
                         "description": "OK",
                         "schema": {
-                            "$ref": "#/definitions/hal.StreamInfo"
+                            "$ref": "#/definitions/cubeos-api_internal_hal.StreamInfo"
                         }
                     },
                     "500": {
                         "description": "Failed to get stream info",
                         "schema": {
-                            "$ref": "#/definitions/handlers.ErrorResponse"
+                            "$ref": "#/definitions/internal_handlers.ErrorResponse"
                         }
                     },
                     "503": {
                         "description": "HAL unavailable",
                         "schema": {
-                            "$ref": "#/definitions/handlers.ErrorResponse"
+                            "$ref": "#/definitions/internal_handlers.ErrorResponse"
                         }
                     }
                 }
@@ -9662,7 +9642,7 @@ const docTemplate = `{
                         "name": "request",
                         "in": "body",
                         "schema": {
-                            "$ref": "#/definitions/handlers.StartStreamRequest"
+                            "$ref": "#/definitions/internal_handlers.StartStreamRequest"
                         }
                     }
                 ],
@@ -9670,25 +9650,25 @@ const docTemplate = `{
                     "200": {
                         "description": "OK",
                         "schema": {
-                            "$ref": "#/definitions/handlers.StreamStartResponse"
+                            "$ref": "#/definitions/internal_handlers.StreamStartResponse"
                         }
                     },
                     "400": {
                         "description": "Invalid request",
                         "schema": {
-                            "$ref": "#/definitions/handlers.ErrorResponse"
+                            "$ref": "#/definitions/internal_handlers.ErrorResponse"
                         }
                     },
                     "500": {
                         "description": "Failed to start stream",
                         "schema": {
-                            "$ref": "#/definitions/handlers.ErrorResponse"
+                            "$ref": "#/definitions/internal_handlers.ErrorResponse"
                         }
                     },
                     "503": {
                         "description": "HAL unavailable",
                         "schema": {
-                            "$ref": "#/definitions/handlers.ErrorResponse"
+                            "$ref": "#/definitions/internal_handlers.ErrorResponse"
                         }
                     }
                 }
@@ -9716,19 +9696,19 @@ const docTemplate = `{
                     "200": {
                         "description": "OK",
                         "schema": {
-                            "$ref": "#/definitions/handlers.SuccessResponse"
+                            "$ref": "#/definitions/internal_handlers.SuccessResponse"
                         }
                     },
                     "500": {
                         "description": "Failed to stop stream",
                         "schema": {
-                            "$ref": "#/definitions/handlers.ErrorResponse"
+                            "$ref": "#/definitions/internal_handlers.ErrorResponse"
                         }
                     },
                     "503": {
                         "description": "HAL unavailable",
                         "schema": {
-                            "$ref": "#/definitions/handlers.ErrorResponse"
+                            "$ref": "#/definitions/internal_handlers.ErrorResponse"
                         }
                     }
                 }
@@ -9788,7 +9768,7 @@ const docTemplate = `{
                     "200": {
                         "description": "Statistics history",
                         "schema": {
-                            "$ref": "#/definitions/models.StatsHistoryResponse"
+                            "$ref": "#/definitions/cubeos-api_internal_models.StatsHistoryResponse"
                         }
                     }
                 }
@@ -9894,7 +9874,7 @@ const docTemplate = `{
                     "400": {
                         "description": "Invalid request body",
                         "schema": {
-                            "$ref": "#/definitions/handlers.ErrorResponse"
+                            "$ref": "#/definitions/internal_handlers.ErrorResponse"
                         }
                     }
                 }
@@ -9952,7 +9932,7 @@ const docTemplate = `{
                     "500": {
                         "description": "MOUNTS_LIST_ERROR",
                         "schema": {
-                            "$ref": "#/definitions/handlers.ErrorResponse"
+                            "$ref": "#/definitions/internal_handlers.ErrorResponse"
                         }
                     }
                 }
@@ -9981,7 +9961,7 @@ const docTemplate = `{
                         "in": "body",
                         "required": true,
                         "schema": {
-                            "$ref": "#/definitions/managers.CreateMountRequest"
+                            "$ref": "#/definitions/cubeos-api_internal_managers.CreateMountRequest"
                         }
                     }
                 ],
@@ -9989,13 +9969,13 @@ const docTemplate = `{
                     "201": {
                         "description": "Created mount configuration",
                         "schema": {
-                            "$ref": "#/definitions/models.Mount"
+                            "$ref": "#/definitions/cubeos-api_internal_models.Mount"
                         }
                     },
                     "400": {
                         "description": "INVALID_JSON or MOUNT_ADD_ERROR",
                         "schema": {
-                            "$ref": "#/definitions/handlers.ErrorResponse"
+                            "$ref": "#/definitions/internal_handlers.ErrorResponse"
                         }
                     }
                 }
@@ -10041,7 +10021,7 @@ const docTemplate = `{
                     "400": {
                         "description": "INVALID_JSON, MISSING_TYPE, or MISSING_PATH",
                         "schema": {
-                            "$ref": "#/definitions/handlers.ErrorResponse"
+                            "$ref": "#/definitions/internal_handlers.ErrorResponse"
                         }
                     }
                 }
@@ -10075,19 +10055,19 @@ const docTemplate = `{
                     "200": {
                         "description": "Mount configuration details",
                         "schema": {
-                            "$ref": "#/definitions/models.Mount"
+                            "$ref": "#/definitions/cubeos-api_internal_models.Mount"
                         }
                     },
                     "400": {
                         "description": "INVALID_NAME - Mount name is required",
                         "schema": {
-                            "$ref": "#/definitions/handlers.ErrorResponse"
+                            "$ref": "#/definitions/internal_handlers.ErrorResponse"
                         }
                     },
                     "404": {
                         "description": "MOUNT_NOT_FOUND - Mount not found",
                         "schema": {
-                            "$ref": "#/definitions/handlers.ErrorResponse"
+                            "$ref": "#/definitions/internal_handlers.ErrorResponse"
                         }
                     }
                 }
@@ -10128,19 +10108,19 @@ const docTemplate = `{
                     "400": {
                         "description": "INVALID_NAME - Mount name is required",
                         "schema": {
-                            "$ref": "#/definitions/handlers.ErrorResponse"
+                            "$ref": "#/definitions/internal_handlers.ErrorResponse"
                         }
                     },
                     "404": {
                         "description": "MOUNT_NOT_FOUND - Mount not found",
                         "schema": {
-                            "$ref": "#/definitions/handlers.ErrorResponse"
+                            "$ref": "#/definitions/internal_handlers.ErrorResponse"
                         }
                     },
                     "500": {
                         "description": "MOUNT_DELETE_ERROR",
                         "schema": {
-                            "$ref": "#/definitions/handlers.ErrorResponse"
+                            "$ref": "#/definitions/internal_handlers.ErrorResponse"
                         }
                     }
                 }
@@ -10181,19 +10161,19 @@ const docTemplate = `{
                     "400": {
                         "description": "INVALID_NAME - Mount name is required",
                         "schema": {
-                            "$ref": "#/definitions/handlers.ErrorResponse"
+                            "$ref": "#/definitions/internal_handlers.ErrorResponse"
                         }
                     },
                     "404": {
                         "description": "MOUNT_NOT_FOUND - Mount not found",
                         "schema": {
-                            "$ref": "#/definitions/handlers.ErrorResponse"
+                            "$ref": "#/definitions/internal_handlers.ErrorResponse"
                         }
                     },
                     "500": {
                         "description": "MOUNT_ERROR - Failed to mount",
                         "schema": {
-                            "$ref": "#/definitions/handlers.ErrorResponse"
+                            "$ref": "#/definitions/internal_handlers.ErrorResponse"
                         }
                     }
                 }
@@ -10234,13 +10214,13 @@ const docTemplate = `{
                     "400": {
                         "description": "INVALID_NAME - Mount name is required",
                         "schema": {
-                            "$ref": "#/definitions/handlers.ErrorResponse"
+                            "$ref": "#/definitions/internal_handlers.ErrorResponse"
                         }
                     },
                     "404": {
                         "description": "MOUNT_NOT_FOUND - Mount not found",
                         "schema": {
-                            "$ref": "#/definitions/handlers.ErrorResponse"
+                            "$ref": "#/definitions/internal_handlers.ErrorResponse"
                         }
                     }
                 }
@@ -10283,19 +10263,19 @@ const docTemplate = `{
                     "400": {
                         "description": "INVALID_NAME - Mount name is required",
                         "schema": {
-                            "$ref": "#/definitions/handlers.ErrorResponse"
+                            "$ref": "#/definitions/internal_handlers.ErrorResponse"
                         }
                     },
                     "404": {
                         "description": "MOUNT_NOT_FOUND - Mount not found",
                         "schema": {
-                            "$ref": "#/definitions/handlers.ErrorResponse"
+                            "$ref": "#/definitions/internal_handlers.ErrorResponse"
                         }
                     },
                     "500": {
                         "description": "UNMOUNT_ERROR - Failed to unmount",
                         "schema": {
-                            "$ref": "#/definitions/handlers.ErrorResponse"
+                            "$ref": "#/definitions/internal_handlers.ErrorResponse"
                         }
                     }
                 }
@@ -10320,13 +10300,13 @@ const docTemplate = `{
                     "200": {
                         "description": "AP configuration",
                         "schema": {
-                            "$ref": "#/definitions/managers.APConfig"
+                            "$ref": "#/definitions/cubeos-api_internal_managers.APConfig"
                         }
                     },
                     "500": {
                         "description": "Failed to get config",
                         "schema": {
-                            "$ref": "#/definitions/handlers.ErrorResponse"
+                            "$ref": "#/definitions/internal_handlers.ErrorResponse"
                         }
                     }
                 }
@@ -10370,19 +10350,19 @@ const docTemplate = `{
                     "400": {
                         "description": "Invalid configuration",
                         "schema": {
-                            "$ref": "#/definitions/handlers.ErrorResponse"
+                            "$ref": "#/definitions/internal_handlers.ErrorResponse"
                         }
                     },
                     "500": {
                         "description": "Failed to update config",
                         "schema": {
-                            "$ref": "#/definitions/handlers.ErrorResponse"
+                            "$ref": "#/definitions/internal_handlers.ErrorResponse"
                         }
                     },
                     "501": {
                         "description": "Not implemented — HAL support required",
                         "schema": {
-                            "$ref": "#/definitions/handlers.ErrorResponse"
+                            "$ref": "#/definitions/internal_handlers.ErrorResponse"
                         }
                     }
                 }
@@ -10414,7 +10394,7 @@ const docTemplate = `{
                     "500": {
                         "description": "Failed to start AP",
                         "schema": {
-                            "$ref": "#/definitions/handlers.ErrorResponse"
+                            "$ref": "#/definitions/internal_handlers.ErrorResponse"
                         }
                     }
                 }
@@ -10446,7 +10426,7 @@ const docTemplate = `{
                     "500": {
                         "description": "Failed to stop AP",
                         "schema": {
-                            "$ref": "#/definitions/handlers.ErrorResponse"
+                            "$ref": "#/definitions/internal_handlers.ErrorResponse"
                         }
                     }
                 }
@@ -10497,13 +10477,13 @@ const docTemplate = `{
                     "200": {
                         "description": "DNS configuration",
                         "schema": {
-                            "$ref": "#/definitions/managers.DNSConfig"
+                            "$ref": "#/definitions/cubeos-api_internal_managers.DNSConfig"
                         }
                     },
                     "500": {
                         "description": "Failed to get DNS config",
                         "schema": {
-                            "$ref": "#/definitions/handlers.ErrorResponse"
+                            "$ref": "#/definitions/internal_handlers.ErrorResponse"
                         }
                     }
                 }
@@ -10532,7 +10512,7 @@ const docTemplate = `{
                         "in": "body",
                         "required": true,
                         "schema": {
-                            "$ref": "#/definitions/managers.DNSConfig"
+                            "$ref": "#/definitions/cubeos-api_internal_managers.DNSConfig"
                         }
                     }
                 ],
@@ -10547,13 +10527,13 @@ const docTemplate = `{
                     "400": {
                         "description": "Invalid request",
                         "schema": {
-                            "$ref": "#/definitions/handlers.ErrorResponse"
+                            "$ref": "#/definitions/internal_handlers.ErrorResponse"
                         }
                     },
                     "500": {
                         "description": "Failed to set DNS config",
                         "schema": {
-                            "$ref": "#/definitions/handlers.ErrorResponse"
+                            "$ref": "#/definitions/internal_handlers.ErrorResponse"
                         }
                     }
                 }
@@ -10585,7 +10565,7 @@ const docTemplate = `{
                     "503": {
                         "description": "HAL service unavailable",
                         "schema": {
-                            "$ref": "#/definitions/handlers.ErrorResponse"
+                            "$ref": "#/definitions/internal_handlers.ErrorResponse"
                         }
                     }
                 }
@@ -10617,7 +10597,7 @@ const docTemplate = `{
                     "503": {
                         "description": "HAL service unavailable",
                         "schema": {
-                            "$ref": "#/definitions/handlers.ErrorResponse"
+                            "$ref": "#/definitions/internal_handlers.ErrorResponse"
                         }
                     }
                 }
@@ -10713,13 +10693,13 @@ const docTemplate = `{
                     "400": {
                         "description": "Invalid mode or missing parameters",
                         "schema": {
-                            "$ref": "#/definitions/handlers.ErrorResponse"
+                            "$ref": "#/definitions/internal_handlers.ErrorResponse"
                         }
                     },
                     "500": {
                         "description": "Failed to change mode",
                         "schema": {
-                            "$ref": "#/definitions/handlers.ErrorResponse"
+                            "$ref": "#/definitions/internal_handlers.ErrorResponse"
                         }
                     }
                 }
@@ -10770,7 +10750,7 @@ const docTemplate = `{
                     "200": {
                         "description": "Network configuration",
                         "schema": {
-                            "$ref": "#/definitions/models.NetworkConfig"
+                            "$ref": "#/definitions/cubeos-api_internal_models.NetworkConfig"
                         }
                     }
                 }
@@ -10807,19 +10787,19 @@ const docTemplate = `{
                     "200": {
                         "description": "Updated configuration",
                         "schema": {
-                            "$ref": "#/definitions/models.NetworkConfig"
+                            "$ref": "#/definitions/cubeos-api_internal_models.NetworkConfig"
                         }
                     },
                     "400": {
                         "description": "Invalid request body",
                         "schema": {
-                            "$ref": "#/definitions/handlers.ErrorResponse"
+                            "$ref": "#/definitions/internal_handlers.ErrorResponse"
                         }
                     },
                     "500": {
                         "description": "Failed to update settings",
                         "schema": {
-                            "$ref": "#/definitions/handlers.ErrorResponse"
+                            "$ref": "#/definitions/internal_handlers.ErrorResponse"
                         }
                     }
                 }
@@ -10844,13 +10824,13 @@ const docTemplate = `{
                     "200": {
                         "description": "Network status",
                         "schema": {
-                            "$ref": "#/definitions/managers.NetworkStatus"
+                            "$ref": "#/definitions/cubeos-api_internal_managers.NetworkStatus"
                         }
                     },
                     "500": {
                         "description": "Failed to get status",
                         "schema": {
-                            "$ref": "#/definitions/handlers.ErrorResponse"
+                            "$ref": "#/definitions/internal_handlers.ErrorResponse"
                         }
                     }
                 }
@@ -10882,7 +10862,7 @@ const docTemplate = `{
                     "503": {
                         "description": "HAL service unavailable",
                         "schema": {
-                            "$ref": "#/definitions/handlers.ErrorResponse"
+                            "$ref": "#/definitions/internal_handlers.ErrorResponse"
                         }
                     }
                 }
@@ -10930,7 +10910,7 @@ const docTemplate = `{
                     "503": {
                         "description": "HAL service unavailable",
                         "schema": {
-                            "$ref": "#/definitions/handlers.ErrorResponse"
+                            "$ref": "#/definitions/internal_handlers.ErrorResponse"
                         }
                     }
                 }
@@ -11000,13 +10980,13 @@ const docTemplate = `{
                     "400": {
                         "description": "Invalid mode",
                         "schema": {
-                            "$ref": "#/definitions/handlers.ErrorResponse"
+                            "$ref": "#/definitions/internal_handlers.ErrorResponse"
                         }
                     },
                     "500": {
                         "description": "Failed to set VPN mode",
                         "schema": {
-                            "$ref": "#/definitions/handlers.ErrorResponse"
+                            "$ref": "#/definitions/internal_handlers.ErrorResponse"
                         }
                     }
                 }
@@ -11064,7 +11044,7 @@ const docTemplate = `{
                     "500": {
                         "description": "Failed to get clients",
                         "schema": {
-                            "$ref": "#/definitions/handlers.ErrorResponse"
+                            "$ref": "#/definitions/internal_handlers.ErrorResponse"
                         }
                     }
                 }
@@ -11105,13 +11085,13 @@ const docTemplate = `{
                     "400": {
                         "description": "Invalid MAC address",
                         "schema": {
-                            "$ref": "#/definitions/handlers.ErrorResponse"
+                            "$ref": "#/definitions/internal_handlers.ErrorResponse"
                         }
                     },
                     "500": {
                         "description": "Failed to block client",
                         "schema": {
-                            "$ref": "#/definitions/handlers.ErrorResponse"
+                            "$ref": "#/definitions/internal_handlers.ErrorResponse"
                         }
                     }
                 }
@@ -11152,13 +11132,13 @@ const docTemplate = `{
                     "400": {
                         "description": "Invalid MAC address",
                         "schema": {
-                            "$ref": "#/definitions/handlers.ErrorResponse"
+                            "$ref": "#/definitions/internal_handlers.ErrorResponse"
                         }
                     },
                     "500": {
                         "description": "Failed to kick client",
                         "schema": {
-                            "$ref": "#/definitions/handlers.ErrorResponse"
+                            "$ref": "#/definitions/internal_handlers.ErrorResponse"
                         }
                     }
                 }
@@ -11190,13 +11170,13 @@ const docTemplate = `{
                     "500": {
                         "description": "Failed to restart AP",
                         "schema": {
-                            "$ref": "#/definitions/handlers.ErrorResponse"
+                            "$ref": "#/definitions/internal_handlers.ErrorResponse"
                         }
                     },
                     "503": {
                         "description": "HAL service unavailable",
                         "schema": {
-                            "$ref": "#/definitions/handlers.ErrorResponse"
+                            "$ref": "#/definitions/internal_handlers.ErrorResponse"
                         }
                     }
                 }
@@ -11228,7 +11208,7 @@ const docTemplate = `{
                     "500": {
                         "description": "Failed to get AP status",
                         "schema": {
-                            "$ref": "#/definitions/handlers.ErrorResponse"
+                            "$ref": "#/definitions/internal_handlers.ErrorResponse"
                         }
                     }
                 }
@@ -11274,13 +11254,13 @@ const docTemplate = `{
                     "400": {
                         "description": "Invalid request or missing SSID",
                         "schema": {
-                            "$ref": "#/definitions/handlers.ErrorResponse"
+                            "$ref": "#/definitions/internal_handlers.ErrorResponse"
                         }
                     },
                     "500": {
                         "description": "Failed to connect",
                         "schema": {
-                            "$ref": "#/definitions/handlers.ErrorResponse"
+                            "$ref": "#/definitions/internal_handlers.ErrorResponse"
                         }
                     }
                 }
@@ -11312,7 +11292,7 @@ const docTemplate = `{
                     "500": {
                         "description": "Failed to disconnect",
                         "schema": {
-                            "$ref": "#/definitions/handlers.ErrorResponse"
+                            "$ref": "#/definitions/internal_handlers.ErrorResponse"
                         }
                     }
                 }
@@ -11379,7 +11359,7 @@ const docTemplate = `{
                     "500": {
                         "description": "Failed to forget network",
                         "schema": {
-                            "$ref": "#/definitions/handlers.ErrorResponse"
+                            "$ref": "#/definitions/internal_handlers.ErrorResponse"
                         }
                     }
                 }
@@ -11419,7 +11399,7 @@ const docTemplate = `{
                     "500": {
                         "description": "Failed to scan networks",
                         "schema": {
-                            "$ref": "#/definitions/handlers.ErrorResponse"
+                            "$ref": "#/definitions/internal_handlers.ErrorResponse"
                         }
                     }
                 }
@@ -11477,13 +11457,13 @@ const docTemplate = `{
                     "500": {
                         "description": "Failed to fetch NPM hosts",
                         "schema": {
-                            "$ref": "#/definitions/handlers.ErrorResponse"
+                            "$ref": "#/definitions/internal_handlers.ErrorResponse"
                         }
                     },
                     "503": {
                         "description": "NPM authentication not configured",
                         "schema": {
-                            "$ref": "#/definitions/handlers.ErrorResponse"
+                            "$ref": "#/definitions/internal_handlers.ErrorResponse"
                         }
                     }
                 }
@@ -11512,7 +11492,7 @@ const docTemplate = `{
                         "in": "body",
                         "required": true,
                         "schema": {
-                            "$ref": "#/definitions/handlers.CreateProxyHostRequest"
+                            "$ref": "#/definitions/internal_handlers.CreateProxyHostRequest"
                         }
                     }
                 ],
@@ -11520,25 +11500,25 @@ const docTemplate = `{
                     "201": {
                         "description": "Created proxy host",
                         "schema": {
-                            "$ref": "#/definitions/managers.NPMProxyHostExtended"
+                            "$ref": "#/definitions/cubeos-api_internal_managers.NPMProxyHostExtended"
                         }
                     },
                     "400": {
                         "description": "Invalid request body",
                         "schema": {
-                            "$ref": "#/definitions/handlers.ErrorResponse"
+                            "$ref": "#/definitions/internal_handlers.ErrorResponse"
                         }
                     },
                     "500": {
                         "description": "Failed to create proxy host",
                         "schema": {
-                            "$ref": "#/definitions/handlers.ErrorResponse"
+                            "$ref": "#/definitions/internal_handlers.ErrorResponse"
                         }
                     },
                     "503": {
                         "description": "NPM authentication not configured",
                         "schema": {
-                            "$ref": "#/definitions/handlers.ErrorResponse"
+                            "$ref": "#/definitions/internal_handlers.ErrorResponse"
                         }
                     }
                 }
@@ -11572,19 +11552,19 @@ const docTemplate = `{
                     "400": {
                         "description": "Host ID required or invalid",
                         "schema": {
-                            "$ref": "#/definitions/handlers.ErrorResponse"
+                            "$ref": "#/definitions/internal_handlers.ErrorResponse"
                         }
                     },
                     "500": {
                         "description": "Failed to delete proxy host",
                         "schema": {
-                            "$ref": "#/definitions/handlers.ErrorResponse"
+                            "$ref": "#/definitions/internal_handlers.ErrorResponse"
                         }
                     },
                     "503": {
                         "description": "NPM authentication not configured",
                         "schema": {
-                            "$ref": "#/definitions/handlers.ErrorResponse"
+                            "$ref": "#/definitions/internal_handlers.ErrorResponse"
                         }
                     }
                 }
@@ -11609,7 +11589,7 @@ const docTemplate = `{
                     "200": {
                         "description": "NPM status with online, authenticated, version, host_count, base_url",
                         "schema": {
-                            "$ref": "#/definitions/handlers.NPMStatus"
+                            "$ref": "#/definitions/internal_handlers.NPMStatus"
                         }
                     }
                 }
@@ -11641,7 +11621,7 @@ const docTemplate = `{
                     "500": {
                         "description": "Failed to get port allocations",
                         "schema": {
-                            "$ref": "#/definitions/handlers.ErrorResponse"
+                            "$ref": "#/definitions/internal_handlers.ErrorResponse"
                         }
                     }
                 }
@@ -11670,7 +11650,7 @@ const docTemplate = `{
                         "in": "body",
                         "required": true,
                         "schema": {
-                            "$ref": "#/definitions/handlers.AddPortRequest"
+                            "$ref": "#/definitions/internal_handlers.AddPortRequest"
                         }
                     }
                 ],
@@ -11685,13 +11665,13 @@ const docTemplate = `{
                     "400": {
                         "description": "Invalid request, missing app_id, invalid protocol, or reserved port",
                         "schema": {
-                            "$ref": "#/definitions/handlers.ErrorResponse"
+                            "$ref": "#/definitions/internal_handlers.ErrorResponse"
                         }
                     },
                     "409": {
                         "description": "Port already allocated",
                         "schema": {
-                            "$ref": "#/definitions/handlers.ErrorResponse"
+                            "$ref": "#/definitions/internal_handlers.ErrorResponse"
                         }
                     }
                 }
@@ -11749,7 +11729,7 @@ const docTemplate = `{
                     "500": {
                         "description": "Failed to get port stats",
                         "schema": {
-                            "$ref": "#/definitions/handlers.ErrorResponse"
+                            "$ref": "#/definitions/internal_handlers.ErrorResponse"
                         }
                     }
                 }
@@ -11796,26 +11776,26 @@ const docTemplate = `{
                     "400": {
                         "description": "Invalid port number",
                         "schema": {
-                            "$ref": "#/definitions/handlers.ErrorResponse"
+                            "$ref": "#/definitions/internal_handlers.ErrorResponse"
                         }
                     },
                     "404": {
                         "description": "Port not allocated",
                         "schema": {
-                            "$ref": "#/definitions/handlers.ErrorResponse"
+                            "$ref": "#/definitions/internal_handlers.ErrorResponse"
                         }
                     },
                     "500": {
                         "description": "Failed to check or deallocate port",
                         "schema": {
-                            "$ref": "#/definitions/handlers.ErrorResponse"
+                            "$ref": "#/definitions/internal_handlers.ErrorResponse"
                         }
                     }
                 }
             }
         },
         "/power/charging": {
-            "put": {
+            "post": {
                 "security": [
                     {
                         "BearerAuth": []
@@ -11854,19 +11834,19 @@ const docTemplate = `{
                     "400": {
                         "description": "Invalid request body",
                         "schema": {
-                            "$ref": "#/definitions/handlers.ErrorResponse"
+                            "$ref": "#/definitions/internal_handlers.ErrorResponse"
                         }
                     },
                     "500": {
                         "description": "Failed to set charging",
                         "schema": {
-                            "$ref": "#/definitions/handlers.ErrorResponse"
+                            "$ref": "#/definitions/internal_handlers.ErrorResponse"
                         }
                     },
                     "503": {
                         "description": "Power manager not available",
                         "schema": {
-                            "$ref": "#/definitions/handlers.ErrorResponse"
+                            "$ref": "#/definitions/internal_handlers.ErrorResponse"
                         }
                     }
                 }
@@ -11917,7 +11897,7 @@ const docTemplate = `{
                     "200": {
                         "description": "User preferences",
                         "schema": {
-                            "$ref": "#/definitions/models.Preferences"
+                            "$ref": "#/definitions/cubeos-api_internal_models.Preferences"
                         }
                     }
                 }
@@ -11946,7 +11926,7 @@ const docTemplate = `{
                         "in": "body",
                         "required": true,
                         "schema": {
-                            "$ref": "#/definitions/models.PreferencesUpdate"
+                            "$ref": "#/definitions/cubeos-api_internal_models.PreferencesUpdate"
                         }
                     }
                 ],
@@ -11961,13 +11941,13 @@ const docTemplate = `{
                     "400": {
                         "description": "Invalid request body",
                         "schema": {
-                            "$ref": "#/definitions/handlers.ErrorResponse"
+                            "$ref": "#/definitions/internal_handlers.ErrorResponse"
                         }
                     },
                     "500": {
                         "description": "Failed to save preferences",
                         "schema": {
-                            "$ref": "#/definitions/handlers.ErrorResponse"
+                            "$ref": "#/definitions/internal_handlers.ErrorResponse"
                         }
                     }
                 }
@@ -12040,7 +12020,7 @@ const docTemplate = `{
                     "200": {
                         "description": "Process list",
                         "schema": {
-                            "$ref": "#/definitions/models.ProcessListResponse"
+                            "$ref": "#/definitions/cubeos-api_internal_models.ProcessListResponse"
                         }
                     }
                 }
@@ -12141,7 +12121,7 @@ const docTemplate = `{
                     "200": {
                         "description": "Top CPU processes",
                         "schema": {
-                            "$ref": "#/definitions/models.ProcessListResponse"
+                            "$ref": "#/definitions/cubeos-api_internal_models.ProcessListResponse"
                         }
                     }
                 }
@@ -12175,7 +12155,7 @@ const docTemplate = `{
                     "200": {
                         "description": "Top memory processes",
                         "schema": {
-                            "$ref": "#/definitions/models.ProcessListResponse"
+                            "$ref": "#/definitions/cubeos-api_internal_models.ProcessListResponse"
                         }
                     }
                 }
@@ -12209,19 +12189,19 @@ const docTemplate = `{
                     "200": {
                         "description": "Process details",
                         "schema": {
-                            "$ref": "#/definitions/models.ProcessInfo"
+                            "$ref": "#/definitions/cubeos-api_internal_models.ProcessInfo"
                         }
                     },
                     "400": {
                         "description": "Invalid PID",
                         "schema": {
-                            "$ref": "#/definitions/handlers.ErrorResponse"
+                            "$ref": "#/definitions/internal_handlers.ErrorResponse"
                         }
                     },
                     "404": {
                         "description": "Process not found",
                         "schema": {
-                            "$ref": "#/definitions/handlers.ErrorResponse"
+                            "$ref": "#/definitions/internal_handlers.ErrorResponse"
                         }
                     }
                 }
@@ -12262,19 +12242,19 @@ const docTemplate = `{
                     "200": {
                         "description": "Process killed",
                         "schema": {
-                            "$ref": "#/definitions/models.SuccessResponse"
+                            "$ref": "#/definitions/cubeos-api_internal_models.SuccessResponse"
                         }
                     },
                     "400": {
                         "description": "Invalid PID",
                         "schema": {
-                            "$ref": "#/definitions/handlers.ErrorResponse"
+                            "$ref": "#/definitions/internal_handlers.ErrorResponse"
                         }
                     },
                     "403": {
                         "description": "Cannot kill protected process",
                         "schema": {
-                            "$ref": "#/definitions/handlers.ErrorResponse"
+                            "$ref": "#/definitions/internal_handlers.ErrorResponse"
                         }
                     }
                 }
@@ -12308,19 +12288,19 @@ const docTemplate = `{
                     "200": {
                         "description": "Process terminated",
                         "schema": {
-                            "$ref": "#/definitions/models.SuccessResponse"
+                            "$ref": "#/definitions/cubeos-api_internal_models.SuccessResponse"
                         }
                     },
                     "400": {
                         "description": "Invalid PID",
                         "schema": {
-                            "$ref": "#/definitions/handlers.ErrorResponse"
+                            "$ref": "#/definitions/internal_handlers.ErrorResponse"
                         }
                     },
                     "403": {
                         "description": "Cannot terminate protected process",
                         "schema": {
-                            "$ref": "#/definitions/handlers.ErrorResponse"
+                            "$ref": "#/definitions/internal_handlers.ErrorResponse"
                         }
                     }
                 }
@@ -12352,7 +12332,7 @@ const docTemplate = `{
                     "500": {
                         "description": "Failed to list profiles",
                         "schema": {
-                            "$ref": "#/definitions/handlers.ErrorResponse"
+                            "$ref": "#/definitions/internal_handlers.ErrorResponse"
                         }
                     }
                 }
@@ -12381,7 +12361,7 @@ const docTemplate = `{
                         "in": "body",
                         "required": true,
                         "schema": {
-                            "$ref": "#/definitions/models.CreateProfileRequest"
+                            "$ref": "#/definitions/cubeos-api_internal_models.CreateProfileRequest"
                         }
                     }
                 ],
@@ -12389,19 +12369,19 @@ const docTemplate = `{
                     "201": {
                         "description": "Created profile",
                         "schema": {
-                            "$ref": "#/definitions/models.Profile"
+                            "$ref": "#/definitions/cubeos-api_internal_models.Profile"
                         }
                     },
                     "400": {
                         "description": "Invalid request body or missing profile name",
                         "schema": {
-                            "$ref": "#/definitions/handlers.ErrorResponse"
+                            "$ref": "#/definitions/internal_handlers.ErrorResponse"
                         }
                     },
                     "500": {
                         "description": "Failed to create profile",
                         "schema": {
-                            "$ref": "#/definitions/handlers.ErrorResponse"
+                            "$ref": "#/definitions/internal_handlers.ErrorResponse"
                         }
                     }
                 }
@@ -12435,13 +12415,13 @@ const docTemplate = `{
                     "200": {
                         "description": "Profile details",
                         "schema": {
-                            "$ref": "#/definitions/models.Profile"
+                            "$ref": "#/definitions/cubeos-api_internal_models.Profile"
                         }
                     },
                     "404": {
                         "description": "Profile not found",
                         "schema": {
-                            "$ref": "#/definitions/handlers.ErrorResponse"
+                            "$ref": "#/definitions/internal_handlers.ErrorResponse"
                         }
                     }
                 }
@@ -12482,13 +12462,13 @@ const docTemplate = `{
                     "404": {
                         "description": "Profile not found",
                         "schema": {
-                            "$ref": "#/definitions/handlers.ErrorResponse"
+                            "$ref": "#/definitions/internal_handlers.ErrorResponse"
                         }
                     },
                     "500": {
                         "description": "Failed to apply profile",
                         "schema": {
-                            "$ref": "#/definitions/handlers.ErrorResponse"
+                            "$ref": "#/definitions/internal_handlers.ErrorResponse"
                         }
                     }
                 }
@@ -12518,7 +12498,7 @@ const docTemplate = `{
                         "name": "request",
                         "in": "body",
                         "schema": {
-                            "$ref": "#/definitions/handlers.CleanupRequest"
+                            "$ref": "#/definitions/internal_handlers.CleanupRequest"
                         }
                     }
                 ],
@@ -12593,7 +12573,7 @@ const docTemplate = `{
                     "503": {
                         "description": "Failed to get image list (registry unavailable)",
                         "schema": {
-                            "$ref": "#/definitions/handlers.ErrorResponse"
+                            "$ref": "#/definitions/internal_handlers.ErrorResponse"
                         }
                     }
                 }
@@ -12640,13 +12620,13 @@ const docTemplate = `{
                     "404": {
                         "description": "Image or tag not found",
                         "schema": {
-                            "$ref": "#/definitions/handlers.ErrorResponse"
+                            "$ref": "#/definitions/internal_handlers.ErrorResponse"
                         }
                     },
                     "500": {
                         "description": "Failed to delete image",
                         "schema": {
-                            "$ref": "#/definitions/handlers.ErrorResponse"
+                            "$ref": "#/definitions/internal_handlers.ErrorResponse"
                         }
                     }
                 }
@@ -12687,7 +12667,7 @@ const docTemplate = `{
                     "404": {
                         "description": "Image not found or failed to get tags",
                         "schema": {
-                            "$ref": "#/definitions/handlers.ErrorResponse"
+                            "$ref": "#/definitions/internal_handlers.ErrorResponse"
                         }
                     }
                 }
@@ -12712,7 +12692,7 @@ const docTemplate = `{
                     "200": {
                         "description": "Registry status with online, url, version, disk_usage, image_count",
                         "schema": {
-                            "$ref": "#/definitions/handlers.RegistryStatus"
+                            "$ref": "#/definitions/internal_handlers.RegistryStatus"
                         }
                     }
                 }
@@ -12744,7 +12724,7 @@ const docTemplate = `{
                     "500": {
                         "description": "Failed to get services",
                         "schema": {
-                            "$ref": "#/definitions/handlers.ErrorResponse"
+                            "$ref": "#/definitions/internal_handlers.ErrorResponse"
                         }
                     }
                 }
@@ -12785,7 +12765,7 @@ const docTemplate = `{
                     "404": {
                         "description": "Service not found",
                         "schema": {
-                            "$ref": "#/definitions/handlers.ErrorResponse"
+                            "$ref": "#/definitions/internal_handlers.ErrorResponse"
                         }
                     }
                 }
@@ -12826,13 +12806,13 @@ const docTemplate = `{
                     "403": {
                         "description": "Cannot modify core service",
                         "schema": {
-                            "$ref": "#/definitions/handlers.ErrorResponse"
+                            "$ref": "#/definitions/internal_handlers.ErrorResponse"
                         }
                     },
                     "500": {
                         "description": "Failed to disable service",
                         "schema": {
-                            "$ref": "#/definitions/handlers.ErrorResponse"
+                            "$ref": "#/definitions/internal_handlers.ErrorResponse"
                         }
                     }
                 }
@@ -12873,13 +12853,13 @@ const docTemplate = `{
                     "403": {
                         "description": "Cannot modify core service",
                         "schema": {
-                            "$ref": "#/definitions/handlers.ErrorResponse"
+                            "$ref": "#/definitions/internal_handlers.ErrorResponse"
                         }
                     },
                     "500": {
                         "description": "Failed to enable service",
                         "schema": {
-                            "$ref": "#/definitions/handlers.ErrorResponse"
+                            "$ref": "#/definitions/internal_handlers.ErrorResponse"
                         }
                     }
                 }
@@ -12913,13 +12893,13 @@ const docTemplate = `{
                     "200": {
                         "description": "Service restarted",
                         "schema": {
-                            "$ref": "#/definitions/models.ServiceAction"
+                            "$ref": "#/definitions/cubeos-api_internal_models.ServiceAction"
                         }
                     },
                     "500": {
                         "description": "Failed to restart service",
                         "schema": {
-                            "$ref": "#/definitions/handlers.ErrorResponse"
+                            "$ref": "#/definitions/internal_handlers.ErrorResponse"
                         }
                     }
                 }
@@ -12953,19 +12933,19 @@ const docTemplate = `{
                     "200": {
                         "description": "Service started",
                         "schema": {
-                            "$ref": "#/definitions/models.ServiceAction"
+                            "$ref": "#/definitions/cubeos-api_internal_models.ServiceAction"
                         }
                     },
                     "403": {
                         "description": "Cannot modify core service",
                         "schema": {
-                            "$ref": "#/definitions/handlers.ErrorResponse"
+                            "$ref": "#/definitions/internal_handlers.ErrorResponse"
                         }
                     },
                     "500": {
                         "description": "Failed to start service",
                         "schema": {
-                            "$ref": "#/definitions/handlers.ErrorResponse"
+                            "$ref": "#/definitions/internal_handlers.ErrorResponse"
                         }
                     }
                 }
@@ -12999,19 +12979,19 @@ const docTemplate = `{
                     "200": {
                         "description": "Service stopped",
                         "schema": {
-                            "$ref": "#/definitions/models.ServiceAction"
+                            "$ref": "#/definitions/cubeos-api_internal_models.ServiceAction"
                         }
                     },
                     "403": {
                         "description": "Cannot modify core service",
                         "schema": {
-                            "$ref": "#/definitions/handlers.ErrorResponse"
+                            "$ref": "#/definitions/internal_handlers.ErrorResponse"
                         }
                     },
                     "500": {
                         "description": "Failed to stop service",
                         "schema": {
-                            "$ref": "#/definitions/handlers.ErrorResponse"
+                            "$ref": "#/definitions/internal_handlers.ErrorResponse"
                         }
                     }
                 }
@@ -13037,7 +13017,7 @@ const docTemplate = `{
                         "in": "body",
                         "required": true,
                         "schema": {
-                            "$ref": "#/definitions/models.SetupConfig"
+                            "$ref": "#/definitions/cubeos-api_internal_models.SetupConfig"
                         }
                     }
                 ],
@@ -13052,13 +13032,13 @@ const docTemplate = `{
                     "400": {
                         "description": "Invalid request body",
                         "schema": {
-                            "$ref": "#/definitions/handlers.ErrorResponse"
+                            "$ref": "#/definitions/internal_handlers.ErrorResponse"
                         }
                     },
                     "500": {
                         "description": "Failed to apply configuration",
                         "schema": {
-                            "$ref": "#/definitions/handlers.ErrorResponse"
+                            "$ref": "#/definitions/internal_handlers.ErrorResponse"
                         }
                     }
                 }
@@ -13078,7 +13058,7 @@ const docTemplate = `{
                     "200": {
                         "description": "Default configuration values",
                         "schema": {
-                            "$ref": "#/definitions/models.SetupConfig"
+                            "$ref": "#/definitions/cubeos-api_internal_models.SetupConfig"
                         }
                     }
                 }
@@ -13140,7 +13120,7 @@ const docTemplate = `{
                     "200": {
                         "description": "System requirements and capabilities",
                         "schema": {
-                            "$ref": "#/definitions/models.SystemRequirements"
+                            "$ref": "#/definitions/cubeos-api_internal_models.SystemRequirements"
                         }
                     }
                 }
@@ -13172,7 +13152,7 @@ const docTemplate = `{
                     "500": {
                         "description": "Failed to reset setup",
                         "schema": {
-                            "$ref": "#/definitions/handlers.ErrorResponse"
+                            "$ref": "#/definitions/internal_handlers.ErrorResponse"
                         }
                     }
                 }
@@ -13199,7 +13179,7 @@ const docTemplate = `{
                     "500": {
                         "description": "Failed to skip setup",
                         "schema": {
-                            "$ref": "#/definitions/handlers.ErrorResponse"
+                            "$ref": "#/definitions/internal_handlers.ErrorResponse"
                         }
                     }
                 }
@@ -13219,7 +13199,7 @@ const docTemplate = `{
                     "200": {
                         "description": "Setup status with completed flag, current step, and progress",
                         "schema": {
-                            "$ref": "#/definitions/models.SetupStatus"
+                            "$ref": "#/definitions/cubeos-api_internal_models.SetupStatus"
                         }
                     }
                 }
@@ -13287,7 +13267,7 @@ const docTemplate = `{
                         "in": "body",
                         "required": true,
                         "schema": {
-                            "$ref": "#/definitions/models.SetupConfig"
+                            "$ref": "#/definitions/cubeos-api_internal_models.SetupConfig"
                         }
                     }
                 ],
@@ -13295,13 +13275,13 @@ const docTemplate = `{
                     "200": {
                         "description": "Validation result with valid flag, errors, and warnings",
                         "schema": {
-                            "$ref": "#/definitions/models.SetupValidation"
+                            "$ref": "#/definitions/cubeos-api_internal_models.SetupValidation"
                         }
                     },
                     "400": {
                         "description": "Invalid request body",
                         "schema": {
-                            "$ref": "#/definitions/handlers.ErrorResponse"
+                            "$ref": "#/definitions/internal_handlers.ErrorResponse"
                         }
                     }
                 }
@@ -13333,7 +13313,7 @@ const docTemplate = `{
                     "500": {
                         "description": "Failed to list shares",
                         "schema": {
-                            "$ref": "#/definitions/handlers.ErrorResponse"
+                            "$ref": "#/definitions/internal_handlers.ErrorResponse"
                         }
                     }
                 }
@@ -13362,7 +13342,7 @@ const docTemplate = `{
                         "in": "body",
                         "required": true,
                         "schema": {
-                            "$ref": "#/definitions/handlers.CreateShareRequest"
+                            "$ref": "#/definitions/internal_handlers.CreateShareRequest"
                         }
                     }
                 ],
@@ -13370,25 +13350,25 @@ const docTemplate = `{
                     "201": {
                         "description": "Created share",
                         "schema": {
-                            "$ref": "#/definitions/handlers.SMBShare"
+                            "$ref": "#/definitions/internal_handlers.SMBShare"
                         }
                     },
                     "400": {
                         "description": "Invalid request",
                         "schema": {
-                            "$ref": "#/definitions/handlers.ErrorResponse"
+                            "$ref": "#/definitions/internal_handlers.ErrorResponse"
                         }
                     },
                     "409": {
                         "description": "Share already exists",
                         "schema": {
-                            "$ref": "#/definitions/handlers.ErrorResponse"
+                            "$ref": "#/definitions/internal_handlers.ErrorResponse"
                         }
                     },
                     "500": {
                         "description": "Failed to create share",
                         "schema": {
-                            "$ref": "#/definitions/handlers.ErrorResponse"
+                            "$ref": "#/definitions/internal_handlers.ErrorResponse"
                         }
                     }
                 }
@@ -13422,19 +13402,19 @@ const docTemplate = `{
                     "200": {
                         "description": "Share details",
                         "schema": {
-                            "$ref": "#/definitions/handlers.SMBShare"
+                            "$ref": "#/definitions/internal_handlers.SMBShare"
                         }
                     },
                     "404": {
                         "description": "Share not found",
                         "schema": {
-                            "$ref": "#/definitions/handlers.ErrorResponse"
+                            "$ref": "#/definitions/internal_handlers.ErrorResponse"
                         }
                     },
                     "500": {
                         "description": "Failed to get share",
                         "schema": {
-                            "$ref": "#/definitions/handlers.ErrorResponse"
+                            "$ref": "#/definitions/internal_handlers.ErrorResponse"
                         }
                     }
                 }
@@ -13470,7 +13450,7 @@ const docTemplate = `{
                         "in": "body",
                         "required": true,
                         "schema": {
-                            "$ref": "#/definitions/handlers.CreateShareRequest"
+                            "$ref": "#/definitions/internal_handlers.CreateShareRequest"
                         }
                     }
                 ],
@@ -13478,25 +13458,25 @@ const docTemplate = `{
                     "200": {
                         "description": "Updated share",
                         "schema": {
-                            "$ref": "#/definitions/handlers.SMBShare"
+                            "$ref": "#/definitions/internal_handlers.SMBShare"
                         }
                     },
                     "400": {
                         "description": "Invalid request",
                         "schema": {
-                            "$ref": "#/definitions/handlers.ErrorResponse"
+                            "$ref": "#/definitions/internal_handlers.ErrorResponse"
                         }
                     },
                     "404": {
                         "description": "Share not found",
                         "schema": {
-                            "$ref": "#/definitions/handlers.ErrorResponse"
+                            "$ref": "#/definitions/internal_handlers.ErrorResponse"
                         }
                     },
                     "500": {
                         "description": "Failed to update share",
                         "schema": {
-                            "$ref": "#/definitions/handlers.ErrorResponse"
+                            "$ref": "#/definitions/internal_handlers.ErrorResponse"
                         }
                     }
                 }
@@ -13535,13 +13515,13 @@ const docTemplate = `{
                     "404": {
                         "description": "Share not found",
                         "schema": {
-                            "$ref": "#/definitions/handlers.ErrorResponse"
+                            "$ref": "#/definitions/internal_handlers.ErrorResponse"
                         }
                     },
                     "500": {
                         "description": "Failed to delete share",
                         "schema": {
-                            "$ref": "#/definitions/handlers.ErrorResponse"
+                            "$ref": "#/definitions/internal_handlers.ErrorResponse"
                         }
                     }
                 }
@@ -13573,7 +13553,7 @@ const docTemplate = `{
                     "500": {
                         "description": "Failed to get SMB status",
                         "schema": {
-                            "$ref": "#/definitions/handlers.ErrorResponse"
+                            "$ref": "#/definitions/internal_handlers.ErrorResponse"
                         }
                     }
                 }
@@ -13631,7 +13611,7 @@ const docTemplate = `{
                     "500": {
                         "description": "Failed to get disk health",
                         "schema": {
-                            "$ref": "#/definitions/handlers.ErrorResponse"
+                            "$ref": "#/definitions/internal_handlers.ErrorResponse"
                         }
                     }
                 }
@@ -13665,13 +13645,13 @@ const docTemplate = `{
                     "200": {
                         "description": "Disk health details",
                         "schema": {
-                            "$ref": "#/definitions/managers.DiskHealth"
+                            "$ref": "#/definitions/cubeos-api_internal_managers.DiskHealth"
                         }
                     },
                     "500": {
                         "description": "Failed to get disk health",
                         "schema": {
-                            "$ref": "#/definitions/handlers.ErrorResponse"
+                            "$ref": "#/definitions/internal_handlers.ErrorResponse"
                         }
                     }
                 }
@@ -13734,13 +13714,13 @@ const docTemplate = `{
                     "200": {
                         "description": "Mount added",
                         "schema": {
-                            "$ref": "#/definitions/models.SuccessResponse"
+                            "$ref": "#/definitions/cubeos-api_internal_models.SuccessResponse"
                         }
                     },
                     "501": {
                         "description": "Not implemented",
                         "schema": {
-                            "$ref": "#/definitions/handlers.ErrorResponse"
+                            "$ref": "#/definitions/internal_handlers.ErrorResponse"
                         }
                     }
                 }
@@ -13774,13 +13754,13 @@ const docTemplate = `{
                     "200": {
                         "description": "Mount removed",
                         "schema": {
-                            "$ref": "#/definitions/models.SuccessResponse"
+                            "$ref": "#/definitions/cubeos-api_internal_models.SuccessResponse"
                         }
                     },
                     "501": {
                         "description": "Not implemented",
                         "schema": {
-                            "$ref": "#/definitions/handlers.ErrorResponse"
+                            "$ref": "#/definitions/internal_handlers.ErrorResponse"
                         }
                     }
                 }
@@ -13845,19 +13825,19 @@ const docTemplate = `{
                     "200": {
                         "description": "Hostname updated",
                         "schema": {
-                            "$ref": "#/definitions/models.SuccessResponse"
+                            "$ref": "#/definitions/cubeos-api_internal_models.SuccessResponse"
                         }
                     },
                     "400": {
                         "description": "Invalid request body",
                         "schema": {
-                            "$ref": "#/definitions/handlers.ErrorResponse"
+                            "$ref": "#/definitions/internal_handlers.ErrorResponse"
                         }
                     },
                     "500": {
                         "description": "Failed to set hostname",
                         "schema": {
-                            "$ref": "#/definitions/handlers.ErrorResponse"
+                            "$ref": "#/definitions/internal_handlers.ErrorResponse"
                         }
                     }
                 }
@@ -13882,7 +13862,7 @@ const docTemplate = `{
                     "200": {
                         "description": "System information",
                         "schema": {
-                            "$ref": "#/definitions/models.SystemInfo"
+                            "$ref": "#/definitions/cubeos-api_internal_models.SystemInfo"
                         }
                     }
                 }
@@ -13916,13 +13896,13 @@ const docTemplate = `{
                     "200": {
                         "description": "Reboot scheduled",
                         "schema": {
-                            "$ref": "#/definitions/models.SuccessResponse"
+                            "$ref": "#/definitions/cubeos-api_internal_models.SuccessResponse"
                         }
                     },
                     "500": {
                         "description": "Failed to schedule reboot",
                         "schema": {
-                            "$ref": "#/definitions/handlers.ErrorResponse"
+                            "$ref": "#/definitions/internal_handlers.ErrorResponse"
                         }
                     }
                 }
@@ -13956,13 +13936,13 @@ const docTemplate = `{
                     "200": {
                         "description": "Shutdown scheduled",
                         "schema": {
-                            "$ref": "#/definitions/models.SuccessResponse"
+                            "$ref": "#/definitions/cubeos-api_internal_models.SuccessResponse"
                         }
                     },
                     "500": {
                         "description": "Failed to schedule shutdown",
                         "schema": {
-                            "$ref": "#/definitions/handlers.ErrorResponse"
+                            "$ref": "#/definitions/internal_handlers.ErrorResponse"
                         }
                     }
                 }
@@ -13987,7 +13967,7 @@ const docTemplate = `{
                     "200": {
                         "description": "System statistics",
                         "schema": {
-                            "$ref": "#/definitions/models.SystemStats"
+                            "$ref": "#/definitions/cubeos-api_internal_models.SystemStats"
                         }
                     }
                 }
@@ -14012,7 +13992,7 @@ const docTemplate = `{
                     "200": {
                         "description": "Temperature information",
                         "schema": {
-                            "$ref": "#/definitions/models.Temperature"
+                            "$ref": "#/definitions/cubeos-api_internal_models.Temperature"
                         }
                     }
                 }
@@ -14077,19 +14057,19 @@ const docTemplate = `{
                     "200": {
                         "description": "Timezone updated",
                         "schema": {
-                            "$ref": "#/definitions/models.SuccessResponse"
+                            "$ref": "#/definitions/cubeos-api_internal_models.SuccessResponse"
                         }
                     },
                     "400": {
                         "description": "Invalid request body or timezone",
                         "schema": {
-                            "$ref": "#/definitions/handlers.ErrorResponse"
+                            "$ref": "#/definitions/internal_handlers.ErrorResponse"
                         }
                     },
                     "500": {
                         "description": "Failed to set timezone",
                         "schema": {
-                            "$ref": "#/definitions/handlers.ErrorResponse"
+                            "$ref": "#/definitions/internal_handlers.ErrorResponse"
                         }
                     }
                 }
@@ -14147,7 +14127,7 @@ const docTemplate = `{
                     "500": {
                         "description": "VPN_LIST_ERROR",
                         "schema": {
-                            "$ref": "#/definitions/handlers.ErrorResponse"
+                            "$ref": "#/definitions/internal_handlers.ErrorResponse"
                         }
                     }
                 }
@@ -14184,19 +14164,19 @@ const docTemplate = `{
                     "201": {
                         "description": "Created VPN configuration",
                         "schema": {
-                            "$ref": "#/definitions/models.VPNConfig"
+                            "$ref": "#/definitions/cubeos-api_internal_models.VPNConfig"
                         }
                     },
                     "400": {
                         "description": "INVALID_JSON, MISSING_NAME, MISSING_TYPE, or MISSING_CONFIG",
                         "schema": {
-                            "$ref": "#/definitions/handlers.ErrorResponse"
+                            "$ref": "#/definitions/internal_handlers.ErrorResponse"
                         }
                     },
                     "500": {
                         "description": "VPN_ADD_ERROR",
                         "schema": {
-                            "$ref": "#/definitions/handlers.ErrorResponse"
+                            "$ref": "#/definitions/internal_handlers.ErrorResponse"
                         }
                     }
                 }
@@ -14230,19 +14210,19 @@ const docTemplate = `{
                     "200": {
                         "description": "VPN configuration details",
                         "schema": {
-                            "$ref": "#/definitions/models.VPNConfig"
+                            "$ref": "#/definitions/cubeos-api_internal_models.VPNConfig"
                         }
                     },
                     "400": {
                         "description": "INVALID_NAME - Configuration name is required",
                         "schema": {
-                            "$ref": "#/definitions/handlers.ErrorResponse"
+                            "$ref": "#/definitions/internal_handlers.ErrorResponse"
                         }
                     },
                     "404": {
                         "description": "VPN_NOT_FOUND - Configuration not found",
                         "schema": {
-                            "$ref": "#/definitions/handlers.ErrorResponse"
+                            "$ref": "#/definitions/internal_handlers.ErrorResponse"
                         }
                     }
                 }
@@ -14283,13 +14263,13 @@ const docTemplate = `{
                     "400": {
                         "description": "INVALID_NAME - Configuration name is required",
                         "schema": {
-                            "$ref": "#/definitions/handlers.ErrorResponse"
+                            "$ref": "#/definitions/internal_handlers.ErrorResponse"
                         }
                     },
                     "500": {
                         "description": "VPN_DELETE_ERROR",
                         "schema": {
-                            "$ref": "#/definitions/handlers.ErrorResponse"
+                            "$ref": "#/definitions/internal_handlers.ErrorResponse"
                         }
                     }
                 }
@@ -14342,13 +14322,13 @@ const docTemplate = `{
                     "400": {
                         "description": "INVALID_NAME or INVALID_JSON",
                         "schema": {
-                            "$ref": "#/definitions/handlers.ErrorResponse"
+                            "$ref": "#/definitions/internal_handlers.ErrorResponse"
                         }
                     },
                     "500": {
                         "description": "VPN_AUTOCONNECT_ERROR",
                         "schema": {
-                            "$ref": "#/definitions/handlers.ErrorResponse"
+                            "$ref": "#/definitions/internal_handlers.ErrorResponse"
                         }
                     }
                 }
@@ -14389,19 +14369,19 @@ const docTemplate = `{
                     "400": {
                         "description": "INVALID_NAME - Configuration name is required",
                         "schema": {
-                            "$ref": "#/definitions/handlers.ErrorResponse"
+                            "$ref": "#/definitions/internal_handlers.ErrorResponse"
                         }
                     },
                     "404": {
                         "description": "VPN_NOT_FOUND - Configuration not found",
                         "schema": {
-                            "$ref": "#/definitions/handlers.ErrorResponse"
+                            "$ref": "#/definitions/internal_handlers.ErrorResponse"
                         }
                     },
                     "500": {
                         "description": "VPN_CONNECT_ERROR",
                         "schema": {
-                            "$ref": "#/definitions/handlers.ErrorResponse"
+                            "$ref": "#/definitions/internal_handlers.ErrorResponse"
                         }
                     }
                 }
@@ -14444,13 +14424,13 @@ const docTemplate = `{
                     "400": {
                         "description": "INVALID_NAME - Configuration name is required",
                         "schema": {
-                            "$ref": "#/definitions/handlers.ErrorResponse"
+                            "$ref": "#/definitions/internal_handlers.ErrorResponse"
                         }
                     },
                     "500": {
                         "description": "VPN_DISCONNECT_ERROR",
                         "schema": {
-                            "$ref": "#/definitions/handlers.ErrorResponse"
+                            "$ref": "#/definitions/internal_handlers.ErrorResponse"
                         }
                     }
                 }
@@ -14484,7 +14464,7 @@ const docTemplate = `{
                     "500": {
                         "description": "PUBLIC_IP_ERROR",
                         "schema": {
-                            "$ref": "#/definitions/handlers.ErrorResponse"
+                            "$ref": "#/definitions/internal_handlers.ErrorResponse"
                         }
                     }
                 }
@@ -14509,13 +14489,13 @@ const docTemplate = `{
                     "200": {
                         "description": "Current VPN status",
                         "schema": {
-                            "$ref": "#/definitions/models.VPNStatus"
+                            "$ref": "#/definitions/cubeos-api_internal_models.VPNStatus"
                         }
                     },
                     "500": {
                         "description": "VPN_STATUS_ERROR",
                         "schema": {
-                            "$ref": "#/definitions/handlers.ErrorResponse"
+                            "$ref": "#/definitions/internal_handlers.ErrorResponse"
                         }
                     }
                 }
@@ -14546,7 +14526,7 @@ const docTemplate = `{
                         "in": "body",
                         "required": true,
                         "schema": {
-                            "$ref": "#/definitions/models.ApplyProfileRequest"
+                            "$ref": "#/definitions/cubeos-api_internal_models.ApplyProfileRequest"
                         }
                     }
                 ],
@@ -14554,13 +14534,13 @@ const docTemplate = `{
                     "200": {
                         "description": "Profile applied",
                         "schema": {
-                            "$ref": "#/definitions/models.ApplyProfileResponse"
+                            "$ref": "#/definitions/cubeos-api_internal_models.ApplyProfileResponse"
                         }
                     },
                     "400": {
                         "description": "Invalid request or profile",
                         "schema": {
-                            "$ref": "#/definitions/handlers.ErrorResponse"
+                            "$ref": "#/definitions/internal_handlers.ErrorResponse"
                         }
                     }
                 }
@@ -14606,7 +14586,7 @@ const docTemplate = `{
                     "400": {
                         "description": "Invalid request body",
                         "schema": {
-                            "$ref": "#/definitions/handlers.ErrorResponse"
+                            "$ref": "#/definitions/internal_handlers.ErrorResponse"
                         }
                     }
                 }
@@ -14783,17 +14763,17 @@ const docTemplate = `{
         }
     },
     "definitions": {
-        "hal.AllSensorsResponse": {
+        "cubeos-api_internal_hal.AllSensorsResponse": {
             "type": "object",
             "properties": {
                 "1wire": {
                     "type": "array",
                     "items": {
-                        "$ref": "#/definitions/hal.OneWireDevice"
+                        "$ref": "#/definitions/cubeos-api_internal_hal.OneWireDevice"
                     }
                 },
                 "bme280": {
-                    "$ref": "#/definitions/hal.BME280Reading"
+                    "$ref": "#/definitions/cubeos-api_internal_hal.BME280Reading"
                 },
                 "extra": {
                     "type": "object",
@@ -14804,7 +14784,7 @@ const docTemplate = `{
                 }
             }
         },
-        "hal.AndroidTetheringStatus": {
+        "cubeos-api_internal_hal.AndroidTetheringStatus": {
             "type": "object",
             "properties": {
                 "available": {
@@ -14824,7 +14804,7 @@ const docTemplate = `{
                 }
             }
         },
-        "hal.AudioDevice": {
+        "cubeos-api_internal_hal.AudioDevice": {
             "type": "object",
             "properties": {
                 "card": {
@@ -14848,24 +14828,24 @@ const docTemplate = `{
                 }
             }
         },
-        "hal.AudioDevicesResponse": {
+        "cubeos-api_internal_hal.AudioDevicesResponse": {
             "type": "object",
             "properties": {
                 "capture": {
                     "type": "array",
                     "items": {
-                        "$ref": "#/definitions/hal.AudioDevice"
+                        "$ref": "#/definitions/cubeos-api_internal_hal.AudioDevice"
                     }
                 },
                 "playback": {
                     "type": "array",
                     "items": {
-                        "$ref": "#/definitions/hal.AudioDevice"
+                        "$ref": "#/definitions/cubeos-api_internal_hal.AudioDevice"
                     }
                 }
             }
         },
-        "hal.BME280Reading": {
+        "cubeos-api_internal_hal.BME280Reading": {
             "type": "object",
             "properties": {
                 "altitude": {
@@ -14906,7 +14886,7 @@ const docTemplate = `{
                 }
             }
         },
-        "hal.BatteryStatus": {
+        "cubeos-api_internal_hal.BatteryStatus": {
             "type": "object",
             "properties": {
                 "ac_present": {
@@ -14947,7 +14927,7 @@ const docTemplate = `{
                 }
             }
         },
-        "hal.BluetoothDevice": {
+        "cubeos-api_internal_hal.BluetoothDevice": {
             "type": "object",
             "properties": {
                 "address": {
@@ -14973,24 +14953,24 @@ const docTemplate = `{
                 }
             }
         },
-        "hal.BluetoothDevicesResponse": {
+        "cubeos-api_internal_hal.BluetoothDevicesResponse": {
             "type": "object",
             "properties": {
                 "available": {
                     "type": "array",
                     "items": {
-                        "$ref": "#/definitions/hal.BluetoothDevice"
+                        "$ref": "#/definitions/cubeos-api_internal_hal.BluetoothDevice"
                     }
                 },
                 "paired": {
                     "type": "array",
                     "items": {
-                        "$ref": "#/definitions/hal.BluetoothDevice"
+                        "$ref": "#/definitions/cubeos-api_internal_hal.BluetoothDevice"
                     }
                 }
             }
         },
-        "hal.BluetoothStatus": {
+        "cubeos-api_internal_hal.BluetoothStatus": {
             "type": "object",
             "properties": {
                 "address": {
@@ -15016,7 +14996,7 @@ const docTemplate = `{
                 }
             }
         },
-        "hal.BootConfig": {
+        "cubeos-api_internal_hal.BootConfig": {
             "type": "object",
             "properties": {
                 "config": {
@@ -15030,7 +15010,7 @@ const docTemplate = `{
                 }
             }
         },
-        "hal.CameraDevice": {
+        "cubeos-api_internal_hal.CameraDevice": {
             "type": "object",
             "properties": {
                 "driver": {
@@ -15053,13 +15033,13 @@ const docTemplate = `{
                 }
             }
         },
-        "hal.CameraDevicesResponse": {
+        "cubeos-api_internal_hal.CameraDevicesResponse": {
             "type": "object",
             "properties": {
                 "cameras": {
                     "type": "array",
                     "items": {
-                        "$ref": "#/definitions/hal.CameraDevice"
+                        "$ref": "#/definitions/cubeos-api_internal_hal.CameraDevice"
                     }
                 },
                 "count": {
@@ -15067,7 +15047,7 @@ const docTemplate = `{
                 }
             }
         },
-        "hal.CameraInfo": {
+        "cubeos-api_internal_hal.CameraInfo": {
             "type": "object",
             "properties": {
                 "available": {
@@ -15084,7 +15064,7 @@ const docTemplate = `{
                 }
             }
         },
-        "hal.CellularModem": {
+        "cubeos-api_internal_hal.CellularModem": {
             "type": "object",
             "properties": {
                 "access_tech": {
@@ -15125,7 +15105,7 @@ const docTemplate = `{
                 }
             }
         },
-        "hal.CellularModemsResponse": {
+        "cubeos-api_internal_hal.CellularModemsResponse": {
             "type": "object",
             "properties": {
                 "count": {
@@ -15134,12 +15114,12 @@ const docTemplate = `{
                 "modems": {
                     "type": "array",
                     "items": {
-                        "$ref": "#/definitions/hal.CellularModem"
+                        "$ref": "#/definitions/cubeos-api_internal_hal.CellularModem"
                     }
                 }
             }
         },
-        "hal.CellularSignal": {
+        "cubeos-api_internal_hal.CellularSignal": {
             "type": "object",
             "properties": {
                 "band": {
@@ -15171,7 +15151,7 @@ const docTemplate = `{
                 }
             }
         },
-        "hal.CellularStatus": {
+        "cubeos-api_internal_hal.CellularStatus": {
             "type": "object",
             "properties": {
                 "active_modem": {
@@ -15189,12 +15169,12 @@ const docTemplate = `{
                 "modems": {
                     "type": "array",
                     "items": {
-                        "$ref": "#/definitions/hal.CellularModem"
+                        "$ref": "#/definitions/cubeos-api_internal_hal.CellularModem"
                     }
                 }
             }
         },
-        "hal.EEPROMInfo": {
+        "cubeos-api_internal_hal.EEPROMInfo": {
             "type": "object",
             "properties": {
                 "bootloader": {
@@ -15217,7 +15197,7 @@ const docTemplate = `{
                 }
             }
         },
-        "hal.FilesystemUsage": {
+        "cubeos-api_internal_hal.FilesystemUsage": {
             "type": "object",
             "properties": {
                 "avail_human": {
@@ -15249,7 +15229,7 @@ const docTemplate = `{
                 }
             }
         },
-        "hal.GPIOPin": {
+        "cubeos-api_internal_hal.GPIOPin": {
             "type": "object",
             "properties": {
                 "active": {
@@ -15273,7 +15253,7 @@ const docTemplate = `{
                 }
             }
         },
-        "hal.GPSDevice": {
+        "cubeos-api_internal_hal.GPSDevice": {
             "type": "object",
             "properties": {
                 "active": {
@@ -15296,7 +15276,7 @@ const docTemplate = `{
                 }
             }
         },
-        "hal.GPSDevicesResponse": {
+        "cubeos-api_internal_hal.GPSDevicesResponse": {
             "type": "object",
             "properties": {
                 "count": {
@@ -15305,12 +15285,12 @@ const docTemplate = `{
                 "devices": {
                     "type": "array",
                     "items": {
-                        "$ref": "#/definitions/hal.GPSDevice"
+                        "$ref": "#/definitions/cubeos-api_internal_hal.GPSDevice"
                     }
                 }
             }
         },
-        "hal.GPSPosition": {
+        "cubeos-api_internal_hal.GPSPosition": {
             "type": "object",
             "properties": {
                 "altitude": {
@@ -15345,7 +15325,7 @@ const docTemplate = `{
                 }
             }
         },
-        "hal.GPSStatus": {
+        "cubeos-api_internal_hal.GPSStatus": {
             "type": "object",
             "properties": {
                 "available": {
@@ -15368,7 +15348,7 @@ const docTemplate = `{
                 }
             }
         },
-        "hal.HardwareLogsResponse": {
+        "cubeos-api_internal_hal.HardwareLogsResponse": {
             "type": "object",
             "properties": {
                 "category": {
@@ -15385,7 +15365,7 @@ const docTemplate = `{
                 }
             }
         },
-        "hal.I2CBus": {
+        "cubeos-api_internal_hal.I2CBus": {
             "type": "object",
             "properties": {
                 "active": {
@@ -15399,7 +15379,7 @@ const docTemplate = `{
                 }
             }
         },
-        "hal.I2CDevice": {
+        "cubeos-api_internal_hal.I2CDevice": {
             "type": "object",
             "properties": {
                 "address": {
@@ -15413,7 +15393,7 @@ const docTemplate = `{
                 }
             }
         },
-        "hal.I2CScanResult": {
+        "cubeos-api_internal_hal.I2CScanResult": {
             "type": "object",
             "properties": {
                 "addresses": {
@@ -15430,7 +15410,7 @@ const docTemplate = `{
                 }
             }
         },
-        "hal.IridiumMessage": {
+        "cubeos-api_internal_hal.IridiumMessage": {
             "type": "object",
             "properties": {
                 "binary": {
@@ -15450,7 +15430,7 @@ const docTemplate = `{
                 }
             }
         },
-        "hal.IridiumMessagesResponse": {
+        "cubeos-api_internal_hal.IridiumMessagesResponse": {
             "type": "object",
             "properties": {
                 "count": {
@@ -15459,12 +15439,12 @@ const docTemplate = `{
                 "messages": {
                     "type": "array",
                     "items": {
-                        "$ref": "#/definitions/hal.IridiumMessage"
+                        "$ref": "#/definitions/cubeos-api_internal_hal.IridiumMessage"
                     }
                 }
             }
         },
-        "hal.IridiumSignal": {
+        "cubeos-api_internal_hal.IridiumSignal": {
             "type": "object",
             "properties": {
                 "bars": {
@@ -15478,7 +15458,7 @@ const docTemplate = `{
                 }
             }
         },
-        "hal.IridiumStatus": {
+        "cubeos-api_internal_hal.IridiumStatus": {
             "type": "object",
             "properties": {
                 "available": {
@@ -15510,7 +15490,7 @@ const docTemplate = `{
                 }
             }
         },
-        "hal.LogsResponse": {
+        "cubeos-api_internal_hal.LogsResponse": {
             "type": "object",
             "properties": {
                 "count": {
@@ -15524,7 +15504,7 @@ const docTemplate = `{
                 }
             }
         },
-        "hal.MeshtasticDevice": {
+        "cubeos-api_internal_hal.MeshtasticDevice": {
             "type": "object",
             "properties": {
                 "connected": {
@@ -15553,7 +15533,7 @@ const docTemplate = `{
                 }
             }
         },
-        "hal.MeshtasticNode": {
+        "cubeos-api_internal_hal.MeshtasticNode": {
             "type": "object",
             "properties": {
                 "altitude": {
@@ -15591,7 +15571,7 @@ const docTemplate = `{
                 }
             }
         },
-        "hal.MeshtasticNodesResponse": {
+        "cubeos-api_internal_hal.MeshtasticNodesResponse": {
             "type": "object",
             "properties": {
                 "count": {
@@ -15600,12 +15580,12 @@ const docTemplate = `{
                 "nodes": {
                     "type": "array",
                     "items": {
-                        "$ref": "#/definitions/hal.MeshtasticNode"
+                        "$ref": "#/definitions/cubeos-api_internal_hal.MeshtasticNode"
                     }
                 }
             }
         },
-        "hal.MeshtasticStatus": {
+        "cubeos-api_internal_hal.MeshtasticStatus": {
             "type": "object",
             "properties": {
                 "available": {
@@ -15618,14 +15598,14 @@ const docTemplate = `{
                     "type": "boolean"
                 },
                 "device": {
-                    "$ref": "#/definitions/hal.MeshtasticDevice"
+                    "$ref": "#/definitions/cubeos-api_internal_hal.MeshtasticDevice"
                 },
                 "node_count": {
                     "type": "integer"
                 }
             }
         },
-        "hal.MountInfo": {
+        "cubeos-api_internal_hal.MountInfo": {
             "type": "object",
             "properties": {
                 "error": {
@@ -15649,7 +15629,7 @@ const docTemplate = `{
                 }
             }
         },
-        "hal.MountResponse": {
+        "cubeos-api_internal_hal.MountResponse": {
             "type": "object",
             "properties": {
                 "message": {
@@ -15663,7 +15643,7 @@ const docTemplate = `{
                 }
             }
         },
-        "hal.MountsResponse": {
+        "cubeos-api_internal_hal.MountsResponse": {
             "type": "object",
             "properties": {
                 "count": {
@@ -15672,12 +15652,12 @@ const docTemplate = `{
                 "mounts": {
                     "type": "array",
                     "items": {
-                        "$ref": "#/definitions/hal.MountInfo"
+                        "$ref": "#/definitions/cubeos-api_internal_hal.MountInfo"
                     }
                 }
             }
         },
-        "hal.OneWireDevice": {
+        "cubeos-api_internal_hal.OneWireDevice": {
             "type": "object",
             "properties": {
                 "family": {
@@ -15703,30 +15683,30 @@ const docTemplate = `{
                 }
             }
         },
-        "hal.PowerStatus": {
+        "cubeos-api_internal_hal.PowerStatus": {
             "type": "object",
             "properties": {
                 "battery": {
-                    "$ref": "#/definitions/hal.BatteryStatus"
+                    "$ref": "#/definitions/cubeos-api_internal_hal.BatteryStatus"
                 },
                 "last_updated": {
                     "type": "string"
                 },
                 "rtc": {
-                    "$ref": "#/definitions/hal.RTCStatus"
+                    "$ref": "#/definitions/cubeos-api_internal_hal.RTCStatus"
                 },
                 "ups": {
-                    "$ref": "#/definitions/hal.UPSInfo"
+                    "$ref": "#/definitions/cubeos-api_internal_hal.UPSInfo"
                 },
                 "uptime": {
-                    "$ref": "#/definitions/hal.UptimeInfo"
+                    "$ref": "#/definitions/cubeos-api_internal_hal.UptimeInfo"
                 },
                 "watchdog": {
-                    "$ref": "#/definitions/hal.WatchdogInfo"
+                    "$ref": "#/definitions/cubeos-api_internal_hal.WatchdogInfo"
                 }
             }
         },
-        "hal.RTCStatus": {
+        "cubeos-api_internal_hal.RTCStatus": {
             "type": "object",
             "properties": {
                 "available": {
@@ -15746,7 +15726,7 @@ const docTemplate = `{
                 }
             }
         },
-        "hal.SMARTInfo": {
+        "cubeos-api_internal_hal.SMARTInfo": {
             "type": "object",
             "properties": {
                 "attributes": {
@@ -15773,7 +15753,7 @@ const docTemplate = `{
                 }
             }
         },
-        "hal.ServiceStatus": {
+        "cubeos-api_internal_hal.ServiceStatus": {
             "type": "object",
             "properties": {
                 "active": {
@@ -15805,7 +15785,7 @@ const docTemplate = `{
                 }
             }
         },
-        "hal.StorageDevice": {
+        "cubeos-api_internal_hal.StorageDevice": {
             "type": "object",
             "properties": {
                 "model": {
@@ -15817,7 +15797,7 @@ const docTemplate = `{
                 "partitions": {
                     "type": "array",
                     "items": {
-                        "$ref": "#/definitions/hal.StorageDevice"
+                        "$ref": "#/definitions/cubeos-api_internal_hal.StorageDevice"
                     }
                 },
                 "path": {
@@ -15843,7 +15823,7 @@ const docTemplate = `{
                 }
             }
         },
-        "hal.StorageDevicesResponse": {
+        "cubeos-api_internal_hal.StorageDevicesResponse": {
             "type": "object",
             "properties": {
                 "count": {
@@ -15852,23 +15832,23 @@ const docTemplate = `{
                 "devices": {
                     "type": "array",
                     "items": {
-                        "$ref": "#/definitions/hal.StorageDevice"
+                        "$ref": "#/definitions/cubeos-api_internal_hal.StorageDevice"
                     }
                 }
             }
         },
-        "hal.StorageUsageResponse": {
+        "cubeos-api_internal_hal.StorageUsageResponse": {
             "type": "object",
             "properties": {
                 "filesystems": {
                     "type": "array",
                     "items": {
-                        "$ref": "#/definitions/hal.FilesystemUsage"
+                        "$ref": "#/definitions/cubeos-api_internal_hal.FilesystemUsage"
                     }
                 }
             }
         },
-        "hal.StreamInfo": {
+        "cubeos-api_internal_hal.StreamInfo": {
             "type": "object",
             "properties": {
                 "active": {
@@ -15894,7 +15874,7 @@ const docTemplate = `{
                 }
             }
         },
-        "hal.TemperatureResponse": {
+        "cubeos-api_internal_hal.TemperatureResponse": {
             "type": "object",
             "properties": {
                 "source": {
@@ -15908,7 +15888,7 @@ const docTemplate = `{
                 }
             }
         },
-        "hal.ThrottleStatus": {
+        "cubeos-api_internal_hal.ThrottleStatus": {
             "type": "object",
             "properties": {
                 "arm_frequency_capped_now": {
@@ -15940,7 +15920,7 @@ const docTemplate = `{
                 }
             }
         },
-        "hal.UPSInfo": {
+        "cubeos-api_internal_hal.UPSInfo": {
             "type": "object",
             "properties": {
                 "chip_version": {
@@ -15969,7 +15949,7 @@ const docTemplate = `{
                 }
             }
         },
-        "hal.USBDevice": {
+        "cubeos-api_internal_hal.USBDevice": {
             "type": "object",
             "properties": {
                 "bus": {
@@ -15998,7 +15978,7 @@ const docTemplate = `{
                 }
             }
         },
-        "hal.USBDevicesResponse": {
+        "cubeos-api_internal_hal.USBDevicesResponse": {
             "type": "object",
             "properties": {
                 "count": {
@@ -16007,12 +15987,12 @@ const docTemplate = `{
                 "devices": {
                     "type": "array",
                     "items": {
-                        "$ref": "#/definitions/hal.USBDevice"
+                        "$ref": "#/definitions/cubeos-api_internal_hal.USBDevice"
                     }
                 }
             }
         },
-        "hal.USBStorageDevice": {
+        "cubeos-api_internal_hal.USBStorageDevice": {
             "type": "object",
             "properties": {
                 "model": {
@@ -16041,7 +16021,7 @@ const docTemplate = `{
                 }
             }
         },
-        "hal.UptimeInfo": {
+        "cubeos-api_internal_hal.UptimeInfo": {
             "type": "object",
             "properties": {
                 "boot_time": {
@@ -16061,7 +16041,7 @@ const docTemplate = `{
                 }
             }
         },
-        "hal.VolumeInfo": {
+        "cubeos-api_internal_hal.VolumeInfo": {
             "type": "object",
             "properties": {
                 "muted": {
@@ -16072,7 +16052,7 @@ const docTemplate = `{
                 }
             }
         },
-        "hal.WatchdogInfo": {
+        "cubeos-api_internal_hal.WatchdogInfo": {
             "type": "object",
             "properties": {
                 "device": {
@@ -16086,1082 +16066,7 @@ const docTemplate = `{
                 }
             }
         },
-        "handlers.AddPortRequest": {
-            "type": "object",
-            "properties": {
-                "app_id": {
-                    "type": "integer"
-                },
-                "description": {
-                    "type": "string"
-                },
-                "is_primary": {
-                    "type": "boolean"
-                },
-                "port": {
-                    "type": "integer"
-                },
-                "protocol": {
-                    "type": "string"
-                }
-            }
-        },
-        "handlers.AddRuleRequest": {
-            "type": "object",
-            "properties": {
-                "args": {
-                    "type": "array",
-                    "items": {
-                        "type": "string"
-                    }
-                },
-                "chain": {
-                    "type": "string"
-                },
-                "table": {
-                    "type": "string"
-                }
-            }
-        },
-        "handlers.AllowPortRequest": {
-            "type": "object",
-            "properties": {
-                "port": {
-                    "type": "integer"
-                },
-                "protocol": {
-                    "description": "tcp, udp, or both",
-                    "type": "string"
-                }
-            }
-        },
-        "handlers.AudioDevicesListResponse": {
-            "type": "object",
-            "properties": {
-                "devices": {
-                    "type": "array",
-                    "items": {
-                        "$ref": "#/definitions/hal.AudioDevice"
-                    }
-                }
-            }
-        },
-        "handlers.Backup": {
-            "type": "object",
-            "properties": {
-                "apps": {
-                    "type": "array",
-                    "items": {
-                        "type": "string"
-                    }
-                },
-                "created_at": {
-                    "type": "string"
-                },
-                "description": {
-                    "type": "string"
-                },
-                "id": {
-                    "type": "string"
-                },
-                "name": {
-                    "type": "string"
-                },
-                "path": {
-                    "type": "string"
-                },
-                "size": {
-                    "type": "integer"
-                },
-                "size_human": {
-                    "type": "string"
-                },
-                "status": {
-                    "description": "completed, failed, in-progress",
-                    "type": "string"
-                },
-                "type": {
-                    "description": "full, incremental, config-only",
-                    "type": "string"
-                }
-            }
-        },
-        "handlers.BackupStats": {
-            "type": "object",
-            "properties": {
-                "last_backup": {
-                    "type": "string"
-                },
-                "oldest_backup": {
-                    "type": "string"
-                },
-                "total_backups": {
-                    "type": "integer"
-                },
-                "total_size": {
-                    "type": "integer"
-                },
-                "total_size_human": {
-                    "type": "string"
-                }
-            }
-        },
-        "handlers.BluetoothScanRequest": {
-            "type": "object",
-            "properties": {
-                "duration": {
-                    "description": "Scan duration in seconds",
-                    "type": "integer"
-                }
-            }
-        },
-        "handlers.CaptureImageRequest": {
-            "type": "object",
-            "properties": {
-                "device": {
-                    "description": "Camera device (default: video0)",
-                    "type": "string"
-                },
-                "format": {
-                    "description": "Output format: jpeg, png (default: jpeg)",
-                    "type": "string"
-                },
-                "height": {
-                    "description": "Image height (default: 1080)",
-                    "type": "integer"
-                },
-                "quality": {
-                    "description": "JPEG quality 1-100 (default: 85)",
-                    "type": "integer"
-                },
-                "width": {
-                    "description": "Image width (default: 1920)",
-                    "type": "integer"
-                }
-            }
-        },
-        "handlers.CellularConnectRequest": {
-            "type": "object",
-            "properties": {
-                "apn": {
-                    "type": "string"
-                },
-                "password": {
-                    "type": "string"
-                },
-                "username": {
-                    "type": "string"
-                }
-            }
-        },
-        "handlers.ChargingRequest": {
-            "type": "object",
-            "properties": {
-                "enabled": {
-                    "type": "boolean"
-                }
-            }
-        },
-        "handlers.ChatMessage": {
-            "type": "object",
-            "properties": {
-                "content": {
-                    "type": "string"
-                },
-                "role": {
-                    "type": "string"
-                }
-            }
-        },
-        "handlers.ChatRequest": {
-            "type": "object",
-            "properties": {
-                "history": {
-                    "type": "array",
-                    "items": {
-                        "$ref": "#/definitions/handlers.ChatMessage"
-                    }
-                },
-                "message": {
-                    "type": "string"
-                }
-            }
-        },
-        "handlers.ChatResponse": {
-            "type": "object",
-            "properties": {
-                "done": {
-                    "type": "boolean"
-                },
-                "response": {
-                    "type": "string"
-                },
-                "sources": {
-                    "type": "array",
-                    "items": {
-                        "type": "string"
-                    }
-                }
-            }
-        },
-        "handlers.ChatStatusResponse": {
-            "type": "object",
-            "properties": {
-                "available": {
-                    "type": "boolean"
-                },
-                "docs_count": {
-                    "type": "integer"
-                },
-                "model": {
-                    "type": "string"
-                },
-                "model_ready": {
-                    "type": "boolean"
-                },
-                "rag_enabled": {
-                    "type": "boolean"
-                }
-            }
-        },
-        "handlers.CleanupRequest": {
-            "type": "object",
-            "properties": {
-                "dry_run": {
-                    "description": "If true, only report what would be deleted",
-                    "type": "boolean"
-                },
-                "keep_tags": {
-                    "description": "Number of tags to keep per image",
-                    "type": "integer"
-                },
-                "older_than_days": {
-                    "description": "Delete tags older than N days",
-                    "type": "integer"
-                }
-            }
-        },
-        "handlers.CreateBackupRequest": {
-            "type": "object",
-            "properties": {
-                "apps": {
-                    "description": "specific apps to backup, empty = all",
-                    "type": "array",
-                    "items": {
-                        "type": "string"
-                    }
-                },
-                "description": {
-                    "type": "string"
-                },
-                "name": {
-                    "type": "string"
-                },
-                "type": {
-                    "description": "full, incremental, config-only",
-                    "type": "string"
-                }
-            }
-        },
-        "handlers.CreateFQDNRequest": {
-            "type": "object",
-            "properties": {
-                "app_id": {
-                    "type": "integer"
-                },
-                "backend_port": {
-                    "type": "integer"
-                },
-                "ssl_enabled": {
-                    "type": "boolean"
-                },
-                "subdomain": {
-                    "type": "string"
-                }
-            }
-        },
-        "handlers.CreateProxyHostRequest": {
-            "type": "object",
-            "properties": {
-                "advanced_config": {
-                    "type": "string"
-                },
-                "block_exploits": {
-                    "type": "boolean"
-                },
-                "caching_enabled": {
-                    "type": "boolean"
-                },
-                "domain_names": {
-                    "type": "array",
-                    "items": {
-                        "type": "string"
-                    }
-                },
-                "forward_host": {
-                    "type": "string"
-                },
-                "forward_port": {
-                    "type": "integer"
-                },
-                "forward_scheme": {
-                    "type": "string"
-                },
-                "ssl_forced": {
-                    "type": "boolean"
-                }
-            }
-        },
-        "handlers.CreateShareRequest": {
-            "type": "object",
-            "properties": {
-                "browseable": {
-                    "type": "boolean"
-                },
-                "description": {
-                    "type": "string"
-                },
-                "guest_ok": {
-                    "type": "boolean"
-                },
-                "name": {
-                    "type": "string"
-                },
-                "path": {
-                    "type": "string"
-                },
-                "read_only": {
-                    "type": "boolean"
-                },
-                "valid_users": {
-                    "type": "array",
-                    "items": {
-                        "type": "string"
-                    }
-                }
-            }
-        },
-        "handlers.DocContent": {
-            "type": "object",
-            "properties": {
-                "content": {
-                    "type": "string"
-                },
-                "path": {
-                    "type": "string"
-                },
-                "title": {
-                    "type": "string"
-                }
-            }
-        },
-        "handlers.DocFile": {
-            "type": "object",
-            "properties": {
-                "children": {
-                    "type": "array",
-                    "items": {
-                        "$ref": "#/definitions/handlers.DocFile"
-                    }
-                },
-                "is_dir": {
-                    "type": "boolean"
-                },
-                "name": {
-                    "type": "string"
-                },
-                "path": {
-                    "type": "string"
-                },
-                "title": {
-                    "type": "string"
-                }
-            }
-        },
-        "handlers.EnvVarPreview": {
-            "type": "object",
-            "properties": {
-                "description": {
-                    "type": "string"
-                },
-                "name": {
-                    "type": "string"
-                },
-                "value": {
-                    "type": "string"
-                }
-            }
-        },
-        "handlers.ErrorResponse": {
-            "description": "API error response",
-            "type": "object",
-            "properties": {
-                "code": {
-                    "type": "integer"
-                },
-                "detail": {
-                    "type": "string"
-                },
-                "error": {
-                    "type": "string"
-                }
-            }
-        },
-        "handlers.FQDN": {
-            "type": "object",
-            "properties": {
-                "app_id": {
-                    "type": "integer"
-                },
-                "app_name": {
-                    "type": "string"
-                },
-                "backend_port": {
-                    "type": "integer"
-                },
-                "created_at": {
-                    "type": "string"
-                },
-                "fqdn": {
-                    "type": "string"
-                },
-                "id": {
-                    "type": "integer"
-                },
-                "ssl_enabled": {
-                    "type": "boolean"
-                },
-                "subdomain": {
-                    "type": "string"
-                }
-            }
-        },
-        "handlers.GPIOModeRequest": {
-            "type": "object",
-            "properties": {
-                "mode": {
-                    "description": "\"input\" or \"output\"",
-                    "type": "string"
-                }
-            }
-        },
-        "handlers.GPIOPinsResponse": {
-            "type": "object",
-            "properties": {
-                "pins": {
-                    "type": "array",
-                    "items": {
-                        "$ref": "#/definitions/hal.GPIOPin"
-                    }
-                }
-            }
-        },
-        "handlers.GPIOSetRequest": {
-            "type": "object",
-            "properties": {
-                "value": {
-                    "type": "boolean"
-                }
-            }
-        },
-        "handlers.HardwareOverviewResponse": {
-            "type": "object",
-            "properties": {
-                "battery": {
-                    "$ref": "#/definitions/hal.BatteryStatus"
-                },
-                "power": {
-                    "$ref": "#/definitions/hal.PowerStatus"
-                },
-                "temperature": {
-                    "$ref": "#/definitions/hal.TemperatureResponse"
-                },
-                "throttle": {
-                    "$ref": "#/definitions/hal.ThrottleStatus"
-                },
-                "uptime": {
-                    "$ref": "#/definitions/hal.UptimeInfo"
-                },
-                "watchdog": {
-                    "$ref": "#/definitions/hal.WatchdogInfo"
-                }
-            }
-        },
-        "handlers.I2CBusesResponse": {
-            "type": "object",
-            "properties": {
-                "buses": {
-                    "type": "array",
-                    "items": {
-                        "$ref": "#/definitions/hal.I2CBus"
-                    }
-                }
-            }
-        },
-        "handlers.ImportRequest": {
-            "type": "object",
-            "properties": {
-                "app_name": {
-                    "description": "Required app name",
-                    "type": "string"
-                },
-                "auto_start": {
-                    "description": "Start after import",
-                    "type": "boolean"
-                },
-                "env_overrides": {
-                    "description": "Environment overrides",
-                    "type": "object",
-                    "additionalProperties": {
-                        "type": "string"
-                    }
-                },
-                "manifest": {
-                    "description": "YAML content",
-                    "type": "string"
-                },
-                "title": {
-                    "description": "Custom title",
-                    "type": "string"
-                },
-                "url": {
-                    "description": "Optional URL to fetch",
-                    "type": "string"
-                }
-            }
-        },
-        "handlers.ImportResponse": {
-            "type": "object",
-            "properties": {
-                "app_id": {
-                    "type": "string"
-                },
-                "app_name": {
-                    "type": "string"
-                },
-                "compose_path": {
-                    "type": "string"
-                },
-                "data_path": {
-                    "type": "string"
-                },
-                "error": {
-                    "type": "string"
-                },
-                "fqdn": {
-                    "type": "string"
-                },
-                "status": {
-                    "type": "string"
-                },
-                "success": {
-                    "type": "boolean"
-                },
-                "title": {
-                    "type": "string"
-                },
-                "warnings": {
-                    "type": "array",
-                    "items": {
-                        "type": "string"
-                    }
-                },
-                "webui": {
-                    "type": "string"
-                }
-            }
-        },
-        "handlers.IridiumSBDRequest": {
-            "type": "object",
-            "properties": {
-                "message": {
-                    "type": "string"
-                }
-            }
-        },
-        "handlers.MeshtasticChannelRequest": {
-            "type": "object",
-            "properties": {
-                "channel": {
-                    "type": "integer"
-                }
-            }
-        },
-        "handlers.MeshtasticMessageRequest": {
-            "type": "object",
-            "properties": {
-                "channel": {
-                    "description": "Default channel 0",
-                    "type": "integer"
-                },
-                "destination": {
-                    "description": "Node ID or \"broadcast\"",
-                    "type": "string"
-                },
-                "text": {
-                    "type": "string"
-                }
-            }
-        },
-        "handlers.MountCheckResponse": {
-            "type": "object",
-            "properties": {
-                "mounted": {
-                    "type": "boolean"
-                },
-                "path": {
-                    "type": "string"
-                }
-            }
-        },
-        "handlers.MountResultResponse": {
-            "type": "object",
-            "properties": {
-                "message": {
-                    "type": "string"
-                },
-                "mount_point": {
-                    "type": "string"
-                },
-                "success": {
-                    "type": "boolean"
-                }
-            }
-        },
-        "handlers.NFSMountRequest": {
-            "type": "object",
-            "properties": {
-                "mount_point": {
-                    "description": "/mnt/nfs",
-                    "type": "string"
-                },
-                "options": {
-                    "type": "string"
-                },
-                "remote_path": {
-                    "description": "server:/export/path",
-                    "type": "string"
-                }
-            }
-        },
-        "handlers.NPMStatus": {
-            "type": "object",
-            "properties": {
-                "authenticated": {
-                    "type": "boolean"
-                },
-                "base_url": {
-                    "type": "string"
-                },
-                "host_count": {
-                    "type": "integer"
-                },
-                "online": {
-                    "type": "boolean"
-                },
-                "version": {
-                    "type": "string"
-                }
-            }
-        },
-        "handlers.OneWireDevicesResponse": {
-            "type": "object",
-            "properties": {
-                "devices": {
-                    "type": "array",
-                    "items": {
-                        "$ref": "#/definitions/hal.OneWireDevice"
-                    }
-                }
-            }
-        },
-        "handlers.PortPreview": {
-            "type": "object",
-            "properties": {
-                "container": {
-                    "type": "string"
-                },
-                "description": {
-                    "type": "string"
-                },
-                "host": {
-                    "type": "string"
-                },
-                "protocol": {
-                    "type": "string"
-                }
-            }
-        },
-        "handlers.PreviewRequest": {
-            "type": "object",
-            "properties": {
-                "app_name": {
-                    "type": "string"
-                },
-                "manifest": {
-                    "description": "YAML or JSON content",
-                    "type": "string"
-                },
-                "url": {
-                    "description": "Optional: URL to fetch manifest from",
-                    "type": "string"
-                }
-            }
-        },
-        "handlers.PreviewResponse": {
-            "type": "object",
-            "properties": {
-                "app_name": {
-                    "type": "string"
-                },
-                "architectures": {
-                    "type": "array",
-                    "items": {
-                        "type": "string"
-                    }
-                },
-                "author": {
-                    "type": "string"
-                },
-                "category": {
-                    "type": "string"
-                },
-                "compatible": {
-                    "type": "boolean"
-                },
-                "description": {
-                    "type": "string"
-                },
-                "env_vars": {
-                    "type": "array",
-                    "items": {
-                        "$ref": "#/definitions/handlers.EnvVarPreview"
-                    }
-                },
-                "errors": {
-                    "type": "array",
-                    "items": {
-                        "type": "string"
-                    }
-                },
-                "icon": {
-                    "type": "string"
-                },
-                "main_service": {
-                    "type": "string"
-                },
-                "ports": {
-                    "type": "array",
-                    "items": {
-                        "$ref": "#/definitions/handlers.PortPreview"
-                    }
-                },
-                "raw_manifest": {
-                    "$ref": "#/definitions/models.CasaOSManifest"
-                },
-                "services": {
-                    "type": "array",
-                    "items": {
-                        "$ref": "#/definitions/handlers.ServicePreview"
-                    }
-                },
-                "title": {
-                    "type": "string"
-                },
-                "valid": {
-                    "type": "boolean"
-                },
-                "version": {
-                    "type": "string"
-                },
-                "volumes": {
-                    "type": "array",
-                    "items": {
-                        "$ref": "#/definitions/handlers.VolumePreview"
-                    }
-                },
-                "warnings": {
-                    "type": "array",
-                    "items": {
-                        "type": "string"
-                    }
-                },
-                "webui_path": {
-                    "type": "string"
-                },
-                "webui_port": {
-                    "type": "string"
-                }
-            }
-        },
-        "handlers.RegistryStatus": {
-            "type": "object",
-            "properties": {
-                "disk_usage": {
-                    "type": "string"
-                },
-                "disk_usage_bytes": {
-                    "type": "integer"
-                },
-                "error": {
-                    "type": "string"
-                },
-                "image_count": {
-                    "type": "integer"
-                },
-                "online": {
-                    "type": "boolean"
-                },
-                "url": {
-                    "type": "string"
-                },
-                "version": {
-                    "type": "string"
-                }
-            }
-        },
-        "handlers.SMBMountRequest": {
-            "type": "object",
-            "properties": {
-                "domain": {
-                    "type": "string"
-                },
-                "mount_point": {
-                    "description": "/mnt/share",
-                    "type": "string"
-                },
-                "options": {
-                    "type": "string"
-                },
-                "password": {
-                    "type": "string"
-                },
-                "remote_path": {
-                    "description": "//server/share",
-                    "type": "string"
-                },
-                "username": {
-                    "type": "string"
-                }
-            }
-        },
-        "handlers.SMBShare": {
-            "type": "object",
-            "properties": {
-                "browseable": {
-                    "type": "boolean"
-                },
-                "created": {
-                    "type": "string"
-                },
-                "description": {
-                    "type": "string"
-                },
-                "guest_ok": {
-                    "type": "boolean"
-                },
-                "modified": {
-                    "type": "string"
-                },
-                "name": {
-                    "type": "string"
-                },
-                "path": {
-                    "type": "string"
-                },
-                "read_only": {
-                    "type": "boolean"
-                },
-                "valid_users": {
-                    "type": "array",
-                    "items": {
-                        "type": "string"
-                    }
-                }
-            }
-        },
-        "handlers.ServicePreview": {
-            "type": "object",
-            "properties": {
-                "image": {
-                    "type": "string"
-                },
-                "is_main": {
-                    "type": "boolean"
-                },
-                "name": {
-                    "type": "string"
-                },
-                "network_mode": {
-                    "type": "string"
-                },
-                "privileged": {
-                    "type": "boolean"
-                }
-            }
-        },
-        "handlers.SetIPForwardRequest": {
-            "type": "object",
-            "properties": {
-                "enabled": {
-                    "type": "boolean"
-                }
-            }
-        },
-        "handlers.SetMuteRequest": {
-            "type": "object",
-            "properties": {
-                "muted": {
-                    "type": "boolean"
-                }
-            }
-        },
-        "handlers.SetVolumeRequest": {
-            "type": "object",
-            "properties": {
-                "volume": {
-                    "description": "0-100",
-                    "type": "integer"
-                }
-            }
-        },
-        "handlers.StartStreamRequest": {
-            "type": "object",
-            "properties": {
-                "device": {
-                    "description": "Camera device (default: video0)",
-                    "type": "string"
-                },
-                "framerate": {
-                    "description": "Framerate (default: 30)",
-                    "type": "integer"
-                },
-                "height": {
-                    "description": "Stream height (default: 720)",
-                    "type": "integer"
-                },
-                "port": {
-                    "description": "Stream port (default: 8080)",
-                    "type": "integer"
-                },
-                "width": {
-                    "description": "Stream width (default: 1280)",
-                    "type": "integer"
-                }
-            }
-        },
-        "handlers.StreamStartResponse": {
-            "type": "object",
-            "properties": {
-                "message": {
-                    "type": "string"
-                },
-                "stream_url": {
-                    "type": "string"
-                },
-                "success": {
-                    "type": "boolean"
-                }
-            }
-        },
-        "handlers.SuccessResponse": {
-            "type": "object",
-            "properties": {
-                "message": {
-                    "type": "string"
-                },
-                "success": {
-                    "type": "boolean"
-                }
-            }
-        },
-        "handlers.TestMountRequest": {
-            "type": "object",
-            "properties": {
-                "password": {
-                    "type": "string"
-                },
-                "remote_path": {
-                    "description": "//server/share or server:/path",
-                    "type": "string"
-                },
-                "type": {
-                    "description": "\"smb\" or \"nfs\"",
-                    "type": "string"
-                },
-                "username": {
-                    "type": "string"
-                }
-            }
-        },
-        "handlers.USBDevicesByClassResponse": {
-            "type": "object",
-            "properties": {
-                "class": {
-                    "type": "string"
-                },
-                "devices": {
-                    "type": "array",
-                    "items": {
-                        "$ref": "#/definitions/hal.USBDevice"
-                    }
-                }
-            }
-        },
-        "handlers.USBStorageResponse": {
-            "type": "object",
-            "properties": {
-                "devices": {
-                    "type": "array",
-                    "items": {
-                        "$ref": "#/definitions/hal.USBStorageDevice"
-                    }
-                }
-            }
-        },
-        "handlers.UnmountNetworkRequest": {
-            "type": "object",
-            "properties": {
-                "path": {
-                    "type": "string"
-                }
-            }
-        },
-        "handlers.UpdateFQDNRequest": {
-            "type": "object",
-            "properties": {
-                "backend_port": {
-                    "type": "integer"
-                },
-                "ssl_enabled": {
-                    "type": "boolean"
-                }
-            }
-        },
-        "handlers.VolumePreview": {
-            "type": "object",
-            "properties": {
-                "container": {
-                    "type": "string"
-                },
-                "description": {
-                    "type": "string"
-                },
-                "host": {
-                    "type": "string"
-                }
-            }
-        },
-        "handlers.WakeAlarmRequest": {
-            "type": "object",
-            "properties": {
-                "time": {
-                    "description": "ISO 8601 format",
-                    "type": "string"
-                }
-            }
-        },
-        "managers.APConfig": {
+        "cubeos-api_internal_managers.APConfig": {
             "type": "object",
             "properties": {
                 "channel": {
@@ -17178,7 +16083,7 @@ const docTemplate = `{
                 }
             }
         },
-        "managers.AccessPointStatus": {
+        "cubeos-api_internal_managers.AccessPointStatus": {
             "type": "object",
             "properties": {
                 "channel": {
@@ -17199,7 +16104,7 @@ const docTemplate = `{
                 }
             }
         },
-        "managers.CreateMountRequest": {
+        "cubeos-api_internal_managers.CreateMountRequest": {
             "type": "object",
             "properties": {
                 "auto_mount": {
@@ -17226,7 +16131,7 @@ const docTemplate = `{
                 }
             }
         },
-        "managers.DNSConfig": {
+        "cubeos-api_internal_managers.DNSConfig": {
             "type": "object",
             "properties": {
                 "dns_servers": {
@@ -17246,13 +16151,13 @@ const docTemplate = `{
                 }
             }
         },
-        "managers.DiskHealth": {
+        "cubeos-api_internal_managers.DiskHealth": {
             "type": "object",
             "properties": {
                 "attributes": {
                     "type": "array",
                     "items": {
-                        "$ref": "#/definitions/managers.SMARTAttribute"
+                        "$ref": "#/definitions/cubeos-api_internal_managers.SMARTAttribute"
                     }
                 },
                 "capacity": {
@@ -17308,7 +16213,7 @@ const docTemplate = `{
                 }
             }
         },
-        "managers.NPMMeta": {
+        "cubeos-api_internal_managers.NPMMeta": {
             "type": "object",
             "properties": {
                 "dns_challenge": {
@@ -17319,7 +16224,7 @@ const docTemplate = `{
                 }
             }
         },
-        "managers.NPMProxyHostExtended": {
+        "cubeos-api_internal_managers.NPMProxyHostExtended": {
             "type": "object",
             "properties": {
                 "access_list_id": {
@@ -17378,7 +16283,7 @@ const docTemplate = `{
                     "items": {}
                 },
                 "meta": {
-                    "$ref": "#/definitions/managers.NPMMeta"
+                    "$ref": "#/definitions/cubeos-api_internal_managers.NPMMeta"
                 },
                 "modified_on": {
                     "type": "string"
@@ -17388,11 +16293,11 @@ const docTemplate = `{
                 }
             }
         },
-        "managers.NetworkStatus": {
+        "cubeos-api_internal_managers.NetworkStatus": {
             "type": "object",
             "properties": {
                 "ap": {
-                    "$ref": "#/definitions/managers.AccessPointStatus"
+                    "$ref": "#/definitions/cubeos-api_internal_managers.AccessPointStatus"
                 },
                 "fallback_ip": {
                     "description": "V2: For SERVER modes",
@@ -17409,7 +16314,7 @@ const docTemplate = `{
                     "type": "boolean"
                 },
                 "mode": {
-                    "$ref": "#/definitions/models.NetworkMode"
+                    "$ref": "#/definitions/cubeos-api_internal_models.NetworkMode"
                 },
                 "public_ip": {
                     "description": "V2",
@@ -17419,7 +16324,7 @@ const docTemplate = `{
                     "type": "string"
                 },
                 "upstream": {
-                    "$ref": "#/definitions/managers.UpstreamStatus"
+                    "$ref": "#/definitions/cubeos-api_internal_managers.UpstreamStatus"
                 },
                 "vpn_active": {
                     "description": "V2",
@@ -17433,13 +16338,13 @@ const docTemplate = `{
                     "description": "V2",
                     "allOf": [
                         {
-                            "$ref": "#/definitions/models.VPNMode"
+                            "$ref": "#/definitions/cubeos-api_internal_models.VPNMode"
                         }
                     ]
                 }
             }
         },
-        "managers.SMARTAttribute": {
+        "cubeos-api_internal_managers.SMARTAttribute": {
             "type": "object",
             "properties": {
                 "failing": {
@@ -17469,7 +16374,7 @@ const docTemplate = `{
                 }
             }
         },
-        "managers.SMBShare": {
+        "cubeos-api_internal_managers.SMBShare": {
             "type": "object",
             "properties": {
                 "browseable": {
@@ -17510,7 +16415,7 @@ const docTemplate = `{
                 }
             }
         },
-        "managers.UpstreamStatus": {
+        "cubeos-api_internal_managers.UpstreamStatus": {
             "type": "object",
             "properties": {
                 "gateway": {
@@ -17531,7 +16436,7 @@ const docTemplate = `{
                 }
             }
         },
-        "models.App": {
+        "cubeos-api_internal_models.App": {
             "type": "object",
             "properties": {
                 "category": {
@@ -17547,7 +16452,7 @@ const docTemplate = `{
                     "type": "string"
                 },
                 "deploy_mode": {
-                    "$ref": "#/definitions/models.DeployMode"
+                    "$ref": "#/definitions/cubeos-api_internal_models.DeployMode"
                 },
                 "description": {
                     "type": "string"
@@ -17562,7 +16467,7 @@ const docTemplate = `{
                 "fqdns": {
                     "type": "array",
                     "items": {
-                        "$ref": "#/definitions/models.FQDN"
+                        "$ref": "#/definitions/cubeos-api_internal_models.FQDN"
                     }
                 },
                 "homepage": {
@@ -17582,17 +16487,17 @@ const docTemplate = `{
                     "description": "Related data (loaded separately, not from main table)",
                     "type": "array",
                     "items": {
-                        "$ref": "#/definitions/models.Port"
+                        "$ref": "#/definitions/cubeos-api_internal_models.Port"
                     }
                 },
                 "source": {
-                    "$ref": "#/definitions/models.AppSource"
+                    "$ref": "#/definitions/cubeos-api_internal_models.AppSource"
                 },
                 "status": {
                     "description": "Runtime status from Swarm (not persisted)",
                     "allOf": [
                         {
-                            "$ref": "#/definitions/models.AppStatus"
+                            "$ref": "#/definitions/cubeos-api_internal_models.AppStatus"
                         }
                     ]
                 },
@@ -17603,7 +16508,7 @@ const docTemplate = `{
                     "type": "boolean"
                 },
                 "type": {
-                    "$ref": "#/definitions/models.AppType"
+                    "$ref": "#/definitions/cubeos-api_internal_models.AppType"
                 },
                 "updated_at": {
                     "type": "string"
@@ -17616,7 +16521,7 @@ const docTemplate = `{
                 }
             }
         },
-        "models.AppActionRequest": {
+        "cubeos-api_internal_models.AppActionRequest": {
             "type": "object",
             "properties": {
                 "action": {
@@ -17625,7 +16530,7 @@ const docTemplate = `{
                 }
             }
         },
-        "models.AppContainer": {
+        "cubeos-api_internal_models.AppContainer": {
             "type": "object",
             "properties": {
                 "created": {
@@ -17648,7 +16553,7 @@ const docTemplate = `{
                 }
             }
         },
-        "models.AppInstallRequest": {
+        "cubeos-api_internal_models.AppInstallRequest": {
             "type": "object",
             "properties": {
                 "app_name": {
@@ -17680,7 +16585,7 @@ const docTemplate = `{
                 }
             }
         },
-        "models.AppSource": {
+        "cubeos-api_internal_models.AppSource": {
             "type": "string",
             "enum": [
                 "cubeos",
@@ -17703,7 +16608,7 @@ const docTemplate = `{
                 "AppSourceCustom"
             ]
         },
-        "models.AppStatus": {
+        "cubeos-api_internal_models.AppStatus": {
             "type": "object",
             "properties": {
                 "error": {
@@ -17724,7 +16629,7 @@ const docTemplate = `{
                 }
             }
         },
-        "models.AppStore": {
+        "cubeos-api_internal_models.AppStore": {
             "type": "object",
             "properties": {
                 "app_count": {
@@ -17756,7 +16661,7 @@ const docTemplate = `{
                 }
             }
         },
-        "models.AppType": {
+        "cubeos-api_internal_models.AppType": {
             "type": "string",
             "enum": [
                 "system",
@@ -17787,7 +16692,7 @@ const docTemplate = `{
                 "AppTypeUser"
             ]
         },
-        "models.ApplyProfileRequest": {
+        "cubeos-api_internal_models.ApplyProfileRequest": {
             "type": "object",
             "properties": {
                 "additional_services": {
@@ -17807,7 +16712,7 @@ const docTemplate = `{
                 }
             }
         },
-        "models.ApplyProfileResponse": {
+        "cubeos-api_internal_models.ApplyProfileResponse": {
             "type": "object",
             "properties": {
                 "disabled_services": {
@@ -17849,7 +16754,7 @@ const docTemplate = `{
                 }
             }
         },
-        "models.BackupCreateRequest": {
+        "cubeos-api_internal_models.BackupCreateRequest": {
             "type": "object",
             "properties": {
                 "compress": {
@@ -17866,7 +16771,7 @@ const docTemplate = `{
                 }
             }
         },
-        "models.BackupInfo": {
+        "cubeos-api_internal_models.BackupInfo": {
             "type": "object",
             "properties": {
                 "compressed": {
@@ -17901,13 +16806,13 @@ const docTemplate = `{
                 }
             }
         },
-        "models.BackupListResponse": {
+        "cubeos-api_internal_models.BackupListResponse": {
             "type": "object",
             "properties": {
                 "backups": {
                     "type": "array",
                     "items": {
-                        "$ref": "#/definitions/models.BackupInfo"
+                        "$ref": "#/definitions/cubeos-api_internal_models.BackupInfo"
                     }
                 },
                 "total_count": {
@@ -17918,7 +16823,7 @@ const docTemplate = `{
                 }
             }
         },
-        "models.CasaOSManifest": {
+        "cubeos-api_internal_models.CasaOSManifest": {
             "type": "object",
             "properties": {
                 "name": {
@@ -17931,7 +16836,7 @@ const docTemplate = `{
                 "services": {
                     "type": "object",
                     "additionalProperties": {
-                        "$ref": "#/definitions/models.ComposeService"
+                        "$ref": "#/definitions/cubeos-api_internal_models.ComposeService"
                     }
                 },
                 "version": {
@@ -17942,11 +16847,11 @@ const docTemplate = `{
                     "additionalProperties": true
                 },
                 "xcasaOS": {
-                    "$ref": "#/definitions/models.XCasaOSApp"
+                    "$ref": "#/definitions/cubeos-api_internal_models.XCasaOSApp"
                 }
             }
         },
-        "models.ChangePasswordRequest": {
+        "cubeos-api_internal_models.ChangePasswordRequest": {
             "type": "object",
             "properties": {
                 "current_password": {
@@ -17957,7 +16862,7 @@ const docTemplate = `{
                 }
             }
         },
-        "models.ComposeService": {
+        "cubeos-api_internal_models.ComposeService": {
             "type": "object",
             "properties": {
                 "capAdd": {
@@ -18017,11 +16922,11 @@ const docTemplate = `{
                     "items": {}
                 },
                 "xcasaOS": {
-                    "$ref": "#/definitions/models.XCasaOSService"
+                    "$ref": "#/definitions/cubeos-api_internal_models.XCasaOSService"
                 }
             }
         },
-        "models.ContainerLogsResponse": {
+        "cubeos-api_internal_models.ContainerLogsResponse": {
             "type": "object",
             "properties": {
                 "container": {
@@ -18038,7 +16943,7 @@ const docTemplate = `{
                 }
             }
         },
-        "models.CreateProfileRequest": {
+        "cubeos-api_internal_models.CreateProfileRequest": {
             "type": "object",
             "properties": {
                 "description": {
@@ -18052,7 +16957,7 @@ const docTemplate = `{
                 }
             }
         },
-        "models.DeployMode": {
+        "cubeos-api_internal_models.DeployMode": {
             "type": "string",
             "enum": [
                 "stack",
@@ -18071,7 +16976,7 @@ const docTemplate = `{
                 "DeployModeCompose"
             ]
         },
-        "models.FQDN": {
+        "cubeos-api_internal_models.FQDN": {
             "type": "object",
             "properties": {
                 "app_id": {
@@ -18100,7 +17005,7 @@ const docTemplate = `{
                 }
             }
         },
-        "models.HealthResponse": {
+        "cubeos-api_internal_models.HealthResponse": {
             "type": "object",
             "properties": {
                 "status": {
@@ -18117,7 +17022,7 @@ const docTemplate = `{
                 }
             }
         },
-        "models.InstallAppRequest": {
+        "cubeos-api_internal_models.InstallAppRequest": {
             "type": "object",
             "properties": {
                 "casaos_json": {
@@ -18135,7 +17040,7 @@ const docTemplate = `{
                     "description": "stack or compose",
                     "allOf": [
                         {
-                            "$ref": "#/definitions/models.DeployMode"
+                            "$ref": "#/definitions/cubeos-api_internal_models.DeployMode"
                         }
                     ]
                 },
@@ -18155,17 +17060,17 @@ const docTemplate = `{
                     "type": "string"
                 },
                 "source": {
-                    "$ref": "#/definitions/models.AppSource"
+                    "$ref": "#/definitions/cubeos-api_internal_models.AppSource"
                 },
                 "store_id": {
                     "type": "string"
                 },
                 "type": {
-                    "$ref": "#/definitions/models.AppType"
+                    "$ref": "#/definitions/cubeos-api_internal_models.AppType"
                 }
             }
         },
-        "models.InstalledApp": {
+        "cubeos-api_internal_models.InstalledApp": {
             "type": "object",
             "properties": {
                 "category": {
@@ -18174,7 +17079,7 @@ const docTemplate = `{
                 "containers": {
                     "type": "array",
                     "items": {
-                        "$ref": "#/definitions/models.AppContainer"
+                        "$ref": "#/definitions/cubeos-api_internal_models.AppContainer"
                     }
                 },
                 "data_path": {
@@ -18221,7 +17126,7 @@ const docTemplate = `{
                 }
             }
         },
-        "models.LogEntry": {
+        "cubeos-api_internal_models.LogEntry": {
             "type": "object",
             "properties": {
                 "hostname": {
@@ -18244,7 +17149,7 @@ const docTemplate = `{
                 }
             }
         },
-        "models.LogUnitsResponse": {
+        "cubeos-api_internal_models.LogUnitsResponse": {
             "type": "object",
             "properties": {
                 "count": {
@@ -18258,7 +17163,7 @@ const docTemplate = `{
                 }
             }
         },
-        "models.LoginRequest": {
+        "cubeos-api_internal_models.LoginRequest": {
             "type": "object",
             "properties": {
                 "password": {
@@ -18269,7 +17174,7 @@ const docTemplate = `{
                 }
             }
         },
-        "models.LoginResponse": {
+        "cubeos-api_internal_models.LoginResponse": {
             "type": "object",
             "properties": {
                 "access_token": {
@@ -18297,7 +17202,7 @@ const docTemplate = `{
                 }
             }
         },
-        "models.LogsResponse": {
+        "cubeos-api_internal_models.LogsResponse": {
             "type": "object",
             "properties": {
                 "count": {
@@ -18306,12 +17211,12 @@ const docTemplate = `{
                 "entries": {
                     "type": "array",
                     "items": {
-                        "$ref": "#/definitions/models.LogEntry"
+                        "$ref": "#/definitions/cubeos-api_internal_models.LogEntry"
                     }
                 }
             }
         },
-        "models.Mount": {
+        "cubeos-api_internal_models.Mount": {
             "type": "object",
             "properties": {
                 "auto_mount": {
@@ -18339,14 +17244,14 @@ const docTemplate = `{
                     "type": "string"
                 },
                 "type": {
-                    "$ref": "#/definitions/models.MountType"
+                    "$ref": "#/definitions/cubeos-api_internal_models.MountType"
                 },
                 "username": {
                     "type": "string"
                 }
             }
         },
-        "models.MountType": {
+        "cubeos-api_internal_models.MountType": {
             "type": "string",
             "enum": [
                 "smb",
@@ -18357,7 +17262,7 @@ const docTemplate = `{
                 "MountTypeNFS"
             ]
         },
-        "models.NetworkConfig": {
+        "cubeos-api_internal_models.NetworkConfig": {
             "type": "object",
             "properties": {
                 "ap_channel": {
@@ -18392,7 +17297,7 @@ const docTemplate = `{
                     "type": "integer"
                 },
                 "mode": {
-                    "$ref": "#/definitions/models.NetworkMode"
+                    "$ref": "#/definitions/cubeos-api_internal_models.NetworkMode"
                 },
                 "server_mode_warning_dismissed": {
                     "description": "UX state",
@@ -18411,7 +17316,7 @@ const docTemplate = `{
                     "description": "VPN overlay",
                     "allOf": [
                         {
-                            "$ref": "#/definitions/models.VPNMode"
+                            "$ref": "#/definitions/cubeos-api_internal_models.VPNMode"
                         }
                     ]
                 },
@@ -18427,7 +17332,7 @@ const docTemplate = `{
                 }
             }
         },
-        "models.NetworkMode": {
+        "cubeos-api_internal_models.NetworkMode": {
             "type": "string",
             "enum": [
                 "offline",
@@ -18458,7 +17363,7 @@ const docTemplate = `{
                 "NetworkModeServerWiFi"
             ]
         },
-        "models.Port": {
+        "cubeos-api_internal_models.Port": {
             "type": "object",
             "properties": {
                 "app_id": {
@@ -18484,7 +17389,7 @@ const docTemplate = `{
                 }
             }
         },
-        "models.Preferences": {
+        "cubeos-api_internal_models.Preferences": {
             "type": "object",
             "properties": {
                 "adminExpanded": {
@@ -18519,7 +17424,7 @@ const docTemplate = `{
                 }
             }
         },
-        "models.PreferencesUpdate": {
+        "cubeos-api_internal_models.PreferencesUpdate": {
             "type": "object",
             "properties": {
                 "adminExpanded": {
@@ -18554,7 +17459,7 @@ const docTemplate = `{
                 }
             }
         },
-        "models.ProcessInfo": {
+        "cubeos-api_internal_models.ProcessInfo": {
             "type": "object",
             "properties": {
                 "cmdline": {
@@ -18586,13 +17491,13 @@ const docTemplate = `{
                 }
             }
         },
-        "models.ProcessListResponse": {
+        "cubeos-api_internal_models.ProcessListResponse": {
             "type": "object",
             "properties": {
                 "processes": {
                     "type": "array",
                     "items": {
-                        "$ref": "#/definitions/models.ProcessInfo"
+                        "$ref": "#/definitions/cubeos-api_internal_models.ProcessInfo"
                     }
                 },
                 "sort_by": {
@@ -18603,14 +17508,14 @@ const docTemplate = `{
                 }
             }
         },
-        "models.Profile": {
+        "cubeos-api_internal_models.Profile": {
             "type": "object",
             "properties": {
                 "apps": {
                     "description": "Related data",
                     "type": "array",
                     "items": {
-                        "$ref": "#/definitions/models.ProfileApp"
+                        "$ref": "#/definitions/cubeos-api_internal_models.ProfileApp"
                     }
                 },
                 "created_at": {
@@ -18639,7 +17544,7 @@ const docTemplate = `{
                 }
             }
         },
-        "models.ProfileApp": {
+        "cubeos-api_internal_models.ProfileApp": {
             "type": "object",
             "properties": {
                 "app_id": {
@@ -18657,7 +17562,7 @@ const docTemplate = `{
                 }
             }
         },
-        "models.ServiceAction": {
+        "cubeos-api_internal_models.ServiceAction": {
             "type": "object",
             "properties": {
                 "action": {
@@ -18681,7 +17586,7 @@ const docTemplate = `{
                 }
             }
         },
-        "models.SetupConfig": {
+        "cubeos-api_internal_models.SetupConfig": {
             "type": "object",
             "properties": {
                 "accent_color": {
@@ -18782,7 +17687,7 @@ const docTemplate = `{
                 }
             }
         },
-        "models.SetupStatus": {
+        "cubeos-api_internal_models.SetupStatus": {
             "type": "object",
             "properties": {
                 "completed_at": {
@@ -18814,7 +17719,7 @@ const docTemplate = `{
                 }
             }
         },
-        "models.SetupValidation": {
+        "cubeos-api_internal_models.SetupValidation": {
             "type": "object",
             "properties": {
                 "errors": {
@@ -18834,7 +17739,7 @@ const docTemplate = `{
                 }
             }
         },
-        "models.StatsHistoryResponse": {
+        "cubeos-api_internal_models.StatsHistoryResponse": {
             "type": "object",
             "properties": {
                 "count": {
@@ -18843,12 +17748,12 @@ const docTemplate = `{
                 "history": {
                     "type": "array",
                     "items": {
-                        "$ref": "#/definitions/models.StatsSnapshot"
+                        "$ref": "#/definitions/cubeos-api_internal_models.StatsSnapshot"
                     }
                 }
             }
         },
-        "models.StatsSnapshot": {
+        "cubeos-api_internal_models.StatsSnapshot": {
             "type": "object",
             "properties": {
                 "cpu_percent": {
@@ -18865,7 +17770,7 @@ const docTemplate = `{
                 }
             }
         },
-        "models.StoreApp": {
+        "cubeos-api_internal_models.StoreApp": {
             "type": "object",
             "properties": {
                 "architectures": {
@@ -18942,7 +17847,7 @@ const docTemplate = `{
                 }
             }
         },
-        "models.SuccessResponse": {
+        "cubeos-api_internal_models.SuccessResponse": {
             "type": "object",
             "properties": {
                 "message": {
@@ -18953,7 +17858,7 @@ const docTemplate = `{
                 }
             }
         },
-        "models.SystemInfo": {
+        "cubeos-api_internal_models.SystemInfo": {
             "type": "object",
             "properties": {
                 "architecture": {
@@ -19009,7 +17914,7 @@ const docTemplate = `{
                 }
             }
         },
-        "models.SystemRequirements": {
+        "cubeos-api_internal_models.SystemRequirements": {
             "type": "object",
             "properties": {
                 "architecture": {
@@ -19046,7 +17951,7 @@ const docTemplate = `{
                 }
             }
         },
-        "models.SystemStats": {
+        "cubeos-api_internal_models.SystemStats": {
             "type": "object",
             "properties": {
                 "cpu_percent": {
@@ -19084,7 +17989,7 @@ const docTemplate = `{
                 }
             }
         },
-        "models.Temperature": {
+        "cubeos-api_internal_models.Temperature": {
             "type": "object",
             "properties": {
                 "cpu_temp_c": {
@@ -19118,7 +18023,7 @@ const docTemplate = `{
                 }
             }
         },
-        "models.VPNConfig": {
+        "cubeos-api_internal_models.VPNConfig": {
             "type": "object",
             "properties": {
                 "auto_connect": {
@@ -19140,14 +18045,14 @@ const docTemplate = `{
                     "type": "string"
                 },
                 "type": {
-                    "$ref": "#/definitions/models.VPNType"
+                    "$ref": "#/definitions/cubeos-api_internal_models.VPNType"
                 },
                 "updated_at": {
                     "type": "string"
                 }
             }
         },
-        "models.VPNMode": {
+        "cubeos-api_internal_models.VPNMode": {
             "type": "string",
             "enum": [
                 "none",
@@ -19162,7 +18067,7 @@ const docTemplate = `{
                 "VPNModeTor"
             ]
         },
-        "models.VPNStatus": {
+        "cubeos-api_internal_models.VPNStatus": {
             "type": "object",
             "properties": {
                 "config_name": {
@@ -19178,11 +18083,11 @@ const docTemplate = `{
                     "type": "string"
                 },
                 "type": {
-                    "$ref": "#/definitions/models.VPNType"
+                    "$ref": "#/definitions/cubeos-api_internal_models.VPNType"
                 }
             }
         },
-        "models.VPNType": {
+        "cubeos-api_internal_models.VPNType": {
             "type": "string",
             "enum": [
                 "wireguard",
@@ -19193,7 +18098,7 @@ const docTemplate = `{
                 "VPNTypeOpenVPN"
             ]
         },
-        "models.XCasaOSApp": {
+        "cubeos-api_internal_models.XCasaOSApp": {
             "type": "object",
             "properties": {
                 "architectures": {
@@ -19261,7 +18166,7 @@ const docTemplate = `{
                 }
             }
         },
-        "models.XCasaOSEnv": {
+        "cubeos-api_internal_models.XCasaOSEnv": {
             "type": "object",
             "properties": {
                 "container": {
@@ -19275,7 +18180,7 @@ const docTemplate = `{
                 }
             }
         },
-        "models.XCasaOSPort": {
+        "cubeos-api_internal_models.XCasaOSPort": {
             "type": "object",
             "properties": {
                 "container": {
@@ -19292,30 +18197,30 @@ const docTemplate = `{
                 }
             }
         },
-        "models.XCasaOSService": {
+        "cubeos-api_internal_models.XCasaOSService": {
             "type": "object",
             "properties": {
                 "envs": {
                     "type": "array",
                     "items": {
-                        "$ref": "#/definitions/models.XCasaOSEnv"
+                        "$ref": "#/definitions/cubeos-api_internal_models.XCasaOSEnv"
                     }
                 },
                 "ports": {
                     "type": "array",
                     "items": {
-                        "$ref": "#/definitions/models.XCasaOSPort"
+                        "$ref": "#/definitions/cubeos-api_internal_models.XCasaOSPort"
                     }
                 },
                 "volumes": {
                     "type": "array",
                     "items": {
-                        "$ref": "#/definitions/models.XCasaOSVolume"
+                        "$ref": "#/definitions/cubeos-api_internal_models.XCasaOSVolume"
                     }
                 }
             }
         },
-        "models.XCasaOSVolume": {
+        "cubeos-api_internal_models.XCasaOSVolume": {
             "type": "object",
             "properties": {
                 "container": {
@@ -19326,6 +18231,1081 @@ const docTemplate = `{
                     "additionalProperties": {
                         "type": "string"
                     }
+                }
+            }
+        },
+        "internal_handlers.AddPortRequest": {
+            "type": "object",
+            "properties": {
+                "app_id": {
+                    "type": "integer"
+                },
+                "description": {
+                    "type": "string"
+                },
+                "is_primary": {
+                    "type": "boolean"
+                },
+                "port": {
+                    "type": "integer"
+                },
+                "protocol": {
+                    "type": "string"
+                }
+            }
+        },
+        "internal_handlers.AddRuleRequest": {
+            "type": "object",
+            "properties": {
+                "args": {
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    }
+                },
+                "chain": {
+                    "type": "string"
+                },
+                "table": {
+                    "type": "string"
+                }
+            }
+        },
+        "internal_handlers.AllowPortRequest": {
+            "type": "object",
+            "properties": {
+                "port": {
+                    "type": "integer"
+                },
+                "protocol": {
+                    "description": "tcp, udp, or both",
+                    "type": "string"
+                }
+            }
+        },
+        "internal_handlers.AudioDevicesListResponse": {
+            "type": "object",
+            "properties": {
+                "devices": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/cubeos-api_internal_hal.AudioDevice"
+                    }
+                }
+            }
+        },
+        "internal_handlers.Backup": {
+            "type": "object",
+            "properties": {
+                "apps": {
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    }
+                },
+                "created_at": {
+                    "type": "string"
+                },
+                "description": {
+                    "type": "string"
+                },
+                "id": {
+                    "type": "string"
+                },
+                "name": {
+                    "type": "string"
+                },
+                "path": {
+                    "type": "string"
+                },
+                "size": {
+                    "type": "integer"
+                },
+                "size_human": {
+                    "type": "string"
+                },
+                "status": {
+                    "description": "completed, failed, in-progress",
+                    "type": "string"
+                },
+                "type": {
+                    "description": "full, incremental, config-only",
+                    "type": "string"
+                }
+            }
+        },
+        "internal_handlers.BackupStats": {
+            "type": "object",
+            "properties": {
+                "last_backup": {
+                    "type": "string"
+                },
+                "oldest_backup": {
+                    "type": "string"
+                },
+                "total_backups": {
+                    "type": "integer"
+                },
+                "total_size": {
+                    "type": "integer"
+                },
+                "total_size_human": {
+                    "type": "string"
+                }
+            }
+        },
+        "internal_handlers.BluetoothScanRequest": {
+            "type": "object",
+            "properties": {
+                "duration": {
+                    "description": "Scan duration in seconds",
+                    "type": "integer"
+                }
+            }
+        },
+        "internal_handlers.CaptureImageRequest": {
+            "type": "object",
+            "properties": {
+                "device": {
+                    "description": "Camera device (default: video0)",
+                    "type": "string"
+                },
+                "format": {
+                    "description": "Output format: jpeg, png (default: jpeg)",
+                    "type": "string"
+                },
+                "height": {
+                    "description": "Image height (default: 1080)",
+                    "type": "integer"
+                },
+                "quality": {
+                    "description": "JPEG quality 1-100 (default: 85)",
+                    "type": "integer"
+                },
+                "width": {
+                    "description": "Image width (default: 1920)",
+                    "type": "integer"
+                }
+            }
+        },
+        "internal_handlers.CellularConnectRequest": {
+            "type": "object",
+            "properties": {
+                "apn": {
+                    "type": "string"
+                },
+                "password": {
+                    "type": "string"
+                },
+                "username": {
+                    "type": "string"
+                }
+            }
+        },
+        "internal_handlers.ChargingRequest": {
+            "type": "object",
+            "properties": {
+                "enabled": {
+                    "type": "boolean"
+                }
+            }
+        },
+        "internal_handlers.ChatMessage": {
+            "type": "object",
+            "properties": {
+                "content": {
+                    "type": "string"
+                },
+                "role": {
+                    "type": "string"
+                }
+            }
+        },
+        "internal_handlers.ChatRequest": {
+            "type": "object",
+            "properties": {
+                "history": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/internal_handlers.ChatMessage"
+                    }
+                },
+                "message": {
+                    "type": "string"
+                }
+            }
+        },
+        "internal_handlers.ChatResponse": {
+            "type": "object",
+            "properties": {
+                "done": {
+                    "type": "boolean"
+                },
+                "response": {
+                    "type": "string"
+                },
+                "sources": {
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    }
+                }
+            }
+        },
+        "internal_handlers.ChatStatusResponse": {
+            "type": "object",
+            "properties": {
+                "available": {
+                    "type": "boolean"
+                },
+                "docs_count": {
+                    "type": "integer"
+                },
+                "model": {
+                    "type": "string"
+                },
+                "model_ready": {
+                    "type": "boolean"
+                },
+                "rag_enabled": {
+                    "type": "boolean"
+                }
+            }
+        },
+        "internal_handlers.CleanupRequest": {
+            "type": "object",
+            "properties": {
+                "dry_run": {
+                    "description": "If true, only report what would be deleted",
+                    "type": "boolean"
+                },
+                "keep_tags": {
+                    "description": "Number of tags to keep per image",
+                    "type": "integer"
+                },
+                "older_than_days": {
+                    "description": "Delete tags older than N days",
+                    "type": "integer"
+                }
+            }
+        },
+        "internal_handlers.CreateBackupRequest": {
+            "type": "object",
+            "properties": {
+                "apps": {
+                    "description": "specific apps to backup, empty = all",
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    }
+                },
+                "description": {
+                    "type": "string"
+                },
+                "name": {
+                    "type": "string"
+                },
+                "type": {
+                    "description": "full, incremental, config-only",
+                    "type": "string"
+                }
+            }
+        },
+        "internal_handlers.CreateFQDNRequest": {
+            "type": "object",
+            "properties": {
+                "app_id": {
+                    "type": "integer"
+                },
+                "backend_port": {
+                    "type": "integer"
+                },
+                "ssl_enabled": {
+                    "type": "boolean"
+                },
+                "subdomain": {
+                    "type": "string"
+                }
+            }
+        },
+        "internal_handlers.CreateProxyHostRequest": {
+            "type": "object",
+            "properties": {
+                "advanced_config": {
+                    "type": "string"
+                },
+                "block_exploits": {
+                    "type": "boolean"
+                },
+                "caching_enabled": {
+                    "type": "boolean"
+                },
+                "domain_names": {
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    }
+                },
+                "forward_host": {
+                    "type": "string"
+                },
+                "forward_port": {
+                    "type": "integer"
+                },
+                "forward_scheme": {
+                    "type": "string"
+                },
+                "ssl_forced": {
+                    "type": "boolean"
+                }
+            }
+        },
+        "internal_handlers.CreateShareRequest": {
+            "type": "object",
+            "properties": {
+                "browseable": {
+                    "type": "boolean"
+                },
+                "description": {
+                    "type": "string"
+                },
+                "guest_ok": {
+                    "type": "boolean"
+                },
+                "name": {
+                    "type": "string"
+                },
+                "path": {
+                    "type": "string"
+                },
+                "read_only": {
+                    "type": "boolean"
+                },
+                "valid_users": {
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    }
+                }
+            }
+        },
+        "internal_handlers.DocContent": {
+            "type": "object",
+            "properties": {
+                "content": {
+                    "type": "string"
+                },
+                "path": {
+                    "type": "string"
+                },
+                "title": {
+                    "type": "string"
+                }
+            }
+        },
+        "internal_handlers.DocFile": {
+            "type": "object",
+            "properties": {
+                "children": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/internal_handlers.DocFile"
+                    }
+                },
+                "is_dir": {
+                    "type": "boolean"
+                },
+                "name": {
+                    "type": "string"
+                },
+                "path": {
+                    "type": "string"
+                },
+                "title": {
+                    "type": "string"
+                }
+            }
+        },
+        "internal_handlers.EnvVarPreview": {
+            "type": "object",
+            "properties": {
+                "description": {
+                    "type": "string"
+                },
+                "name": {
+                    "type": "string"
+                },
+                "value": {
+                    "type": "string"
+                }
+            }
+        },
+        "internal_handlers.ErrorResponse": {
+            "description": "API error response",
+            "type": "object",
+            "properties": {
+                "code": {
+                    "type": "integer"
+                },
+                "detail": {
+                    "type": "string"
+                },
+                "error": {
+                    "type": "string"
+                }
+            }
+        },
+        "internal_handlers.FQDN": {
+            "type": "object",
+            "properties": {
+                "app_id": {
+                    "type": "integer"
+                },
+                "app_name": {
+                    "type": "string"
+                },
+                "backend_port": {
+                    "type": "integer"
+                },
+                "created_at": {
+                    "type": "string"
+                },
+                "fqdn": {
+                    "type": "string"
+                },
+                "id": {
+                    "type": "integer"
+                },
+                "ssl_enabled": {
+                    "type": "boolean"
+                },
+                "subdomain": {
+                    "type": "string"
+                }
+            }
+        },
+        "internal_handlers.GPIOModeRequest": {
+            "type": "object",
+            "properties": {
+                "mode": {
+                    "description": "\"input\" or \"output\"",
+                    "type": "string"
+                }
+            }
+        },
+        "internal_handlers.GPIOPinsResponse": {
+            "type": "object",
+            "properties": {
+                "pins": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/cubeos-api_internal_hal.GPIOPin"
+                    }
+                }
+            }
+        },
+        "internal_handlers.GPIOSetRequest": {
+            "type": "object",
+            "properties": {
+                "value": {
+                    "type": "boolean"
+                }
+            }
+        },
+        "internal_handlers.HardwareOverviewResponse": {
+            "type": "object",
+            "properties": {
+                "battery": {
+                    "$ref": "#/definitions/cubeos-api_internal_hal.BatteryStatus"
+                },
+                "power": {
+                    "$ref": "#/definitions/cubeos-api_internal_hal.PowerStatus"
+                },
+                "temperature": {
+                    "$ref": "#/definitions/cubeos-api_internal_hal.TemperatureResponse"
+                },
+                "throttle": {
+                    "$ref": "#/definitions/cubeos-api_internal_hal.ThrottleStatus"
+                },
+                "uptime": {
+                    "$ref": "#/definitions/cubeos-api_internal_hal.UptimeInfo"
+                },
+                "watchdog": {
+                    "$ref": "#/definitions/cubeos-api_internal_hal.WatchdogInfo"
+                }
+            }
+        },
+        "internal_handlers.I2CBusesResponse": {
+            "type": "object",
+            "properties": {
+                "buses": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/cubeos-api_internal_hal.I2CBus"
+                    }
+                }
+            }
+        },
+        "internal_handlers.ImportRequest": {
+            "type": "object",
+            "properties": {
+                "app_name": {
+                    "description": "Required app name",
+                    "type": "string"
+                },
+                "auto_start": {
+                    "description": "Start after import",
+                    "type": "boolean"
+                },
+                "env_overrides": {
+                    "description": "Environment overrides",
+                    "type": "object",
+                    "additionalProperties": {
+                        "type": "string"
+                    }
+                },
+                "manifest": {
+                    "description": "YAML content",
+                    "type": "string"
+                },
+                "title": {
+                    "description": "Custom title",
+                    "type": "string"
+                },
+                "url": {
+                    "description": "Optional URL to fetch",
+                    "type": "string"
+                }
+            }
+        },
+        "internal_handlers.ImportResponse": {
+            "type": "object",
+            "properties": {
+                "app_id": {
+                    "type": "string"
+                },
+                "app_name": {
+                    "type": "string"
+                },
+                "compose_path": {
+                    "type": "string"
+                },
+                "data_path": {
+                    "type": "string"
+                },
+                "error": {
+                    "type": "string"
+                },
+                "fqdn": {
+                    "type": "string"
+                },
+                "status": {
+                    "type": "string"
+                },
+                "success": {
+                    "type": "boolean"
+                },
+                "title": {
+                    "type": "string"
+                },
+                "warnings": {
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    }
+                },
+                "webui": {
+                    "type": "string"
+                }
+            }
+        },
+        "internal_handlers.IridiumSBDRequest": {
+            "type": "object",
+            "properties": {
+                "message": {
+                    "type": "string"
+                }
+            }
+        },
+        "internal_handlers.MeshtasticChannelRequest": {
+            "type": "object",
+            "properties": {
+                "channel": {
+                    "type": "integer"
+                }
+            }
+        },
+        "internal_handlers.MeshtasticMessageRequest": {
+            "type": "object",
+            "properties": {
+                "channel": {
+                    "description": "Default channel 0",
+                    "type": "integer"
+                },
+                "destination": {
+                    "description": "Node ID or \"broadcast\"",
+                    "type": "string"
+                },
+                "text": {
+                    "type": "string"
+                }
+            }
+        },
+        "internal_handlers.MountCheckResponse": {
+            "type": "object",
+            "properties": {
+                "mounted": {
+                    "type": "boolean"
+                },
+                "path": {
+                    "type": "string"
+                }
+            }
+        },
+        "internal_handlers.MountResultResponse": {
+            "type": "object",
+            "properties": {
+                "message": {
+                    "type": "string"
+                },
+                "mount_point": {
+                    "type": "string"
+                },
+                "success": {
+                    "type": "boolean"
+                }
+            }
+        },
+        "internal_handlers.NFSMountRequest": {
+            "type": "object",
+            "properties": {
+                "mount_point": {
+                    "description": "/mnt/nfs",
+                    "type": "string"
+                },
+                "options": {
+                    "type": "string"
+                },
+                "remote_path": {
+                    "description": "server:/export/path",
+                    "type": "string"
+                }
+            }
+        },
+        "internal_handlers.NPMStatus": {
+            "type": "object",
+            "properties": {
+                "authenticated": {
+                    "type": "boolean"
+                },
+                "base_url": {
+                    "type": "string"
+                },
+                "host_count": {
+                    "type": "integer"
+                },
+                "online": {
+                    "type": "boolean"
+                },
+                "version": {
+                    "type": "string"
+                }
+            }
+        },
+        "internal_handlers.OneWireDevicesResponse": {
+            "type": "object",
+            "properties": {
+                "devices": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/cubeos-api_internal_hal.OneWireDevice"
+                    }
+                }
+            }
+        },
+        "internal_handlers.PortPreview": {
+            "type": "object",
+            "properties": {
+                "container": {
+                    "type": "string"
+                },
+                "description": {
+                    "type": "string"
+                },
+                "host": {
+                    "type": "string"
+                },
+                "protocol": {
+                    "type": "string"
+                }
+            }
+        },
+        "internal_handlers.PreviewRequest": {
+            "type": "object",
+            "properties": {
+                "app_name": {
+                    "type": "string"
+                },
+                "manifest": {
+                    "description": "YAML or JSON content",
+                    "type": "string"
+                },
+                "url": {
+                    "description": "Optional: URL to fetch manifest from",
+                    "type": "string"
+                }
+            }
+        },
+        "internal_handlers.PreviewResponse": {
+            "type": "object",
+            "properties": {
+                "app_name": {
+                    "type": "string"
+                },
+                "architectures": {
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    }
+                },
+                "author": {
+                    "type": "string"
+                },
+                "category": {
+                    "type": "string"
+                },
+                "compatible": {
+                    "type": "boolean"
+                },
+                "description": {
+                    "type": "string"
+                },
+                "env_vars": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/internal_handlers.EnvVarPreview"
+                    }
+                },
+                "errors": {
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    }
+                },
+                "icon": {
+                    "type": "string"
+                },
+                "main_service": {
+                    "type": "string"
+                },
+                "ports": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/internal_handlers.PortPreview"
+                    }
+                },
+                "raw_manifest": {
+                    "$ref": "#/definitions/cubeos-api_internal_models.CasaOSManifest"
+                },
+                "services": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/internal_handlers.ServicePreview"
+                    }
+                },
+                "title": {
+                    "type": "string"
+                },
+                "valid": {
+                    "type": "boolean"
+                },
+                "version": {
+                    "type": "string"
+                },
+                "volumes": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/internal_handlers.VolumePreview"
+                    }
+                },
+                "warnings": {
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    }
+                },
+                "webui_path": {
+                    "type": "string"
+                },
+                "webui_port": {
+                    "type": "string"
+                }
+            }
+        },
+        "internal_handlers.RegistryStatus": {
+            "type": "object",
+            "properties": {
+                "disk_usage": {
+                    "type": "string"
+                },
+                "disk_usage_bytes": {
+                    "type": "integer"
+                },
+                "error": {
+                    "type": "string"
+                },
+                "image_count": {
+                    "type": "integer"
+                },
+                "online": {
+                    "type": "boolean"
+                },
+                "url": {
+                    "type": "string"
+                },
+                "version": {
+                    "type": "string"
+                }
+            }
+        },
+        "internal_handlers.SMBMountRequest": {
+            "type": "object",
+            "properties": {
+                "domain": {
+                    "type": "string"
+                },
+                "mount_point": {
+                    "description": "/mnt/share",
+                    "type": "string"
+                },
+                "options": {
+                    "type": "string"
+                },
+                "password": {
+                    "type": "string"
+                },
+                "remote_path": {
+                    "description": "//server/share",
+                    "type": "string"
+                },
+                "username": {
+                    "type": "string"
+                }
+            }
+        },
+        "internal_handlers.SMBShare": {
+            "type": "object",
+            "properties": {
+                "browseable": {
+                    "type": "boolean"
+                },
+                "created": {
+                    "type": "string"
+                },
+                "description": {
+                    "type": "string"
+                },
+                "guest_ok": {
+                    "type": "boolean"
+                },
+                "modified": {
+                    "type": "string"
+                },
+                "name": {
+                    "type": "string"
+                },
+                "path": {
+                    "type": "string"
+                },
+                "read_only": {
+                    "type": "boolean"
+                },
+                "valid_users": {
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    }
+                }
+            }
+        },
+        "internal_handlers.ServicePreview": {
+            "type": "object",
+            "properties": {
+                "image": {
+                    "type": "string"
+                },
+                "is_main": {
+                    "type": "boolean"
+                },
+                "name": {
+                    "type": "string"
+                },
+                "network_mode": {
+                    "type": "string"
+                },
+                "privileged": {
+                    "type": "boolean"
+                }
+            }
+        },
+        "internal_handlers.SetIPForwardRequest": {
+            "type": "object",
+            "properties": {
+                "enabled": {
+                    "type": "boolean"
+                }
+            }
+        },
+        "internal_handlers.SetMuteRequest": {
+            "type": "object",
+            "properties": {
+                "muted": {
+                    "type": "boolean"
+                }
+            }
+        },
+        "internal_handlers.SetVolumeRequest": {
+            "type": "object",
+            "properties": {
+                "volume": {
+                    "description": "0-100",
+                    "type": "integer"
+                }
+            }
+        },
+        "internal_handlers.StartStreamRequest": {
+            "type": "object",
+            "properties": {
+                "device": {
+                    "description": "Camera device (default: video0)",
+                    "type": "string"
+                },
+                "framerate": {
+                    "description": "Framerate (default: 30)",
+                    "type": "integer"
+                },
+                "height": {
+                    "description": "Stream height (default: 720)",
+                    "type": "integer"
+                },
+                "port": {
+                    "description": "Stream port (default: 8080)",
+                    "type": "integer"
+                },
+                "width": {
+                    "description": "Stream width (default: 1280)",
+                    "type": "integer"
+                }
+            }
+        },
+        "internal_handlers.StreamStartResponse": {
+            "type": "object",
+            "properties": {
+                "message": {
+                    "type": "string"
+                },
+                "stream_url": {
+                    "type": "string"
+                },
+                "success": {
+                    "type": "boolean"
+                }
+            }
+        },
+        "internal_handlers.SuccessResponse": {
+            "type": "object",
+            "properties": {
+                "message": {
+                    "type": "string"
+                },
+                "success": {
+                    "type": "boolean"
+                }
+            }
+        },
+        "internal_handlers.TestMountRequest": {
+            "type": "object",
+            "properties": {
+                "password": {
+                    "type": "string"
+                },
+                "remote_path": {
+                    "description": "//server/share or server:/path",
+                    "type": "string"
+                },
+                "type": {
+                    "description": "\"smb\" or \"nfs\"",
+                    "type": "string"
+                },
+                "username": {
+                    "type": "string"
+                }
+            }
+        },
+        "internal_handlers.USBDevicesByClassResponse": {
+            "type": "object",
+            "properties": {
+                "class": {
+                    "type": "string"
+                },
+                "devices": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/cubeos-api_internal_hal.USBDevice"
+                    }
+                }
+            }
+        },
+        "internal_handlers.USBStorageResponse": {
+            "type": "object",
+            "properties": {
+                "devices": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/cubeos-api_internal_hal.USBStorageDevice"
+                    }
+                }
+            }
+        },
+        "internal_handlers.UnmountNetworkRequest": {
+            "type": "object",
+            "properties": {
+                "path": {
+                    "type": "string"
+                }
+            }
+        },
+        "internal_handlers.UpdateFQDNRequest": {
+            "type": "object",
+            "properties": {
+                "backend_port": {
+                    "type": "integer"
+                },
+                "ssl_enabled": {
+                    "type": "boolean"
+                }
+            }
+        },
+        "internal_handlers.VolumePreview": {
+            "type": "object",
+            "properties": {
+                "container": {
+                    "type": "string"
+                },
+                "description": {
+                    "type": "string"
+                },
+                "host": {
+                    "type": "string"
+                }
+            }
+        },
+        "internal_handlers.WakeAlarmRequest": {
+            "type": "object",
+            "properties": {
+                "time": {
+                    "description": "ISO 8601 format",
+                    "type": "string"
                 }
             }
         }

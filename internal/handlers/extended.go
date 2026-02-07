@@ -1490,7 +1490,7 @@ func (h *ExtendedHandlers) GetPowerStatus(w http.ResponseWriter, r *http.Request
 // @Failure 400 {object} ErrorResponse "Invalid request body"
 // @Failure 500 {object} ErrorResponse "Failed to set charging"
 // @Failure 503 {object} ErrorResponse "Power manager not available"
-// @Router /power/charging [put]
+// @Router /power/charging [post]
 func (h *ExtendedHandlers) SetCharging(w http.ResponseWriter, r *http.Request) {
 	if h.power == nil {
 		writeError(w, http.StatusServiceUnavailable, "Power manager not available")
