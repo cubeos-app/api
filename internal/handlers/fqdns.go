@@ -235,8 +235,8 @@ func (h *FQDNsHandler) CreateFQDN(w http.ResponseWriter, r *http.Request) {
 	var npmProxyID int
 	if h.npm != nil {
 		host := &managers.NPMProxyHostExtended{
-			DomainNames:  []string{fullFQDN},
-			ForwardPort:  req.BackendPort,
+			DomainNames:   []string{fullFQDN},
+			ForwardPort:   req.BackendPort,
 			ForwardScheme: "http",
 		}
 		created, err := h.npm.CreateProxyHost(host)
