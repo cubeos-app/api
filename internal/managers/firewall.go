@@ -8,6 +8,7 @@ import (
 	"context"
 	"fmt"
 	"strconv"
+	"strings"
 
 	"cubeos-api/internal/config"
 	"cubeos-api/internal/hal"
@@ -31,19 +32,81 @@ func NewFirewallManager(cfg *config.Config, halClient *hal.Client) *FirewallMana
 	}
 }
 
+// validTables is the set of valid iptables table names
+var validTables = map[string]bool{
+	"filter": true,
+	"nat":    true,
+	"mangle": true,
+	"raw":    true,
+}
+
+// validChains is the set of valid iptables built-in chain names
+var validChains = map[string]bool{
+	"INPUT":       true,
+	"OUTPUT":      true,
+	"FORWARD":     true,
+	"PREROUTING":  true,
+	"POSTROUTING": true,
+}
+
+// validProtocols is the set of valid protocol names
+var validProtocols = map[string]bool{
+	"tcp":  true,
+	"udp":  true,
+	"icmp": true,
+	"all":  true,
+}
+
+// ValidateTable checks if a table name is valid
+func ValidateTable(table string) error {
+	if !validTables[strings.ToLower(table)] {
+		return fmt.Errorf("invalid table: %s (must be filter, nat, mangle, or raw)", table)
+	}
+	return nil
+}
+
+// ValidateChain checks if a chain name is valid
+func ValidateChain(chain string) error {
+	if !validChains[strings.ToUpper(chain)] {
+		return fmt.Errorf("invalid chain: %s (must be INPUT, OUTPUT, FORWARD, PREROUTING, or POSTROUTING)", chain)
+	}
+	return nil
+}
+
+// ValidateProtocol checks if a protocol name is valid
+func ValidateProtocol(protocol string) error {
+	if !validProtocols[strings.ToLower(protocol)] {
+		return fmt.Errorf("invalid protocol: %s (must be tcp, udp, icmp, or all)", protocol)
+	}
+	return nil
+}
+
 // GetStatus returns complete firewall status via HAL
 func (m *FirewallManager) GetStatus(ctx context.Context) (map[string]interface{}, error) {
-	rules, err := m.hal.GetFirewallRules(ctx)
-	if err != nil {
-		return nil, fmt.Errorf("failed to get firewall rules: %w", err)
+	// Get NAT status
+	natEnabled := false
+	natStatus, err := m.GetNATStatus(ctx)
+	if err == nil && natStatus != nil {
+		if enabled, ok := natStatus["nat_enabled"].(bool); ok {
+			natEnabled = enabled
+		}
 	}
 
-	// Get NAT status
-	natStatus, _ := m.hal.GetNetworkStatus(ctx)
+	// Get forwarding status
+	forwardingEnabled, _ := m.GetForwardingStatus(ctx)
+
+	// Get rules count
+	rulesCount := 0
+	rulesResp, err := m.hal.GetFirewallRulesDetailed(ctx)
+	if err == nil && rulesResp != nil {
+		rulesCount = len(rulesResp.Filter) + len(rulesResp.NAT) + len(rulesResp.Mangle) + len(rulesResp.Raw)
+	}
 
 	return map[string]interface{}{
-		"rules":      rules,
-		"nat_status": natStatus,
+		"enabled":            true, // iptables is always "enabled" on Linux
+		"nat_enabled":        natEnabled,
+		"forwarding_enabled": forwardingEnabled,
+		"rules_count":        rulesCount,
 	}, nil
 }
 
@@ -78,6 +141,80 @@ func (m *FirewallManager) DisableNAT(ctx context.Context) *models.SuccessRespons
 	}
 
 	return &models.SuccessResponse{Status: "success", Message: "NAT disabled"}
+}
+
+// GetForwardingStatus returns IP forwarding status via HAL
+func (m *FirewallManager) GetForwardingStatus(ctx context.Context) (bool, error) {
+	return m.hal.GetForwardingStatus(ctx)
+}
+
+// SetForwarding enables or disables IP forwarding via HAL
+func (m *FirewallManager) SetForwarding(ctx context.Context, enabled bool) error {
+	if enabled {
+		return m.hal.EnableIPForward(ctx)
+	}
+	return m.hal.DisableIPForward(ctx)
+}
+
+// GetRulesDetailed returns structured firewall rules grouped by table from HAL
+func (m *FirewallManager) GetRulesDetailed(ctx context.Context) (*hal.FirewallRulesResponse, error) {
+	resp, err := m.hal.GetFirewallRulesDetailed(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get firewall rules: %w", err)
+	}
+	return resp, nil
+}
+
+// GetRules returns firewall rules for a specific table from HAL
+func (m *FirewallManager) GetRules(ctx context.Context, table string) ([]models.FirewallRule, error) {
+	resp, err := m.hal.GetFirewallRulesDetailed(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get firewall rules: %w", err)
+	}
+
+	var halRules []hal.FirewallRule
+	switch strings.ToLower(table) {
+	case "filter":
+		halRules = resp.Filter
+	case "nat":
+		halRules = resp.NAT
+	case "mangle":
+		halRules = resp.Mangle
+	case "raw":
+		halRules = resp.Raw
+	default:
+		halRules = resp.Filter
+	}
+
+	// Convert HAL rules to model rules
+	rules := make([]models.FirewallRule, 0, len(halRules))
+	for _, hr := range halRules {
+		rules = append(rules, models.FirewallRule{
+			Chain:       hr.Chain,
+			Target:      hr.Target,
+			Protocol:    hr.Prot,
+			Source:      hr.Source,
+			Destination: hr.Destination,
+		})
+	}
+
+	return rules, nil
+}
+
+// AddRule adds a generic iptables rule via HAL
+func (m *FirewallManager) AddRule(ctx context.Context, table, chain string, args []string) error {
+	if err := m.hal.AddFirewallRule(ctx, table, chain, args); err != nil {
+		return fmt.Errorf("failed to add firewall rule: %w", err)
+	}
+	return nil
+}
+
+// DeleteRule removes a generic iptables rule via HAL
+func (m *FirewallManager) DeleteRule(ctx context.Context, table, chain string, args []string) error {
+	if err := m.hal.DeleteFirewallRule(ctx, table, chain, args); err != nil {
+		return fmt.Errorf("failed to delete firewall rule: %w", err)
+	}
+	return nil
 }
 
 // AllowPort allows incoming traffic on a port via HAL
@@ -125,6 +262,18 @@ func (m *FirewallManager) RemovePortRule(ctx context.Context, port int, protocol
 	}
 }
 
+// DeletePortRules removes both ACCEPT and DROP rules for a port via HAL.
+// Errors are ignored since the rules may not exist.
+func (m *FirewallManager) DeletePortRules(ctx context.Context, port int, protocol string) {
+	portStr := strconv.Itoa(port)
+	argsAccept := []string{"-p", protocol, "--dport", portStr, "-j", "ACCEPT"}
+	argsDrop := []string{"-p", protocol, "--dport", portStr, "-j", "DROP"}
+
+	// Best-effort: rules may not exist
+	_ = m.hal.DeleteFirewallRule(ctx, "filter", "INPUT", argsAccept)
+	_ = m.hal.DeleteFirewallRule(ctx, "filter", "INPUT", argsDrop)
+}
+
 // SetIPForward enables or disables IP forwarding via HAL
 func (m *FirewallManager) SetIPForward(ctx context.Context, enabled bool) *models.SuccessResponse {
 	var err error
@@ -148,67 +297,62 @@ func (m *FirewallManager) SetIPForward(ctx context.Context, enabled bool) *model
 	}
 }
 
-// Common service ports
-var ServicePorts = map[string]struct {
+// ServicePorts maps common service names to their port/protocol pairs
+var ServicePorts = map[string][]struct {
 	Port     int
 	Protocol string
 }{
-	"ssh":   {22, "tcp"},
-	"http":  {80, "tcp"},
-	"https": {443, "tcp"},
-	"dns":   {53, "udp"},
+	"ssh":   {{22, "tcp"}},
+	"http":  {{80, "tcp"}},
+	"https": {{443, "tcp"}},
+	"dns":   {{53, "tcp"}, {53, "udp"}},
+	"dhcp":  {{67, "udp"}, {68, "udp"}},
+	"ntp":   {{123, "udp"}},
+	"smtp":  {{25, "tcp"}, {587, "tcp"}},
+	"ftp":   {{21, "tcp"}},
+	"smb":   {{445, "tcp"}, {139, "tcp"}},
 }
 
 // AllowService allows traffic for a common service by name
 func (m *FirewallManager) AllowService(ctx context.Context, service string) *models.SuccessResponse {
-	svc, ok := ServicePorts[service]
+	ports, ok := ServicePorts[strings.ToLower(service)]
 	if !ok {
 		return &models.SuccessResponse{Status: "error", Message: fmt.Sprintf("Unknown service: %s", service)}
 	}
-	return m.AllowPort(ctx, svc.Port, svc.Protocol, fmt.Sprintf("Allow %s", service))
-}
 
-// GetRules returns all firewall rules (simplified for HAL)
-func (m *FirewallManager) GetRules(ctx context.Context, table string) ([]models.FirewallRule, error) {
-	rules, err := m.hal.GetFirewallRules(ctx)
-	if err != nil {
-		return nil, err
+	for _, p := range ports {
+		result := m.AllowPort(ctx, p.Port, p.Protocol, fmt.Sprintf("Allow %s", service))
+		if result.Status == "error" {
+			return result
+		}
 	}
 
-	// HAL returns raw iptables output - we need to parse it
-	// For now, return empty slice - full parsing would require HAL changes
-	var parsedRules []models.FirewallRule
-
-	// The HAL returns a map with table names as keys and raw output as values
-	// In future, HAL should return structured data
-	_ = rules
-
-	return parsedRules, nil
+	return &models.SuccessResponse{
+		Status:  "success",
+		Message: fmt.Sprintf("Service %s allowed through firewall", service),
+	}
 }
 
-// SaveRules saves iptables rules (requires HAL endpoint)
+// SaveRules saves current iptables rules to persistent storage via HAL
 func (m *FirewallManager) SaveRules(ctx context.Context) *models.SuccessResponse {
-	// This would need a new HAL endpoint: POST /hal/firewall/save
-	return &models.SuccessResponse{
-		Status:  "warning",
-		Message: "Save rules via HAL not yet implemented",
+	if err := m.hal.SaveFirewallRules(ctx); err != nil {
+		return &models.SuccessResponse{Status: "error", Message: fmt.Sprintf("Failed to save firewall rules: %v", err)}
 	}
+	return &models.SuccessResponse{Status: "success", Message: "Firewall rules saved"}
 }
 
-// RestoreRules restores iptables rules (requires HAL endpoint)
+// RestoreRules restores iptables rules from persistent storage via HAL
 func (m *FirewallManager) RestoreRules(ctx context.Context) *models.SuccessResponse {
-	// This would need a new HAL endpoint: POST /hal/firewall/restore
-	return &models.SuccessResponse{
-		Status:  "warning",
-		Message: "Restore rules via HAL not yet implemented",
+	if err := m.hal.RestoreFirewallRules(ctx); err != nil {
+		return &models.SuccessResponse{Status: "error", Message: fmt.Sprintf("Failed to restore firewall rules: %v", err)}
 	}
+	return &models.SuccessResponse{Status: "success", Message: "Firewall rules restored"}
 }
 
-// ResetFirewall resets firewall to default (requires HAL endpoint)
+// ResetFirewall flushes all iptables rules and resets to defaults via HAL
 func (m *FirewallManager) ResetFirewall(ctx context.Context) *models.SuccessResponse {
-	// This would need a new HAL endpoint: POST /hal/firewall/reset
-	return &models.SuccessResponse{
-		Status:  "warning",
-		Message: "Reset firewall via HAL not yet implemented",
+	if err := m.hal.ResetFirewall(ctx); err != nil {
+		return &models.SuccessResponse{Status: "error", Message: fmt.Sprintf("Failed to reset firewall: %v", err)}
 	}
+	return &models.SuccessResponse{Status: "success", Message: "Firewall reset to defaults"}
 }

@@ -8,21 +8,21 @@ import (
 
 	"github.com/go-chi/chi/v5"
 
-	"cubeos-api/internal/hal"
 	"cubeos-api/internal/managers"
 )
 
 // FirewallHandler handles firewall-related HTTP requests.
+// All operations are routed through the FirewallManager (which uses HAL).
 type FirewallHandler struct {
-	firewall  *managers.FirewallManager
-	halClient *hal.Client
+	firewall *managers.FirewallManager
 }
 
 // NewFirewallHandler creates a new firewall handler.
-func NewFirewallHandler(firewall *managers.FirewallManager, halClient *hal.Client) *FirewallHandler {
+// The halClient parameter is accepted for backward compatibility but ignored;
+// all operations go through the manager.
+func NewFirewallHandler(firewall *managers.FirewallManager, _ interface{}) *FirewallHandler {
 	return &FirewallHandler{
-		firewall:  firewall,
-		halClient: halClient,
+		firewall: firewall,
 	}
 }
 
@@ -74,46 +74,22 @@ func (h *FirewallHandler) Routes() chi.Router {
 // @Produce json
 // @Security BearerAuth
 // @Success 200 {object} map[string]interface{} "enabled, nat_enabled, forwarding_enabled, rules_count"
+// @Failure 500 {object} ErrorResponse "Failed to get firewall status"
+// @Failure 503 {object} ErrorResponse "Firewall service unavailable"
 // @Router /firewall/status [get]
 func (h *FirewallHandler) GetStatus(w http.ResponseWriter, r *http.Request) {
-	ctx := r.Context()
-
-	// Get NAT status
-	natEnabled := false
-	if h.firewall != nil {
-		natStatus, err := h.firewall.GetNATStatus(ctx)
-		if err == nil && natStatus != nil {
-			// Check if NAT is enabled by looking for masquerade rules
-			if enabled, ok := natStatus["nat_enabled"].(bool); ok {
-				natEnabled = enabled
-			}
-		}
+	if h.firewall == nil {
+		writeError(w, http.StatusServiceUnavailable, "Firewall service unavailable")
+		return
 	}
 
-	// Get forwarding status
-	forwardingEnabled := false
-	if h.halClient != nil {
-		fwdStatus, err := h.halClient.GetForwardingStatus(ctx)
-		if err == nil {
-			forwardingEnabled = fwdStatus
-		}
+	status, err := h.firewall.GetStatus(r.Context())
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "Failed to get firewall status: "+err.Error())
+		return
 	}
 
-	// Get firewall rules count
-	rulesCount := 0
-	if h.halClient != nil {
-		rulesResp, err := h.halClient.GetFirewallRulesDetailed(ctx)
-		if err == nil && rulesResp != nil {
-			rulesCount = len(rulesResp.Filter) + len(rulesResp.NAT) + len(rulesResp.Mangle) + len(rulesResp.Raw)
-		}
-	}
-
-	writeJSON(w, http.StatusOK, map[string]interface{}{
-		"enabled":            true, // iptables is always "enabled" on Linux
-		"nat_enabled":        natEnabled,
-		"forwarding_enabled": forwardingEnabled,
-		"rules_count":        rulesCount,
-	})
+	writeJSON(w, http.StatusOK, status)
 }
 
 // GetNATStatus godoc
@@ -127,14 +103,12 @@ func (h *FirewallHandler) GetStatus(w http.ResponseWriter, r *http.Request) {
 // @Failure 503 {object} ErrorResponse "Firewall service unavailable"
 // @Router /firewall/nat [get]
 func (h *FirewallHandler) GetNATStatus(w http.ResponseWriter, r *http.Request) {
-	ctx := r.Context()
-
 	if h.firewall == nil {
 		writeError(w, http.StatusServiceUnavailable, "Firewall service unavailable")
 		return
 	}
 
-	status, err := h.firewall.GetNATStatus(ctx)
+	status, err := h.firewall.GetNATStatus(r.Context())
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, "Failed to get NAT status: "+err.Error())
 		return
@@ -154,14 +128,12 @@ func (h *FirewallHandler) GetNATStatus(w http.ResponseWriter, r *http.Request) {
 // @Failure 503 {object} ErrorResponse "Firewall service unavailable"
 // @Router /firewall/nat/enable [post]
 func (h *FirewallHandler) EnableNAT(w http.ResponseWriter, r *http.Request) {
-	ctx := r.Context()
-
 	if h.firewall == nil {
 		writeError(w, http.StatusServiceUnavailable, "Firewall service unavailable")
 		return
 	}
 
-	result := h.firewall.EnableNAT(ctx)
+	result := h.firewall.EnableNAT(r.Context())
 	if result.Status == "error" {
 		writeError(w, http.StatusInternalServerError, result.Message)
 		return
@@ -181,14 +153,12 @@ func (h *FirewallHandler) EnableNAT(w http.ResponseWriter, r *http.Request) {
 // @Failure 503 {object} ErrorResponse "Firewall service unavailable"
 // @Router /firewall/nat/disable [post]
 func (h *FirewallHandler) DisableNAT(w http.ResponseWriter, r *http.Request) {
-	ctx := r.Context()
-
 	if h.firewall == nil {
 		writeError(w, http.StatusServiceUnavailable, "Firewall service unavailable")
 		return
 	}
 
-	result := h.firewall.DisableNAT(ctx)
+	result := h.firewall.DisableNAT(r.Context())
 	if result.Status == "error" {
 		writeError(w, http.StatusInternalServerError, result.Message)
 		return
@@ -205,17 +175,15 @@ func (h *FirewallHandler) DisableNAT(w http.ResponseWriter, r *http.Request) {
 // @Security BearerAuth
 // @Success 200 {object} map[string]interface{} "enabled: boolean"
 // @Failure 500 {object} ErrorResponse "Failed to get forwarding status"
-// @Failure 503 {object} ErrorResponse "HAL service unavailable"
+// @Failure 503 {object} ErrorResponse "Firewall service unavailable"
 // @Router /firewall/forwarding [get]
 func (h *FirewallHandler) GetForwardingStatus(w http.ResponseWriter, r *http.Request) {
-	ctx := r.Context()
-
-	if h.halClient == nil {
-		writeError(w, http.StatusServiceUnavailable, "HAL service unavailable")
+	if h.firewall == nil {
+		writeError(w, http.StatusServiceUnavailable, "Firewall service unavailable")
 		return
 	}
 
-	enabled, err := h.halClient.GetForwardingStatus(ctx)
+	enabled, err := h.firewall.GetForwardingStatus(r.Context())
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, "Failed to get forwarding status: "+err.Error())
 		return
@@ -234,17 +202,15 @@ func (h *FirewallHandler) GetForwardingStatus(w http.ResponseWriter, r *http.Req
 // @Security BearerAuth
 // @Success 200 {object} map[string]interface{} "success: true, message"
 // @Failure 500 {object} ErrorResponse "Failed to enable forwarding"
-// @Failure 503 {object} ErrorResponse "HAL service unavailable"
+// @Failure 503 {object} ErrorResponse "Firewall service unavailable"
 // @Router /firewall/forwarding/enable [post]
 func (h *FirewallHandler) EnableForwarding(w http.ResponseWriter, r *http.Request) {
-	ctx := r.Context()
-
-	if h.halClient == nil {
-		writeError(w, http.StatusServiceUnavailable, "HAL service unavailable")
+	if h.firewall == nil {
+		writeError(w, http.StatusServiceUnavailable, "Firewall service unavailable")
 		return
 	}
 
-	if err := h.halClient.EnableForwarding(ctx); err != nil {
+	if err := h.firewall.SetForwarding(r.Context(), true); err != nil {
 		writeError(w, http.StatusInternalServerError, "Failed to enable forwarding: "+err.Error())
 		return
 	}
@@ -263,17 +229,15 @@ func (h *FirewallHandler) EnableForwarding(w http.ResponseWriter, r *http.Reques
 // @Security BearerAuth
 // @Success 200 {object} map[string]interface{} "success: true, message"
 // @Failure 500 {object} ErrorResponse "Failed to disable forwarding"
-// @Failure 503 {object} ErrorResponse "HAL service unavailable"
+// @Failure 503 {object} ErrorResponse "Firewall service unavailable"
 // @Router /firewall/forwarding/disable [post]
 func (h *FirewallHandler) DisableForwarding(w http.ResponseWriter, r *http.Request) {
-	ctx := r.Context()
-
-	if h.halClient == nil {
-		writeError(w, http.StatusServiceUnavailable, "HAL service unavailable")
+	if h.firewall == nil {
+		writeError(w, http.StatusServiceUnavailable, "Firewall service unavailable")
 		return
 	}
 
-	if err := h.halClient.DisableForwarding(ctx); err != nil {
+	if err := h.firewall.SetForwarding(r.Context(), false); err != nil {
 		writeError(w, http.StatusInternalServerError, "Failed to disable forwarding: "+err.Error())
 		return
 	}
@@ -293,60 +257,66 @@ func (h *FirewallHandler) DisableForwarding(w http.ResponseWriter, r *http.Reque
 // @Param chain query string false "Filter by chain (INPUT, OUTPUT, FORWARD)"
 // @Param table query string false "Filter by table (filter, nat, mangle)"
 // @Success 200 {object} map[string]interface{} "rules: map of rules, count: total"
+// @Failure 400 {object} ErrorResponse "Invalid table or chain name"
 // @Failure 500 {object} ErrorResponse "Failed to get firewall rules"
-// @Failure 503 {object} ErrorResponse "HAL service unavailable"
+// @Failure 503 {object} ErrorResponse "Firewall service unavailable"
 // @Router /firewall/rules [get]
 func (h *FirewallHandler) GetRules(w http.ResponseWriter, r *http.Request) {
-	ctx := r.Context()
-
-	if h.halClient == nil {
-		writeError(w, http.StatusServiceUnavailable, "HAL service unavailable")
+	if h.firewall == nil {
+		writeError(w, http.StatusServiceUnavailable, "Firewall service unavailable")
 		return
 	}
 
-	// Get detailed firewall rules from HAL
-	rulesResp, err := h.halClient.GetFirewallRulesDetailed(ctx)
+	// Validate query params if provided
+	chainFilter := r.URL.Query().Get("chain")
+	tableFilter := r.URL.Query().Get("table")
+
+	if tableFilter != "" {
+		if err := managers.ValidateTable(tableFilter); err != nil {
+			writeError(w, http.StatusBadRequest, err.Error())
+			return
+		}
+	}
+
+	if chainFilter != "" {
+		if err := managers.ValidateChain(chainFilter); err != nil {
+			writeError(w, http.StatusBadRequest, err.Error())
+			return
+		}
+	}
+
+	// Get detailed rules from manager
+	rulesResp, err := h.firewall.GetRulesDetailed(r.Context())
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, "Failed to get firewall rules: "+err.Error())
 		return
 	}
 
 	// Build response grouped by "table:chain"
-	rulesByTableChain := make(map[string][]hal.FirewallRule)
+	rulesByTableChain := make(map[string][]interface{})
 
-	// Process filter table
 	for _, rule := range rulesResp.Filter {
 		key := "filter:" + rule.Chain
 		rulesByTableChain[key] = append(rulesByTableChain[key], rule)
 	}
-
-	// Process nat table
 	for _, rule := range rulesResp.NAT {
 		key := "nat:" + rule.Chain
 		rulesByTableChain[key] = append(rulesByTableChain[key], rule)
 	}
-
-	// Process mangle table
 	for _, rule := range rulesResp.Mangle {
 		key := "mangle:" + rule.Chain
 		rulesByTableChain[key] = append(rulesByTableChain[key], rule)
 	}
-
-	// Process raw table
 	for _, rule := range rulesResp.Raw {
 		key := "raw:" + rule.Chain
 		rulesByTableChain[key] = append(rulesByTableChain[key], rule)
 	}
 
 	// Filter by chain/table if specified
-	chainFilter := r.URL.Query().Get("chain")
-	tableFilter := r.URL.Query().Get("table")
-
 	totalCount := 0
 	if chainFilter != "" || tableFilter != "" {
-		filtered := make(map[string][]hal.FirewallRule)
+		filtered := make(map[string][]interface{})
 		for k, rules := range rulesByTableChain {
-			// Key format is "table:chain"
 			parts := strings.SplitN(k, ":", 2)
 			if len(parts) != 2 {
 				continue
@@ -392,10 +362,13 @@ type AddRuleRequest struct {
 // @Success 200 {object} map[string]interface{} "success: true, message, rule"
 // @Failure 400 {object} ErrorResponse "Invalid request or missing chain"
 // @Failure 500 {object} ErrorResponse "Failed to add firewall rule"
-// @Failure 503 {object} ErrorResponse "HAL service unavailable"
+// @Failure 503 {object} ErrorResponse "Firewall service unavailable"
 // @Router /firewall/rules [post]
 func (h *FirewallHandler) AddRule(w http.ResponseWriter, r *http.Request) {
-	ctx := r.Context()
+	if h.firewall == nil {
+		writeError(w, http.StatusServiceUnavailable, "Firewall service unavailable")
+		return
+	}
 
 	var req AddRuleRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
@@ -409,17 +382,27 @@ func (h *FirewallHandler) AddRule(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	if err := managers.ValidateChain(req.Chain); err != nil {
+		writeError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+
 	// Set defaults
 	if req.Table == "" {
 		req.Table = "filter"
 	}
 
-	if h.halClient == nil {
-		writeError(w, http.StatusServiceUnavailable, "HAL service unavailable")
+	if err := managers.ValidateTable(req.Table); err != nil {
+		writeError(w, http.StatusBadRequest, err.Error())
 		return
 	}
 
-	if err := h.halClient.AddFirewallRule(ctx, req.Table, req.Chain, req.Args); err != nil {
+	if len(req.Args) == 0 {
+		writeError(w, http.StatusBadRequest, "Args cannot be empty")
+		return
+	}
+
+	if err := h.firewall.AddRule(r.Context(), req.Table, req.Chain, req.Args); err != nil {
 		writeError(w, http.StatusInternalServerError, "Failed to add firewall rule: "+err.Error())
 		return
 	}
@@ -442,10 +425,13 @@ func (h *FirewallHandler) AddRule(w http.ResponseWriter, r *http.Request) {
 // @Success 200 {object} map[string]interface{} "success: true, message"
 // @Failure 400 {object} ErrorResponse "Invalid request or missing chain"
 // @Failure 500 {object} ErrorResponse "Failed to delete firewall rule"
-// @Failure 503 {object} ErrorResponse "HAL service unavailable"
+// @Failure 503 {object} ErrorResponse "Firewall service unavailable"
 // @Router /firewall/rules [delete]
 func (h *FirewallHandler) DeleteRule(w http.ResponseWriter, r *http.Request) {
-	ctx := r.Context()
+	if h.firewall == nil {
+		writeError(w, http.StatusServiceUnavailable, "Firewall service unavailable")
+		return
+	}
 
 	var req AddRuleRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
@@ -459,17 +445,27 @@ func (h *FirewallHandler) DeleteRule(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	if err := managers.ValidateChain(req.Chain); err != nil {
+		writeError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+
 	// Set defaults
 	if req.Table == "" {
 		req.Table = "filter"
 	}
 
-	if h.halClient == nil {
-		writeError(w, http.StatusServiceUnavailable, "HAL service unavailable")
+	if err := managers.ValidateTable(req.Table); err != nil {
+		writeError(w, http.StatusBadRequest, err.Error())
 		return
 	}
 
-	if err := h.halClient.DeleteFirewallRule(ctx, req.Table, req.Chain, req.Args); err != nil {
+	if len(req.Args) == 0 {
+		writeError(w, http.StatusBadRequest, "Args cannot be empty")
+		return
+	}
+
+	if err := h.firewall.DeleteRule(r.Context(), req.Table, req.Chain, req.Args); err != nil {
 		writeError(w, http.StatusInternalServerError, "Failed to delete firewall rule: "+err.Error())
 		return
 	}
@@ -488,16 +484,15 @@ func (h *FirewallHandler) DeleteRule(w http.ResponseWriter, r *http.Request) {
 // @Security BearerAuth
 // @Success 200 {object} map[string]interface{} "enabled: boolean, value: string"
 // @Failure 500 {object} ErrorResponse "Failed to get IP forward status"
+// @Failure 503 {object} ErrorResponse "Firewall service unavailable"
 // @Router /firewall/ipforward [get]
 func (h *FirewallHandler) GetIPForward(w http.ResponseWriter, r *http.Request) {
-	ctx := r.Context()
-
-	if h.halClient == nil {
-		writeError(w, http.StatusServiceUnavailable, "HAL service unavailable")
+	if h.firewall == nil {
+		writeError(w, http.StatusServiceUnavailable, "Firewall service unavailable")
 		return
 	}
 
-	enabled, err := h.halClient.GetForwardingStatus(ctx)
+	enabled, err := h.firewall.GetForwardingStatus(r.Context())
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, "Failed to get IP forward status: "+err.Error())
 		return
@@ -530,9 +525,13 @@ type SetIPForwardRequest struct {
 // @Success 200 {object} map[string]interface{} "success, enabled"
 // @Failure 400 {object} ErrorResponse "Invalid request"
 // @Failure 500 {object} ErrorResponse "Failed to set IP forward"
+// @Failure 503 {object} ErrorResponse "Firewall service unavailable"
 // @Router /firewall/ipforward [put]
 func (h *FirewallHandler) SetIPForward(w http.ResponseWriter, r *http.Request) {
-	ctx := r.Context()
+	if h.firewall == nil {
+		writeError(w, http.StatusServiceUnavailable, "Firewall service unavailable")
+		return
+	}
 
 	var req SetIPForwardRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
@@ -540,19 +539,7 @@ func (h *FirewallHandler) SetIPForward(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if h.halClient == nil {
-		writeError(w, http.StatusServiceUnavailable, "HAL service unavailable")
-		return
-	}
-
-	var err error
-	if req.Enabled {
-		err = h.halClient.EnableForwarding(ctx)
-	} else {
-		err = h.halClient.DisableForwarding(ctx)
-	}
-
-	if err != nil {
+	if err := h.firewall.SetForwarding(r.Context(), req.Enabled); err != nil {
 		writeError(w, http.StatusInternalServerError, "Failed to set IP forward: "+err.Error())
 		return
 	}
@@ -580,9 +567,13 @@ type AllowPortRequest struct {
 // @Success 200 {object} map[string]interface{} "success, port, protocol"
 // @Failure 400 {object} ErrorResponse "Invalid port or protocol"
 // @Failure 500 {object} ErrorResponse "Failed to allow port"
+// @Failure 503 {object} ErrorResponse "Firewall service unavailable"
 // @Router /firewall/port/allow [post]
 func (h *FirewallHandler) AllowPort(w http.ResponseWriter, r *http.Request) {
-	ctx := r.Context()
+	if h.firewall == nil {
+		writeError(w, http.StatusServiceUnavailable, "Firewall service unavailable")
+		return
+	}
 
 	var req AllowPortRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
@@ -599,15 +590,14 @@ func (h *FirewallHandler) AllowPort(w http.ResponseWriter, r *http.Request) {
 		req.Protocol = "tcp"
 	}
 
-	if h.halClient == nil {
-		writeError(w, http.StatusServiceUnavailable, "HAL service unavailable")
+	if err := managers.ValidateProtocol(req.Protocol); err != nil {
+		writeError(w, http.StatusBadRequest, err.Error())
 		return
 	}
 
-	// Add INPUT ACCEPT rule for the port
-	args := []string{"-p", req.Protocol, "--dport", strconv.Itoa(req.Port), "-j", "ACCEPT"}
-	if err := h.halClient.AddFirewallRule(ctx, "filter", "INPUT", args); err != nil {
-		writeError(w, http.StatusInternalServerError, "Failed to allow port: "+err.Error())
+	result := h.firewall.AllowPort(r.Context(), req.Port, req.Protocol, "")
+	if result.Status == "error" {
+		writeError(w, http.StatusInternalServerError, "Failed to allow port: "+result.Message)
 		return
 	}
 
@@ -630,9 +620,13 @@ func (h *FirewallHandler) AllowPort(w http.ResponseWriter, r *http.Request) {
 // @Success 200 {object} map[string]interface{} "success, port, protocol"
 // @Failure 400 {object} ErrorResponse "Invalid port or protocol"
 // @Failure 500 {object} ErrorResponse "Failed to block port"
+// @Failure 503 {object} ErrorResponse "Firewall service unavailable"
 // @Router /firewall/port/block [post]
 func (h *FirewallHandler) BlockPort(w http.ResponseWriter, r *http.Request) {
-	ctx := r.Context()
+	if h.firewall == nil {
+		writeError(w, http.StatusServiceUnavailable, "Firewall service unavailable")
+		return
+	}
 
 	var req AllowPortRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
@@ -649,15 +643,14 @@ func (h *FirewallHandler) BlockPort(w http.ResponseWriter, r *http.Request) {
 		req.Protocol = "tcp"
 	}
 
-	if h.halClient == nil {
-		writeError(w, http.StatusServiceUnavailable, "HAL service unavailable")
+	if err := managers.ValidateProtocol(req.Protocol); err != nil {
+		writeError(w, http.StatusBadRequest, err.Error())
 		return
 	}
 
-	// Add INPUT DROP rule for the port
-	args := []string{"-p", req.Protocol, "--dport", strconv.Itoa(req.Port), "-j", "DROP"}
-	if err := h.halClient.AddFirewallRule(ctx, "filter", "INPUT", args); err != nil {
-		writeError(w, http.StatusInternalServerError, "Failed to block port: "+err.Error())
+	result := h.firewall.BlockPort(r.Context(), req.Port, req.Protocol)
+	if result.Status == "error" {
+		writeError(w, http.StatusInternalServerError, "Failed to block port: "+result.Message)
 		return
 	}
 
@@ -679,10 +672,13 @@ func (h *FirewallHandler) BlockPort(w http.ResponseWriter, r *http.Request) {
 // @Param protocol query string false "Protocol (tcp, udp)"
 // @Success 200 {object} map[string]interface{} "success, message"
 // @Failure 400 {object} ErrorResponse "Invalid port"
-// @Failure 500 {object} ErrorResponse "Failed to delete port rule"
+// @Failure 503 {object} ErrorResponse "Firewall service unavailable"
 // @Router /firewall/port/{port} [delete]
 func (h *FirewallHandler) DeletePortRule(w http.ResponseWriter, r *http.Request) {
-	ctx := r.Context()
+	if h.firewall == nil {
+		writeError(w, http.StatusServiceUnavailable, "Firewall service unavailable")
+		return
+	}
 
 	portStr := chi.URLParam(r, "port")
 	port, err := strconv.Atoi(portStr)
@@ -701,29 +697,19 @@ func (h *FirewallHandler) DeletePortRule(w http.ResponseWriter, r *http.Request)
 		protocol = "tcp"
 	}
 
-	if h.halClient == nil {
-		writeError(w, http.StatusServiceUnavailable, "HAL service unavailable")
+	if err := managers.ValidateProtocol(protocol); err != nil {
+		writeError(w, http.StatusBadRequest, err.Error())
 		return
 	}
 
-	// Try to delete both ACCEPT and DROP rules for the port
-	argsAccept := []string{"-p", protocol, "--dport", portStr, "-j", "ACCEPT"}
-	argsDrop := []string{"-p", protocol, "--dport", portStr, "-j", "DROP"}
-
-	// Ignore errors - rules may not exist
-	h.halClient.DeleteFirewallRule(ctx, "filter", "INPUT", argsAccept)
-	h.halClient.DeleteFirewallRule(ctx, "filter", "INPUT", argsDrop)
+	// Delete both ACCEPT and DROP rules for the port (best-effort)
+	h.firewall.DeletePortRules(r.Context(), port, protocol)
 
 	writeJSON(w, http.StatusOK, map[string]interface{}{
 		"success": true,
 		"port":    port,
 		"message": "Port rules deleted",
 	})
-}
-
-func mustParseInt(s string) int64 {
-	i, _ := strconv.ParseInt(s, 10, 64)
-	return i
 }
 
 // AllowService godoc
@@ -733,73 +719,60 @@ func mustParseInt(s string) int64 {
 // @Produce json
 // @Security BearerAuth
 // @Param service path string true "Service name (ssh, http, https, dns, etc.)"
-// @Success 200 {object} map[string]interface{} "success, service, ports"
+// @Success 200 {object} map[string]interface{} "success, service, message"
 // @Failure 400 {object} ErrorResponse "Unknown service"
 // @Failure 500 {object} ErrorResponse "Failed to allow service"
+// @Failure 503 {object} ErrorResponse "Firewall service unavailable"
 // @Router /firewall/service/{service}/allow [post]
 func (h *FirewallHandler) AllowService(w http.ResponseWriter, r *http.Request) {
-	ctx := r.Context()
+	if h.firewall == nil {
+		writeError(w, http.StatusServiceUnavailable, "Firewall service unavailable")
+		return
+	}
 
 	service := chi.URLParam(r, "service")
 
-	// Map service names to ports
-	servicePorts := map[string][]struct {
-		Port     int
-		Protocol string
-	}{
-		"ssh":   {{22, "tcp"}},
-		"http":  {{80, "tcp"}},
-		"https": {{443, "tcp"}},
-		"dns":   {{53, "tcp"}, {53, "udp"}},
-		"dhcp":  {{67, "udp"}, {68, "udp"}},
-		"ntp":   {{123, "udp"}},
-		"smtp":  {{25, "tcp"}, {587, "tcp"}},
-		"ftp":   {{21, "tcp"}},
-		"smb":   {{445, "tcp"}, {139, "tcp"}},
-	}
-
-	ports, ok := servicePorts[strings.ToLower(service)]
-	if !ok {
-		writeError(w, http.StatusBadRequest, "Unknown service: "+service)
-		return
-	}
-
-	if h.halClient == nil {
-		writeError(w, http.StatusServiceUnavailable, "HAL service unavailable")
-		return
-	}
-
-	for _, p := range ports {
-		args := []string{"-p", p.Protocol, "--dport", strconv.Itoa(p.Port), "-j", "ACCEPT"}
-		if err := h.halClient.AddFirewallRule(ctx, "filter", "INPUT", args); err != nil {
-			writeError(w, http.StatusInternalServerError, "Failed to allow service: "+err.Error())
+	result := h.firewall.AllowService(r.Context(), service)
+	if result.Status == "error" {
+		// Check if it's an unknown service vs HAL failure
+		if strings.Contains(result.Message, "Unknown service") {
+			writeError(w, http.StatusBadRequest, result.Message)
 			return
 		}
+		writeError(w, http.StatusInternalServerError, "Failed to allow service: "+result.Message)
+		return
 	}
 
 	writeJSON(w, http.StatusOK, map[string]interface{}{
 		"success": true,
 		"service": service,
-		"ports":   ports,
-		"message": "Service allowed through firewall",
+		"message": result.Message,
 	})
 }
 
 // SaveRules godoc
 // @Summary Save firewall rules
-// @Description Saves current firewall rules to persistent storage
+// @Description Saves current firewall rules to persistent storage so they survive reboots
 // @Tags Firewall
 // @Produce json
 // @Security BearerAuth
-// @Success 200 {object} map[string]interface{} "success, message"
+// @Success 200 {object} map[string]interface{} "status, message"
 // @Failure 500 {object} ErrorResponse "Failed to save rules"
+// @Failure 503 {object} ErrorResponse "Firewall service unavailable"
 // @Router /firewall/save [post]
 func (h *FirewallHandler) SaveRules(w http.ResponseWriter, r *http.Request) {
-	// TODO: Implement iptables-save to persistent file
-	writeJSON(w, http.StatusOK, map[string]interface{}{
-		"success": true,
-		"message": "Firewall rules saved",
-	})
+	if h.firewall == nil {
+		writeError(w, http.StatusServiceUnavailable, "Firewall service unavailable")
+		return
+	}
+
+	result := h.firewall.SaveRules(r.Context())
+	if result.Status == "error" {
+		writeError(w, http.StatusInternalServerError, result.Message)
+		return
+	}
+
+	writeJSON(w, http.StatusOK, result)
 }
 
 // RestoreRules godoc
@@ -808,30 +781,46 @@ func (h *FirewallHandler) SaveRules(w http.ResponseWriter, r *http.Request) {
 // @Tags Firewall
 // @Produce json
 // @Security BearerAuth
-// @Success 200 {object} map[string]interface{} "success, message"
+// @Success 200 {object} map[string]interface{} "status, message"
 // @Failure 500 {object} ErrorResponse "Failed to restore rules"
+// @Failure 503 {object} ErrorResponse "Firewall service unavailable"
 // @Router /firewall/restore [post]
 func (h *FirewallHandler) RestoreRules(w http.ResponseWriter, r *http.Request) {
-	// TODO: Implement iptables-restore from persistent file
-	writeJSON(w, http.StatusOK, map[string]interface{}{
-		"success": true,
-		"message": "Firewall rules restored",
-	})
+	if h.firewall == nil {
+		writeError(w, http.StatusServiceUnavailable, "Firewall service unavailable")
+		return
+	}
+
+	result := h.firewall.RestoreRules(r.Context())
+	if result.Status == "error" {
+		writeError(w, http.StatusInternalServerError, result.Message)
+		return
+	}
+
+	writeJSON(w, http.StatusOK, result)
 }
 
 // ResetFirewall godoc
 // @Summary Reset firewall to defaults
-// @Description Resets all firewall rules to default (allow all)
+// @Description Flushes all firewall rules and resets to default allow-all policy
 // @Tags Firewall
 // @Produce json
 // @Security BearerAuth
-// @Success 200 {object} map[string]interface{} "success, message"
+// @Success 200 {object} map[string]interface{} "status, message"
 // @Failure 500 {object} ErrorResponse "Failed to reset firewall"
+// @Failure 503 {object} ErrorResponse "Firewall service unavailable"
 // @Router /firewall/reset [post]
 func (h *FirewallHandler) ResetFirewall(w http.ResponseWriter, r *http.Request) {
-	// TODO: Implement iptables flush/reset
-	writeJSON(w, http.StatusOK, map[string]interface{}{
-		"success": true,
-		"message": "Firewall reset to defaults",
-	})
+	if h.firewall == nil {
+		writeError(w, http.StatusServiceUnavailable, "Firewall service unavailable")
+		return
+	}
+
+	result := h.firewall.ResetFirewall(r.Context())
+	if result.Status == "error" {
+		writeError(w, http.StatusInternalServerError, result.Message)
+		return
+	}
+
+	writeJSON(w, http.StatusOK, result)
 }

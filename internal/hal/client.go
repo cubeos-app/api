@@ -1436,6 +1436,21 @@ func (c *Client) DisableIPForward(ctx context.Context) error {
 	return c.doPost(ctx, "/firewall/forward/disable", nil)
 }
 
+// SaveFirewallRules saves current iptables rules to persistent storage via HAL
+func (c *Client) SaveFirewallRules(ctx context.Context) error {
+	return c.doPost(ctx, "/firewall/save", nil)
+}
+
+// RestoreFirewallRules restores iptables rules from persistent storage via HAL
+func (c *Client) RestoreFirewallRules(ctx context.Context) error {
+	return c.doPost(ctx, "/firewall/restore", nil)
+}
+
+// ResetFirewall flushes all iptables rules and resets to default policy via HAL
+func (c *Client) ResetFirewall(ctx context.Context) error {
+	return c.doPost(ctx, "/firewall/reset", nil)
+}
+
 // =============================================================================
 // VPN Operations
 // =============================================================================
