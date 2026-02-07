@@ -235,6 +235,12 @@ func (h *Handlers) ChangePassword(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// Validate new password length
+	if len(req.NewPassword) < 8 {
+		writeError(w, http.StatusBadRequest, "New password must be at least 8 characters")
+		return
+	}
+
 	var currentHash string
 	err := h.db.Get(&currentHash, "SELECT password_hash FROM users WHERE username = ?", claims.Username)
 	if err != nil {
@@ -247,7 +253,7 @@ func (h *Handlers) ChangePassword(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	newHash, err := bcrypt.GenerateFromPassword([]byte(req.NewPassword), bcrypt.DefaultCost)
+	newHash, err := bcrypt.GenerateFromPassword([]byte(req.NewPassword), config.BcryptCost)
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, "Failed to hash password")
 		return

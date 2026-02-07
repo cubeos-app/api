@@ -138,6 +138,7 @@ import (
 	"log"
 	"net/http"
 	"os"
+	"strings"
 	"time"
 
 	"github.com/go-chi/chi/v5"
@@ -164,6 +165,11 @@ func main() {
 	// Setup logging
 	log.SetFlags(log.LstdFlags | log.Lshortfile)
 	log.Printf("Starting CubeOS API v%s", cfg.Version)
+
+	// Warn if using default JWT secret
+	if cfg.JWTSecret == "cubeos-dev-secret-change-in-production" {
+		log.Printf("WARNING: Using default JWT secret — set JWT_SECRET in secrets.env for production!")
+	}
 
 	// Connect to database
 	// Open database using pure-Go driver
@@ -357,8 +363,26 @@ func main() {
 	r.Use(chimw.RequestID)
 
 	// CORS must come before Timeout so OPTIONS preflight responses aren't delayed
+	// Build allowed origins from config — restrict to known dashboard locations
+	allowedOrigins := []string{
+		fmt.Sprintf("http://%s:%d", cfg.GatewayIP, cfg.DashboardPort),
+		fmt.Sprintf("https://%s:%d", cfg.GatewayIP, cfg.DashboardPort),
+		fmt.Sprintf("http://%s:%d", cfg.Domain, cfg.DashboardPort),
+		fmt.Sprintf("https://%s:%d", cfg.Domain, cfg.DashboardPort),
+		fmt.Sprintf("http://%s", cfg.Domain),
+		fmt.Sprintf("https://%s", cfg.Domain),
+	}
+	// Allow additional origins from env (comma-separated)
+	if extra := os.Getenv("CORS_ALLOWED_ORIGINS"); extra != "" {
+		for _, origin := range strings.Split(extra, ",") {
+			if o := strings.TrimSpace(origin); o != "" {
+				allowedOrigins = append(allowedOrigins, o)
+			}
+		}
+	}
+
 	r.Use(cors.Handler(cors.Options{
-		AllowedOrigins:   []string{"*"},
+		AllowedOrigins:   allowedOrigins,
 		AllowedMethods:   []string{"GET", "POST", "PUT", "DELETE", "OPTIONS", "PATCH"},
 		AllowedHeaders:   []string{"Accept", "Authorization", "Content-Type", "X-CSRF-Token"},
 		ExposedHeaders:   []string{"Link"},
@@ -370,6 +394,10 @@ func main() {
 
 	// Global body size limit: 10MB (prevents OOM from oversized requests)
 	r.Use(middleware.MaxBodySize(10 * 1024 * 1024))
+
+	// Setup-required guard: blocks API requests until first boot setup is complete.
+	// Allows: /health, /api/v1/setup/*, /api/v1/auth/login
+	r.Use(handlers.SetupRequiredMiddleware(setupMgr))
 
 	// Public routes
 	r.Get("/health", h.Health)
@@ -390,6 +418,12 @@ func main() {
 		// Public auth routes
 		r.Post("/auth/login", h.Login)
 
+		// Token refresh — uses lenient JWT middleware (accepts recently-expired tokens)
+		r.Group(func(r chi.Router) {
+			r.Use(middleware.JWTAuthAllowExpired(cfg))
+			r.Post("/auth/refresh", h.RefreshToken)
+		})
+
 		// Protected routes
 		r.Group(func(r chi.Router) {
 			r.Use(middleware.JWTAuth(cfg))
@@ -397,7 +431,6 @@ func main() {
 			// Auth routes
 			r.Route("/auth", func(r chi.Router) {
 				r.Post("/logout", h.Logout)
-				r.Post("/refresh", h.RefreshToken)
 				r.Get("/me", h.GetMe)
 				r.Post("/password", h.ChangePassword)
 			})
@@ -622,7 +655,7 @@ func seedDefaultAdmin(db *sqlx.DB) error {
 		return fmt.Errorf("failed to check admin user: %w", err)
 	}
 	if count == 0 {
-		hash, err := bcrypt.GenerateFromPassword([]byte("cubeos"), bcrypt.DefaultCost)
+		hash, err := bcrypt.GenerateFromPassword([]byte("cubeos"), config.BcryptCost)
 		if err != nil {
 			return fmt.Errorf("failed to hash default password: %w", err)
 		}

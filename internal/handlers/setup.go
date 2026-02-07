@@ -3,6 +3,7 @@ package handlers
 import (
 	"encoding/json"
 	"net/http"
+	"strings"
 
 	"cubeos-api/internal/managers"
 	"cubeos-api/internal/models"
@@ -258,14 +259,17 @@ func (h *SetupHandler) SkipSetup(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
-// SetupRequiredMiddleware blocks requests if setup is not complete
+// SetupRequiredMiddleware blocks requests if setup is not complete.
+// Allows: health check, setup endpoints, and login (so user can authenticate after setup).
 func SetupRequiredMiddleware(setupMgr *managers.SetupManager) func(http.Handler) http.Handler {
 	return func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-			// Allow setup endpoints
-			if r.URL.Path == "/api/v1/setup" ||
-				r.URL.Path == "/api/v1/setup/" ||
-				len(r.URL.Path) > 13 && r.URL.Path[:14] == "/api/v1/setup/" {
+			path := r.URL.Path
+
+			// Always allow setup endpoints, health check, and login
+			if strings.HasPrefix(path, "/api/v1/setup") ||
+				path == "/health" ||
+				path == "/api/v1/auth/login" {
 				next.ServeHTTP(w, r)
 				return
 			}

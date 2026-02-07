@@ -407,7 +407,7 @@ func (m *SetupManager) GetConfig(key string) string {
 // createAdminUser creates the admin user account
 func (m *SetupManager) createAdminUser(username, password, email string) error {
 	// Hash password
-	hash, err := bcrypt.GenerateFromPassword([]byte(password), bcrypt.DefaultCost)
+	hash, err := bcrypt.GenerateFromPassword([]byte(password), config.BcryptCost)
 	if err != nil {
 		return err
 	}

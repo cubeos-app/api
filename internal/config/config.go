@@ -62,6 +62,10 @@ type Config struct {
 	CriticalBatteryPct int
 }
 
+// BcryptCost is the standardized bcrypt cost for all password hashing.
+// Cost 12 provides ~250ms hashing on Pi 5, balancing security and latency.
+const BcryptCost = 12
+
 // CoreServices that cannot be toggled
 var CoreServices = map[string]bool{
 	"nginx-proxy":         true,
