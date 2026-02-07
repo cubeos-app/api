@@ -36,13 +36,13 @@ const (
 
 // NetworkStatus represents the current network status (V2: extended)
 type NetworkStatus struct {
-	Mode       models.NetworkMode        `json:"mode"`
+	Mode       models.NetworkMode `json:"mode"`
 	Internet   bool               `json:"internet"`
 	AP         *AccessPointStatus `json:"ap,omitempty"`
 	Upstream   *UpstreamStatus    `json:"upstream,omitempty"`
 	Subnet     string             `json:"subnet"`
 	GatewayIP  string             `json:"gateway_ip"`
-	VPNMode    models.VPNMode            `json:"vpn_mode"`              // V2
+	VPNMode    models.VPNMode     `json:"vpn_mode"`              // V2
 	VPNActive  bool               `json:"vpn_active"`            // V2
 	VPNConfig  string             `json:"vpn_config,omitempty"`  // V2: Active config name
 	PublicIP   string             `json:"public_ip,omitempty"`   // V2
