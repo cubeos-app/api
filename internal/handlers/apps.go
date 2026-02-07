@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"net/http"
 	"strconv"
+	"strings"
 	"time"
 
 	"github.com/go-chi/chi/v5"
@@ -95,13 +96,18 @@ func (h *AppsHandler) ListApps(w http.ResponseWriter, r *http.Request) {
 // @Param name path string true "App name"
 // @Success 200 {object} models.App "App details"
 // @Failure 404 {object} ErrorResponse "App not found"
+// @Failure 500 {object} ErrorResponse "Database error"
 // @Router /apps/{name} [get]
 func (h *AppsHandler) GetApp(w http.ResponseWriter, r *http.Request) {
 	name := chi.URLParam(r, "name")
 
 	app, err := h.orchestrator.GetApp(r.Context(), name)
 	if err != nil {
-		writeError(w, http.StatusNotFound, err.Error())
+		if strings.Contains(err.Error(), "not found") {
+			writeError(w, http.StatusNotFound, err.Error())
+		} else {
+			writeError(w, http.StatusInternalServerError, err.Error())
+		}
 		return
 	}
 

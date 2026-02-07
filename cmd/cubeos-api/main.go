@@ -334,7 +334,7 @@ func main() {
 	log.Printf("PortsHandler, FQDNsHandler, and RegistryHandler initialized")
 
 	// Create CasaOS Import handler (Sprint 4D)
-	casaosHandler := handlers.NewCasaOSHandler(appStoreMgr, cfg.GatewayIP, cfg.Domain)
+	casaosHandler := handlers.NewCasaOSHandler(appStoreMgr, orchestrator, cfg.GatewayIP, cfg.Domain)
 	log.Printf("CasaOSHandler initialized")
 
 	// Create NPM handler (Sprint 4E)
@@ -577,11 +577,15 @@ func main() {
 			// Unified Apps API (Sprint 3)
 			if appsHandler != nil {
 				r.Mount("/apps", appsHandler.Routes())
+			} else {
+				r.Mount("/apps", unavailableHandler("Orchestrator unavailable — apps API requires a working Orchestrator"))
 			}
 
 			// Profiles API (Sprint 3)
 			if profilesHandler != nil {
 				r.Mount("/profiles", profilesHandler.Routes())
+			} else {
+				r.Mount("/profiles", unavailableHandler("Orchestrator unavailable — profiles API requires a working Orchestrator"))
 			}
 
 			// VPN API (Sprint 3)
@@ -653,6 +657,21 @@ func main() {
 	if err := http.ListenAndServe(addr, r); err != nil {
 		log.Fatalf("Server failed: %v", err)
 	}
+}
+
+// unavailableHandler returns a chi router that responds with 503 for all routes.
+// Used when a subsystem (e.g. Orchestrator) fails to initialize but the API
+// should still advertise the endpoint with a helpful error instead of hiding it.
+func unavailableHandler(message string) chi.Router {
+	r := chi.NewRouter()
+	handler := func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusServiceUnavailable)
+		fmt.Fprintf(w, `{"error":%q,"code":503}`, message)
+	}
+	r.HandleFunc("/*", handler)
+	r.HandleFunc("/", handler)
+	return r
 }
 
 // seedDefaultAdmin creates a default admin user if none exists.

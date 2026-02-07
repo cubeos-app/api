@@ -23,15 +23,17 @@ import (
 // CasaOSHandler handles CasaOS import API requests
 type CasaOSHandler struct {
 	appStoreManager *managers.AppStoreManager
+	orchestrator    *managers.Orchestrator
 	appsPath        string
 	gatewayIP       string
 	baseDomain      string
 }
 
 // NewCasaOSHandler creates a new CasaOS handler
-func NewCasaOSHandler(appStoreManager *managers.AppStoreManager, gatewayIP, baseDomain string) *CasaOSHandler {
+func NewCasaOSHandler(appStoreManager *managers.AppStoreManager, orchestrator *managers.Orchestrator, gatewayIP, baseDomain string) *CasaOSHandler {
 	return &CasaOSHandler{
 		appStoreManager: appStoreManager,
+		orchestrator:    orchestrator,
 		appsPath:        "/cubeos/apps",
 		gatewayIP:       gatewayIP,
 		baseDomain:      baseDomain,
@@ -604,21 +606,37 @@ func (h *CasaOSHandler) ImportApp(w http.ResponseWriter, r *http.Request) {
 
 	// Auto-start if requested
 	if req.AutoStart {
-		// Pull images first
-		pullCmd := exec.Command("docker", "compose", "-f", composePath, "pull")
-		pullCmd.Dir = appConfig
-		if _, err := pullCmd.CombinedOutput(); err != nil {
-			response.Warnings = append(response.Warnings, "image pull may have failed, trying anyway")
-		}
-
-		// Start containers
-		upCmd := exec.Command("docker", "compose", "-f", composePath, "up", "-d")
-		upCmd.Dir = appConfig
-		if output, err := upCmd.CombinedOutput(); err != nil {
-			response.Status = "failed"
-			response.Warnings = append(response.Warnings, fmt.Sprintf("startup failed: %s", string(output)))
+		if h.orchestrator != nil {
+			// Route through Orchestrator pipeline for unified app management
+			installReq := models.InstallAppRequest{
+				Name:        appName,
+				Source:      models.AppSourceCasaOS,
+				ComposePath: composePath,
+			}
+			if _, err := h.orchestrator.InstallApp(r.Context(), installReq); err != nil {
+				response.Status = "imported"
+				response.Warnings = append(response.Warnings, fmt.Sprintf("orchestrator install failed, app imported but not started: %v", err))
+			} else {
+				response.Status = "running"
+			}
 		} else {
-			response.Status = "running"
+			// Fallback: raw docker compose when Orchestrator is unavailable
+			ctx := r.Context()
+
+			pullCmd := exec.CommandContext(ctx, "docker", "compose", "-f", composePath, "pull")
+			pullCmd.Dir = appConfig
+			if _, err := pullCmd.CombinedOutput(); err != nil {
+				response.Warnings = append(response.Warnings, "image pull may have failed, trying anyway")
+			}
+
+			upCmd := exec.CommandContext(ctx, "docker", "compose", "-f", composePath, "up", "-d")
+			upCmd.Dir = appConfig
+			if output, err := upCmd.CombinedOutput(); err != nil {
+				response.Status = "failed"
+				response.Warnings = append(response.Warnings, fmt.Sprintf("startup failed: %s", string(output)))
+			} else {
+				response.Status = "running"
+			}
 		}
 	} else {
 		response.Status = "imported"
