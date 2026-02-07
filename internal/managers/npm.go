@@ -7,6 +7,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"log"
 	"net/http"
 	"os"
 	"path/filepath"
@@ -144,7 +145,7 @@ func NewNPMManager(cfg *config.Config, configDir string) *NPMManager {
 func (m *NPMManager) Init() error {
 	// Step 1: Try existing token
 	if m.tryLoadToken() {
-		fmt.Println("NPM: Using existing API token")
+		log.Printf("NPM: Using existing API token")
 		m.initialized = true
 		return nil
 	}
@@ -152,17 +153,17 @@ func (m *NPMManager) Init() error {
 	// Step 2: Try service account credentials from secrets.env
 	if password := m.loadServiceAccountPassword(); password != "" {
 		if err := m.authenticateServiceAccount(password); err == nil {
-			fmt.Println("NPM: Authenticated with service account")
+			log.Printf("NPM: Authenticated with service account")
 			m.initialized = true
 			return nil
 		}
-		fmt.Printf("NPM: Service account auth failed, will try bootstrap\n")
+		log.Printf("NPM: Service account auth failed, will try bootstrap\n")
 	}
 
 	// Step 3: Bootstrap - create service account using admin credentials
 	if err := m.bootstrapServiceAccount(); err != nil {
-		fmt.Printf("NPM Warning: Bootstrap failed: %v\n", err)
-		fmt.Println("NPM: Will operate in degraded mode (some features unavailable)")
+		log.Printf("NPM Warning: Bootstrap failed: %v\n", err)
+		log.Printf("NPM: Will operate in degraded mode (some features unavailable)")
 		// Don't return error - NPM integration is optional
 		return nil
 	}
@@ -260,7 +261,7 @@ func (m *NPMManager) authenticate(email, password string) error {
 
 	// Save token to file
 	if err := m.saveToken(tokenResp.Token); err != nil {
-		fmt.Printf("NPM Warning: Failed to save token: %v\n", err)
+		log.Printf("NPM Warning: Failed to save token: %v\n", err)
 	}
 
 	return nil
@@ -285,7 +286,7 @@ func (m *NPMManager) bootstrapServiceAccount() error {
 		return fmt.Errorf("bootstrap credentials not configured (set %s and %s)", npmBootstrapEmailKey, npmBootstrapPasswordKey)
 	}
 
-	fmt.Println("NPM: Bootstrapping service account...")
+	log.Printf("NPM: Bootstrapping service account...")
 
 	// Step 1: Authenticate as admin
 	if err := m.authenticate(adminEmail, adminPassword); err != nil {
@@ -300,7 +301,7 @@ func (m *NPMManager) bootstrapServiceAccount() error {
 
 	for _, user := range users {
 		if user.Email == npmServiceEmail {
-			fmt.Println("NPM: Service account already exists")
+			log.Printf("NPM: Service account already exists")
 			// Service account exists but we don't have the password
 			// Generate new password and update it
 			return m.resetServiceAccountPassword()
@@ -328,7 +329,7 @@ func (m *NPMManager) bootstrapServiceAccount() error {
 		return fmt.Errorf("failed to authenticate service account: %w", err)
 	}
 
-	fmt.Println("NPM: Service account bootstrap complete")
+	log.Printf("NPM: Service account bootstrap complete")
 	return nil
 }
 
@@ -517,13 +518,13 @@ func (m *NPMManager) doRequest(method, endpoint string, body interface{}) (*http
 		// Try to re-authenticate
 		if password := m.loadServiceAccountPassword(); password != "" {
 			if err := m.authenticateServiceAccount(password); err == nil {
-				// Retry the request
+				// Retry the request with new token
 				return m.doRequestOnce(method, endpoint, body)
 			}
 		}
 
-		// Re-authentication failed, return original 401
-		return m.doRequestOnce(method, endpoint, body)
+		// Re-authentication failed, return an error
+		return nil, fmt.Errorf("NPM authentication expired and re-authentication failed")
 	}
 
 	return resp, nil

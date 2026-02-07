@@ -313,7 +313,12 @@ func main() {
 
 	// Create Ports, FQDNs, and Registry handlers (Sprint 4)
 	portsHandler := handlers.NewPortsHandler(portMgr)
-	fqdnsHandler := handlers.NewFQDNsHandler(db.DB, nil, nil) // NPM/Pihole managers optional
+
+	// Create PiholeManager for FQDN DNS management
+	piholeMgr := managers.NewPiholeManager(cfg, "/cubeos")
+	log.Printf("PiholeManager initialized")
+
+	fqdnsHandler := handlers.NewFQDNsHandler(db.DB, npmMgr, piholeMgr)
 	registryURL := os.Getenv("REGISTRY_URL")
 	if registryURL == "" {
 		registryURL = "http://" + cfg.GatewayIP + ":5000"
