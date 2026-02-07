@@ -616,6 +616,10 @@ func (h *Handlers) RemoveMount(w http.ResponseWriter, r *http.Request) {
 // @Failure 500 {object} ErrorResponse "Failed to get services"
 // @Router /services [get]
 func (h *Handlers) ListServices(w http.ResponseWriter, r *http.Request) {
+	if h.docker == nil {
+		writeError(w, http.StatusServiceUnavailable, "Docker not available")
+		return
+	}
 	resp, err := h.docker.GetServicesResponse(r.Context())
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, err.Error())
@@ -635,6 +639,10 @@ func (h *Handlers) ListServices(w http.ResponseWriter, r *http.Request) {
 // @Failure 404 {object} ErrorResponse "Service not found"
 // @Router /services/{name} [get]
 func (h *Handlers) GetService(w http.ResponseWriter, r *http.Request) {
+	if h.docker == nil {
+		writeError(w, http.StatusServiceUnavailable, "Docker not available")
+		return
+	}
 	name := chi.URLParam(r, "name")
 	container, err := h.docker.GetContainer(r.Context(), name)
 	if err != nil {
@@ -656,6 +664,10 @@ func (h *Handlers) GetService(w http.ResponseWriter, r *http.Request) {
 // @Failure 500 {object} ErrorResponse "Failed to start service"
 // @Router /services/{name}/start [post]
 func (h *Handlers) StartService(w http.ResponseWriter, r *http.Request) {
+	if h.docker == nil {
+		writeError(w, http.StatusServiceUnavailable, "Docker not available")
+		return
+	}
 	name := chi.URLParam(r, "name")
 	if config.IsCoreService(name) {
 		writeError(w, http.StatusForbidden, "Cannot modify core service")
@@ -685,6 +697,10 @@ func (h *Handlers) StartService(w http.ResponseWriter, r *http.Request) {
 // @Failure 500 {object} ErrorResponse "Failed to stop service"
 // @Router /services/{name}/stop [post]
 func (h *Handlers) StopService(w http.ResponseWriter, r *http.Request) {
+	if h.docker == nil {
+		writeError(w, http.StatusServiceUnavailable, "Docker not available")
+		return
+	}
 	name := chi.URLParam(r, "name")
 	if config.IsCoreService(name) {
 		writeError(w, http.StatusForbidden, "Cannot modify core service")
@@ -713,6 +729,10 @@ func (h *Handlers) StopService(w http.ResponseWriter, r *http.Request) {
 // @Failure 500 {object} ErrorResponse "Failed to restart service"
 // @Router /services/{name}/restart [post]
 func (h *Handlers) RestartService(w http.ResponseWriter, r *http.Request) {
+	if h.docker == nil {
+		writeError(w, http.StatusServiceUnavailable, "Docker not available")
+		return
+	}
 	name := chi.URLParam(r, "name")
 	if err := h.docker.RestartContainer(r.Context(), name, h.cfg.ContainerStopTimeout); err != nil {
 		writeError(w, http.StatusInternalServerError, err.Error())
@@ -738,6 +758,10 @@ func (h *Handlers) RestartService(w http.ResponseWriter, r *http.Request) {
 // @Failure 500 {object} ErrorResponse "Failed to enable service"
 // @Router /services/{name}/enable [post]
 func (h *Handlers) EnableService(w http.ResponseWriter, r *http.Request) {
+	if h.docker == nil {
+		writeError(w, http.StatusServiceUnavailable, "Docker not available")
+		return
+	}
 	name := chi.URLParam(r, "name")
 	if config.IsCoreService(name) {
 		writeError(w, http.StatusForbidden, "Cannot modify core service")
@@ -763,6 +787,10 @@ func (h *Handlers) EnableService(w http.ResponseWriter, r *http.Request) {
 // @Failure 500 {object} ErrorResponse "Failed to disable service"
 // @Router /services/{name}/disable [post]
 func (h *Handlers) DisableService(w http.ResponseWriter, r *http.Request) {
+	if h.docker == nil {
+		writeError(w, http.StatusServiceUnavailable, "Docker not available")
+		return
+	}
 	name := chi.URLParam(r, "name")
 	if config.IsCoreService(name) {
 		writeError(w, http.StatusForbidden, "Cannot modify core service")

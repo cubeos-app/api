@@ -85,7 +85,7 @@ func (m *WizardManager) GetProfiles() []models.WizardProfile {
 	var profiles []models.WizardProfile
 
 	// Get all services for "full" profile
-	allServices := m.docker.ListServices()
+	allServices := m.docker.ListServices(context.Background())
 	var allServiceNames []string
 	var totalRAM int
 
@@ -142,7 +142,7 @@ func (m *WizardManager) GetProfiles() []models.WizardProfile {
 
 // GetWizardServices returns services grouped by category
 func (m *WizardManager) GetWizardServices() models.WizardServicesResponse {
-	services := m.docker.ListServices()
+	services := m.docker.ListServices(context.Background())
 
 	// Group by category
 	byCategory := make(map[string][]models.WizardService)
@@ -209,7 +209,7 @@ func (m *WizardManager) ApplyProfile(profileID string, additionalServices, exclu
 
 	if profileID == "full" {
 		// Enable all non-core services
-		services := m.docker.ListServices()
+		services := m.docker.ListServices(context.Background())
 		for _, svc := range services {
 			if !svc.IsCore {
 				toEnable[svc.Name] = true
@@ -232,7 +232,7 @@ func (m *WizardManager) ApplyProfile(profileID string, additionalServices, exclu
 	}
 
 	// Get all toggleable services
-	services := m.docker.ListServices()
+	services := m.docker.ListServices(context.Background())
 	allToggleable := make(map[string]bool)
 	for _, svc := range services {
 		if !svc.IsCore {
@@ -281,7 +281,7 @@ func (m *WizardManager) ApplyProfile(profileID string, additionalServices, exclu
 
 // GetRecommendations returns service recommendations based on available RAM
 func (m *WizardManager) GetRecommendations(availableRAM int) map[string]interface{} {
-	services := m.docker.ListServices()
+	services := m.docker.ListServices(context.Background())
 
 	// Sort by RAM usage
 	sort.Slice(services, func(i, j int) bool {
@@ -342,7 +342,7 @@ func (m *WizardManager) GetRecommendations(availableRAM int) map[string]interfac
 
 // EstimateResources estimates resource usage for a list of services
 func (m *WizardManager) EstimateResources(serviceNames []string) map[string]interface{} {
-	services := m.docker.ListServices()
+	services := m.docker.ListServices(context.Background())
 
 	var totalRAM int
 	var found []string

@@ -523,25 +523,32 @@ func (s *SwarmManager) RestartService(serviceName string) error {
 }
 
 // WaitForService waits for a service to reach the desired state.
-// It returns an error if the timeout is exceeded.
+// It respects the parent context for cancellation and applies the given timeout.
 func (s *SwarmManager) WaitForService(serviceName string, timeout time.Duration) error {
-	deadline := time.Now().Add(timeout)
+	return s.WaitForServiceWithContext(s.ctx, serviceName, timeout)
+}
 
-	for time.Now().Before(deadline) {
-		status, err := s.GetServiceStatus(serviceName)
-		if err != nil {
-			time.Sleep(2 * time.Second)
-			continue
-		}
+// WaitForServiceWithContext waits for a service using the provided context.
+func (s *SwarmManager) WaitForServiceWithContext(ctx context.Context, serviceName string, timeout time.Duration) error {
+	ctx, cancel := context.WithTimeout(ctx, timeout)
+	defer cancel()
 
-		if status.Running {
+	ticker := time.NewTicker(2 * time.Second)
+	defer ticker.Stop()
+
+	for {
+		status, err := s.GetServiceStatusWithContext(ctx, serviceName)
+		if err == nil && status.Running {
 			return nil
 		}
 
-		time.Sleep(2 * time.Second)
+		select {
+		case <-ctx.Done():
+			return fmt.Errorf("timeout waiting for service %s to be ready: %w", serviceName, ctx.Err())
+		case <-ticker.C:
+			// retry
+		}
 	}
-
-	return fmt.Errorf("timeout waiting for service %s to be ready", serviceName)
 }
 
 // GetSwarmInfo returns information about the Swarm cluster.
@@ -639,10 +646,10 @@ func (s *SwarmManager) determineHealth(svc swarm.Service, running, desired int) 
 		return "starting"
 	}
 	if running == desired {
-		// Check if service has healthcheck
-		if svc.Spec.TaskTemplate.ContainerSpec.Healthcheck != nil {
-			return "healthy" // Swarm wouldn't keep it running if unhealthy
-		}
+		// Even if a healthcheck is configured, Swarm reports tasks as "running"
+		// before health checks pass. We can't distinguish "healthy" from
+		// "health check pending" purely from service spec. Return "running"
+		// and let the caller inspect task-level health if needed.
 		return "running"
 	}
 	return "unknown"

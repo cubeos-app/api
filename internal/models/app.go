@@ -185,6 +185,7 @@ type PortAllocation struct {
 	Port        int       `db:"port" json:"port"`
 	Protocol    string    `db:"protocol" json:"protocol"`
 	Description string    `db:"description" json:"description,omitempty"`
+	IsPrimary   bool      `db:"is_primary" json:"is_primary"`
 	InUse       bool      `db:"-" json:"in_use"` // From runtime check
 	CreatedAt   time.Time `db:"created_at" json:"created_at"`
 }

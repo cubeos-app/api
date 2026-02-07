@@ -85,10 +85,16 @@ func NewPortManager(db *sql.DB) *PortManager {
 }
 
 // AllocateUserPort allocates the next available port in the user range (6100-6999).
+// This acquires the mutex and is safe to call from external code.
 func (p *PortManager) AllocateUserPort() (int, error) {
 	p.mu.Lock()
 	defer p.mu.Unlock()
+	return p.allocateNextUserPort()
+}
 
+// allocateNextUserPort is the internal, lock-free implementation.
+// MUST be called with p.mu already held.
+func (p *PortManager) allocateNextUserPort() (int, error) {
 	// Find the highest allocated port in user range
 	var maxPort sql.NullInt64
 	err := p.db.QueryRow(`
@@ -133,7 +139,9 @@ func (p *PortManager) findGapInUserRange() (int, error) {
 	allocated := make(map[int]bool)
 	for rows.Next() {
 		var port int
-		rows.Scan(&port)
+		if err := rows.Scan(&port); err != nil {
+			return 0, fmt.Errorf("failed to scan port allocation: %w", err)
+		}
 		allocated[port] = true
 	}
 
@@ -156,10 +164,10 @@ func (p *PortManager) AllocatePort(appID int64, port int, protocol, description 
 		protocol = "tcp"
 	}
 
-	// If port is 0, auto-allocate
+	// If port is 0, auto-allocate (use lock-free variant since we already hold mu)
 	if port == 0 {
 		var err error
-		port, err = p.AllocateUserPort()
+		port, err = p.allocateNextUserPort()
 		if err != nil {
 			return err
 		}
@@ -169,7 +177,10 @@ func (p *PortManager) AllocatePort(appID int64, port int, protocol, description 
 	if _, reserved := ReservedSystemPorts[port]; reserved {
 		// Check if this is a system app by looking at the app type
 		var appType string
-		p.db.QueryRow("SELECT type FROM apps WHERE id = ?", appID).Scan(&appType)
+		err := p.db.QueryRow("SELECT type FROM apps WHERE id = ?", appID).Scan(&appType)
+		if err != nil {
+			return fmt.Errorf("failed to look up app type for app_id %d: %w", appID, err)
+		}
 		if appType != "system" && appType != "platform" {
 			return fmt.Errorf("port %d is reserved for system use", port)
 		}
@@ -177,7 +188,9 @@ func (p *PortManager) AllocatePort(appID int64, port int, protocol, description 
 
 	// Check if port is already allocated
 	var count int
-	p.db.QueryRow("SELECT COUNT(*) FROM port_allocations WHERE port = ? AND protocol = ?", port, protocol).Scan(&count)
+	if err := p.db.QueryRow("SELECT COUNT(*) FROM port_allocations WHERE port = ? AND protocol = ?", port, protocol).Scan(&count); err != nil {
+		return fmt.Errorf("failed to check port allocation: %w", err)
+	}
 	if count > 0 {
 		return fmt.Errorf("port %d/%s is already allocated", port, protocol)
 	}
@@ -270,7 +283,9 @@ func (p *PortManager) GetAppPorts(appID int64) ([]int, error) {
 	var ports []int
 	for rows.Next() {
 		var port int
-		rows.Scan(&port)
+		if err := rows.Scan(&port); err != nil {
+			return nil, fmt.Errorf("failed to scan port: %w", err)
+		}
 		ports = append(ports, port)
 	}
 	return ports, nil
@@ -282,7 +297,7 @@ func (p *PortManager) GetAllAllocations() ([]models.PortAllocation, error) {
 	defer p.mu.RUnlock()
 
 	rows, err := p.db.Query(`
-		SELECT pa.id, pa.app_id, a.name, pa.port, pa.protocol, pa.description, pa.created_at
+		SELECT pa.id, pa.app_id, a.name, pa.port, pa.protocol, pa.description, pa.is_primary, pa.created_at
 		FROM port_allocations pa
 		JOIN apps a ON pa.app_id = a.id
 		ORDER BY pa.port
@@ -296,7 +311,7 @@ func (p *PortManager) GetAllAllocations() ([]models.PortAllocation, error) {
 	for rows.Next() {
 		var alloc models.PortAllocation
 		err := rows.Scan(&alloc.ID, &alloc.AppID, &alloc.AppName, &alloc.Port,
-			&alloc.Protocol, &alloc.Description, &alloc.CreatedAt)
+			&alloc.Protocol, &alloc.Description, &alloc.IsPrimary, &alloc.CreatedAt)
 		if err != nil {
 			continue
 		}
@@ -317,17 +332,21 @@ func (p *PortManager) GetPortStats() (*PortStats, error) {
 	}
 
 	// Count allocations by type
-	p.db.QueryRow(`
+	if err := p.db.QueryRow(`
 		SELECT COUNT(*) FROM port_allocations pa
 		JOIN apps a ON pa.app_id = a.id
 		WHERE a.type IN ('system', 'platform')
-	`).Scan(&stats.SystemAllocated)
+	`).Scan(&stats.SystemAllocated); err != nil && err != sql.ErrNoRows {
+		return nil, fmt.Errorf("failed to count system port allocations: %w", err)
+	}
 
-	p.db.QueryRow(`
+	if err := p.db.QueryRow(`
 		SELECT COUNT(*) FROM port_allocations pa
 		JOIN apps a ON pa.app_id = a.id
 		WHERE a.type = 'user'
-	`).Scan(&stats.UserAllocated)
+	`).Scan(&stats.UserAllocated); err != nil && err != sql.ErrNoRows {
+		return nil, fmt.Errorf("failed to count user port allocations: %w", err)
+	}
 
 	stats.TotalAllocated = stats.SystemAllocated + stats.UserAllocated
 	stats.UserPortsAvailable = UserPortCount - stats.UserAllocated

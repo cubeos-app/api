@@ -12,6 +12,7 @@ import (
 	"github.com/docker/docker/api/types/container"
 	"github.com/docker/docker/api/types/filters"
 	"github.com/docker/docker/client"
+	"github.com/docker/docker/pkg/stdcopy"
 
 	"cubeos-api/internal/config"
 	"cubeos-api/internal/models"
@@ -58,6 +59,10 @@ func (m *DockerManager) ListContainers(ctx context.Context) ([]models.ContainerI
 
 	var result []models.ContainerInfo
 	for _, c := range containers {
+		// Guard against containers with no names (shouldn't happen, but be safe)
+		if len(c.Names) == 0 || c.Names[0] == "" {
+			continue
+		}
 		name := strings.TrimPrefix(c.Names[0], "/")
 
 		info := models.ContainerInfo{
@@ -155,7 +160,10 @@ func (m *DockerManager) GetContainer(ctx context.Context, name string) (*models.
 func (m *DockerManager) GetContainerStatus(ctx context.Context, name string) (string, error) {
 	inspect, err := m.client.ContainerInspect(ctx, name)
 	if err != nil {
-		return "not_found", nil
+		if client.IsErrNotFound(err) {
+			return "not_found", nil
+		}
+		return "", fmt.Errorf("failed to inspect container %s: %w", name, err)
 	}
 	return inspect.State.Status, nil
 }
@@ -200,8 +208,13 @@ func (m *DockerManager) EnableService(ctx context.Context, name string) (*models
 
 	// Start the container
 	if err := m.StartContainer(ctx, name); err != nil {
+		// Rollback: revert restart policy to prevent auto-restart of a broken container
+		if rbErr := m.SetRestartPolicy(ctx, name, "no"); rbErr != nil {
+			result.Message = fmt.Sprintf("Failed to start container: %v (rollback also failed: %v)", err, rbErr)
+		} else {
+			result.Message = fmt.Sprintf("Failed to start container: %v (restart policy rolled back)", err)
+		}
 		result.Success = false
-		result.Message = fmt.Sprintf("Failed to start container: %v", err)
 		return result, err
 	}
 
@@ -291,7 +304,15 @@ func (m *DockerManager) GetContainerStats(ctx context.Context, name string) (*mo
 
 	var cpuPercent float64
 	if systemDelta > 0 && cpuDelta > 0 {
-		cpuPercent = (cpuDelta / systemDelta) * float64(len(stats.CPUStats.CPUUsage.PercpuUsage)) * 100.0
+		// Use OnlineCPUs (newer Docker API) with fallback to PercpuUsage length
+		cpuCount := stats.CPUStats.OnlineCPUs
+		if cpuCount == 0 {
+			cpuCount = uint32(len(stats.CPUStats.CPUUsage.PercpuUsage))
+		}
+		if cpuCount == 0 {
+			cpuCount = 1 // Final fallback
+		}
+		cpuPercent = (cpuDelta / systemDelta) * float64(cpuCount) * 100.0
 	}
 
 	return &models.ContainerStats{
@@ -344,29 +365,34 @@ func (m *DockerManager) GetContainerLogs(ctx context.Context, name string, tail 
 	}
 	defer reader.Close()
 
-	// Read logs (skip the 8-byte header for each line)
-	var logs strings.Builder
-	buf := make([]byte, 8192)
-	for {
-		n, err := reader.Read(buf)
-		if n > 0 {
-			// Docker multiplexes stdout/stderr with 8-byte headers
-			// For simplicity, we'll just strip any control characters
-			for i := 0; i < n; i++ {
-				if buf[i] >= 32 || buf[i] == '\n' || buf[i] == '\t' {
-					logs.WriteByte(buf[i])
-				}
-			}
+	// Use stdcopy to properly demultiplex Docker's stream format.
+	// Docker multiplexes stdout/stderr with 8-byte headers per frame.
+	var stdout, stderr strings.Builder
+	if _, err := stdcopy.StdCopy(&stdout, &stderr, reader); err != nil {
+		// Fallback: some containers (e.g. TTY mode) don't use multiplexed format.
+		// Re-read as plain text.
+		reader2, err2 := m.client.ContainerLogs(ctx, name, options)
+		if err2 != nil {
+			return "", err2
 		}
-		if err == io.EOF {
-			break
+		defer reader2.Close()
+		data, err2 := io.ReadAll(reader2)
+		if err2 != nil {
+			return "", err2
 		}
-		if err != nil {
-			return logs.String(), err
-		}
+		return string(data), nil
 	}
 
-	return logs.String(), nil
+	// Combine stdout and stderr
+	result := stdout.String()
+	if stderr.Len() > 0 {
+		if result != "" {
+			result += "\n"
+		}
+		result += stderr.String()
+	}
+
+	return result, nil
 }
 
 // GetAllContainerStatus returns status map for all containers
@@ -378,6 +404,9 @@ func (m *DockerManager) GetAllContainerStatus(ctx context.Context) (map[string]m
 
 	result := make(map[string]map[string]interface{})
 	for _, c := range containers {
+		if len(c.Names) == 0 || c.Names[0] == "" {
+			continue
+		}
 		name := strings.TrimPrefix(c.Names[0], "/")
 		result[name] = map[string]interface{}{
 			"status":  c.State,
@@ -522,8 +551,8 @@ func (m *DockerManager) GetDiskUsage(ctx context.Context) (map[string]interface{
 }
 
 // ListServices returns all services with detailed info for wizard
-func (m *DockerManager) ListServices() []models.ServiceInfo {
-	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+func (m *DockerManager) ListServices(ctx context.Context) []models.ServiceInfo {
+	ctx, cancel := context.WithTimeout(ctx, 30*time.Second)
 	defer cancel()
 
 	containers, err := m.ListContainers(ctx)
