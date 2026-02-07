@@ -10,6 +10,8 @@ import (
 	"strings"
 	"time"
 
+	"github.com/rs/zerolog/log"
+
 	"cubeos-api/internal/config"
 	"cubeos-api/internal/models"
 )
@@ -104,7 +106,8 @@ func (o *Orchestrator) Close() error {
 // App Lifecycle Operations
 // =============================================================================
 
-// InstallApp installs a new application
+// InstallApp installs a new application.
+// Database operations are wrapped in a transaction for atomicity.
 func (o *Orchestrator) InstallApp(ctx context.Context, req models.InstallAppRequest) (*models.App, error) {
 	// Validate app name
 	name := strings.ToLower(strings.TrimSpace(req.Name))
@@ -158,13 +161,23 @@ func (o *Orchestrator) InstallApp(ctx context.Context, req models.InstallAppRequ
 		return nil, fmt.Errorf("failed to create data directory: %w", err)
 	}
 
-	// Insert app into database
+	// Generate display name
 	displayName := req.DisplayName
 	if displayName == "" {
-		displayName = strings.Title(strings.ReplaceAll(name, "-", " "))
+		displayName = toTitleCase(strings.ReplaceAll(name, "-", " "))
 	}
 
-	result, err := o.db.ExecContext(ctx, `
+	// Generate FQDN
+	fqdn := fmt.Sprintf("%s.%s", name, o.cfg.Domain)
+
+	// Begin transaction for all database inserts
+	tx, err := o.db.BeginTx(ctx, nil)
+	if err != nil {
+		return nil, fmt.Errorf("failed to begin transaction: %w", err)
+	}
+	defer tx.Rollback() // no-op after Commit
+
+	result, err := tx.ExecContext(ctx, `
 		INSERT INTO apps (name, display_name, description, type, category, source, 
 			compose_path, data_path, enabled, deploy_mode)
 		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
@@ -174,48 +187,48 @@ func (o *Orchestrator) InstallApp(ctx context.Context, req models.InstallAppRequ
 		return nil, fmt.Errorf("failed to insert app: %w", err)
 	}
 
-	appID, _ := result.LastInsertId()
+	appID, err := result.LastInsertId()
+	if err != nil {
+		return nil, fmt.Errorf("failed to get app ID: %w", err)
+	}
 
 	// Insert port allocation
-	_, err = o.db.ExecContext(ctx, `
+	_, err = tx.ExecContext(ctx, `
 		INSERT INTO port_allocations (app_id, port, protocol, description, is_primary)
 		VALUES (?, ?, 'tcp', 'Web UI', TRUE)
 	`, appID, port)
 	if err != nil {
-		// Rollback app insert
-		o.db.ExecContext(ctx, "DELETE FROM apps WHERE id = ?", appID)
 		return nil, fmt.Errorf("failed to allocate port: %w", err)
 	}
 
-	// Generate FQDN
-	fqdn := fmt.Sprintf("%s.cubeos.cube", name)
-	_, err = o.db.ExecContext(ctx, `
+	// Insert FQDN
+	_, err = tx.ExecContext(ctx, `
 		INSERT INTO fqdns (app_id, fqdn, subdomain, backend_port)
 		VALUES (?, ?, ?, ?)
 	`, appID, fqdn, name, port)
 	if err != nil {
-		// Rollback
-		o.db.ExecContext(ctx, "DELETE FROM port_allocations WHERE app_id = ?", appID)
-		o.db.ExecContext(ctx, "DELETE FROM apps WHERE id = ?", appID)
 		return nil, fmt.Errorf("failed to register FQDN: %w", err)
 	}
 
-	// Deploy the app
+	if err := tx.Commit(); err != nil {
+		return nil, fmt.Errorf("failed to commit app install: %w", err)
+	}
+
+	// Deploy the app (outside transaction — rollback DB on failure)
 	if err := o.deployApp(ctx, name, composePath, deployMode); err != nil {
-		// Rollback database entries
-		o.db.ExecContext(ctx, "DELETE FROM fqdns WHERE app_id = ?", appID)
-		o.db.ExecContext(ctx, "DELETE FROM port_allocations WHERE app_id = ?", appID)
-		o.db.ExecContext(ctx, "DELETE FROM apps WHERE id = ?", appID)
+		// Best-effort rollback: remove the committed DB rows
+		if _, dbErr := o.db.ExecContext(ctx, "DELETE FROM apps WHERE id = ?", appID); dbErr != nil {
+			log.Error().Err(dbErr).Str("app", name).Msg("Failed to rollback app row after deploy failure")
+		}
 		return nil, fmt.Errorf("failed to deploy app: %w", err)
 	}
 
-	// Register DNS entry with Pi-hole
+	// Register DNS entry with Pi-hole (non-fatal)
 	if err := o.pihole.AddEntry(fqdn, models.DefaultGatewayIP); err != nil {
-		// Log warning but don't fail - DNS can be fixed later
-		fmt.Printf("WARNING: Failed to add DNS entry for %s: %v\n", fqdn, err)
+		log.Warn().Err(err).Str("fqdn", fqdn).Msg("Failed to add DNS entry")
 	}
 
-	// Create NPM proxy host
+	// Create NPM proxy host (non-fatal)
 	proxyHost := &NPMProxyHostExtended{
 		DomainNames:           []string{fqdn},
 		ForwardScheme:         "http",
@@ -229,8 +242,7 @@ func (o *Orchestrator) InstallApp(ctx context.Context, req models.InstallAppRequ
 		Meta:                  NPMMeta{},
 	}
 	if _, err := o.npm.CreateProxyHost(proxyHost); err != nil {
-		// Log warning but don't fail
-		fmt.Printf("WARNING: Failed to create NPM proxy for %s: %v\n", fqdn, err)
+		log.Warn().Err(err).Str("fqdn", fqdn).Msg("Failed to create NPM proxy")
 	}
 
 	// Return the created app
@@ -251,13 +263,13 @@ func (o *Orchestrator) UninstallApp(ctx context.Context, name string, keepData b
 
 	// Stop the app first
 	if err := o.StopApp(ctx, name); err != nil {
-		fmt.Printf("WARNING: Failed to stop app %s: %v\n", name, err)
+		log.Warn().Err(err).Str("app", name).Msg("Failed to stop app during uninstall")
 	}
 
 	// Remove from Swarm/Docker
 	if app.UsesSwarm() {
 		if err := o.swarm.RemoveStack(name); err != nil {
-			fmt.Printf("WARNING: Failed to remove stack %s: %v\n", name, err)
+			log.Warn().Err(err).Str("app", name).Msg("Failed to remove stack during uninstall")
 		}
 	} else {
 		// Stop and remove container
@@ -267,14 +279,14 @@ func (o *Orchestrator) UninstallApp(ctx context.Context, name string, keepData b
 	// Remove NPM proxy host
 	if proxyHost, err := o.npm.FindProxyHostByDomain(app.GetPrimaryFQDN()); err == nil && proxyHost != nil {
 		if err := o.npm.DeleteProxyHost(proxyHost.ID); err != nil {
-			fmt.Printf("WARNING: Failed to delete NPM proxy: %v\n", err)
+			log.Warn().Err(err).Str("app", name).Msg("Failed to delete NPM proxy during uninstall")
 		}
 	}
 
 	// Remove DNS entry
 	if fqdn := app.GetPrimaryFQDN(); fqdn != "" {
 		if err := o.pihole.RemoveEntry(fqdn); err != nil {
-			fmt.Printf("WARNING: Failed to remove DNS entry: %v\n", err)
+			log.Warn().Err(err).Str("fqdn", fqdn).Msg("Failed to remove DNS entry during uninstall")
 		}
 	}
 
@@ -287,7 +299,7 @@ func (o *Orchestrator) UninstallApp(ctx context.Context, name string, keepData b
 	// Optionally remove data
 	if !keepData && app.DataPath != "" {
 		if err := os.RemoveAll(app.DataPath); err != nil {
-			fmt.Printf("WARNING: Failed to remove data directory: %v\n", err)
+			log.Warn().Err(err).Str("path", app.DataPath).Msg("Failed to remove data directory during uninstall")
 		}
 	}
 
@@ -342,6 +354,11 @@ func (o *Orchestrator) RestartApp(ctx context.Context, name string) error {
 
 // EnableApp marks an app to start on boot
 func (o *Orchestrator) EnableApp(ctx context.Context, name string) error {
+	// Verify app exists
+	if _, err := o.GetApp(ctx, name); err != nil {
+		return fmt.Errorf("app not found: %w", err)
+	}
+
 	_, err := o.db.ExecContext(ctx, `
 		UPDATE apps SET enabled = TRUE, updated_at = CURRENT_TIMESTAMP 
 		WHERE name = ?
@@ -376,14 +393,15 @@ func (o *Orchestrator) DisableApp(ctx context.Context, name string) error {
 func (o *Orchestrator) GetApp(ctx context.Context, name string) (*models.App, error) {
 	var app models.App
 	err := o.db.QueryRowContext(ctx, `
-		SELECT id, name, display_name, description, type, category, source,
-			compose_path, data_path, enabled, deploy_mode, icon_url, version,
-			created_at, updated_at
+		SELECT id, name, display_name, description, type, category, source, store_id,
+			compose_path, data_path, enabled, tor_enabled, vpn_enabled,
+			deploy_mode, icon_url, version, homepage, created_at, updated_at
 		FROM apps WHERE name = ?
 	`, name).Scan(
 		&app.ID, &app.Name, &app.DisplayName, &app.Description, &app.Type,
-		&app.Category, &app.Source, &app.ComposePath, &app.DataPath,
-		&app.Enabled, &app.DeployMode, &app.IconURL, &app.Version,
+		&app.Category, &app.Source, &app.StoreID, &app.ComposePath, &app.DataPath,
+		&app.Enabled, &app.TorEnabled, &app.VPNEnabled,
+		&app.DeployMode, &app.IconURL, &app.Version, &app.Homepage,
 		&app.CreatedAt, &app.UpdatedAt,
 	)
 	if err == sql.ErrNoRows {
@@ -407,9 +425,9 @@ func (o *Orchestrator) GetApp(ctx context.Context, name string) (*models.App, er
 // ListApps retrieves all apps with optional filtering
 func (o *Orchestrator) ListApps(ctx context.Context, filter *models.AppFilter) ([]*models.App, error) {
 	query := `
-		SELECT id, name, display_name, description, type, category, source,
-			compose_path, data_path, enabled, deploy_mode, icon_url, version,
-			created_at, updated_at
+		SELECT id, name, display_name, description, type, category, source, store_id,
+			compose_path, data_path, enabled, tor_enabled, vpn_enabled,
+			deploy_mode, icon_url, version, homepage, created_at, updated_at
 		FROM apps WHERE 1=1
 	`
 	var args []interface{}
@@ -438,8 +456,9 @@ func (o *Orchestrator) ListApps(ctx context.Context, filter *models.AppFilter) (
 		var app models.App
 		err := rows.Scan(
 			&app.ID, &app.Name, &app.DisplayName, &app.Description, &app.Type,
-			&app.Category, &app.Source, &app.ComposePath, &app.DataPath,
-			&app.Enabled, &app.DeployMode, &app.IconURL, &app.Version,
+			&app.Category, &app.Source, &app.StoreID, &app.ComposePath, &app.DataPath,
+			&app.Enabled, &app.TorEnabled, &app.VPNEnabled,
+			&app.DeployMode, &app.IconURL, &app.Version, &app.Homepage,
 			&app.CreatedAt, &app.UpdatedAt,
 		)
 		if err != nil {
@@ -470,7 +489,7 @@ func (o *Orchestrator) ReconcileState(ctx context.Context) error {
 	var errors []string
 	for _, app := range apps {
 		if app.Status == nil || !app.Status.Running {
-			fmt.Printf("Reconciling: starting %s\n", app.Name)
+			log.Info().Str("app", app.Name).Msg("Reconciling: starting app")
 			if err := o.StartApp(ctx, app.Name); err != nil {
 				errors = append(errors, fmt.Sprintf("%s: %v", app.Name, err))
 			}
@@ -507,7 +526,9 @@ func (o *Orchestrator) SeedSystemApps(ctx context.Context) error {
 	for _, sa := range systemApps {
 		// Check if already exists
 		var count int
-		o.db.QueryRowContext(ctx, "SELECT COUNT(*) FROM apps WHERE name = ?", sa.name).Scan(&count)
+		if err := o.db.QueryRowContext(ctx, "SELECT COUNT(*) FROM apps WHERE name = ?", sa.name).Scan(&count); err != nil {
+			return fmt.Errorf("failed to check existence of %s: %w", sa.name, err)
+		}
 		if count > 0 {
 			continue
 		}
@@ -523,20 +544,27 @@ func (o *Orchestrator) SeedSystemApps(ctx context.Context) error {
 			return fmt.Errorf("failed to seed %s: %w", sa.name, err)
 		}
 
-		appID, _ := result.LastInsertId()
+		appID, err := result.LastInsertId()
+		if err != nil {
+			return fmt.Errorf("failed to get ID for %s: %w", sa.name, err)
+		}
 
 		// Add port allocation
-		o.db.ExecContext(ctx, `
+		if _, err := o.db.ExecContext(ctx, `
 			INSERT INTO port_allocations (app_id, port, protocol, description, is_primary)
 			VALUES (?, ?, 'tcp', 'Web UI', TRUE)
-		`, appID, sa.port)
+		`, appID, sa.port); err != nil {
+			return fmt.Errorf("failed to allocate port for %s: %w", sa.name, err)
+		}
 
 		// Add FQDN
-		fqdn := fmt.Sprintf("%s.cubeos.cube", sa.name)
-		o.db.ExecContext(ctx, `
+		fqdn := fmt.Sprintf("%s.%s", sa.name, o.cfg.Domain)
+		if _, err := o.db.ExecContext(ctx, `
 			INSERT INTO fqdns (app_id, fqdn, subdomain, backend_port)
 			VALUES (?, ?, ?, ?)
-		`, appID, fqdn, sa.name, sa.port)
+		`, appID, fqdn, sa.name, sa.port); err != nil {
+			return fmt.Errorf("failed to register FQDN for %s: %w", sa.name, err)
+		}
 	}
 
 	return nil
@@ -551,8 +579,10 @@ func (o *Orchestrator) deployApp(ctx context.Context, name, composePath string, 
 		return o.swarm.DeployStack(name, composePath)
 	}
 
-	// Compose mode - use docker compose
-	// The actual compose up is handled by the container management
+	// Compose mode: no-op here. Host-network services (pihole, npm) are managed
+	// externally via systemd or docker-compose directly on the host. The orchestrator
+	// only tracks their state in the database; actual lifecycle is handled outside Swarm.
+	log.Debug().Str("app", name).Msg("Compose mode deploy is a no-op — managed externally")
 	return nil
 }
 
@@ -603,7 +633,7 @@ func (o *Orchestrator) getAppStatus(ctx context.Context, app *models.App) *model
 }
 
 func (o *Orchestrator) loadAppRelations(ctx context.Context, app *models.App) error {
-	// Load ports
+	// Load ports — close rows explicitly before second query to free SQLite connection
 	rows, err := o.db.QueryContext(ctx, `
 		SELECT id, app_id, port, protocol, description, is_primary
 		FROM port_allocations WHERE app_id = ?
@@ -611,18 +641,23 @@ func (o *Orchestrator) loadAppRelations(ctx context.Context, app *models.App) er
 	if err != nil {
 		return err
 	}
-	defer rows.Close()
 
 	for rows.Next() {
 		var port models.Port
 		if err := rows.Scan(&port.ID, &port.AppID, &port.Port, &port.Protocol,
 			&port.Description, &port.IsPrimary); err != nil {
+			rows.Close()
 			return err
 		}
 		app.Ports = append(app.Ports, port)
 	}
+	rows.Close()
 
-	// Load FQDNs
+	if err := rows.Err(); err != nil {
+		return err
+	}
+
+	// Load FQDNs — connection is now free
 	fqdnRows, err := o.db.QueryContext(ctx, `
 		SELECT id, app_id, fqdn, subdomain, backend_port, ssl_enabled
 		FROM fqdns WHERE app_id = ?
@@ -641,7 +676,7 @@ func (o *Orchestrator) loadAppRelations(ctx context.Context, app *models.App) er
 		app.FQDNs = append(app.FQDNs, fqdn)
 	}
 
-	return nil
+	return fqdnRows.Err()
 }
 
 // isValidAppName checks if an app name is valid (lowercase alphanumeric with hyphens)
@@ -662,6 +697,18 @@ func isValidAppName(name string) bool {
 		return false
 	}
 	return true
+}
+
+// toTitleCase capitalizes the first letter of each word.
+// Replaces deprecated strings.Title without requiring golang.org/x/text.
+func toTitleCase(s string) string {
+	words := strings.Fields(s)
+	for i, w := range words {
+		if len(w) > 0 {
+			words[i] = strings.ToUpper(w[:1]) + w[1:]
+		}
+	}
+	return strings.Join(words, " ")
 }
 
 func boolPtr(b bool) *bool {
@@ -869,12 +916,6 @@ func (o *Orchestrator) ApplyProfile(ctx context.Context, name string) (*models.A
 		return nil, fmt.Errorf("profile not found: %s", name)
 	}
 
-	// Get currently active profile to determine what to stop
-	_, currentActive, err := o.ListProfiles(ctx)
-	if err != nil {
-		return nil, err
-	}
-
 	var started, stopped []string
 
 	// Get apps to enable from this profile
@@ -898,7 +939,7 @@ func (o *Orchestrator) ApplyProfile(ctx context.Context, name string) (*models.A
 
 		if !shouldBeEnabled && !app.IsProtected() && app.Status != nil && app.Status.Running {
 			if err := o.StopApp(ctx, app.Name); err != nil {
-				fmt.Printf("Warning: failed to stop app %s: %v\n", app.Name, err)
+				log.Warn().Err(err).Str("app", app.Name).Msg("Failed to stop app during profile apply")
 			} else {
 				stopped = append(stopped, app.Name)
 			}
@@ -913,27 +954,22 @@ func (o *Orchestrator) ApplyProfile(ctx context.Context, name string) (*models.A
 		}
 		if app.Status == nil || !app.Status.Running {
 			if err := o.StartApp(ctx, appName); err != nil {
-				fmt.Printf("Warning: failed to start app %s: %v\n", appName, err)
+				log.Warn().Err(err).Str("app", appName).Msg("Failed to start app during profile apply")
 			} else {
 				started = append(started, appName)
 			}
 		}
 	}
 
-	// Update active profile in database
-	_, err = o.db.ExecContext(ctx, `UPDATE profiles SET is_active = FALSE`)
-	if err != nil {
-		return nil, err
-	}
+	// Update active profile in database (single statement with CASE)
 	_, err = o.db.ExecContext(ctx, `
-		UPDATE profiles SET is_active = TRUE, updated_at = CURRENT_TIMESTAMP 
-		WHERE name = ?
-	`, name)
+		UPDATE profiles SET 
+			is_active = (name = ?),
+			updated_at = CASE WHEN name = ? THEN CURRENT_TIMESTAMP ELSE updated_at END
+	`, name, name)
 	if err != nil {
 		return nil, err
 	}
-
-	_ = currentActive // suppress unused warning
 
 	return &models.ApplyProfileResponse{
 		Profile: name,
