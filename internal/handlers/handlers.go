@@ -4,6 +4,7 @@ import (
 	"database/sql"
 	"encoding/json"
 	"fmt"
+	"log"
 	"net/http"
 	"strconv"
 	"time"
@@ -30,13 +31,15 @@ type Handlers struct {
 	startTime time.Time
 }
 
-// NewHandlers creates a new Handlers instance
-func NewHandlers(cfg *config.Config, db *sqlx.DB, docker *managers.DockerManager, halClient *hal.Client) *Handlers {
+// NewHandlers creates a new Handlers instance.
+// systemMgr and networkMgr are passed in to avoid creating duplicate instances
+// (they are shared with WSManager, MonitoringManager, etc.).
+func NewHandlers(cfg *config.Config, db *sqlx.DB, docker *managers.DockerManager, halClient *hal.Client, systemMgr *managers.SystemManager, networkMgr *managers.NetworkManager) *Handlers {
 	return &Handlers{
 		cfg:       cfg,
 		db:        db,
-		system:    managers.NewSystemManager(),
-		network:   managers.NewNetworkManager(cfg, halClient, db),
+		system:    systemMgr,
+		network:   networkMgr,
 		docker:    docker,
 		hal:       halClient,
 		startTime: time.Now(),
@@ -47,7 +50,9 @@ func NewHandlers(cfg *config.Config, db *sqlx.DB, docker *managers.DockerManager
 func writeJSON(w http.ResponseWriter, status int, data interface{}) {
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(status)
-	json.NewEncoder(w).Encode(data)
+	if err := json.NewEncoder(w).Encode(data); err != nil {
+		log.Printf("ERROR: failed to encode JSON response: %v", err)
+	}
 }
 
 func writeError(w http.ResponseWriter, status int, message string) {

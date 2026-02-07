@@ -175,11 +175,17 @@ func main() {
 	defer db.Close()
 
 	// Initialize database schema + run migrations (single source of truth: database/schema.go)
+	// Schema init is critical — without tables, the API cannot function.
+	// Migration failures are non-critical — existing schema can still serve traffic.
 	log.Printf("Initializing database schema and running migrations...")
-	if err := database.MigrateAndSeed(db.DB); err != nil {
-		log.Fatalf("Failed to initialize database: %v", err)
+	if err := database.InitSchema(db.DB); err != nil {
+		log.Fatalf("FATAL: Failed to initialize database schema: %v", err)
 	}
-	log.Printf("Database schema and migrations completed successfully")
+	if err := database.Migrate(db.DB); err != nil {
+		log.Printf("WARNING: Database migration failed (existing schema still usable): %v", err)
+	} else {
+		log.Printf("Database schema and migrations completed successfully")
+	}
 
 	// Seed default admin user (after schema is created)
 	if err := seedDefaultAdmin(db); err != nil {
@@ -203,7 +209,7 @@ func main() {
 		halURL = "http://10.42.24.1:6005"
 	}
 	halClient := hal.NewClient(halURL)
-	log.Printf("HAL client initialized (endpoint: http://10.42.24.1:6005)")
+	log.Printf("HAL client initialized (endpoint: %s)", halURL)
 
 	// Create core managers (with HAL client for hardware access)
 	systemMgr := managers.NewSystemManager()
@@ -267,7 +273,7 @@ func main() {
 	setupMgr := managers.NewSetupManager(cfg, db.DB)
 
 	// Create handlers
-	h := handlers.NewHandlers(cfg, db, docker, halClient)
+	h := handlers.NewHandlers(cfg, db, docker, halClient, systemMgr, networkMgr)
 	ext := handlers.NewExtendedHandlers(logMgr, firewallMgr, backupMgr, processMgr, wizardMgr, monitoringMgr, prefMgr, powerMgr, storageMgr, halClient)
 	appStoreHandler := handlers.NewAppStoreHandler(appStoreMgr, npmMgr)
 	setupHandler := handlers.NewSetupHandler(setupMgr)
@@ -302,7 +308,15 @@ func main() {
 	// Create Ports, FQDNs, and Registry handlers (Sprint 4)
 	portsHandler := handlers.NewPortsHandler(portMgr)
 	fqdnsHandler := handlers.NewFQDNsHandler(db.DB, nil, nil) // NPM/Pihole managers optional
-	registryHandler := handlers.NewRegistryHandler("http://10.42.24.1:5000", "/cubeos/data/registry")
+	registryURL := os.Getenv("REGISTRY_URL")
+	if registryURL == "" {
+		registryURL = "http://" + cfg.GatewayIP + ":5000"
+	}
+	registryPath := os.Getenv("REGISTRY_PATH")
+	if registryPath == "" {
+		registryPath = "/cubeos/data/registry"
+	}
+	registryHandler := handlers.NewRegistryHandler(registryURL, registryPath)
 	log.Printf("PortsHandler, FQDNsHandler, and RegistryHandler initialized")
 
 	// Create CasaOS Import handler (Sprint 4D)
@@ -341,9 +355,8 @@ func main() {
 	r.Use(chimw.Recoverer)
 	r.Use(chimw.RealIP)
 	r.Use(chimw.RequestID)
-	r.Use(chimw.Timeout(60 * time.Second))
 
-	// CORS configuration
+	// CORS must come before Timeout so OPTIONS preflight responses aren't delayed
 	r.Use(cors.Handler(cors.Options{
 		AllowedOrigins:   []string{"*"},
 		AllowedMethods:   []string{"GET", "POST", "PUT", "DELETE", "OPTIONS", "PATCH"},
@@ -353,12 +366,13 @@ func main() {
 		MaxAge:           300,
 	}))
 
+	r.Use(chimw.Timeout(60 * time.Second))
+
 	// Public routes
 	r.Get("/health", h.Health)
 
-	// WebSocket routes (public, auth via query param)
-	r.Get("/ws/stats", wsHandlers.StatsWebSocket)
-	r.Get("/ws/monitoring", wsHandlers.MonitoringWebSocket)
+	// NOTE: WebSocket endpoints moved inside /api/v1/ws (auth-protected).
+	// The /monitoring/websocket endpoint also provides authenticated WS access.
 
 	// Swagger documentation
 	r.Get("/api/v1/docs/*", httpSwagger.Handler(
@@ -583,22 +597,8 @@ func main() {
 		r.Mount("/setup", setupHandler.Routes())
 	})
 
-	// Legacy API routes (without /v1 prefix for backward compatibility)
-	r.Route("/api", func(r chi.Router) {
-		r.Use(middleware.JWTAuth(cfg))
-
-		// Preferences (matches Python API path)
-		r.Get("/preferences", ext.GetPreferences)
-		r.Post("/preferences", ext.SetPreferences)
-
-		// Wizard (matches Python API path)
-		r.Route("/wizard", func(r chi.Router) {
-			r.Get("/profiles", ext.GetProfiles)
-			r.Get("/services", ext.GetWizardServices)
-			r.Get("/recommendations", ext.GetRecommendations)
-			r.Post("/apply-profile", ext.ApplyProfile)
-		})
-	})
+	// Legacy /api routes removed — all endpoints are under /api/v1.
+	// Dashboard and clients should use /api/v1/{resource} exclusively.
 
 	// Start server
 	addr := fmt.Sprintf("%s:%d", cfg.Host, cfg.Port)
