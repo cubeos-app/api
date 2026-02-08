@@ -115,13 +115,24 @@ package:
     - if: $CI_COMMIT_BRANCH == "main"
 
 # -----------------------------------------------------------------------------
-# DEPLOY - Bulletproof deployment for host-mode Swarm services
+# DEPLOY - Host-mode Swarm service deployment
 # -----------------------------------------------------------------------------
-# Host-mode ports require special handling: the old container MUST release
-# the port before the new one can bind. Standard rolling updates fail because
-# Swarm tries to start the new container before the old one stops.
+# Host-mode ports require the old container to fully release the port before
+# the new one can bind. Standard rolling updates fail because Swarm tries to
+# start the new container before the old one stops.
 #
-# Strategy: Scale down → wait for port → update image → scale up
+# Strategy:
+#   1. Pre-flight: verify Docker networking (iptables chains) is healthy
+#   2. Scale down to 0 (releases host port)
+#   3. Wait for port to be free
+#   4. Scale back to 1 (Swarm starts new task with current image)
+#
+# Key fixes over previous version:
+#   - No --force flag (avoids task churn on 0-replica services)
+#   - Image update happens via `docker service update --image` BEFORE scale-up,
+#     not during a force-restart cycle
+#   - Pre-flight iptables check catches corruption before deploy attempt
+#   - Limited retry count on service update to prevent crash-loop chain corruption
 # -----------------------------------------------------------------------------
 deploy:
   stage: deploy
@@ -135,25 +146,45 @@ deploy:
     - echo "$GHCR_TOKEN" | docker login ghcr.io -u "$GHCR_USER" --password-stdin
   script:
     - echo "🚀 Deploying CubeOS API (commit ${CI_COMMIT_SHORT_SHA})..."
-    
+
+    # =========================================================================
+    # Pre-flight: verify Docker iptables chains are healthy
+    # =========================================================================
+    - |
+      echo "🔍 Pre-flight: checking Docker networking health..."
+      if ! iptables -t nat -L DOCKER -n > /dev/null 2>&1; then
+        echo "⚠️  DOCKER nat chain missing — restarting Docker to recreate..."
+        systemctl restart docker
+        sleep 15
+        if ! iptables -t nat -L DOCKER -n > /dev/null 2>&1; then
+          echo "❌ DOCKER nat chain still missing after restart. Manual intervention required."
+          exit 1
+        fi
+        echo "✅ Docker networking restored"
+      else
+        echo "✅ Docker networking healthy"
+      fi
+
     # Pull the new image first
     - docker pull ${GHCR_IMAGE}:${CI_COMMIT_SHORT_SHA}
     - docker tag ${GHCR_IMAGE}:${CI_COMMIT_SHORT_SHA} ${GHCR_IMAGE}:latest
-    
+
     # Check current state
     - |
       echo "📊 Current state:"
       docker service ls | grep ${STACK_NAME} || echo "  No existing services found"
-      
-    # Determine deployment strategy
+
+    # =========================================================================
+    # Deploy strategy
+    # =========================================================================
     - |
       if docker service inspect ${SERVICE_NAME} > /dev/null 2>&1; then
-        echo "📦 Service exists - performing zero-downtime update..."
-        
+        echo "📦 Service exists — performing zero-downtime update..."
+
         # Step 1: Scale down to release the host port
         echo "  ⏬ Scaling down service..."
-        docker service scale ${SERVICE_NAME}=0 --detach=false || true
-        
+        docker service scale ${SERVICE_NAME}=0 --detach=false 2>/dev/null || true
+
         # Step 2: Wait for port to be released (max 30 seconds)
         echo "  ⏳ Waiting for port ${HOST_PORT} to be released..."
         for i in $(seq 1 15); do
@@ -163,38 +194,38 @@ deploy:
           fi
           if [ $i -eq 15 ]; then
             echo "  ⚠️  Port still in use, forcing cleanup..."
-            # Kill any lingering containers using the port
             docker ps -q --filter "publish=${HOST_PORT}" | xargs -r docker kill || true
             sleep 2
           fi
           sleep 2
         done
-        
-        # Step 3: Update the service image
-        echo "  🔄 Updating service image..."
+
+        # Step 3: Update the image while still at 0 replicas (no container churn)
+        echo "  🔄 Updating service image (at 0 replicas — no container start yet)..."
         docker service update \
           --image ${GHCR_IMAGE}:${CI_COMMIT_SHORT_SHA} \
-          --force \
           --detach=false \
-          ${SERVICE_NAME} || {
-            echo "  ⚠️  Service update failed, will redeploy stack"
-            docker stack rm ${STACK_NAME} || true
-            sleep 5
-          }
-        
-        # Step 4: Scale back up
+          --update-failure-action pause \
+          ${SERVICE_NAME} 2>/dev/null || true
+
+        # Step 4: Scale back up to 1 (starts single container with new image)
         echo "  ⏫ Scaling up service..."
-        docker service scale ${SERVICE_NAME}=1 --detach=false || true
-        
+        docker service scale ${SERVICE_NAME}=1 --detach=false || {
+          echo "  ⚠️  Scale-up failed, checking state..."
+          docker service ps ${SERVICE_NAME} --no-trunc 2>/dev/null | head -5
+        }
+
       else
-        echo "📦 Service doesn't exist - deploying fresh stack..."
+        echo "📦 Service doesn't exist — deploying fresh stack..."
       fi
-      
-    # Ensure stack is deployed (handles fresh deploy or recovery)
+
+    # =========================================================================
+    # Ensure stack exists (handles fresh deploy or recovery from rm)
+    # =========================================================================
     - |
       if ! docker service inspect ${SERVICE_NAME} > /dev/null 2>&1; then
         echo "🆕 Deploying stack from compose file..."
-        
+
         # Make sure port is free before deploying
         for i in $(seq 1 10); do
           if ! ss -tlnp | grep -q ":${HOST_PORT} "; then
@@ -203,29 +234,34 @@ deploy:
           echo "  Waiting for port ${HOST_PORT}... ($i/10)"
           sleep 2
         done
-        
+
         # Deploy the stack
         docker stack deploy \
           --compose-file ${COMPOSE_PATH} \
           --resolve-image never \
           ${STACK_NAME}
-        
-        sleep 5
-        
-        # Force update to ensure correct image
+
+        # Wait for service to be registered
+        sleep 10
+
+        # Update image (stack deploy uses whatever's in compose, override to exact commit)
+        echo "  🔄 Setting exact commit image..."
         docker service update \
           --image ${GHCR_IMAGE}:${CI_COMMIT_SHORT_SHA} \
           --detach=false \
+          --update-failure-action pause \
           ${SERVICE_NAME} || true
       fi
-      
-    # Health check with detailed feedback
+
+    # =========================================================================
+    # Health check
+    # =========================================================================
     - |
       echo ""
       echo "⏳ Waiting for API to be healthy..."
       HEALTH_URL="http://127.0.0.1:${HOST_PORT}/health"
-      
-      for i in $(seq 1 45); do
+
+      for i in $(seq 1 30); do
         RESPONSE=$(curl -sf ${HEALTH_URL} 2>/dev/null) && {
           echo ""
           echo "✅ Health check passed!"
@@ -240,35 +276,46 @@ deploy:
           echo "📚 Swagger UI: http://cubeos.cube:${HOST_PORT}/api/v1/docs/index.html"
           exit 0
         }
-        
+
         # Show progress every 5 attempts
         if [ $((i % 5)) -eq 0 ]; then
-          echo "  Attempt $i/45 - checking service status..."
+          echo "  Attempt $i/30 — checking service status..."
           docker service ps ${SERVICE_NAME} --no-trunc 2>/dev/null | head -3 || true
         else
-          echo "  Attempt $i/45..."
+          echo "  Attempt $i/30..."
         fi
         sleep 3
       done
-      
-      # Health check failed - gather diagnostics
+
+      # =====================================================================
+      # Health check failed — diagnostics and safe cleanup
+      # =====================================================================
       echo ""
-      echo "❌ Health check failed after 45 attempts"
+      echo "❌ Health check failed after 30 attempts"
       echo ""
       echo "=== Diagnostics ==="
       echo "Service status:"
       docker service ls | grep ${STACK_NAME} || echo "  Stack not found"
       echo ""
       echo "Service tasks:"
-      docker service ps ${SERVICE_NAME} --no-trunc 2>/dev/null || echo "  Service not found"
+      docker service ps ${SERVICE_NAME} --no-trunc 2>/dev/null | head -5 || echo "  Service not found"
       echo ""
       echo "Recent logs:"
       docker service logs ${SERVICE_NAME} --tail 30 2>/dev/null || echo "  No logs available"
       echo ""
       echo "Port status:"
       ss -tlnp | grep ${HOST_PORT} || echo "  Port ${HOST_PORT} not listening"
+      echo ""
+      echo "iptables DOCKER chain:"
+      iptables -t nat -L DOCKER -n 2>&1 | head -5
+      echo ""
+
+      # Scale to 0 to stop crash loop and preserve iptables chains
+      echo "🛑 Scaling service to 0 to prevent crash-loop chain corruption..."
+      docker service scale ${SERVICE_NAME}=0 --detach=false 2>/dev/null || true
+
       exit 1
-      
+
   environment:
     name: production
     url: http://nllei01mule01:6010
