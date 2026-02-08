@@ -50,11 +50,11 @@ func (h *VPNHandler) Routes() chi.Router {
 func (h *VPNHandler) GetStatus(w http.ResponseWriter, r *http.Request) {
 	status, err := h.vpn.GetStatus(r.Context())
 	if err != nil {
-		vpnRespondError(w, http.StatusInternalServerError, "VPN_STATUS_ERROR", err.Error())
+		writeError(w, http.StatusInternalServerError, err.Error())
 		return
 	}
 
-	vpnRespondJSON(w, http.StatusOK, status)
+	writeJSON(w, http.StatusOK, status)
 }
 
 // ListConfigs godoc
@@ -69,11 +69,11 @@ func (h *VPNHandler) GetStatus(w http.ResponseWriter, r *http.Request) {
 func (h *VPNHandler) ListConfigs(w http.ResponseWriter, r *http.Request) {
 	configs, err := h.vpn.ListConfigs(r.Context())
 	if err != nil {
-		vpnRespondError(w, http.StatusInternalServerError, "VPN_LIST_ERROR", err.Error())
+		writeError(w, http.StatusInternalServerError, err.Error())
 		return
 	}
 
-	vpnRespondJSON(w, http.StatusOK, map[string]interface{}{
+	writeJSON(w, http.StatusOK, map[string]interface{}{
 		"configs": configs,
 	})
 }
@@ -92,17 +92,17 @@ func (h *VPNHandler) ListConfigs(w http.ResponseWriter, r *http.Request) {
 func (h *VPNHandler) GetConfig(w http.ResponseWriter, r *http.Request) {
 	name := chi.URLParam(r, "name")
 	if name == "" {
-		vpnRespondError(w, http.StatusBadRequest, "INVALID_NAME", "Configuration name is required")
+		writeError(w, http.StatusBadRequest, "Configuration name is required")
 		return
 	}
 
 	cfg, err := h.vpn.GetConfig(r.Context(), name)
 	if err != nil {
-		vpnRespondError(w, http.StatusNotFound, "VPN_NOT_FOUND", err.Error())
+		writeError(w, http.StatusNotFound, err.Error())
 		return
 	}
 
-	vpnRespondJSON(w, http.StatusOK, cfg)
+	writeJSON(w, http.StatusOK, cfg)
 }
 
 // AddConfig godoc
@@ -125,30 +125,30 @@ func (h *VPNHandler) AddConfig(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		vpnRespondError(w, http.StatusBadRequest, "INVALID_JSON", "Invalid request body")
+		writeError(w, http.StatusBadRequest, "Invalid request body")
 		return
 	}
 
 	if req.Name == "" {
-		vpnRespondError(w, http.StatusBadRequest, "MISSING_NAME", "Configuration name is required")
+		writeError(w, http.StatusBadRequest, "Configuration name is required")
 		return
 	}
 	if req.Type != managers.VPNTypeWireGuard && req.Type != managers.VPNTypeOpenVPN {
-		vpnRespondError(w, http.StatusBadRequest, "INVALID_TYPE", "VPN type must be 'wireguard' or 'openvpn'")
+		writeError(w, http.StatusBadRequest, "VPN type must be 'wireguard' or 'openvpn'")
 		return
 	}
 	if req.Config == "" {
-		vpnRespondError(w, http.StatusBadRequest, "MISSING_CONFIG", "Configuration data is required")
+		writeError(w, http.StatusBadRequest, "Configuration data is required")
 		return
 	}
 
 	cfg, err := h.vpn.AddConfig(r.Context(), req.Name, req.Type, req.Config)
 	if err != nil {
-		vpnRespondError(w, http.StatusInternalServerError, "VPN_ADD_ERROR", err.Error())
+		writeError(w, http.StatusInternalServerError, err.Error())
 		return
 	}
 
-	vpnRespondJSON(w, http.StatusCreated, cfg)
+	writeJSON(w, http.StatusCreated, cfg)
 }
 
 // DeleteConfig godoc
@@ -165,16 +165,16 @@ func (h *VPNHandler) AddConfig(w http.ResponseWriter, r *http.Request) {
 func (h *VPNHandler) DeleteConfig(w http.ResponseWriter, r *http.Request) {
 	name := chi.URLParam(r, "name")
 	if name == "" {
-		vpnRespondError(w, http.StatusBadRequest, "INVALID_NAME", "Configuration name is required")
+		writeError(w, http.StatusBadRequest, "Configuration name is required")
 		return
 	}
 
 	if err := h.vpn.DeleteConfig(r.Context(), name); err != nil {
-		vpnRespondError(w, http.StatusInternalServerError, "VPN_DELETE_ERROR", err.Error())
+		writeError(w, http.StatusInternalServerError, err.Error())
 		return
 	}
 
-	vpnRespondJSON(w, http.StatusOK, map[string]string{
+	writeJSON(w, http.StatusOK, map[string]string{
 		"status": "deleted",
 		"name":   name,
 	})
@@ -195,24 +195,24 @@ func (h *VPNHandler) DeleteConfig(w http.ResponseWriter, r *http.Request) {
 func (h *VPNHandler) Connect(w http.ResponseWriter, r *http.Request) {
 	name := chi.URLParam(r, "name")
 	if name == "" {
-		vpnRespondError(w, http.StatusBadRequest, "INVALID_NAME", "Configuration name is required")
+		writeError(w, http.StatusBadRequest, "Configuration name is required")
 		return
 	}
 
 	// Check if config exists first
 	if _, err := h.vpn.GetConfig(r.Context(), name); err != nil {
-		vpnRespondError(w, http.StatusNotFound, "VPN_NOT_FOUND", "VPN configuration not found: "+name)
+		writeError(w, http.StatusNotFound, "VPN configuration not found: "+name)
 		return
 	}
 
 	if err := h.vpn.Connect(r.Context(), name); err != nil {
-		vpnRespondError(w, http.StatusInternalServerError, "VPN_CONNECT_ERROR", err.Error())
+		writeError(w, http.StatusInternalServerError, err.Error())
 		return
 	}
 
 	// Get updated status
 	status, _ := h.vpn.GetStatus(r.Context())
-	vpnRespondJSON(w, http.StatusOK, map[string]interface{}{
+	writeJSON(w, http.StatusOK, map[string]interface{}{
 		"status":  "connected",
 		"name":    name,
 		"details": status,
@@ -233,16 +233,16 @@ func (h *VPNHandler) Connect(w http.ResponseWriter, r *http.Request) {
 func (h *VPNHandler) Disconnect(w http.ResponseWriter, r *http.Request) {
 	name := chi.URLParam(r, "name")
 	if name == "" {
-		vpnRespondError(w, http.StatusBadRequest, "INVALID_NAME", "Configuration name is required")
+		writeError(w, http.StatusBadRequest, "Configuration name is required")
 		return
 	}
 
 	if err := h.vpn.Disconnect(r.Context(), name); err != nil {
-		vpnRespondError(w, http.StatusInternalServerError, "VPN_DISCONNECT_ERROR", err.Error())
+		writeError(w, http.StatusInternalServerError, err.Error())
 		return
 	}
 
-	vpnRespondJSON(w, http.StatusOK, map[string]string{
+	writeJSON(w, http.StatusOK, map[string]string{
 		"status": "disconnected",
 		"name":   name,
 	})
@@ -264,7 +264,7 @@ func (h *VPNHandler) Disconnect(w http.ResponseWriter, r *http.Request) {
 func (h *VPNHandler) SetAutoConnect(w http.ResponseWriter, r *http.Request) {
 	name := chi.URLParam(r, "name")
 	if name == "" {
-		vpnRespondError(w, http.StatusBadRequest, "INVALID_NAME", "Configuration name is required")
+		writeError(w, http.StatusBadRequest, "Configuration name is required")
 		return
 	}
 
@@ -273,16 +273,16 @@ func (h *VPNHandler) SetAutoConnect(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		vpnRespondError(w, http.StatusBadRequest, "INVALID_JSON", "Invalid request body")
+		writeError(w, http.StatusBadRequest, "Invalid request body")
 		return
 	}
 
 	if err := h.vpn.SetAutoConnect(r.Context(), name, req.Enabled); err != nil {
-		vpnRespondError(w, http.StatusInternalServerError, "VPN_AUTOCONNECT_ERROR", err.Error())
+		writeError(w, http.StatusInternalServerError, err.Error())
 		return
 	}
 
-	vpnRespondJSON(w, http.StatusOK, map[string]interface{}{
+	writeJSON(w, http.StatusOK, map[string]interface{}{
 		"name":         name,
 		"auto_connect": req.Enabled,
 	})
@@ -300,26 +300,11 @@ func (h *VPNHandler) SetAutoConnect(w http.ResponseWriter, r *http.Request) {
 func (h *VPNHandler) GetPublicIP(w http.ResponseWriter, r *http.Request) {
 	ip, err := h.vpn.GetPublicIP(r.Context())
 	if err != nil {
-		vpnRespondError(w, http.StatusInternalServerError, "PUBLIC_IP_ERROR", err.Error())
+		writeError(w, http.StatusInternalServerError, err.Error())
 		return
 	}
 
-	vpnRespondJSON(w, http.StatusOK, map[string]string{
+	writeJSON(w, http.StatusOK, map[string]string{
 		"public_ip": ip,
-	})
-}
-
-// Helper functions for VPN handlers
-
-func vpnRespondJSON(w http.ResponseWriter, status int, data interface{}) {
-	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(status)
-	json.NewEncoder(w).Encode(data)
-}
-
-func vpnRespondError(w http.ResponseWriter, status int, code, message string) {
-	vpnRespondJSON(w, status, map[string]string{
-		"error":   code,
-		"message": message,
 	})
 }

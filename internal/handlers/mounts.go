@@ -49,11 +49,11 @@ func (h *MountsHandler) Routes() chi.Router {
 func (h *MountsHandler) ListMounts(w http.ResponseWriter, r *http.Request) {
 	mounts, err := h.mounts.ListMounts(r.Context())
 	if err != nil {
-		mountsRespondError(w, http.StatusInternalServerError, "MOUNTS_LIST_ERROR", err.Error())
+		writeError(w, http.StatusInternalServerError, err.Error())
 		return
 	}
 
-	mountsRespondJSON(w, http.StatusOK, map[string]interface{}{
+	writeJSON(w, http.StatusOK, map[string]interface{}{
 		"mounts": mounts,
 	})
 }
@@ -72,17 +72,17 @@ func (h *MountsHandler) ListMounts(w http.ResponseWriter, r *http.Request) {
 func (h *MountsHandler) GetMount(w http.ResponseWriter, r *http.Request) {
 	name := chi.URLParam(r, "name")
 	if name == "" {
-		mountsRespondError(w, http.StatusBadRequest, "INVALID_NAME", "Mount name is required")
+		writeError(w, http.StatusBadRequest, "Mount name is required")
 		return
 	}
 
 	mount, err := h.mounts.GetMountByName(r.Context(), name)
 	if err != nil {
-		mountsRespondError(w, http.StatusNotFound, "MOUNT_NOT_FOUND", err.Error())
+		writeError(w, http.StatusNotFound, err.Error())
 		return
 	}
 
-	mountsRespondJSON(w, http.StatusOK, mount)
+	writeJSON(w, http.StatusOK, mount)
 }
 
 // AddMount godoc
@@ -100,17 +100,17 @@ func (h *MountsHandler) AddMount(w http.ResponseWriter, r *http.Request) {
 	var req managers.CreateMountRequest
 
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		mountsRespondError(w, http.StatusBadRequest, "INVALID_JSON", "Invalid request body")
+		writeError(w, http.StatusBadRequest, "Invalid request body")
 		return
 	}
 
 	mount, err := h.mounts.CreateMount(r.Context(), &req)
 	if err != nil {
-		mountsRespondError(w, http.StatusBadRequest, "MOUNT_ADD_ERROR", err.Error())
+		writeError(w, http.StatusBadRequest, err.Error())
 		return
 	}
 
-	mountsRespondJSON(w, http.StatusCreated, mount)
+	writeJSON(w, http.StatusCreated, mount)
 }
 
 // DeleteMount godoc
@@ -128,23 +128,23 @@ func (h *MountsHandler) AddMount(w http.ResponseWriter, r *http.Request) {
 func (h *MountsHandler) DeleteMount(w http.ResponseWriter, r *http.Request) {
 	name := chi.URLParam(r, "name")
 	if name == "" {
-		mountsRespondError(w, http.StatusBadRequest, "INVALID_NAME", "Mount name is required")
+		writeError(w, http.StatusBadRequest, "Mount name is required")
 		return
 	}
 
 	// Look up mount by name to get ID
 	mount, err := h.mounts.GetMountByName(r.Context(), name)
 	if err != nil {
-		mountsRespondError(w, http.StatusNotFound, "MOUNT_NOT_FOUND", err.Error())
+		writeError(w, http.StatusNotFound, err.Error())
 		return
 	}
 
 	if err := h.mounts.DeleteMount(r.Context(), mount.ID); err != nil {
-		mountsRespondError(w, http.StatusInternalServerError, "MOUNT_DELETE_ERROR", err.Error())
+		writeError(w, http.StatusInternalServerError, err.Error())
 		return
 	}
 
-	mountsRespondJSON(w, http.StatusOK, map[string]string{
+	writeJSON(w, http.StatusOK, map[string]string{
 		"status": "deleted",
 		"name":   name,
 	})
@@ -165,25 +165,25 @@ func (h *MountsHandler) DeleteMount(w http.ResponseWriter, r *http.Request) {
 func (h *MountsHandler) Mount(w http.ResponseWriter, r *http.Request) {
 	name := chi.URLParam(r, "name")
 	if name == "" {
-		mountsRespondError(w, http.StatusBadRequest, "INVALID_NAME", "Mount name is required")
+		writeError(w, http.StatusBadRequest, "Mount name is required")
 		return
 	}
 
 	// Look up mount by name to get ID
 	mount, err := h.mounts.GetMountByName(r.Context(), name)
 	if err != nil {
-		mountsRespondError(w, http.StatusNotFound, "MOUNT_NOT_FOUND", err.Error())
+		writeError(w, http.StatusNotFound, err.Error())
 		return
 	}
 
 	if err := h.mounts.MountPath(r.Context(), mount.ID); err != nil {
-		mountsRespondError(w, http.StatusInternalServerError, "MOUNT_ERROR", err.Error())
+		writeError(w, http.StatusInternalServerError, err.Error())
 		return
 	}
 
 	// Get updated mount info
 	updatedMount, _ := h.mounts.GetMount(r.Context(), mount.ID)
-	mountsRespondJSON(w, http.StatusOK, map[string]interface{}{
+	writeJSON(w, http.StatusOK, map[string]interface{}{
 		"status":  "mounted",
 		"name":    name,
 		"details": updatedMount,
@@ -205,23 +205,23 @@ func (h *MountsHandler) Mount(w http.ResponseWriter, r *http.Request) {
 func (h *MountsHandler) Unmount(w http.ResponseWriter, r *http.Request) {
 	name := chi.URLParam(r, "name")
 	if name == "" {
-		mountsRespondError(w, http.StatusBadRequest, "INVALID_NAME", "Mount name is required")
+		writeError(w, http.StatusBadRequest, "Mount name is required")
 		return
 	}
 
 	// Look up mount by name to get ID
 	mount, err := h.mounts.GetMountByName(r.Context(), name)
 	if err != nil {
-		mountsRespondError(w, http.StatusNotFound, "MOUNT_NOT_FOUND", err.Error())
+		writeError(w, http.StatusNotFound, err.Error())
 		return
 	}
 
 	if err := h.mounts.UnmountPath(r.Context(), mount.ID); err != nil {
-		mountsRespondError(w, http.StatusInternalServerError, "UNMOUNT_ERROR", err.Error())
+		writeError(w, http.StatusInternalServerError, err.Error())
 		return
 	}
 
-	mountsRespondJSON(w, http.StatusOK, map[string]string{
+	writeJSON(w, http.StatusOK, map[string]string{
 		"status": "unmounted",
 		"name":   name,
 	})
@@ -241,18 +241,18 @@ func (h *MountsHandler) Unmount(w http.ResponseWriter, r *http.Request) {
 func (h *MountsHandler) GetMountStatus(w http.ResponseWriter, r *http.Request) {
 	name := chi.URLParam(r, "name")
 	if name == "" {
-		mountsRespondError(w, http.StatusBadRequest, "INVALID_NAME", "Mount name is required")
+		writeError(w, http.StatusBadRequest, "Mount name is required")
 		return
 	}
 
 	// Look up mount by name - this also checks actual mount status
 	mount, err := h.mounts.GetMountByName(r.Context(), name)
 	if err != nil {
-		mountsRespondError(w, http.StatusNotFound, "MOUNT_NOT_FOUND", err.Error())
+		writeError(w, http.StatusNotFound, err.Error())
 		return
 	}
 
-	mountsRespondJSON(w, http.StatusOK, map[string]interface{}{
+	writeJSON(w, http.StatusOK, map[string]interface{}{
 		"name":       mount.Name,
 		"type":       mount.Type,
 		"local_path": mount.LocalPath,
@@ -281,45 +281,30 @@ func (h *MountsHandler) TestConnection(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		mountsRespondError(w, http.StatusBadRequest, "INVALID_JSON", "Invalid request body")
+		writeError(w, http.StatusBadRequest, "Invalid request body")
 		return
 	}
 
 	if req.Type == "" {
-		mountsRespondError(w, http.StatusBadRequest, "MISSING_TYPE", "Mount type is required (smb or nfs)")
+		writeError(w, http.StatusBadRequest, "Mount type is required (smb or nfs)")
 		return
 	}
 	if req.RemotePath == "" {
-		mountsRespondError(w, http.StatusBadRequest, "MISSING_PATH", "Remote path is required")
+		writeError(w, http.StatusBadRequest, "Remote path is required")
 		return
 	}
 
 	err := h.mounts.TestConnection(r.Context(), string(req.Type), req.RemotePath, req.Username, req.Password)
 	if err != nil {
-		mountsRespondJSON(w, http.StatusOK, map[string]interface{}{
+		writeJSON(w, http.StatusOK, map[string]interface{}{
 			"success": false,
 			"error":   err.Error(),
 		})
 		return
 	}
 
-	mountsRespondJSON(w, http.StatusOK, map[string]interface{}{
+	writeJSON(w, http.StatusOK, map[string]interface{}{
 		"success": true,
 		"message": "Connection successful",
-	})
-}
-
-// Helper functions for Mounts handlers
-
-func mountsRespondJSON(w http.ResponseWriter, status int, data interface{}) {
-	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(status)
-	json.NewEncoder(w).Encode(data)
-}
-
-func mountsRespondError(w http.ResponseWriter, status int, code, message string) {
-	mountsRespondJSON(w, status, map[string]string{
-		"error":   code,
-		"message": message,
 	})
 }
