@@ -31,6 +31,7 @@ import (
 	"io"
 	"net/http"
 	"net/url"
+	"os"
 	"strconv"
 	"strings"
 	"time"
@@ -42,9 +43,9 @@ import (
 
 const (
 	// DefaultHALURL is the default URL for the HAL service.
-	// Uses the host gateway IP because the API runs inside a Docker container
-	// and HAL runs on the host network.
-	DefaultHALURL = "http://10.42.24.1:6005"
+	// Uses Docker service hostname for DNS resolution through Swarm overlay network.
+	// Override with HAL_URL environment variable if needed.
+	DefaultHALURL = "http://cubeos-hal:6005"
 	// DefaultTimeout is the default HTTP client timeout
 	DefaultTimeout = 30 * time.Second
 )
@@ -61,6 +62,9 @@ type Client struct {
 
 // NewClient creates a new HAL client
 func NewClient(baseURL string) *Client {
+	if baseURL == "" {
+		baseURL = os.Getenv("HAL_URL")
+	}
 	if baseURL == "" {
 		baseURL = DefaultHALURL
 	}
@@ -569,6 +573,61 @@ type MeshtasticNodesResponse struct {
 	Nodes []MeshtasticNode `json:"nodes"`
 }
 
+// MeshtasticDevicesResponse represents available Meshtastic devices
+type MeshtasticDevicesResponse struct {
+	Devices []MeshtasticDevice `json:"devices"`
+}
+
+// MeshtasticMessagesResponse represents Meshtastic message history
+type MeshtasticMessagesResponse struct {
+	Messages []MeshtasticMessage `json:"messages"`
+}
+
+// MeshtasticMessage represents a single Meshtastic message
+type MeshtasticMessage struct {
+	From      string  `json:"from"`
+	To        string  `json:"to"`
+	Text      string  `json:"text"`
+	Channel   int     `json:"channel"`
+	Timestamp int64   `json:"timestamp"`
+	RxSNR     float64 `json:"rx_snr,omitempty"`
+	RxRSSI    int     `json:"rx_rssi,omitempty"`
+}
+
+// MeshtasticPosition represents GPS position from a Meshtastic radio
+type MeshtasticPosition struct {
+	Latitude  float64 `json:"latitude"`
+	Longitude float64 `json:"longitude"`
+	Altitude  int     `json:"altitude"`
+	Time      int64   `json:"time"`
+}
+
+// MeshtasticConnectRequest represents a Meshtastic connect request
+type MeshtasticConnectRequest struct {
+	Port      string `json:"port,omitempty"`
+	Address   string `json:"address,omitempty"`
+	Transport string `json:"transport,omitempty"` // "auto", "serial", "ble"
+}
+
+// MeshtasticChannelRequest represents a Meshtastic channel configuration request
+type MeshtasticChannelRequest struct {
+	Index           int    `json:"index"`
+	Name            string `json:"name"`
+	PSK             string `json:"psk,omitempty"`
+	Role            string `json:"role"`
+	UplinkEnabled   bool   `json:"uplink_enabled,omitempty"`
+	DownlinkEnabled bool   `json:"downlink_enabled,omitempty"`
+}
+
+// MeshtasticRawRequest represents a raw Meshtastic packet send request
+type MeshtasticRawRequest struct {
+	To      string `json:"to,omitempty"`
+	PortNum int    `json:"portnum"`
+	Payload string `json:"payload"`
+	Channel int    `json:"channel,omitempty"`
+	WantAck bool   `json:"want_ack,omitempty"`
+}
+
 // =============================================================================
 // Response Types - Iridium
 // =============================================================================
@@ -616,6 +675,65 @@ type IridiumMessage struct {
 type IridiumMessagesResponse struct {
 	Count    int              `json:"count"`
 	Messages []IridiumMessage `json:"messages"`
+}
+
+// IridiumDevicesResponse represents available Iridium devices
+type IridiumDevicesResponse struct {
+	Devices []IridiumDevice `json:"devices"`
+}
+
+// IridiumConnectRequest represents an Iridium connect request
+type IridiumConnectRequest struct {
+	Port string `json:"port,omitempty"`
+}
+
+// IridiumSendResponse represents the response from sending an SBD message
+type IridiumSendResponse struct {
+	Status     string `json:"status"`
+	MOStatus   int    `json:"mo_status"`
+	MOMSN      int    `json:"momsn"`
+	MTReceived bool   `json:"mt_received"`
+	MTQueued   int    `json:"mt_queued"`
+}
+
+// IridiumMailboxResponse represents the response from a mailbox check
+type IridiumMailboxResponse struct {
+	MTReceived bool    `json:"mt_received"`
+	MTMessage  *string `json:"mt_message,omitempty"`
+	MTQueued   int     `json:"mt_queued"`
+}
+
+// IridiumReceiveResponse represents a received Iridium message
+type IridiumReceiveResponse struct {
+	Data   string `json:"data,omitempty"`
+	Length int    `json:"length"`
+	Format string `json:"format"`
+}
+
+// IridiumClearRequest represents a request to clear Iridium buffers
+type IridiumClearRequest struct {
+	Buffer string `json:"buffer"` // "mo", "mt", or "both"
+}
+
+// =============================================================================
+// Response Types - Infrastructure (HAL-backed)
+// =============================================================================
+
+// FirewallStatusResponse represents consolidated HAL firewall status
+type FirewallStatusResponse struct {
+	Active     bool `json:"active"`
+	Rules      int  `json:"rules"`
+	NAT        bool `json:"nat"`
+	Forwarding bool `json:"forwarding"`
+}
+
+// PowerMonitorStatus represents UPS/power monitoring status
+type PowerMonitorStatus struct {
+	Running  bool   `json:"running"`
+	UPSModel string `json:"ups_model"`
+	Battery  int    `json:"battery_percent,omitempty"`
+	Charging bool   `json:"charging,omitempty"`
+	ACPower  bool   `json:"ac_power,omitempty"`
 }
 
 // =============================================================================
@@ -883,16 +1001,16 @@ type CellularConnectRequest struct {
 
 // MeshtasticMessageRequest represents a Meshtastic message
 type MeshtasticMessageRequest struct {
-	Text        string `json:"text"`
-	Destination string `json:"destination,omitempty"`
-	Channel     int    `json:"channel,omitempty"`
+	Text    string `json:"text"`
+	To      string `json:"to,omitempty"`
+	Channel int    `json:"channel,omitempty"`
 }
 
 // IridiumSendRequest represents an SBD message to send
 type IridiumSendRequest struct {
-	Message string `json:"message"`
-	Binary  bool   `json:"binary,omitempty"`
-	Data    string `json:"data,omitempty"` // Base64 for binary
+	Text   string `json:"text,omitempty"`
+	Data   string `json:"data,omitempty"` // Base64 for binary
+	Format string `json:"format"`         // "text" or "binary"
 }
 
 // CaptureRequest represents image capture request
@@ -1033,6 +1151,58 @@ func (c *Client) doPost(ctx context.Context, path string, reqBody interface{}) e
 func (c *Client) doDelete(ctx context.Context, path string, reqBody interface{}) error {
 	_, err := c.doRequest(ctx, http.MethodDelete, path, reqBody)
 	return err
+}
+
+// doPostWithResult sends a POST and unmarshals the response into result
+func (c *Client) doPostWithResult(ctx context.Context, path string, reqBody interface{}, result interface{}) error {
+	body, err := c.doRequest(ctx, http.MethodPost, path, reqBody)
+	if err != nil {
+		return err
+	}
+	if result != nil {
+		if err := json.Unmarshal(body, result); err != nil {
+			return fmt.Errorf("failed to parse response: %w", err)
+		}
+	}
+	return nil
+}
+
+// doGetRaw sends a GET and returns the raw response bytes (for binary downloads)
+func (c *Client) doGetRaw(ctx context.Context, path string) ([]byte, error) {
+	return c.doRequest(ctx, http.MethodGet, path, nil)
+}
+
+// doStreamRequest creates a raw HTTP request and returns the open *http.Response.
+// The caller is responsible for closing the response body.
+// Used for SSE event streams that need to be proxied to the API client.
+func (c *Client) doStreamRequest(ctx context.Context, path string) (*http.Response, error) {
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, c.baseURL+path, nil)
+	if err != nil {
+		return nil, fmt.Errorf("failed to create stream request: %w", err)
+	}
+	req.Header.Set("Accept", "text/event-stream")
+
+	// Use a separate client with no timeout for long-lived SSE streams
+	streamClient := &http.Client{}
+	resp, err := streamClient.Do(req)
+	if err != nil {
+		return nil, fmt.Errorf("stream request failed: %w", err)
+	}
+
+	if resp.StatusCode >= 400 {
+		defer resp.Body.Close()
+		body, _ := io.ReadAll(resp.Body)
+		var errResp struct {
+			Error string `json:"error"`
+		}
+		json.Unmarshal(body, &errResp)
+		if errResp.Error != "" {
+			return nil, fmt.Errorf("HAL error: %s", errResp.Error)
+		}
+		return nil, fmt.Errorf("HAL error: status %d", resp.StatusCode)
+	}
+
+	return resp, nil
 }
 
 // =============================================================================
@@ -1177,6 +1347,29 @@ func (c *Client) StartPowerMonitor(ctx context.Context) error {
 // StopPowerMonitor stops power monitoring
 func (c *Client) StopPowerMonitor(ctx context.Context) error {
 	return c.doPost(ctx, "/power/monitor/stop", nil)
+}
+
+// GetPowerMonitorStatus returns power monitoring status (battery, charging, UPS)
+func (c *Client) GetPowerMonitorStatus(ctx context.Context) (*PowerMonitorStatus, error) {
+	var result PowerMonitorStatus
+	if err := c.doGet(ctx, "/power/monitor/status", &result); err != nil {
+		return nil, err
+	}
+	return &result, nil
+}
+
+// GetHALFirewallStatus returns consolidated firewall status from HAL
+func (c *Client) GetHALFirewallStatus(ctx context.Context) (*FirewallStatusResponse, error) {
+	var result FirewallStatusResponse
+	if err := c.doGet(ctx, "/firewall/status", &result); err != nil {
+		return nil, err
+	}
+	return &result, nil
+}
+
+// GetSupportBundle downloads the support bundle zip from HAL
+func (c *Client) GetSupportBundle(ctx context.Context) ([]byte, error) {
+	return c.doGetRaw(ctx, "/support/bundle.zip")
 }
 
 // =============================================================================
@@ -1860,122 +2053,183 @@ func (c *Client) DisableAndroidTethering(ctx context.Context) error {
 // Meshtastic Operations
 // =============================================================================
 
-// GetMeshtasticStatus returns Meshtastic status
-func (c *Client) GetMeshtasticStatus(ctx context.Context, port string) (*MeshtasticStatus, error) {
-	path := "/meshtastic/status"
-	if port != "" {
-		path += "?port=" + url.QueryEscape(port)
+// GetMeshtasticDevices returns available Meshtastic devices
+func (c *Client) GetMeshtasticDevices(ctx context.Context) (*MeshtasticDevicesResponse, error) {
+	var result MeshtasticDevicesResponse
+	if err := c.doGet(ctx, "/meshtastic/devices", &result); err != nil {
+		return nil, err
 	}
+	return &result, nil
+}
 
+// ConnectMeshtastic connects to a Meshtastic device
+func (c *Client) ConnectMeshtastic(ctx context.Context, req *MeshtasticConnectRequest) error {
+	return c.doPost(ctx, "/meshtastic/connect", req)
+}
+
+// DisconnectMeshtastic disconnects from the Meshtastic device
+func (c *Client) DisconnectMeshtastic(ctx context.Context) error {
+	return c.doPost(ctx, "/meshtastic/disconnect", nil)
+}
+
+// GetMeshtasticStatus returns Meshtastic status
+func (c *Client) GetMeshtasticStatus(ctx context.Context) (*MeshtasticStatus, error) {
 	var result MeshtasticStatus
-	if err := c.doGet(ctx, path, &result); err != nil {
+	if err := c.doGet(ctx, "/meshtastic/status", &result); err != nil {
 		return nil, err
 	}
 	return &result, nil
 }
 
 // GetMeshtasticNodes returns mesh nodes
-func (c *Client) GetMeshtasticNodes(ctx context.Context, port string) (*MeshtasticNodesResponse, error) {
-	path := "/meshtastic/nodes"
-	if port != "" {
-		path += "?port=" + url.QueryEscape(port)
-	}
-
+func (c *Client) GetMeshtasticNodes(ctx context.Context) (*MeshtasticNodesResponse, error) {
 	var result MeshtasticNodesResponse
-	if err := c.doGet(ctx, path, &result); err != nil {
+	if err := c.doGet(ctx, "/meshtastic/nodes", &result); err != nil {
+		return nil, err
+	}
+	return &result, nil
+}
+
+// GetMeshtasticPosition returns GPS position from the connected Meshtastic radio
+func (c *Client) GetMeshtasticPosition(ctx context.Context) (*MeshtasticPosition, error) {
+	var result MeshtasticPosition
+	if err := c.doGet(ctx, "/meshtastic/position", &result); err != nil {
+		return nil, err
+	}
+	return &result, nil
+}
+
+// GetMeshtasticMessages returns Meshtastic message history
+func (c *Client) GetMeshtasticMessages(ctx context.Context) (*MeshtasticMessagesResponse, error) {
+	var result MeshtasticMessagesResponse
+	if err := c.doGet(ctx, "/meshtastic/messages", &result); err != nil {
 		return nil, err
 	}
 	return &result, nil
 }
 
 // SendMeshtasticMessage sends a message via Meshtastic
-func (c *Client) SendMeshtasticMessage(ctx context.Context, port, text, destination string, channel int) error {
-	path := "/meshtastic/send"
-	if port != "" {
-		path += "?port=" + url.QueryEscape(port)
-	}
-
-	req := MeshtasticMessageRequest{
-		Text:        text,
-		Destination: destination,
-		Channel:     channel,
-	}
-	return c.doPost(ctx, path, req)
+func (c *Client) SendMeshtasticMessage(ctx context.Context, req *MeshtasticMessageRequest) error {
+	return c.doPost(ctx, "/meshtastic/messages/send", req)
 }
 
-// SetMeshtasticChannel sets the Meshtastic channel
-func (c *Client) SetMeshtasticChannel(ctx context.Context, port string, channel int) error {
-	path := "/meshtastic/channel"
-	if port != "" {
-		path += "?port=" + url.QueryEscape(port)
+// SendMeshtasticRaw sends a raw protobuf packet via Meshtastic
+func (c *Client) SendMeshtasticRaw(ctx context.Context, req *MeshtasticRawRequest) error {
+	return c.doPost(ctx, "/meshtastic/messages/send_raw", req)
+}
+
+// GetMeshtasticConfig returns the Meshtastic radio configuration
+func (c *Client) GetMeshtasticConfig(ctx context.Context) (map[string]interface{}, error) {
+	var result map[string]interface{}
+	if err := c.doGet(ctx, "/meshtastic/config", &result); err != nil {
+		return nil, err
 	}
-	return c.doPost(ctx, path, map[string]int{"channel": channel})
+	return result, nil
+}
+
+// SetMeshtasticChannel configures a Meshtastic channel
+func (c *Client) SetMeshtasticChannel(ctx context.Context, req *MeshtasticChannelRequest) error {
+	return c.doPost(ctx, "/meshtastic/channel", req)
+}
+
+// StreamMeshtasticEvents returns an open SSE stream for Meshtastic events.
+// The caller is responsible for closing the response body.
+func (c *Client) StreamMeshtasticEvents(ctx context.Context) (*http.Response, error) {
+	return c.doStreamRequest(ctx, "/meshtastic/events")
 }
 
 // =============================================================================
 // Iridium Operations
 // =============================================================================
 
-// GetIridiumStatus returns Iridium status
-func (c *Client) GetIridiumStatus(ctx context.Context, port string) (*IridiumStatus, error) {
-	path := "/iridium/status"
+// GetIridiumDevices returns available Iridium devices
+func (c *Client) GetIridiumDevices(ctx context.Context) (*IridiumDevicesResponse, error) {
+	var result IridiumDevicesResponse
+	if err := c.doGet(ctx, "/iridium/devices", &result); err != nil {
+		return nil, err
+	}
+	return &result, nil
+}
+
+// ConnectIridium connects to an Iridium device.
+// Port is optional — if empty, HAL auto-detects.
+func (c *Client) ConnectIridium(ctx context.Context, port string) error {
+	path := "/iridium/connect"
 	if port != "" {
 		path += "?port=" + url.QueryEscape(port)
 	}
+	return c.doPost(ctx, path, nil)
+}
 
+// DisconnectIridium disconnects from the Iridium device
+func (c *Client) DisconnectIridium(ctx context.Context) error {
+	return c.doPost(ctx, "/iridium/disconnect", nil)
+}
+
+// GetIridiumStatus returns Iridium status
+func (c *Client) GetIridiumStatus(ctx context.Context) (*IridiumStatus, error) {
 	var result IridiumStatus
-	if err := c.doGet(ctx, path, &result); err != nil {
+	if err := c.doGet(ctx, "/iridium/status", &result); err != nil {
 		return nil, err
 	}
 	return &result, nil
 }
 
 // GetIridiumSignal returns Iridium signal strength
-func (c *Client) GetIridiumSignal(ctx context.Context, port string) (*IridiumSignal, error) {
-	path := "/iridium/signal"
-	if port != "" {
-		path += "?port=" + url.QueryEscape(port)
-	}
-
+func (c *Client) GetIridiumSignal(ctx context.Context) (*IridiumSignal, error) {
 	var result IridiumSignal
-	if err := c.doGet(ctx, path, &result); err != nil {
+	if err := c.doGet(ctx, "/iridium/signal", &result); err != nil {
 		return nil, err
 	}
 	return &result, nil
 }
 
 // SendIridiumSBD sends an SBD message via Iridium
-func (c *Client) SendIridiumSBD(ctx context.Context, port, message string) error {
-	path := "/iridium/send"
-	if port != "" {
-		path += "?port=" + url.QueryEscape(port)
+func (c *Client) SendIridiumSBD(ctx context.Context, req *IridiumSendRequest) (*IridiumSendResponse, error) {
+	var result IridiumSendResponse
+	if err := c.doPostWithResult(ctx, "/iridium/send", req, &result); err != nil {
+		return nil, err
 	}
-
-	req := IridiumSendRequest{Message: message}
-	return c.doPost(ctx, path, req)
+	return &result, nil
 }
 
-// GetIridiumMessages retrieves Iridium messages
-func (c *Client) GetIridiumMessages(ctx context.Context, port string) (*IridiumMessagesResponse, error) {
-	path := "/iridium/messages"
-	if port != "" {
-		path += "?port=" + url.QueryEscape(port)
-	}
-
+// GetIridiumMessages retrieves Iridium messages (alias for receive)
+func (c *Client) GetIridiumMessages(ctx context.Context) (*IridiumMessagesResponse, error) {
 	var result IridiumMessagesResponse
-	if err := c.doGet(ctx, path, &result); err != nil {
+	if err := c.doGet(ctx, "/iridium/messages", &result); err != nil {
 		return nil, err
 	}
 	return &result, nil
 }
 
 // CheckIridiumMailbox checks the Iridium mailbox
-func (c *Client) CheckIridiumMailbox(ctx context.Context, port string) error {
-	path := "/iridium/check"
-	if port != "" {
-		path += "?port=" + url.QueryEscape(port)
+func (c *Client) CheckIridiumMailbox(ctx context.Context) (*IridiumMailboxResponse, error) {
+	var result IridiumMailboxResponse
+	if err := c.doPostWithResult(ctx, "/iridium/mailbox_check", nil, &result); err != nil {
+		return nil, err
 	}
-	return c.doPost(ctx, path, nil)
+	return &result, nil
+}
+
+// ReceiveIridiumMessage receives a pending Iridium message
+func (c *Client) ReceiveIridiumMessage(ctx context.Context) (*IridiumReceiveResponse, error) {
+	var result IridiumReceiveResponse
+	if err := c.doGet(ctx, "/iridium/receive", &result); err != nil {
+		return nil, err
+	}
+	return &result, nil
+}
+
+// ClearIridiumBuffers clears Iridium MO/MT buffers
+func (c *Client) ClearIridiumBuffers(ctx context.Context, buffer string) error {
+	req := IridiumClearRequest{Buffer: buffer}
+	return c.doPost(ctx, "/iridium/clear", req)
+}
+
+// StreamIridiumEvents returns an open SSE stream for Iridium events.
+// The caller is responsible for closing the response body.
+func (c *Client) StreamIridiumEvents(ctx context.Context) (*http.Response, error) {
+	return c.doStreamRequest(ctx, "/iridium/events")
 }
 
 // =============================================================================
