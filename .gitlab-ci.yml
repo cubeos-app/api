@@ -152,11 +152,11 @@ deploy:
     # =========================================================================
     - |
       echo "🔍 Pre-flight: checking Docker networking health..."
-      if ! iptables -t nat -L DOCKER -n > /dev/null 2>&1; then
+      if ! sudo iptables -t nat -L DOCKER -n > /dev/null 2>&1; then
         echo "⚠️  DOCKER nat chain missing — restarting Docker to recreate..."
-        systemctl restart docker
+        sudo systemctl restart docker
         sleep 15
-        if ! iptables -t nat -L DOCKER -n > /dev/null 2>&1; then
+        if ! sudo iptables -t nat -L DOCKER -n > /dev/null 2>&1; then
           echo "❌ DOCKER nat chain still missing after restart. Manual intervention required."
           exit 1
         fi
@@ -307,7 +307,7 @@ deploy:
       ss -tlnp | grep ${HOST_PORT} || echo "  Port ${HOST_PORT} not listening"
       echo ""
       echo "iptables DOCKER chain:"
-      iptables -t nat -L DOCKER -n 2>&1 | head -5
+      sudo iptables -t nat -L DOCKER -n 2>&1 | head -5
       echo ""
 
       # Scale to 0 to stop crash loop and preserve iptables chains
