@@ -1,7 +1,10 @@
 package handlers
 
 import (
+	"bufio"
 	"encoding/json"
+	"io"
+	"log"
 	"net/http"
 	"strconv"
 
@@ -43,18 +46,25 @@ func (h *CommunicationHandler) Routes() chi.Router {
 	r.Post("/cellular/android/enable", h.EnableAndroidTethering)
 	r.Post("/cellular/android/disable", h.DisableAndroidTethering)
 
-	// Meshtastic
-	r.Get("/meshtastic/{port}/status", h.GetMeshtasticStatus)
-	r.Get("/meshtastic/{port}/nodes", h.GetMeshtasticNodes)
-	r.Post("/meshtastic/{port}/message", h.SendMeshtasticMessage)
-	r.Post("/meshtastic/{port}/channel", h.SetMeshtasticChannel)
+	// Meshtastic — Session 3 will add lifecycle routes (devices, connect, disconnect, etc.)
+	// Temporarily using portless routes so handlers compile with updated HAL client
+	r.Get("/meshtastic/status", h.GetMeshtasticStatus)
+	r.Get("/meshtastic/nodes", h.GetMeshtasticNodes)
+	r.Post("/meshtastic/messages/send", h.SendMeshtasticMessage)
+	r.Post("/meshtastic/channel", h.SetMeshtasticChannel)
 
-	// Iridium
-	r.Get("/iridium/{port}/status", h.GetIridiumStatus)
-	r.Get("/iridium/{port}/signal", h.GetIridiumSignal)
-	r.Post("/iridium/{port}/send", h.SendIridiumSBD)
-	r.Get("/iridium/{port}/messages", h.GetIridiumMessages)
-	r.Post("/iridium/{port}/mailbox", h.CheckIridiumMailbox)
+	// Iridium — new lifecycle routes (no {port}, uses connect/disconnect pattern)
+	r.Get("/iridium/devices", h.GetIridiumDevices)
+	r.Post("/iridium/connect", h.ConnectIridium)
+	r.Post("/iridium/disconnect", h.DisconnectIridium)
+	r.Get("/iridium/status", h.GetIridiumStatus)
+	r.Get("/iridium/signal", h.GetIridiumSignal)
+	r.Post("/iridium/send", h.SendIridiumSBD)
+	r.Post("/iridium/mailbox_check", h.CheckIridiumMailbox)
+	r.Get("/iridium/receive", h.ReceiveIridiumMessage)
+	r.Get("/iridium/messages", h.GetIridiumMessages)
+	r.Post("/iridium/clear", h.ClearIridiumBuffers)
+	r.Get("/iridium/events", h.StreamIridiumEvents)
 
 	// Bluetooth
 	r.Get("/bluetooth", h.GetBluetoothStatus)
@@ -470,36 +480,30 @@ func (h *CommunicationHandler) DisableAndroidTethering(w http.ResponseWriter, r 
 
 // =============================================================================
 // Meshtastic Endpoints
+// NOTE: Minimal compilation fixes applied (port param removed from HAL calls).
+// Session 3 will do the full rewrite: new lifecycle routes, new handlers, Swagger.
 // =============================================================================
 
 // GetMeshtasticStatus godoc
 // @Summary Get Meshtastic status
-// @Description Returns Meshtastic radio status and configuration
+// @Description Returns Meshtastic radio status
 // @Tags Communication
 // @Accept json
 // @Produce json
-// @Param port path string true "Meshtastic device port" example(ttyUSB0)
 // @Success 200 {object} hal.MeshtasticStatus
-// @Failure 400 {object} ErrorResponse "Port required"
 // @Failure 500 {object} ErrorResponse "Failed to get status"
 // @Failure 503 {object} ErrorResponse "HAL unavailable"
 // @Security BearerAuth
-// @Router /communication/meshtastic/{port}/status [get]
+// @Router /communication/meshtastic/status [get]
 func (h *CommunicationHandler) GetMeshtasticStatus(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
-	port := chi.URLParam(r, "port")
-
-	if port == "" {
-		writeError(w, http.StatusBadRequest, "Meshtastic port is required")
-		return
-	}
 
 	if h.halClient == nil {
 		writeError(w, http.StatusServiceUnavailable, "HAL service unavailable")
 		return
 	}
 
-	status, err := h.halClient.GetMeshtasticStatus(ctx, port)
+	status, err := h.halClient.GetMeshtasticStatus(ctx)
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, "Failed to get Meshtastic status: "+err.Error())
 		return
@@ -514,28 +518,20 @@ func (h *CommunicationHandler) GetMeshtasticStatus(w http.ResponseWriter, r *htt
 // @Tags Communication
 // @Accept json
 // @Produce json
-// @Param port path string true "Meshtastic device port" example(ttyUSB0)
 // @Success 200 {object} hal.MeshtasticNodesResponse
-// @Failure 400 {object} ErrorResponse "Port required"
 // @Failure 500 {object} ErrorResponse "Failed to get nodes"
 // @Failure 503 {object} ErrorResponse "HAL unavailable"
 // @Security BearerAuth
-// @Router /communication/meshtastic/{port}/nodes [get]
+// @Router /communication/meshtastic/nodes [get]
 func (h *CommunicationHandler) GetMeshtasticNodes(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
-	port := chi.URLParam(r, "port")
-
-	if port == "" {
-		writeError(w, http.StatusBadRequest, "Meshtastic port is required")
-		return
-	}
 
 	if h.halClient == nil {
 		writeError(w, http.StatusServiceUnavailable, "HAL service unavailable")
 		return
 	}
 
-	nodes, err := h.halClient.GetMeshtasticNodes(ctx, port)
+	nodes, err := h.halClient.GetMeshtasticNodes(ctx)
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, "Failed to get Meshtastic nodes: "+err.Error())
 		return
@@ -544,37 +540,23 @@ func (h *CommunicationHandler) GetMeshtasticNodes(w http.ResponseWriter, r *http
 	writeJSON(w, http.StatusOK, nodes)
 }
 
-// MeshtasticMessageRequest represents a Meshtastic message request
-type MeshtasticMessageRequest struct {
-	Text        string `json:"text"`
-	Destination string `json:"destination,omitempty"` // Node ID or "broadcast"
-	Channel     int    `json:"channel,omitempty"`     // Default channel 0
-}
-
 // SendMeshtasticMessage godoc
 // @Summary Send Meshtastic message
 // @Description Sends a text message via Meshtastic mesh network
 // @Tags Communication
 // @Accept json
 // @Produce json
-// @Param port path string true "Meshtastic device port" example(ttyUSB0)
-// @Param request body MeshtasticMessageRequest true "Message to send"
+// @Param request body hal.MeshtasticMessageRequest true "Message to send"
 // @Success 200 {object} SuccessResponse
 // @Failure 400 {object} ErrorResponse "Invalid request"
 // @Failure 500 {object} ErrorResponse "Failed to send message"
 // @Failure 503 {object} ErrorResponse "HAL unavailable"
 // @Security BearerAuth
-// @Router /communication/meshtastic/{port}/message [post]
+// @Router /communication/meshtastic/messages/send [post]
 func (h *CommunicationHandler) SendMeshtasticMessage(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
-	port := chi.URLParam(r, "port")
 
-	if port == "" {
-		writeError(w, http.StatusBadRequest, "Meshtastic port is required")
-		return
-	}
-
-	var req MeshtasticMessageRequest
+	var req hal.MeshtasticMessageRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		writeError(w, http.StatusBadRequest, "Invalid request body")
 		return
@@ -590,7 +572,7 @@ func (h *CommunicationHandler) SendMeshtasticMessage(w http.ResponseWriter, r *h
 		return
 	}
 
-	if err := h.halClient.SendMeshtasticMessage(ctx, port, req.Text, req.Destination, req.Channel); err != nil {
+	if err := h.halClient.SendMeshtasticMessage(ctx, &req); err != nil {
 		writeError(w, http.StatusInternalServerError, "Failed to send Meshtastic message: "+err.Error())
 		return
 	}
@@ -601,35 +583,23 @@ func (h *CommunicationHandler) SendMeshtasticMessage(w http.ResponseWriter, r *h
 	})
 }
 
-// MeshtasticChannelRequest represents a channel change request
-type MeshtasticChannelRequest struct {
-	Channel int `json:"channel"`
-}
-
 // SetMeshtasticChannel godoc
 // @Summary Set Meshtastic channel
-// @Description Sets the active Meshtastic channel
+// @Description Configures a Meshtastic channel with name, PSK, and role
 // @Tags Communication
 // @Accept json
 // @Produce json
-// @Param port path string true "Meshtastic device port" example(ttyUSB0)
-// @Param request body MeshtasticChannelRequest true "Channel number"
+// @Param request body hal.MeshtasticChannelRequest true "Channel configuration"
 // @Success 200 {object} SuccessResponse
 // @Failure 400 {object} ErrorResponse "Invalid request"
 // @Failure 500 {object} ErrorResponse "Failed to set channel"
 // @Failure 503 {object} ErrorResponse "HAL unavailable"
 // @Security BearerAuth
-// @Router /communication/meshtastic/{port}/channel [post]
+// @Router /communication/meshtastic/channel [post]
 func (h *CommunicationHandler) SetMeshtasticChannel(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
-	port := chi.URLParam(r, "port")
 
-	if port == "" {
-		writeError(w, http.StatusBadRequest, "Meshtastic port is required")
-		return
-	}
-
-	var req MeshtasticChannelRequest
+	var req hal.MeshtasticChannelRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		writeError(w, http.StatusBadRequest, "Invalid request body")
 		return
@@ -640,14 +610,14 @@ func (h *CommunicationHandler) SetMeshtasticChannel(w http.ResponseWriter, r *ht
 		return
 	}
 
-	if err := h.halClient.SetMeshtasticChannel(ctx, port, req.Channel); err != nil {
+	if err := h.halClient.SetMeshtasticChannel(ctx, &req); err != nil {
 		writeError(w, http.StatusInternalServerError, "Failed to set Meshtastic channel: "+err.Error())
 		return
 	}
 
 	writeJSON(w, http.StatusOK, SuccessResponse{
 		Success: true,
-		Message: "Channel set",
+		Message: "Channel configured",
 	})
 }
 
@@ -655,34 +625,126 @@ func (h *CommunicationHandler) SetMeshtasticChannel(w http.ResponseWriter, r *ht
 // Iridium Endpoints
 // =============================================================================
 
-// GetIridiumStatus godoc
-// @Summary Get Iridium status
-// @Description Returns Iridium satellite modem status
+// GetIridiumDevices godoc
+// @Summary List Iridium devices
+// @Description Returns list of detected Iridium satellite modems (USB serial)
 // @Tags Communication
 // @Accept json
 // @Produce json
-// @Param port path string true "Iridium device port" example(ttyUSB0)
-// @Success 200 {object} hal.IridiumStatus
-// @Failure 400 {object} ErrorResponse "Port required"
-// @Failure 500 {object} ErrorResponse "Failed to get status"
+// @Success 200 {object} hal.IridiumDevicesResponse
+// @Failure 500 {object} ErrorResponse "Failed to list Iridium devices"
 // @Failure 503 {object} ErrorResponse "HAL unavailable"
 // @Security BearerAuth
-// @Router /communication/iridium/{port}/status [get]
-func (h *CommunicationHandler) GetIridiumStatus(w http.ResponseWriter, r *http.Request) {
+// @Router /communication/iridium/devices [get]
+func (h *CommunicationHandler) GetIridiumDevices(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
-	port := chi.URLParam(r, "port")
-
-	if port == "" {
-		writeError(w, http.StatusBadRequest, "Iridium port is required")
-		return
-	}
 
 	if h.halClient == nil {
 		writeError(w, http.StatusServiceUnavailable, "HAL service unavailable")
 		return
 	}
 
-	status, err := h.halClient.GetIridiumStatus(ctx, port)
+	devices, err := h.halClient.GetIridiumDevices(ctx)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "Failed to get Iridium devices: "+err.Error())
+		return
+	}
+
+	writeJSON(w, http.StatusOK, devices)
+}
+
+// IridiumConnectRequest represents an Iridium connect request at the API level.
+// The port field is optional — if empty, HAL auto-detects the device.
+type IridiumConnectRequest struct {
+	Port string `json:"port,omitempty"`
+}
+
+// ConnectIridium godoc
+// @Summary Connect to Iridium modem
+// @Description Connects to an Iridium satellite modem. If port is omitted, HAL auto-detects the device.
+// @Tags Communication
+// @Accept json
+// @Produce json
+// @Param request body IridiumConnectRequest false "Optional device port for explicit selection"
+// @Success 200 {object} SuccessResponse
+// @Failure 400 {object} ErrorResponse "Invalid request"
+// @Failure 500 {object} ErrorResponse "Failed to connect"
+// @Failure 503 {object} ErrorResponse "HAL unavailable"
+// @Security BearerAuth
+// @Router /communication/iridium/connect [post]
+func (h *CommunicationHandler) ConnectIridium(w http.ResponseWriter, r *http.Request) {
+	ctx := r.Context()
+
+	var req IridiumConnectRequest
+	// Body is optional — ignore decode errors for empty body
+	_ = json.NewDecoder(r.Body).Decode(&req)
+
+	if h.halClient == nil {
+		writeError(w, http.StatusServiceUnavailable, "HAL service unavailable")
+		return
+	}
+
+	if err := h.halClient.ConnectIridium(ctx, req.Port); err != nil {
+		writeError(w, http.StatusInternalServerError, "Failed to connect to Iridium modem: "+err.Error())
+		return
+	}
+
+	writeJSON(w, http.StatusOK, SuccessResponse{
+		Success: true,
+		Message: "Iridium modem connected",
+	})
+}
+
+// DisconnectIridium godoc
+// @Summary Disconnect Iridium modem
+// @Description Disconnects from the currently connected Iridium satellite modem
+// @Tags Communication
+// @Accept json
+// @Produce json
+// @Success 200 {object} SuccessResponse
+// @Failure 500 {object} ErrorResponse "Failed to disconnect"
+// @Failure 503 {object} ErrorResponse "HAL unavailable"
+// @Security BearerAuth
+// @Router /communication/iridium/disconnect [post]
+func (h *CommunicationHandler) DisconnectIridium(w http.ResponseWriter, r *http.Request) {
+	ctx := r.Context()
+
+	if h.halClient == nil {
+		writeError(w, http.StatusServiceUnavailable, "HAL service unavailable")
+		return
+	}
+
+	if err := h.halClient.DisconnectIridium(ctx); err != nil {
+		writeError(w, http.StatusInternalServerError, "Failed to disconnect Iridium modem: "+err.Error())
+		return
+	}
+
+	writeJSON(w, http.StatusOK, SuccessResponse{
+		Success: true,
+		Message: "Iridium modem disconnected",
+	})
+}
+
+// GetIridiumStatus godoc
+// @Summary Get Iridium status
+// @Description Returns Iridium satellite modem status including connection state and registration
+// @Tags Communication
+// @Accept json
+// @Produce json
+// @Success 200 {object} hal.IridiumStatus
+// @Failure 500 {object} ErrorResponse "Failed to get status"
+// @Failure 503 {object} ErrorResponse "HAL unavailable"
+// @Security BearerAuth
+// @Router /communication/iridium/status [get]
+func (h *CommunicationHandler) GetIridiumStatus(w http.ResponseWriter, r *http.Request) {
+	ctx := r.Context()
+
+	if h.halClient == nil {
+		writeError(w, http.StatusServiceUnavailable, "HAL service unavailable")
+		return
+	}
+
+	status, err := h.halClient.GetIridiumStatus(ctx)
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, "Failed to get Iridium status: "+err.Error())
 		return
@@ -697,28 +759,20 @@ func (h *CommunicationHandler) GetIridiumStatus(w http.ResponseWriter, r *http.R
 // @Tags Communication
 // @Accept json
 // @Produce json
-// @Param port path string true "Iridium device port" example(ttyUSB0)
 // @Success 200 {object} hal.IridiumSignal
-// @Failure 400 {object} ErrorResponse "Port required"
 // @Failure 500 {object} ErrorResponse "Failed to get signal"
 // @Failure 503 {object} ErrorResponse "HAL unavailable"
 // @Security BearerAuth
-// @Router /communication/iridium/{port}/signal [get]
+// @Router /communication/iridium/signal [get]
 func (h *CommunicationHandler) GetIridiumSignal(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
-	port := chi.URLParam(r, "port")
-
-	if port == "" {
-		writeError(w, http.StatusBadRequest, "Iridium port is required")
-		return
-	}
 
 	if h.halClient == nil {
 		writeError(w, http.StatusServiceUnavailable, "HAL service unavailable")
 		return
 	}
 
-	signal, err := h.halClient.GetIridiumSignal(ctx, port)
+	signal, err := h.halClient.GetIridiumSignal(ctx)
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, "Failed to get Iridium signal: "+err.Error())
 		return
@@ -727,47 +781,43 @@ func (h *CommunicationHandler) GetIridiumSignal(w http.ResponseWriter, r *http.R
 	writeJSON(w, http.StatusOK, signal)
 }
 
-// IridiumSBDRequest represents an Iridium SBD message request
-type IridiumSBDRequest struct {
-	Message string `json:"message"`
-}
-
 // SendIridiumSBD godoc
 // @Summary Send Iridium SBD message
-// @Description Sends a Short Burst Data message via Iridium satellite
+// @Description Sends a Short Burst Data message via Iridium satellite. Supports text (max 340 bytes) and binary (base64-encoded) formats.
 // @Tags Communication
 // @Accept json
 // @Produce json
-// @Param port path string true "Iridium device port" example(ttyUSB0)
-// @Param request body IridiumSBDRequest true "SBD message (max 340 bytes)"
-// @Success 200 {object} SuccessResponse
-// @Failure 400 {object} ErrorResponse "Invalid request"
+// @Param request body hal.IridiumSendRequest true "SBD message with text or binary data and format"
+// @Success 200 {object} hal.IridiumSendResponse "SBD transmission result with MO status and MT queue info"
+// @Failure 400 {object} ErrorResponse "Invalid request or message too large"
 // @Failure 500 {object} ErrorResponse "Failed to send SBD"
 // @Failure 503 {object} ErrorResponse "HAL unavailable"
 // @Security BearerAuth
-// @Router /communication/iridium/{port}/send [post]
+// @Router /communication/iridium/send [post]
 func (h *CommunicationHandler) SendIridiumSBD(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
-	port := chi.URLParam(r, "port")
 
-	if port == "" {
-		writeError(w, http.StatusBadRequest, "Iridium port is required")
-		return
-	}
-
-	var req IridiumSBDRequest
+	var req hal.IridiumSendRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		writeError(w, http.StatusBadRequest, "Invalid request body")
 		return
 	}
 
-	if req.Message == "" {
-		writeError(w, http.StatusBadRequest, "Message is required")
+	// Validate: must have either text or data
+	if req.Text == "" && req.Data == "" {
+		writeError(w, http.StatusBadRequest, "Either text or data is required")
 		return
 	}
 
-	if len(req.Message) > 340 {
-		writeError(w, http.StatusBadRequest, "SBD message exceeds 340 byte limit")
+	// Validate format field
+	if req.Format != "text" && req.Format != "binary" {
+		writeError(w, http.StatusBadRequest, "Format must be 'text' or 'binary'")
+		return
+	}
+
+	// Text messages are limited to 340 bytes
+	if req.Format == "text" && len(req.Text) > 340 {
+		writeError(w, http.StatusBadRequest, "SBD text message exceeds 340 byte limit")
 		return
 	}
 
@@ -776,45 +826,91 @@ func (h *CommunicationHandler) SendIridiumSBD(w http.ResponseWriter, r *http.Req
 		return
 	}
 
-	if err := h.halClient.SendIridiumSBD(ctx, port, req.Message); err != nil {
+	result, err := h.halClient.SendIridiumSBD(ctx, &req)
+	if err != nil {
 		writeError(w, http.StatusInternalServerError, "Failed to send Iridium SBD: "+err.Error())
 		return
 	}
 
-	writeJSON(w, http.StatusOK, SuccessResponse{
-		Success: true,
-		Message: "SBD message sent",
-	})
+	writeJSON(w, http.StatusOK, result)
 }
 
-// GetIridiumMessages godoc
-// @Summary Get Iridium messages
-// @Description Returns received Iridium SBD messages
+// CheckIridiumMailbox godoc
+// @Summary Check Iridium mailbox
+// @Description Initiates a mailbox check (SBD session) to retrieve incoming MT messages from the Iridium gateway
 // @Tags Communication
 // @Accept json
 // @Produce json
-// @Param port path string true "Iridium device port" example(ttyUSB0)
-// @Success 200 {object} hal.IridiumMessagesResponse
-// @Failure 400 {object} ErrorResponse "Port required"
-// @Failure 500 {object} ErrorResponse "Failed to get messages"
+// @Success 200 {object} hal.IridiumMailboxResponse "Mailbox check result with MT message info"
+// @Failure 500 {object} ErrorResponse "Failed to check mailbox"
 // @Failure 503 {object} ErrorResponse "HAL unavailable"
 // @Security BearerAuth
-// @Router /communication/iridium/{port}/messages [get]
-func (h *CommunicationHandler) GetIridiumMessages(w http.ResponseWriter, r *http.Request) {
+// @Router /communication/iridium/mailbox_check [post]
+func (h *CommunicationHandler) CheckIridiumMailbox(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
-	port := chi.URLParam(r, "port")
-
-	if port == "" {
-		writeError(w, http.StatusBadRequest, "Iridium port is required")
-		return
-	}
 
 	if h.halClient == nil {
 		writeError(w, http.StatusServiceUnavailable, "HAL service unavailable")
 		return
 	}
 
-	messages, err := h.halClient.GetIridiumMessages(ctx, port)
+	result, err := h.halClient.CheckIridiumMailbox(ctx)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "Failed to check Iridium mailbox: "+err.Error())
+		return
+	}
+
+	writeJSON(w, http.StatusOK, result)
+}
+
+// ReceiveIridiumMessage godoc
+// @Summary Receive Iridium message
+// @Description Retrieves the most recently received MT (Mobile-Terminated) message from the Iridium modem buffer
+// @Tags Communication
+// @Accept json
+// @Produce json
+// @Success 200 {object} hal.IridiumReceiveResponse "Received message data with length and format"
+// @Failure 500 {object} ErrorResponse "Failed to receive message"
+// @Failure 503 {object} ErrorResponse "HAL unavailable"
+// @Security BearerAuth
+// @Router /communication/iridium/receive [get]
+func (h *CommunicationHandler) ReceiveIridiumMessage(w http.ResponseWriter, r *http.Request) {
+	ctx := r.Context()
+
+	if h.halClient == nil {
+		writeError(w, http.StatusServiceUnavailable, "HAL service unavailable")
+		return
+	}
+
+	result, err := h.halClient.ReceiveIridiumMessage(ctx)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "Failed to receive Iridium message: "+err.Error())
+		return
+	}
+
+	writeJSON(w, http.StatusOK, result)
+}
+
+// GetIridiumMessages godoc
+// @Summary Get Iridium messages
+// @Description Returns received Iridium SBD messages (alias for receive endpoint)
+// @Tags Communication
+// @Accept json
+// @Produce json
+// @Success 200 {object} hal.IridiumMessagesResponse
+// @Failure 500 {object} ErrorResponse "Failed to get messages"
+// @Failure 503 {object} ErrorResponse "HAL unavailable"
+// @Security BearerAuth
+// @Router /communication/iridium/messages [get]
+func (h *CommunicationHandler) GetIridiumMessages(w http.ResponseWriter, r *http.Request) {
+	ctx := r.Context()
+
+	if h.halClient == nil {
+		writeError(w, http.StatusServiceUnavailable, "HAL service unavailable")
+		return
+	}
+
+	messages, err := h.halClient.GetIridiumMessages(ctx)
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, "Failed to get Iridium messages: "+err.Error())
 		return
@@ -823,25 +919,35 @@ func (h *CommunicationHandler) GetIridiumMessages(w http.ResponseWriter, r *http
 	writeJSON(w, http.StatusOK, messages)
 }
 
-// CheckIridiumMailbox godoc
-// @Summary Check Iridium mailbox
-// @Description Initiates a mailbox check for new incoming messages
+// IridiumClearRequest represents a request to clear Iridium modem buffers at the API level.
+type IridiumClearRequest struct {
+	Buffer string `json:"buffer"` // "mo", "mt", or "both"
+}
+
+// ClearIridiumBuffers godoc
+// @Summary Clear Iridium buffers
+// @Description Clears MO (Mobile-Originated) and/or MT (Mobile-Terminated) message buffers on the Iridium modem
 // @Tags Communication
 // @Accept json
 // @Produce json
-// @Param port path string true "Iridium device port" example(ttyUSB0)
+// @Param request body IridiumClearRequest true "Buffer to clear: mo, mt, or both"
 // @Success 200 {object} SuccessResponse
-// @Failure 400 {object} ErrorResponse "Port required"
-// @Failure 500 {object} ErrorResponse "Failed to check mailbox"
+// @Failure 400 {object} ErrorResponse "Invalid buffer value"
+// @Failure 500 {object} ErrorResponse "Failed to clear buffers"
 // @Failure 503 {object} ErrorResponse "HAL unavailable"
 // @Security BearerAuth
-// @Router /communication/iridium/{port}/mailbox [post]
-func (h *CommunicationHandler) CheckIridiumMailbox(w http.ResponseWriter, r *http.Request) {
+// @Router /communication/iridium/clear [post]
+func (h *CommunicationHandler) ClearIridiumBuffers(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
-	port := chi.URLParam(r, "port")
 
-	if port == "" {
-		writeError(w, http.StatusBadRequest, "Iridium port is required")
+	var req IridiumClearRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		writeError(w, http.StatusBadRequest, "Invalid request body")
+		return
+	}
+
+	if req.Buffer != "mo" && req.Buffer != "mt" && req.Buffer != "both" {
+		writeError(w, http.StatusBadRequest, "Buffer must be 'mo', 'mt', or 'both'")
 		return
 	}
 
@@ -850,15 +956,42 @@ func (h *CommunicationHandler) CheckIridiumMailbox(w http.ResponseWriter, r *htt
 		return
 	}
 
-	if err := h.halClient.CheckIridiumMailbox(ctx, port); err != nil {
-		writeError(w, http.StatusInternalServerError, "Failed to check Iridium mailbox: "+err.Error())
+	if err := h.halClient.ClearIridiumBuffers(ctx, req.Buffer); err != nil {
+		writeError(w, http.StatusInternalServerError, "Failed to clear Iridium buffers: "+err.Error())
 		return
 	}
 
 	writeJSON(w, http.StatusOK, SuccessResponse{
 		Success: true,
-		Message: "Mailbox check initiated",
+		Message: "Iridium buffers cleared",
 	})
+}
+
+// StreamIridiumEvents godoc
+// @Summary Stream Iridium events
+// @Description Opens a Server-Sent Events (SSE) stream for real-time Iridium modem events including signal changes, incoming messages, and connection state transitions
+// @Tags Communication
+// @Produce text/event-stream
+// @Success 200 {string} string "SSE event stream"
+// @Failure 500 {object} ErrorResponse "Failed to connect to event stream"
+// @Failure 503 {object} ErrorResponse "HAL unavailable"
+// @Security BearerAuth
+// @Router /communication/iridium/events [get]
+func (h *CommunicationHandler) StreamIridiumEvents(w http.ResponseWriter, r *http.Request) {
+	ctx := r.Context()
+
+	if h.halClient == nil {
+		writeError(w, http.StatusServiceUnavailable, "HAL service unavailable")
+		return
+	}
+
+	halResp, err := h.halClient.StreamIridiumEvents(ctx)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "Failed to connect to Iridium event stream: "+err.Error())
+		return
+	}
+
+	proxySSE(w, r, halResp)
 }
 
 // =============================================================================
@@ -1176,4 +1309,55 @@ func (h *CommunicationHandler) RemoveBluetoothDevice(w http.ResponseWriter, r *h
 		Success: true,
 		Message: "Device removed",
 	})
+}
+
+// =============================================================================
+// SSE Proxy Helper
+// =============================================================================
+
+// proxySSE forwards a Server-Sent Events stream from HAL to the API client.
+// The halResp must be an open *http.Response from a HAL SSE endpoint.
+// This function blocks until the client disconnects or the HAL stream ends.
+// It is reused by both Iridium and Meshtastic event stream handlers.
+func proxySSE(w http.ResponseWriter, r *http.Request, halResp *http.Response) {
+	defer halResp.Body.Close()
+
+	flusher, ok := w.(http.Flusher)
+	if !ok {
+		writeError(w, http.StatusInternalServerError, "Streaming not supported")
+		return
+	}
+
+	// Set SSE headers
+	w.Header().Set("Content-Type", "text/event-stream")
+	w.Header().Set("Cache-Control", "no-cache")
+	w.Header().Set("Connection", "keep-alive")
+	w.Header().Set("X-Accel-Buffering", "no") // Disable nginx buffering
+	w.WriteHeader(http.StatusOK)
+	flusher.Flush()
+
+	scanner := bufio.NewScanner(halResp.Body)
+	for {
+		select {
+		case <-r.Context().Done():
+			// Client disconnected
+			return
+		default:
+			if !scanner.Scan() {
+				// HAL stream ended or read error
+				if err := scanner.Err(); err != nil {
+					log.Printf("SSE proxy read error: %v", err)
+				}
+				return
+			}
+			line := scanner.Text()
+			// Forward the line as-is (SSE lines include "data:", "event:", "id:", or empty lines)
+			if _, err := io.WriteString(w, line+"\n"); err != nil {
+				// Client write failed (likely disconnected)
+				return
+			}
+			// Flush after every line for low latency
+			flusher.Flush()
+		}
+	}
 }
