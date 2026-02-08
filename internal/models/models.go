@@ -43,21 +43,22 @@ type ChangePasswordRequest struct {
 // =============================================================================
 
 type SystemInfo struct {
-	Hostname      string            `json:"hostname"`
-	OSName        string            `json:"os_name"`
-	OSVersion     string            `json:"os_version"`
-	Kernel        string            `json:"kernel"`
-	Architecture  string            `json:"architecture"`
-	PiModel       string            `json:"pi_model,omitempty"`
-	PiSerial      string            `json:"pi_serial,omitempty"`
-	PiRevision    string            `json:"pi_revision,omitempty"`
-	CPUModel      string            `json:"cpu_model,omitempty"`
-	CPUCores      int               `json:"cpu_cores"`
-	UptimeSeconds int64             `json:"uptime_seconds"`
-	UptimeHuman   string            `json:"uptime_human"`
-	BootTime      time.Time         `json:"boot_time"`
-	MACAddresses  map[string]string `json:"mac_addresses"`
-	IPAddresses   map[string]string `json:"ip_addresses"`
+	Hostname           string            `json:"hostname"`
+	OSName             string            `json:"os_name"`
+	OSVersion          string            `json:"os_version"`
+	Kernel             string            `json:"kernel"`
+	Architecture       string            `json:"architecture"`
+	PiModel            string            `json:"pi_model,omitempty"`
+	PiSerial           string            `json:"pi_serial,omitempty"`
+	PiRevision         string            `json:"pi_revision,omitempty"`
+	CPUModel           string            `json:"cpu_model,omitempty"`
+	CPUCores           int               `json:"cpu_cores"`
+	UptimeSeconds      int64             `json:"uptime_seconds"`
+	UptimeHuman        string            `json:"uptime_human"`
+	BootTime           time.Time         `json:"boot_time"`
+	MACAddresses       map[string]string `json:"mac_addresses"`
+	IPAddresses        map[string]string `json:"ip_addresses"`
+	DefaultCredentials bool              `json:"default_credentials"`
 }
 
 type SystemStats struct {

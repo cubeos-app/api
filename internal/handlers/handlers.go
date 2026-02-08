@@ -284,6 +284,16 @@ func (h *Handlers) ChangePassword(w http.ResponseWriter, r *http.Request) {
 // @Router /system/info [get]
 func (h *Handlers) GetSystemInfo(w http.ResponseWriter, r *http.Request) {
 	info := h.system.GetSystemInfo()
+
+	// Check if admin account still uses default credentials
+	var passwordHash string
+	err := h.db.Get(&passwordHash, "SELECT password_hash FROM users WHERE username = 'admin'")
+	if err == nil {
+		if bcrypt.CompareHashAndPassword([]byte(passwordHash), []byte("cubeos")) == nil {
+			info.DefaultCredentials = true
+		}
+	}
+
 	writeJSON(w, http.StatusOK, info)
 }
 
