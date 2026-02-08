@@ -46,12 +46,19 @@ func (h *CommunicationHandler) Routes() chi.Router {
 	r.Post("/cellular/android/enable", h.EnableAndroidTethering)
 	r.Post("/cellular/android/disable", h.DisableAndroidTethering)
 
-	// Meshtastic — Session 3 will add lifecycle routes (devices, connect, disconnect, etc.)
-	// Temporarily using portless routes so handlers compile with updated HAL client
+	// Meshtastic — full lifecycle routes (no {port}, uses connect/disconnect pattern)
+	r.Get("/meshtastic/devices", h.GetMeshtasticDevices)
+	r.Post("/meshtastic/connect", h.ConnectMeshtastic)
+	r.Post("/meshtastic/disconnect", h.DisconnectMeshtastic)
 	r.Get("/meshtastic/status", h.GetMeshtasticStatus)
 	r.Get("/meshtastic/nodes", h.GetMeshtasticNodes)
+	r.Get("/meshtastic/position", h.GetMeshtasticPosition)
+	r.Get("/meshtastic/messages", h.GetMeshtasticMessages)
 	r.Post("/meshtastic/messages/send", h.SendMeshtasticMessage)
+	r.Post("/meshtastic/messages/send_raw", h.SendMeshtasticRaw)
+	r.Get("/meshtastic/config", h.GetMeshtasticConfig)
 	r.Post("/meshtastic/channel", h.SetMeshtasticChannel)
+	r.Get("/meshtastic/events", h.StreamMeshtasticEvents)
 
 	// Iridium — new lifecycle routes (no {port}, uses connect/disconnect pattern)
 	r.Get("/iridium/devices", h.GetIridiumDevices)
@@ -480,13 +487,136 @@ func (h *CommunicationHandler) DisableAndroidTethering(w http.ResponseWriter, r 
 
 // =============================================================================
 // Meshtastic Endpoints
-// NOTE: Minimal compilation fixes applied (port param removed from HAL calls).
-// Session 3 will do the full rewrite: new lifecycle routes, new handlers, Swagger.
 // =============================================================================
+
+// GetMeshtasticDevices godoc
+// @Summary List Meshtastic devices
+// @Description Returns list of detected Meshtastic radios (USB serial and BLE)
+// @Tags Communication
+// @Accept json
+// @Produce json
+// @Success 200 {object} hal.MeshtasticDevicesResponse
+// @Failure 500 {object} ErrorResponse "Failed to list Meshtastic devices"
+// @Failure 503 {object} ErrorResponse "HAL unavailable"
+// @Security BearerAuth
+// @Router /communication/meshtastic/devices [get]
+func (h *CommunicationHandler) GetMeshtasticDevices(w http.ResponseWriter, r *http.Request) {
+	ctx := r.Context()
+
+	if h.halClient == nil {
+		writeError(w, http.StatusServiceUnavailable, "HAL service unavailable")
+		return
+	}
+
+	devices, err := h.halClient.GetMeshtasticDevices(ctx)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "Failed to get Meshtastic devices: "+err.Error())
+		return
+	}
+
+	writeJSON(w, http.StatusOK, devices)
+}
+
+// MeshtasticConnectAPIRequest represents a Meshtastic connect request at the API level.
+// Supports auto-detect (empty body), explicit serial (port + transport), or BLE (address + transport).
+type MeshtasticConnectAPIRequest struct {
+	Port      string `json:"port,omitempty"`
+	Address   string `json:"address,omitempty"`
+	Transport string `json:"transport,omitempty"` // "auto", "serial", "ble"
+}
+
+// ConnectMeshtastic godoc
+// @Summary Connect to Meshtastic radio
+// @Description Connects to a Meshtastic radio. Supports auto-detect (empty body), explicit serial port, or BLE address. When transport is "ble", connection may fail if WiFi AP is active due to shared radio hardware.
+// @Tags Communication
+// @Accept json
+// @Produce json
+// @Param request body MeshtasticConnectAPIRequest false "Connection parameters (all optional for auto-detect)"
+// @Success 200 {object} SuccessResponse
+// @Failure 400 {object} ErrorResponse "Invalid transport or missing parameters"
+// @Failure 409 {object} ErrorResponse "BLE unavailable (WiFi AP active)"
+// @Failure 500 {object} ErrorResponse "Failed to connect"
+// @Failure 503 {object} ErrorResponse "HAL unavailable"
+// @Security BearerAuth
+// @Router /communication/meshtastic/connect [post]
+func (h *CommunicationHandler) ConnectMeshtastic(w http.ResponseWriter, r *http.Request) {
+	ctx := r.Context()
+
+	var apiReq MeshtasticConnectAPIRequest
+	// Body is optional — ignore decode errors for empty body (auto-detect mode)
+	_ = json.NewDecoder(r.Body).Decode(&apiReq)
+
+	// Validate transport if provided
+	if apiReq.Transport != "" && apiReq.Transport != "auto" && apiReq.Transport != "serial" && apiReq.Transport != "ble" {
+		writeError(w, http.StatusBadRequest, "Transport must be 'auto', 'serial', or 'ble'")
+		return
+	}
+
+	// Validate that BLE has an address and serial has a port
+	if apiReq.Transport == "ble" && apiReq.Address == "" {
+		writeError(w, http.StatusBadRequest, "BLE address is required when transport is 'ble'")
+		return
+	}
+	if apiReq.Transport == "serial" && apiReq.Port == "" {
+		writeError(w, http.StatusBadRequest, "Port is required when transport is 'serial'")
+		return
+	}
+
+	if h.halClient == nil {
+		writeError(w, http.StatusServiceUnavailable, "HAL service unavailable")
+		return
+	}
+
+	halReq := &hal.MeshtasticConnectRequest{
+		Port:      apiReq.Port,
+		Address:   apiReq.Address,
+		Transport: apiReq.Transport,
+	}
+
+	if err := h.halClient.ConnectMeshtastic(ctx, halReq); err != nil {
+		writeError(w, http.StatusInternalServerError, "Failed to connect to Meshtastic radio: "+err.Error())
+		return
+	}
+
+	writeJSON(w, http.StatusOK, SuccessResponse{
+		Success: true,
+		Message: "Meshtastic radio connected",
+	})
+}
+
+// DisconnectMeshtastic godoc
+// @Summary Disconnect Meshtastic radio
+// @Description Disconnects from the currently connected Meshtastic radio
+// @Tags Communication
+// @Accept json
+// @Produce json
+// @Success 200 {object} SuccessResponse
+// @Failure 500 {object} ErrorResponse "Failed to disconnect"
+// @Failure 503 {object} ErrorResponse "HAL unavailable"
+// @Security BearerAuth
+// @Router /communication/meshtastic/disconnect [post]
+func (h *CommunicationHandler) DisconnectMeshtastic(w http.ResponseWriter, r *http.Request) {
+	ctx := r.Context()
+
+	if h.halClient == nil {
+		writeError(w, http.StatusServiceUnavailable, "HAL service unavailable")
+		return
+	}
+
+	if err := h.halClient.DisconnectMeshtastic(ctx); err != nil {
+		writeError(w, http.StatusInternalServerError, "Failed to disconnect Meshtastic radio: "+err.Error())
+		return
+	}
+
+	writeJSON(w, http.StatusOK, SuccessResponse{
+		Success: true,
+		Message: "Meshtastic radio disconnected",
+	})
+}
 
 // GetMeshtasticStatus godoc
 // @Summary Get Meshtastic status
-// @Description Returns Meshtastic radio status
+// @Description Returns Meshtastic radio status including connection state, device info, node count, and channel URL
 // @Tags Communication
 // @Accept json
 // @Produce json
@@ -514,7 +644,7 @@ func (h *CommunicationHandler) GetMeshtasticStatus(w http.ResponseWriter, r *htt
 
 // GetMeshtasticNodes godoc
 // @Summary Get Meshtastic nodes
-// @Description Returns list of discovered Meshtastic nodes in the mesh
+// @Description Returns list of discovered Meshtastic nodes in the mesh including signal, battery, and position data
 // @Tags Communication
 // @Accept json
 // @Produce json
@@ -540,15 +670,71 @@ func (h *CommunicationHandler) GetMeshtasticNodes(w http.ResponseWriter, r *http
 	writeJSON(w, http.StatusOK, nodes)
 }
 
-// SendMeshtasticMessage godoc
-// @Summary Send Meshtastic message
-// @Description Sends a text message via Meshtastic mesh network
+// GetMeshtasticPosition godoc
+// @Summary Get Meshtastic position
+// @Description Returns GPS position from the connected Meshtastic radio (latitude, longitude, altitude, time)
 // @Tags Communication
 // @Accept json
 // @Produce json
-// @Param request body hal.MeshtasticMessageRequest true "Message to send"
+// @Success 200 {object} hal.MeshtasticPosition
+// @Failure 500 {object} ErrorResponse "Failed to get position"
+// @Failure 503 {object} ErrorResponse "HAL unavailable"
+// @Security BearerAuth
+// @Router /communication/meshtastic/position [get]
+func (h *CommunicationHandler) GetMeshtasticPosition(w http.ResponseWriter, r *http.Request) {
+	ctx := r.Context()
+
+	if h.halClient == nil {
+		writeError(w, http.StatusServiceUnavailable, "HAL service unavailable")
+		return
+	}
+
+	position, err := h.halClient.GetMeshtasticPosition(ctx)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "Failed to get Meshtastic position: "+err.Error())
+		return
+	}
+
+	writeJSON(w, http.StatusOK, position)
+}
+
+// GetMeshtasticMessages godoc
+// @Summary Get Meshtastic messages
+// @Description Returns message history from the connected Meshtastic radio
+// @Tags Communication
+// @Accept json
+// @Produce json
+// @Success 200 {object} hal.MeshtasticMessagesResponse
+// @Failure 500 {object} ErrorResponse "Failed to get messages"
+// @Failure 503 {object} ErrorResponse "HAL unavailable"
+// @Security BearerAuth
+// @Router /communication/meshtastic/messages [get]
+func (h *CommunicationHandler) GetMeshtasticMessages(w http.ResponseWriter, r *http.Request) {
+	ctx := r.Context()
+
+	if h.halClient == nil {
+		writeError(w, http.StatusServiceUnavailable, "HAL service unavailable")
+		return
+	}
+
+	messages, err := h.halClient.GetMeshtasticMessages(ctx)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "Failed to get Meshtastic messages: "+err.Error())
+		return
+	}
+
+	writeJSON(w, http.StatusOK, messages)
+}
+
+// SendMeshtasticMessage godoc
+// @Summary Send Meshtastic message
+// @Description Sends a text message via Meshtastic mesh network. Optionally specify destination node and channel.
+// @Tags Communication
+// @Accept json
+// @Produce json
+// @Param request body hal.MeshtasticMessageRequest true "Message with text, optional to (node ID) and channel"
 // @Success 200 {object} SuccessResponse
-// @Failure 400 {object} ErrorResponse "Invalid request"
+// @Failure 400 {object} ErrorResponse "Invalid request or empty text"
 // @Failure 500 {object} ErrorResponse "Failed to send message"
 // @Failure 503 {object} ErrorResponse "HAL unavailable"
 // @Security BearerAuth
@@ -583,15 +769,91 @@ func (h *CommunicationHandler) SendMeshtasticMessage(w http.ResponseWriter, r *h
 	})
 }
 
-// SetMeshtasticChannel godoc
-// @Summary Set Meshtastic channel
-// @Description Configures a Meshtastic channel with name, PSK, and role
+// SendMeshtasticRaw godoc
+// @Summary Send raw Meshtastic packet
+// @Description Sends a raw protobuf packet via Meshtastic mesh network. Requires portnum and base64-encoded payload.
 // @Tags Communication
 // @Accept json
 // @Produce json
-// @Param request body hal.MeshtasticChannelRequest true "Channel configuration"
+// @Param request body hal.MeshtasticRawRequest true "Raw packet with portnum, payload, optional to/channel/want_ack"
 // @Success 200 {object} SuccessResponse
-// @Failure 400 {object} ErrorResponse "Invalid request"
+// @Failure 400 {object} ErrorResponse "Invalid request or missing portnum/payload"
+// @Failure 500 {object} ErrorResponse "Failed to send raw packet"
+// @Failure 503 {object} ErrorResponse "HAL unavailable"
+// @Security BearerAuth
+// @Router /communication/meshtastic/messages/send_raw [post]
+func (h *CommunicationHandler) SendMeshtasticRaw(w http.ResponseWriter, r *http.Request) {
+	ctx := r.Context()
+
+	var req hal.MeshtasticRawRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		writeError(w, http.StatusBadRequest, "Invalid request body")
+		return
+	}
+
+	if req.PortNum == 0 {
+		writeError(w, http.StatusBadRequest, "Portnum is required")
+		return
+	}
+
+	if req.Payload == "" {
+		writeError(w, http.StatusBadRequest, "Payload is required")
+		return
+	}
+
+	if h.halClient == nil {
+		writeError(w, http.StatusServiceUnavailable, "HAL service unavailable")
+		return
+	}
+
+	if err := h.halClient.SendMeshtasticRaw(ctx, &req); err != nil {
+		writeError(w, http.StatusInternalServerError, "Failed to send Meshtastic raw packet: "+err.Error())
+		return
+	}
+
+	writeJSON(w, http.StatusOK, SuccessResponse{
+		Success: true,
+		Message: "Raw packet sent",
+	})
+}
+
+// GetMeshtasticConfig godoc
+// @Summary Get Meshtastic config
+// @Description Returns the full radio and module configuration from the connected Meshtastic device handshake data
+// @Tags Communication
+// @Accept json
+// @Produce json
+// @Success 200 {object} map[string]interface{} "Radio and module configuration"
+// @Failure 500 {object} ErrorResponse "Failed to get config"
+// @Failure 503 {object} ErrorResponse "HAL unavailable"
+// @Security BearerAuth
+// @Router /communication/meshtastic/config [get]
+func (h *CommunicationHandler) GetMeshtasticConfig(w http.ResponseWriter, r *http.Request) {
+	ctx := r.Context()
+
+	if h.halClient == nil {
+		writeError(w, http.StatusServiceUnavailable, "HAL service unavailable")
+		return
+	}
+
+	config, err := h.halClient.GetMeshtasticConfig(ctx)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "Failed to get Meshtastic config: "+err.Error())
+		return
+	}
+
+	writeJSON(w, http.StatusOK, config)
+}
+
+// SetMeshtasticChannel godoc
+// @Summary Set Meshtastic channel
+// @Description Configures a Meshtastic channel with index (0-7), name, PSK, and role. Role must be PRIMARY, SECONDARY, or DISABLED.
+// @Tags Communication
+// @Accept json
+// @Produce json
+// @Param request body hal.MeshtasticChannelRequest true "Channel configuration with index, name, role, optional PSK and uplink/downlink"
+// @Success 200 {object} SuccessResponse
+// @Failure 400 {object} ErrorResponse "Invalid request, missing name/role, or invalid index"
 // @Failure 500 {object} ErrorResponse "Failed to set channel"
 // @Failure 503 {object} ErrorResponse "HAL unavailable"
 // @Security BearerAuth
@@ -602,6 +864,28 @@ func (h *CommunicationHandler) SetMeshtasticChannel(w http.ResponseWriter, r *ht
 	var req hal.MeshtasticChannelRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		writeError(w, http.StatusBadRequest, "Invalid request body")
+		return
+	}
+
+	// Validate index range (0-7)
+	if req.Index < 0 || req.Index > 7 {
+		writeError(w, http.StatusBadRequest, "Channel index must be between 0 and 7")
+		return
+	}
+
+	if req.Name == "" {
+		writeError(w, http.StatusBadRequest, "Channel name is required")
+		return
+	}
+
+	if req.Role == "" {
+		writeError(w, http.StatusBadRequest, "Channel role is required")
+		return
+	}
+
+	// Validate role enum
+	if req.Role != "PRIMARY" && req.Role != "SECONDARY" && req.Role != "DISABLED" {
+		writeError(w, http.StatusBadRequest, "Channel role must be 'PRIMARY', 'SECONDARY', or 'DISABLED'")
 		return
 	}
 
@@ -619,6 +903,33 @@ func (h *CommunicationHandler) SetMeshtasticChannel(w http.ResponseWriter, r *ht
 		Success: true,
 		Message: "Channel configured",
 	})
+}
+
+// StreamMeshtasticEvents godoc
+// @Summary Stream Meshtastic events
+// @Description Opens a Server-Sent Events (SSE) stream for real-time Meshtastic events including incoming messages, node updates, and position reports
+// @Tags Communication
+// @Produce text/event-stream
+// @Success 200 {string} string "SSE event stream"
+// @Failure 500 {object} ErrorResponse "Failed to connect to event stream"
+// @Failure 503 {object} ErrorResponse "HAL unavailable"
+// @Security BearerAuth
+// @Router /communication/meshtastic/events [get]
+func (h *CommunicationHandler) StreamMeshtasticEvents(w http.ResponseWriter, r *http.Request) {
+	ctx := r.Context()
+
+	if h.halClient == nil {
+		writeError(w, http.StatusServiceUnavailable, "HAL service unavailable")
+		return
+	}
+
+	halResp, err := h.halClient.StreamMeshtasticEvents(ctx)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "Failed to connect to Meshtastic event stream: "+err.Error())
+		return
+	}
+
+	proxySSE(w, r, halResp)
 }
 
 // =============================================================================
