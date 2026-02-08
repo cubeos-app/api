@@ -193,3 +193,42 @@ var DefaultAppStores = []AppStore{
 		Enabled:     true,
 	},
 }
+
+// InstalledAppToApp converts a legacy InstalledApp to the unified App model.
+// This supports backward compatibility with CasaOS import flows.
+//
+// Deprecated: Use the unified App model directly for new code paths.
+func InstalledAppToApp(ia *InstalledApp) *App {
+	if ia == nil {
+		return nil
+	}
+
+	storeID := &ia.StoreID
+	if ia.StoreID == "" {
+		storeID = nil
+	}
+	storeAppID := &ia.StoreAppID
+	if ia.StoreAppID == "" {
+		storeAppID = nil
+	}
+
+	return &App{
+		Name:        ia.Name,
+		DisplayName: ia.Title,
+		Description: ia.Description,
+		Type:        AppTypeUser,
+		Category:    ia.Category,
+		Source:      AppSourceCasaOS,
+		StoreID:     storeID,
+		StoreAppID:  storeAppID,
+		ComposePath: ia.ComposeFile,
+		DataPath:    ia.DataPath,
+		Enabled:     true,
+		DeployMode:  DeployModeStack,
+		IconURL:     ia.Icon,
+		Version:     ia.Version,
+		Homepage:    ia.WebUI,
+		CreatedAt:   ia.InstalledAt,
+		UpdatedAt:   ia.UpdatedAt,
+	}
+}

@@ -347,6 +347,134 @@ var migrations = []Migration{
 			return nil
 		},
 	},
+
+	// Version 10: Unify installed_apps into apps table, add app_catalog
+	{
+		Version:     10,
+		Description: "Migrate installed_apps into unified apps table, add app_catalog",
+		Up: func(db *sql.DB) error {
+			// Step 1: Add store_app_id column to apps if missing
+			_, err := db.Exec(`ALTER TABLE apps ADD COLUMN store_app_id TEXT DEFAULT NULL`)
+			if err != nil && !isDuplicateColumnError(err) {
+				return fmt.Errorf("failed to add apps.store_app_id: %w", err)
+			}
+
+			// Step 2: Migrate rows from installed_apps → apps (if installed_apps exists)
+			var tableExists int
+			err = db.QueryRow(`SELECT COUNT(*) FROM sqlite_master WHERE type='table' AND name='installed_apps'`).Scan(&tableExists)
+			if err != nil {
+				return fmt.Errorf("failed to check for installed_apps table: %w", err)
+			}
+
+			if tableExists > 0 {
+				// Copy installed_apps rows into apps table, mapping columns:
+				//   installed_apps.name          → apps.name
+				//   installed_apps.title          → apps.display_name
+				//   installed_apps.description    → apps.description
+				//   installed_apps.icon           → apps.icon_url
+				//   installed_apps.category       → apps.category
+				//   installed_apps.version        → apps.version
+				//   installed_apps.compose_file   → apps.compose_path
+				//   installed_apps.data_path      → apps.data_path
+				//   installed_apps.store_id       → apps.store_id
+				//   installed_apps.store_app_id   → apps.store_app_id
+				//   installed_apps.webui          → apps.homepage
+				//   installed_apps.deploy_mode    → apps.deploy_mode
+				//   installed_apps.installed_at   → apps.created_at
+				//   installed_apps.updated_at     → apps.updated_at
+				// Fields NOT migrated:
+				//   installed_apps.status         → Swarm is truth (runtime only)
+				//   installed_apps.npm_proxy_id   → Tracked per-FQDN in fqdns table
+				_, err = db.Exec(`
+					INSERT OR IGNORE INTO apps (
+						name, display_name, description, type, category, source,
+						store_id, store_app_id, compose_path, data_path,
+						enabled, deploy_mode, icon_url, version, homepage,
+						created_at, updated_at
+					)
+					SELECT
+						ia.name,
+						COALESCE(ia.title, ia.name),
+						COALESCE(ia.description, ''),
+						'user',
+						COALESCE(ia.category, 'other'),
+						'casaos',
+						ia.store_id,
+						ia.store_app_id,
+						COALESCE(ia.compose_file, ''),
+						COALESCE(ia.data_path, ''),
+						TRUE,
+						COALESCE(ia.deploy_mode, 'stack'),
+						COALESCE(ia.icon, ''),
+						COALESCE(ia.version, ''),
+						COALESCE(ia.webui, ''),
+						COALESCE(ia.installed_at, CURRENT_TIMESTAMP),
+						COALESCE(ia.updated_at, CURRENT_TIMESTAMP)
+					FROM installed_apps ia
+					WHERE ia.name NOT IN (SELECT name FROM apps)
+				`)
+				if err != nil {
+					log.Warn().Err(err).Msg("Migration 10: Failed to migrate installed_apps rows (non-fatal)")
+				}
+
+				// Migrate npm_proxy_id to fqdns table where possible
+				rows, err := db.Query(`
+					SELECT ia.name, ia.npm_proxy_id 
+					FROM installed_apps ia 
+					WHERE ia.npm_proxy_id > 0
+				`)
+				if err == nil {
+					defer rows.Close()
+					for rows.Next() {
+						var name string
+						var npmID int
+						if rows.Scan(&name, &npmID) == nil {
+							db.Exec(`
+								UPDATE fqdns SET npm_proxy_id = ? 
+								WHERE app_id = (SELECT id FROM apps WHERE name = ?)
+								AND npm_proxy_id IS NULL
+							`, npmID, name)
+						}
+					}
+				}
+
+				// Step 3: Drop installed_apps table
+				_, err = db.Exec(`DROP TABLE IF EXISTS installed_apps`)
+				if err != nil {
+					log.Warn().Err(err).Msg("Migration 10: Failed to drop installed_apps (non-fatal)")
+				}
+			}
+
+			// Step 4: Create app_catalog table for store caching
+			_, err = db.Exec(`
+				CREATE TABLE IF NOT EXISTS app_catalog (
+					id              TEXT PRIMARY KEY,
+					store_id        TEXT NOT NULL,
+					name            TEXT NOT NULL,
+					title           TEXT DEFAULT '',
+					description     TEXT DEFAULT '',
+					icon_url        TEXT DEFAULT '',
+					category        TEXT DEFAULT '',
+					version         TEXT DEFAULT '',
+					architectures   TEXT DEFAULT '[]',
+					manifest_path   TEXT DEFAULT '',
+					cached_at       DATETIME DEFAULT CURRENT_TIMESTAMP,
+					FOREIGN KEY (store_id) REFERENCES app_stores(id) ON DELETE CASCADE
+				)
+			`)
+			if err != nil {
+				return fmt.Errorf("failed to create app_catalog table: %w", err)
+			}
+
+			_, err = db.Exec(`CREATE INDEX IF NOT EXISTS idx_app_catalog_store ON app_catalog(store_id)`)
+			if err != nil {
+				log.Warn().Err(err).Msg("Migration 10: Failed to create app_catalog index")
+			}
+
+			log.Info().Msg("Migration 10: Unified installed_apps into apps table, created app_catalog")
+			return nil
+		},
+	},
 }
 
 // isDuplicateColumnError checks if an error is a "duplicate column" error
@@ -438,7 +566,7 @@ func DropAllTables(db *sql.DB) error {
 		"settings",
 		"service_states",
 		"app_stores",
-		"installed_apps",
+		"app_catalog",
 		"setup_status",
 		"system_config",
 	}

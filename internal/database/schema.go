@@ -9,7 +9,7 @@ import (
 )
 
 // CurrentSchemaVersion tracks the database schema version for migrations.
-const CurrentSchemaVersion = 9
+const CurrentSchemaVersion = 10
 
 // Schema defines the unified CubeOS database schema.
 // Design Principles:
@@ -33,6 +33,7 @@ CREATE TABLE IF NOT EXISTS apps (
     category        TEXT DEFAULT 'other',           -- 'infrastructure' | 'media' | 'productivity' | etc.
     source          TEXT DEFAULT 'custom',          -- 'cubeos' | 'casaos' | 'custom'
     store_id        TEXT DEFAULT NULL,              -- Reference to app store (if installed from store)
+    store_app_id    TEXT DEFAULT NULL,              -- Store catalog app ID (for updates)
     
     -- Paths
     compose_path    TEXT NOT NULL,                  -- /cubeos/{core}apps/{name}/appconfig/docker-compose.yml
@@ -331,31 +332,25 @@ CREATE TABLE IF NOT EXISTS app_stores (
 );
 
 -- =============================================================================
--- INSTALLED_APPS: Apps installed from app stores
--- DEPRECATED: Legacy table from pre-Swarm architecture. New installs should use
--- the unified 'apps' table. This table is retained for AppStore manager
--- compatibility and will be migrated/removed in FS-05.
+-- APP_CATALOG: Cached app store catalog entries
 -- =============================================================================
-CREATE TABLE IF NOT EXISTS installed_apps (
-    id              TEXT PRIMARY KEY,
-    store_id        TEXT,
-    store_app_id    TEXT,
+CREATE TABLE IF NOT EXISTS app_catalog (
+    id              TEXT PRIMARY KEY,               -- composite: store_id/app_name
+    store_id        TEXT NOT NULL,
     name            TEXT NOT NULL,
-    title           TEXT,
-    description     TEXT,
-    icon            TEXT,
-    category        TEXT,
-    version         TEXT,
-    status          TEXT DEFAULT 'stopped',
-    webui           TEXT,
-    compose_file    TEXT,
-    data_path       TEXT,
-    npm_proxy_id    INTEGER DEFAULT 0,
-    installed_at    DATETIME DEFAULT CURRENT_TIMESTAMP,
-    updated_at      DATETIME DEFAULT CURRENT_TIMESTAMP
+    title           TEXT DEFAULT '',
+    description     TEXT DEFAULT '',
+    icon_url        TEXT DEFAULT '',
+    category        TEXT DEFAULT '',
+    version         TEXT DEFAULT '',
+    architectures   TEXT DEFAULT '[]',              -- JSON array of supported archs
+    manifest_path   TEXT DEFAULT '',
+    cached_at       DATETIME DEFAULT CURRENT_TIMESTAMP,
+
+    FOREIGN KEY (store_id) REFERENCES app_stores(id) ON DELETE CASCADE
 );
 
-CREATE INDEX IF NOT EXISTS idx_installed_apps_name ON installed_apps(name);
+CREATE INDEX IF NOT EXISTS idx_app_catalog_store ON app_catalog(store_id);
 
 -- =============================================================================
 -- SETUP_STATUS: First-boot setup wizard state
@@ -400,7 +395,7 @@ INSERT OR IGNORE INTO system_state (key, value) VALUES
     ('domain', 'cubeos.cube'),
     ('gateway_ip', '10.42.24.1'),
     ('subnet', '10.42.24.0/24'),
-    ('schema_version', '9');
+    ('schema_version', '10');
 
 -- =============================================================================
 -- DEFAULT NETWORK CONFIG

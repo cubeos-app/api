@@ -88,20 +88,10 @@ func NewAppStoreManager(cfg *config.Config, db *DatabaseManager, dataPath string
 
 // initDB ensures app store tables exist.
 // Core table creation is handled by database.InitSchema().
-// CREATE IF NOT EXISTS is idempotent, so this is safe as a fallback.
+// The apps table already has all needed columns (deploy_mode, store_app_id, etc.)
 func (m *AppStoreManager) initDB() {
-	// Tables are now defined in database/schema.go.
-	// Only add migration-style column additions here for backward compatibility.
-	migrations := []string{
-		// Migration: Add npm_proxy_id if table already exists without it
-		`ALTER TABLE installed_apps ADD COLUMN npm_proxy_id INTEGER DEFAULT 0`,
-		// Migration: Add deploy_mode to track stack vs compose deployment
-		`ALTER TABLE installed_apps ADD COLUMN deploy_mode TEXT DEFAULT 'compose'`,
-	}
-
-	for _, q := range migrations {
-		m.db.db.Exec(q) // Ignore errors (column may already exist)
-	}
+	// Ensure store_app_id column exists for older databases
+	m.db.db.Exec(`ALTER TABLE apps ADD COLUMN store_app_id TEXT DEFAULT NULL`)
 }
 
 // loadStores loads stores from database
@@ -138,11 +128,16 @@ func (m *AppStoreManager) loadStores() {
 	}
 }
 
-// loadInstalledApps loads installed apps from database
+// loadInstalledApps loads user-installed apps from the unified apps table.
+// Only loads apps with source='casaos' (installed from app store).
 func (m *AppStoreManager) loadInstalledApps() {
-	rows, err := m.db.db.Query(`SELECT id, store_id, store_app_id, name, title, description,
-		icon, category, version, status, webui, compose_file, data_path, installed_at, updated_at 
-		FROM installed_apps`)
+	rows, err := m.db.db.Query(`SELECT name, store_id, COALESCE(store_app_id, '') as store_app_id,
+		name, COALESCE(display_name, name) as title, COALESCE(description, '') as description,
+		COALESCE(icon_url, '') as icon, COALESCE(category, '') as category,
+		COALESCE(version, '') as version, COALESCE(homepage, '') as webui,
+		COALESCE(compose_path, '') as compose_file, COALESCE(data_path, '') as data_path,
+		created_at, updated_at
+		FROM apps WHERE source = 'casaos'`)
 	if err != nil {
 		return
 	}
@@ -152,10 +147,11 @@ func (m *AppStoreManager) loadInstalledApps() {
 		var app models.InstalledApp
 		var installedAt, updatedAt string
 		rows.Scan(&app.ID, &app.StoreID, &app.StoreAppID, &app.Name, &app.Title, &app.Description,
-			&app.Icon, &app.Category, &app.Version, &app.Status, &app.WebUI, &app.ComposeFile,
+			&app.Icon, &app.Category, &app.Version, &app.WebUI, &app.ComposeFile,
 			&app.DataPath, &installedAt, &updatedAt)
 		app.InstalledAt, _ = time.Parse(time.RFC3339, installedAt)
 		app.UpdatedAt, _ = time.Parse(time.RFC3339, updatedAt)
+		app.Status = "unknown" // Will be refreshed from Swarm at query time
 		m.installed[app.ID] = &app
 	}
 	if err := rows.Err(); err != nil {
@@ -737,17 +733,30 @@ func (m *AppStoreManager) InstallApp(req *models.AppInstallRequest) (*models.Ins
 		UpdatedAt:   time.Now(),
 	}
 
-	// Save to database (with deploy_mode = 'stack' for new Swarm installs)
-	_, err = m.db.db.Exec(`INSERT INTO installed_apps 
-		(id, store_id, store_app_id, name, title, description, icon, category, version, status, webui, compose_file, data_path, installed_at, updated_at, npm_proxy_id, deploy_mode)
-		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-		installed.ID, installed.StoreID, installed.StoreAppID, installed.Name, installed.Title,
-		installed.Description, installed.Icon, installed.Category, installed.Version,
-		installed.Status, installed.WebUI, installed.ComposeFile, installed.DataPath,
-		installed.InstalledAt.Format(time.RFC3339), installed.UpdatedAt.Format(time.RFC3339),
-		npmProxyID, "stack")
+	// Save to database (unified apps table, source='casaos', deploy_mode='stack' for new Swarm installs)
+	_, err = m.db.db.Exec(`INSERT INTO apps 
+		(name, display_name, description, type, category, source,
+		 store_id, store_app_id, compose_path, data_path,
+		 enabled, deploy_mode, icon_url, version, homepage,
+		 created_at, updated_at)
+		VALUES (?, ?, ?, 'user', ?, 'casaos', ?, ?, ?, ?, TRUE, 'stack', ?, ?, ?, ?, ?)`,
+		installed.Name, installed.Title, installed.Description,
+		installed.Category, installed.StoreID, installed.StoreAppID,
+		installed.ComposeFile, installed.DataPath,
+		installed.Icon, installed.Version, installed.WebUI,
+		installed.InstalledAt.Format(time.RFC3339), installed.UpdatedAt.Format(time.RFC3339))
 	if err != nil {
 		return nil, fmt.Errorf("failed to save app record: %w", err)
+	}
+
+	// Store NPM proxy ID and FQDN in the fqdns table (replaces old installed_apps.npm_proxy_id)
+	if npmProxyID > 0 && appFQDN != "" {
+		var appID int64
+		if err := m.db.db.QueryRow("SELECT id FROM apps WHERE name = ?", installed.Name).Scan(&appID); err == nil {
+			m.db.db.Exec(`INSERT INTO fqdns (app_id, fqdn, subdomain, backend_port, npm_proxy_id)
+				VALUES (?, ?, ?, ?, ?) ON CONFLICT DO NOTHING`,
+				appID, appFQDN, installed.Name, appPort, npmProxyID)
+		}
 	}
 
 	m.mu.Lock()
@@ -953,7 +962,7 @@ func getString(m map[string]interface{}, key string) string {
 // getDeployMode returns the deploy mode for an installed app
 func (m *AppStoreManager) getDeployMode(appID string) string {
 	var mode string
-	err := m.db.db.QueryRow(`SELECT COALESCE(deploy_mode, 'compose') FROM installed_apps WHERE id = ?`, appID).Scan(&mode)
+	err := m.db.db.QueryRow(`SELECT COALESCE(deploy_mode, 'compose') FROM apps WHERE name = ?`, appID).Scan(&mode)
 	if err != nil {
 		return "compose" // default to compose for legacy apps
 	}
@@ -1062,9 +1071,11 @@ func (m *AppStoreManager) RemoveApp(appID string, deleteData bool) error {
 		return fmt.Errorf("app not found: %s", appID)
 	}
 
-	// Remove NPM proxy host
+	// Remove NPM proxy host (npm_proxy_id now tracked in fqdns table)
 	var npmProxyID int
-	m.db.db.QueryRow(`SELECT npm_proxy_id FROM installed_apps WHERE id = ?`, appID).Scan(&npmProxyID)
+	m.db.db.QueryRow(`SELECT COALESCE(f.npm_proxy_id, 0) FROM fqdns f
+		JOIN apps a ON a.id = f.app_id WHERE a.name = ? AND f.npm_proxy_id > 0 LIMIT 1`,
+		appID).Scan(&npmProxyID)
 	if npmProxyID > 0 {
 		if err := m.removeNPMProxyHost(npmProxyID); err != nil {
 			log.Printf("Warning: Failed to remove NPM proxy: %v", err)
@@ -1103,8 +1114,8 @@ func (m *AppStoreManager) RemoveApp(appID string, deleteData bool) error {
 		os.RemoveAll(appConfigDir)
 	}
 
-	// Remove from database
-	m.db.db.Exec(`DELETE FROM installed_apps WHERE id = ?`, appID)
+	// Remove from database (unified apps table)
+	m.db.db.Exec(`DELETE FROM apps WHERE name = ? AND source = 'casaos'`, appID)
 
 	// Update catalog
 	m.mu.Lock()
@@ -1120,8 +1131,10 @@ func (m *AppStoreManager) RemoveApp(appID string, deleteData bool) error {
 }
 
 func (m *AppStoreManager) updateAppStatus(appID, status string) {
-	m.db.db.Exec(`UPDATE installed_apps SET status = ?, updated_at = ? WHERE id = ?`,
-		status, time.Now().Format(time.RFC3339), appID)
+	// Status is not persisted in the unified apps table (Swarm is truth).
+	// Only update the timestamp to track last state change.
+	m.db.db.Exec(`UPDATE apps SET updated_at = ? WHERE name = ?`,
+		time.Now().Format(time.RFC3339), appID)
 }
 
 // ValidateAppName validates an app name

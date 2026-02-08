@@ -44,6 +44,7 @@ type App struct {
 	Category    string     `db:"category" json:"category"`
 	Source      AppSource  `db:"source" json:"source"`
 	StoreID     *string    `db:"store_id" json:"store_id,omitempty"`
+	StoreAppID  *string    `db:"store_app_id" json:"store_app_id,omitempty"`
 	ComposePath string     `db:"compose_path" json:"compose_path"`
 	DataPath    string     `db:"data_path" json:"data_path"`
 	Enabled     bool       `db:"enabled" json:"enabled"`
