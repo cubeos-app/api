@@ -8,21 +8,23 @@ import (
 
 	"github.com/go-chi/chi/v5"
 
+	"cubeos-api/internal/hal"
 	"cubeos-api/internal/managers"
 )
 
 // FirewallHandler handles firewall-related HTTP requests.
-// All operations are routed through the FirewallManager (which uses HAL).
+// All rule operations are routed through the FirewallManager (which uses HAL).
+// The halClient is used for consolidated HAL-based firewall status.
 type FirewallHandler struct {
-	firewall *managers.FirewallManager
+	firewall  *managers.FirewallManager
+	halClient *hal.Client
 }
 
 // NewFirewallHandler creates a new firewall handler.
-// The halClient parameter is accepted for backward compatibility but ignored;
-// all operations go through the manager.
-func NewFirewallHandler(firewall *managers.FirewallManager, _ interface{}) *FirewallHandler {
+func NewFirewallHandler(firewall *managers.FirewallManager, halClient *hal.Client) *FirewallHandler {
 	return &FirewallHandler{
-		firewall: firewall,
+		firewall:  firewall,
+		halClient: halClient,
 	}
 }
 
@@ -32,6 +34,7 @@ func (h *FirewallHandler) Routes() chi.Router {
 
 	// Status endpoints
 	r.Get("/status", h.GetStatus)
+	r.Get("/hal/status", h.GetHALFirewallStatus)
 	r.Get("/nat", h.GetNATStatus)
 	r.Get("/nat/status", h.GetNATStatus) // Alias
 
@@ -86,6 +89,31 @@ func (h *FirewallHandler) GetStatus(w http.ResponseWriter, r *http.Request) {
 	status, err := h.firewall.GetStatus(r.Context())
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, "Failed to get firewall status: "+err.Error())
+		return
+	}
+
+	writeJSON(w, http.StatusOK, status)
+}
+
+// GetHALFirewallStatus godoc
+// @Summary Get consolidated HAL firewall status
+// @Description Returns consolidated firewall status directly from the HAL, including active state, rule count, NAT, and forwarding status
+// @Tags Firewall
+// @Produce json
+// @Security BearerAuth
+// @Success 200 {object} hal.FirewallStatusResponse "Consolidated firewall status"
+// @Failure 500 {object} ErrorResponse "Failed to get HAL firewall status"
+// @Failure 503 {object} ErrorResponse "HAL service unavailable"
+// @Router /firewall/hal/status [get]
+func (h *FirewallHandler) GetHALFirewallStatus(w http.ResponseWriter, r *http.Request) {
+	if h.halClient == nil {
+		writeError(w, http.StatusServiceUnavailable, "HAL service unavailable")
+		return
+	}
+
+	status, err := h.halClient.GetHALFirewallStatus(r.Context())
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "Failed to get HAL firewall status: "+err.Error())
 		return
 	}
 

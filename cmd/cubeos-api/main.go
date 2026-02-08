@@ -131,6 +131,9 @@
 //
 //	@tag.name					DiskHealth
 //	@tag.description			Disk health monitoring (SMART)
+//
+//	@tag.name					Support
+//	@tag.description			Support and diagnostic tools
 package main
 
 import (
@@ -613,6 +616,9 @@ func main() {
 			// HAL-based Hardware APIs (Sprint 6)
 			// ===========================================================
 
+			// Support Bundle (diagnostic download via HAL)
+			r.Get("/support/bundle.zip", hardwareHandler.GetSupportBundle)
+
 			// Hardware API - System info, power, RTC, watchdog, GPIO, I2C, sensors
 			// 35 endpoints for Pi-specific hardware access
 			r.Mount("/hardware", hardwareHandler.Routes())
@@ -663,7 +669,7 @@ func main() {
 	go func() {
 		log.Printf("API listening on %s", addr)
 		log.Printf("Swagger UI: http://%s/api/v1/docs/index.html", addr)
-		log.Printf("HAL endpoints: /hardware, /hal/storage, /communication, /media, /hal/logs")
+		log.Printf("HAL endpoints: /hardware, /hal/storage, /communication, /media, /hal/logs, /support/bundle.zip")
 		if err := srv.ListenAndServe(); err != nil && err != http.ErrServerClosed {
 			log.Fatalf("Server failed: %v", err)
 		}

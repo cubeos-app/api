@@ -46,6 +46,11 @@ func (h *HardwareHandler) Routes() chi.Router {
 	r.Post("/charging", h.SetChargingEnabled)
 	r.Post("/battery/quickstart", h.QuickStartBattery)
 
+	// Power Monitor (UPS monitoring daemon)
+	r.Get("/power/monitor", h.GetPowerMonitorStatus)
+	r.Post("/power/monitor/start", h.StartPowerMonitor)
+	r.Post("/power/monitor/stop", h.StopPowerMonitor)
+
 	// RTC
 	r.Get("/rtc", h.GetRTCStatus)
 	r.Post("/rtc/sync", h.SyncRTCTime)
@@ -518,6 +523,98 @@ func (h *HardwareHandler) QuickStartBattery(w http.ResponseWriter, r *http.Reque
 	writeJSON(w, http.StatusOK, SuccessResponse{
 		Success: true,
 		Message: "Battery quick start initiated",
+	})
+}
+
+// =============================================================================
+// Power Monitor Endpoints
+// =============================================================================
+
+// GetPowerMonitorStatus godoc
+// @Summary Get power monitor status
+// @Description Returns UPS power monitoring daemon status including battery percent, charging state, UPS model, and AC power status
+// @Tags Hardware
+// @Accept json
+// @Produce json
+// @Success 200 {object} hal.PowerMonitorStatus
+// @Failure 500 {object} ErrorResponse "Failed to get power monitor status"
+// @Failure 503 {object} ErrorResponse "HAL unavailable"
+// @Security BearerAuth
+// @Router /hardware/power/monitor [get]
+func (h *HardwareHandler) GetPowerMonitorStatus(w http.ResponseWriter, r *http.Request) {
+	ctx := r.Context()
+
+	if h.halClient == nil {
+		writeError(w, http.StatusServiceUnavailable, "HAL service unavailable")
+		return
+	}
+
+	status, err := h.halClient.GetPowerMonitorStatus(ctx)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "Failed to get power monitor status: "+err.Error())
+		return
+	}
+
+	writeJSON(w, http.StatusOK, status)
+}
+
+// StartPowerMonitor godoc
+// @Summary Start power monitor
+// @Description Starts the UPS power monitoring daemon for continuous battery and charging state tracking
+// @Tags Hardware
+// @Accept json
+// @Produce json
+// @Success 200 {object} SuccessResponse
+// @Failure 500 {object} ErrorResponse "Failed to start power monitor"
+// @Failure 503 {object} ErrorResponse "HAL unavailable"
+// @Security BearerAuth
+// @Router /hardware/power/monitor/start [post]
+func (h *HardwareHandler) StartPowerMonitor(w http.ResponseWriter, r *http.Request) {
+	ctx := r.Context()
+
+	if h.halClient == nil {
+		writeError(w, http.StatusServiceUnavailable, "HAL service unavailable")
+		return
+	}
+
+	if err := h.halClient.StartPowerMonitor(ctx); err != nil {
+		writeError(w, http.StatusInternalServerError, "Failed to start power monitor: "+err.Error())
+		return
+	}
+
+	writeJSON(w, http.StatusOK, SuccessResponse{
+		Success: true,
+		Message: "Power monitor started",
+	})
+}
+
+// StopPowerMonitor godoc
+// @Summary Stop power monitor
+// @Description Stops the UPS power monitoring daemon
+// @Tags Hardware
+// @Accept json
+// @Produce json
+// @Success 200 {object} SuccessResponse
+// @Failure 500 {object} ErrorResponse "Failed to stop power monitor"
+// @Failure 503 {object} ErrorResponse "HAL unavailable"
+// @Security BearerAuth
+// @Router /hardware/power/monitor/stop [post]
+func (h *HardwareHandler) StopPowerMonitor(w http.ResponseWriter, r *http.Request) {
+	ctx := r.Context()
+
+	if h.halClient == nil {
+		writeError(w, http.StatusServiceUnavailable, "HAL service unavailable")
+		return
+	}
+
+	if err := h.halClient.StopPowerMonitor(ctx); err != nil {
+		writeError(w, http.StatusInternalServerError, "Failed to stop power monitor: "+err.Error())
+		return
+	}
+
+	writeJSON(w, http.StatusOK, SuccessResponse{
+		Success: true,
+		Message: "Power monitor stopped",
 	})
 }
 
@@ -1346,4 +1443,39 @@ func (h *HardwareHandler) ReadBME280(w http.ResponseWriter, r *http.Request) {
 	}
 
 	writeJSON(w, http.StatusOK, reading)
+}
+
+// =============================================================================
+// Support Bundle Endpoint
+// =============================================================================
+
+// GetSupportBundle godoc
+// @Summary Download support bundle
+// @Description Downloads a zip archive containing system logs, configuration, and diagnostic data for troubleshooting
+// @Tags Support
+// @Produce application/zip
+// @Success 200 {file} binary "Support bundle zip file"
+// @Failure 500 {object} ErrorResponse "Failed to generate support bundle"
+// @Failure 503 {object} ErrorResponse "HAL unavailable"
+// @Security BearerAuth
+// @Router /support/bundle.zip [get]
+func (h *HardwareHandler) GetSupportBundle(w http.ResponseWriter, r *http.Request) {
+	ctx := r.Context()
+
+	if h.halClient == nil {
+		writeError(w, http.StatusServiceUnavailable, "HAL service unavailable")
+		return
+	}
+
+	data, err := h.halClient.GetSupportBundle(ctx)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "Failed to get support bundle: "+err.Error())
+		return
+	}
+
+	w.Header().Set("Content-Type", "application/zip")
+	w.Header().Set("Content-Disposition", `attachment; filename="cubeos-support-bundle.zip"`)
+	w.Header().Set("Content-Length", strconv.Itoa(len(data)))
+	w.WriteHeader(http.StatusOK)
+	w.Write(data)
 }

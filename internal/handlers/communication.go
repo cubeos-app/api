@@ -43,6 +43,7 @@ func (h *CommunicationHandler) Routes() chi.Router {
 
 	// Android Tethering
 	r.Get("/cellular/android", h.GetAndroidTetheringStatus)
+	r.Get("/cellular/android/status", h.GetAndroidTetheringStatus) // Alias to match HAL route naming
 	r.Post("/cellular/android/enable", h.EnableAndroidTethering)
 	r.Post("/cellular/android/disable", h.DisableAndroidTethering)
 
@@ -399,7 +400,7 @@ func (h *CommunicationHandler) DisconnectCellular(w http.ResponseWriter, r *http
 
 // GetAndroidTetheringStatus godoc
 // @Summary Get Android tethering status
-// @Description Returns USB tethering status for connected Android phone
+// @Description Returns USB tethering status for connected Android phone. Also available at /communication/cellular/android for backward compatibility.
 // @Tags Communication
 // @Accept json
 // @Produce json
@@ -407,7 +408,7 @@ func (h *CommunicationHandler) DisconnectCellular(w http.ResponseWriter, r *http
 // @Failure 500 {object} ErrorResponse "Failed to get status"
 // @Failure 503 {object} ErrorResponse "HAL unavailable"
 // @Security BearerAuth
-// @Router /communication/cellular/android [get]
+// @Router /communication/cellular/android/status [get]
 func (h *CommunicationHandler) GetAndroidTetheringStatus(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
 
