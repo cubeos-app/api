@@ -555,11 +555,13 @@ func main() {
 			r.Route("/power", func(r chi.Router) {
 				r.Get("/status", ext.GetPowerStatus)
 				r.Post("/charging", ext.SetCharging)
+				r.Put("/charging", ext.SetCharging)
 			})
 
 			// Preferences
 			r.Get("/preferences", ext.GetPreferences)
 			r.Post("/preferences", ext.SetPreferences)
+			r.Put("/preferences", ext.SetPreferences)
 			r.Post("/preferences/reset", ext.ResetPreferences) // Added
 
 			// Favorites

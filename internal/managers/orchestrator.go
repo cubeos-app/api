@@ -775,6 +775,8 @@ func (o *Orchestrator) SetAppTor(ctx context.Context, name string, enabled bool)
 
 	// TODO: Actually configure Tor proxy for this app's network
 	// This will be implemented when Tor coreapp is fully integrated
+	log.Warn().Str("app", name).Bool("enabled", enabled).
+		Msg("routing preference saved, actual routing not yet implemented")
 
 	return nil
 }
@@ -801,6 +803,8 @@ func (o *Orchestrator) SetAppVPN(ctx context.Context, name string, enabled bool)
 
 	// TODO: Actually configure VPN routing for this app's network
 	// This will be implemented when WireGuard/OpenVPN coreapps are fully integrated
+	log.Warn().Str("app", name).Bool("enabled", enabled).
+		Msg("routing preference saved, actual routing not yet implemented")
 
 	return nil
 }
