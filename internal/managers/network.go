@@ -88,10 +88,6 @@ type NetworkManager struct {
 
 // NewNetworkManager creates a new network manager (V2: loads VPN mode too)
 func NewNetworkManager(cfg *config.Config, halClient *hal.Client, db *sqlx.DB) *NetworkManager {
-	if halClient == nil {
-		halClient = hal.NewClient("")
-	}
-
 	// Get interface names from environment or use defaults
 	apIface := getEnvOrDefault("CUBEOS_AP_INTERFACE", DefaultAPInterface)
 	wanIface := getEnvOrDefault("CUBEOS_WAN_INTERFACE", DefaultWANInterface)

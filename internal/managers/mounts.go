@@ -26,9 +26,6 @@ type MountsManager struct {
 
 // NewMountsManager creates a new mounts manager
 func NewMountsManager(cfg *config.Config, halClient *hal.Client) *MountsManager {
-	if halClient == nil {
-		halClient = hal.NewClient("")
-	}
 	return &MountsManager{
 		cfg: cfg,
 		hal: halClient,

@@ -63,9 +63,6 @@ type VPNManager struct {
 
 // NewVPNManager creates a new VPN manager
 func NewVPNManager(cfg *config.Config, halClient *hal.Client) *VPNManager {
-	if halClient == nil {
-		halClient = hal.NewClient("")
-	}
 	return &VPNManager{
 		cfg:              cfg,
 		hal:              halClient,

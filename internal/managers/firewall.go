@@ -23,9 +23,6 @@ type FirewallManager struct {
 
 // NewFirewallManager creates a new FirewallManager
 func NewFirewallManager(cfg *config.Config, halClient *hal.Client) *FirewallManager {
-	if halClient == nil {
-		halClient = hal.NewClient("")
-	}
 	return &FirewallManager{
 		cfg: cfg,
 		hal: halClient,
