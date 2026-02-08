@@ -117,22 +117,12 @@ package:
 # -----------------------------------------------------------------------------
 # DEPLOY - Host-mode Swarm service deployment
 # -----------------------------------------------------------------------------
-# Host-mode ports require the old container to fully release the port before
-# the new one can bind. Standard rolling updates fail because Swarm tries to
-# start the new container before the old one stops.
+# Host-mode ports require the old container to stop before the new one starts.
+# Uses --update-order stop-first which tells Swarm to handle this atomically:
+#   stop old task → release port → start new task → bind port
 #
-# Strategy:
-#   1. Pre-flight: verify Docker networking (iptables chains) is healthy
-#   2. Scale down to 0 (releases host port)
-#   3. Wait for port to be free
-#   4. Scale back to 1 (Swarm starts new task with current image)
-#
-# Key fixes over previous version:
-#   - No --force flag (avoids task churn on 0-replica services)
-#   - Image update happens via `docker service update --image` BEFORE scale-up,
-#     not during a force-restart cycle
-#   - Pre-flight iptables check catches corruption before deploy attempt
-#   - Limited retry count on service update to prevent crash-loop chain corruption
+# This replaces the fragile scale-down/update/scale-up dance which caused
+# race conditions where Swarm reconciliation deleted the service between steps.
 # -----------------------------------------------------------------------------
 deploy:
   stage: deploy
@@ -175,58 +165,42 @@ deploy:
       docker service ls | grep ${STACK_NAME} || echo "  No existing services found"
 
     # =========================================================================
-    # Deploy strategy
+    # Deploy: single atomic update with stop-first ordering
     # =========================================================================
     - |
       if docker service inspect ${SERVICE_NAME} > /dev/null 2>&1; then
-        echo "📦 Service exists — performing zero-downtime update..."
+        echo "📦 Service exists — updating with stop-first ordering..."
 
-        # Step 1: Scale down to release the host port
-        echo "  ⏬ Scaling down service..."
-        docker service scale ${SERVICE_NAME}=0 --detach=false 2>/dev/null || true
-
-        # Step 2: Wait for port to be released (max 30 seconds)
-        echo "  ⏳ Waiting for port ${HOST_PORT} to be released..."
-        for i in $(seq 1 15); do
-          if ! ss -tlnp | grep -q ":${HOST_PORT} "; then
-            echo "  ✅ Port ${HOST_PORT} is free"
-            break
-          fi
-          if [ $i -eq 15 ]; then
-            echo "  ⚠️  Port still in use, forcing cleanup..."
-            docker ps -q --filter "publish=${HOST_PORT}" | xargs -r docker kill || true
-            sleep 2
-          fi
-          sleep 2
-        done
-
-        # Step 3: Update the image while still at 0 replicas (no container churn)
-        echo "  🔄 Updating service image (at 0 replicas — no container start yet)..."
-        docker service update \
-          --image ${GHCR_IMAGE}:${CI_COMMIT_SHORT_SHA} \
-          --detach=false \
-          --update-failure-action pause \
-          ${SERVICE_NAME} 2>/dev/null || true
-
-        # Step 4: Scale back up to 1 (starts single container with new image)
-        echo "  ⏫ Scaling up service..."
-        docker service scale ${SERVICE_NAME}=1 --detach=false || {
-          echo "  ⚠️  Scale-up failed, checking state..."
-          docker service ps ${SERVICE_NAME} --no-trunc 2>/dev/null | head -5
-        }
-
+        # Check current replicas — if 0 (from previous failed deploy), scale up first
+        CURRENT_REPLICAS=$(docker service inspect ${SERVICE_NAME} --format '{{.Spec.Mode.Replicated.Replicas}}' 2>/dev/null || echo "0")
+        if [ "${CURRENT_REPLICAS}" = "0" ]; then
+          echo "  ⚠️  Service at 0 replicas (previous failure?) — updating image and scaling to 1..."
+          docker service update \
+            --image ${GHCR_IMAGE}:${CI_COMMIT_SHORT_SHA} \
+            --update-order stop-first \
+            --replicas 1 \
+            --detach=false \
+            ${SERVICE_NAME}
+        else
+          # Normal case: service is running, do atomic stop-first update
+          docker service update \
+            --image ${GHCR_IMAGE}:${CI_COMMIT_SHORT_SHA} \
+            --update-order stop-first \
+            --detach=false \
+            ${SERVICE_NAME}
+        fi
       else
         echo "📦 Service doesn't exist — deploying fresh stack..."
       fi
 
     # =========================================================================
-    # Ensure stack exists (handles fresh deploy or recovery from rm)
+    # Ensure stack exists (handles fresh deploy or recovery)
     # =========================================================================
     - |
       if ! docker service inspect ${SERVICE_NAME} > /dev/null 2>&1; then
         echo "🆕 Deploying stack from compose file..."
 
-        # Make sure port is free before deploying
+        # Wait for port to be free before fresh deploy
         for i in $(seq 1 10); do
           if ! ss -tlnp | grep -q ":${HOST_PORT} "; then
             break
@@ -235,7 +209,6 @@ deploy:
           sleep 2
         done
 
-        # Deploy the stack
         docker stack deploy \
           --compose-file ${COMPOSE_PATH} \
           --resolve-image never \
@@ -244,13 +217,13 @@ deploy:
         # Wait for service to be registered
         sleep 10
 
-        # Update image (stack deploy uses whatever's in compose, override to exact commit)
-        echo "  🔄 Setting exact commit image..."
+        # Pin to exact commit image
+        echo "  🔄 Pinning to commit image..."
         docker service update \
           --image ${GHCR_IMAGE}:${CI_COMMIT_SHORT_SHA} \
+          --update-order stop-first \
           --detach=false \
-          --update-failure-action pause \
-          ${SERVICE_NAME} || true
+          ${SERVICE_NAME}
       fi
 
     # =========================================================================
@@ -277,7 +250,6 @@ deploy:
           exit 0
         }
 
-        # Show progress every 5 attempts
         if [ $((i % 5)) -eq 0 ]; then
           echo "  Attempt $i/30 — checking service status..."
           docker service ps ${SERVICE_NAME} --no-trunc 2>/dev/null | head -3 || true
@@ -287,9 +259,7 @@ deploy:
         sleep 3
       done
 
-      # =====================================================================
-      # Health check failed — diagnostics and safe cleanup
-      # =====================================================================
+      # Health check failed — diagnostics
       echo ""
       echo "❌ Health check failed after 30 attempts"
       echo ""
@@ -309,11 +279,6 @@ deploy:
       echo "iptables DOCKER chain:"
       sudo iptables -t nat -L DOCKER -n 2>&1 | head -5
       echo ""
-
-      # Scale to 0 to stop crash loop and preserve iptables chains
-      echo "🛑 Scaling service to 0 to prevent crash-loop chain corruption..."
-      docker service scale ${SERVICE_NAME}=0 --detach=false 2>/dev/null || true
-
       exit 1
 
   environment:
