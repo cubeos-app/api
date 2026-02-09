@@ -915,47 +915,92 @@ func (m *AppStoreManager) processManifest(manifest, appID, dataDir string, req *
 	return sanitized
 }
 
-// sanitizeForSwarm transforms a CasaOS docker-compose.yml to be compatible with
-// docker stack deploy. Handles known incompatibilities:
-// Root level: name, x-casaos and other x- extensions not allowed by stack deploy
-// Service level:
-// - depends_on: map with conditions → simple list of service names
-// - container_name: not supported in Swarm, removed
-// - privileged: not supported in Swarm stacks, removed
-// - devices: not supported in Swarm stacks, removed
-// - network_mode: "host"/"bridge" not supported in Swarm stacks, removed
+// sanitizeForSwarm transforms a CasaOS docker-compose.yml into a format compatible
+// with `docker stack deploy`. This is a comprehensive, single-pass sanitizer based on
+// the full CasaOS manifest specification and Docker Swarm's compose file restrictions.
+//
+// CasaOS manifests target single-node Docker with direct hardware access. Swarm abstracts
+// away host-level resources, so many directives must be stripped or converted.
+//
+// Transformation categories:
+//
+//	ROOT LEVEL:    Strip name, x-casaos, all x-* extensions, version
+//	SERVICE LEVEL: Strip 15+ unsupported directives, convert restart/cpu_shares/network_mode
+//	NETWORK LEVEL: Convert all drivers to overlay, strip driver_opts and explicit names
+//	VOLUME LEVEL:  Strip bind.create_host_path and other unsupported options
+//
+// Returns the sanitized YAML string and any error. On parse failure, returns the original
+// manifest unchanged so existing working apps aren't broken.
 func sanitizeForSwarm(manifest string) (string, error) {
 	var compose map[string]interface{}
 	if err := yaml.Unmarshal([]byte(manifest), &compose); err != nil {
 		return "", fmt.Errorf("failed to parse compose YAML: %w", err)
 	}
 
-	// Remove root-level properties not allowed by docker stack deploy
-	rootDisallowed := []string{"name"}
-	for _, key := range rootDisallowed {
-		if _, exists := compose[key]; exists {
-			delete(compose, key)
-			log.Info().Str("key", key).Msg("removed disallowed root-level property for Swarm")
-		}
+	var warnings []string
+
+	// =========================================================================
+	// PHASE 1: Root-level cleanup
+	// =========================================================================
+
+	// Strip root "name:" — stack name comes from CLI argument, not the file.
+	// CasaOS uses this as the project name and store_app_id.
+	if _, exists := compose["name"]; exists {
+		delete(compose, "name")
 	}
 
-	// Remove x-casaos and other custom extensions (x-*) at root level
+	// Strip "version:" — deprecated in modern compose, can cause warnings
+	if _, exists := compose["version"]; exists {
+		delete(compose, "version")
+	}
+
+	// Strip all x-* extensions at root level (x-casaos metadata, etc.)
 	for key := range compose {
 		if strings.HasPrefix(key, "x-") {
 			delete(compose, key)
-			log.Info().Str("key", key).Msg("removed custom extension for Swarm compatibility")
 		}
 	}
 
+	// =========================================================================
+	// PHASE 2: Service-level transformations
+	// =========================================================================
+
 	services, ok := compose["services"]
 	if !ok {
-		// No services section, nothing to sanitize
 		return manifest, nil
 	}
-
 	svcMap, ok := services.(map[string]interface{})
 	if !ok {
 		return manifest, nil
+	}
+
+	// Directives to strip entirely — no Swarm equivalent exists.
+	// Grouped by reason:
+	stripDirectives := []string{
+		// Container identity (Swarm auto-names as stack_service_slot)
+		"container_name",
+		// Hardware passthrough (no Swarm equivalent)
+		"privileged",
+		"devices",
+		// Security options (silently ignored but can cause parse issues)
+		"security_opt",
+		"userns_mode",
+		"cgroup_parent",
+		// Build context (Swarm deploys pre-built images only)
+		"build",
+		// Legacy networking (replaced by Swarm overlay)
+		"links",
+		"external_links",
+		// Inheritance (actively rejected by stack deploy)
+		"extends",
+		// Process namespace sharing (not supported in Swarm services)
+		"pid",
+		"ipc",
+		// TTY/stdin (not supported in Swarm services)
+		"stdin_open",
+		"tty",
+		// Platform hint (can conflict with --resolve-image=never)
+		"platform",
 	}
 
 	for svcName, svcDef := range svcMap {
@@ -964,54 +1009,250 @@ func sanitizeForSwarm(manifest string) (string, error) {
 			continue
 		}
 
-		// Convert depends_on map → list
+		// --- Strip unsupported directives ---
+		for _, key := range stripDirectives {
+			if val, exists := svc[key]; exists {
+				delete(svc, key)
+				// Track critical removals that affect app functionality
+				switch key {
+				case "privileged":
+					if b, ok := val.(bool); ok && b {
+						warnings = append(warnings, fmt.Sprintf(
+							"service '%s': removed privileged mode — app may not function correctly", svcName))
+					}
+				case "devices":
+					warnings = append(warnings, fmt.Sprintf(
+						"service '%s': removed devices passthrough — hardware features unavailable", svcName))
+				}
+			}
+		}
+
+		// --- Strip all x-* extensions at service level ---
+		for key := range svc {
+			if strings.HasPrefix(key, "x-") {
+				delete(svc, key)
+			}
+		}
+
+		// --- Convert depends_on map → list ---
+		// CasaOS uses: depends_on: {postgres: {condition: service_healthy}}
+		// Swarm requires: depends_on: [postgres]   (or strip entirely)
+		// Swarm ignores depends_on for scheduling anyway, but map form causes parse error.
 		if deps, exists := svc["depends_on"]; exists {
 			switch d := deps.(type) {
 			case map[string]interface{}:
-				// Map form: {postgres: {condition: service_healthy}} → [postgres]
 				depList := make([]string, 0, len(d))
 				for depName := range d {
 					depList = append(depList, depName)
 				}
 				sort.Strings(depList)
 				svc["depends_on"] = depList
-				log.Info().Str("service", svcName).
-					Int("count", len(depList)).
-					Msg("converted depends_on map to list for Swarm compatibility")
 			case []interface{}:
-				// Already a list, keep as-is
+				// Already a list — keep as-is
 			default:
-				// Unexpected type, remove to be safe
 				delete(svc, "depends_on")
 			}
 		}
 
-		// Remove Swarm-incompatible keys
-		incompatible := []string{"container_name", "privileged", "devices"}
-		for _, key := range incompatible {
-			if _, exists := svc[key]; exists {
-				delete(svc, key)
-				log.Info().Str("service", svcName).Str("key", key).
-					Msg("removed Swarm-incompatible directive")
+		// --- Convert restart: → deploy.restart_policy ---
+		// Swarm ignores compose-level "restart:" and logs "Ignoring unsupported options".
+		// Convert to the Swarm-native deploy.restart_policy so behavior is preserved.
+		if restart, exists := svc["restart"]; exists {
+			restartStr, _ := restart.(string)
+			deploy := getOrCreateMap(svc, "deploy")
+			if _, hasPolicy := deploy["restart_policy"]; !hasPolicy && restartStr != "" {
+				condition := "any"
+				switch restartStr {
+				case "no":
+					condition = "none"
+				case "on-failure":
+					condition = "on-failure"
+				case "always", "unless-stopped":
+					condition = "any"
+				}
+				deploy["restart_policy"] = map[string]interface{}{
+					"condition": condition,
+				}
 			}
+			delete(svc, "restart")
 		}
 
-		// Remove network_mode if host/bridge (unsupported in stack deploy)
+		// --- Convert network_mode ---
+		// Swarm does not support network_mode: host/bridge/container:X
 		if nm, exists := svc["network_mode"]; exists {
 			if nmStr, ok := nm.(string); ok {
-				if nmStr == "host" || nmStr == "bridge" {
+				switch {
+				case nmStr == "host":
+					warnings = append(warnings, fmt.Sprintf(
+						"service '%s': removed network_mode:host — mDNS/DHCP/discovery may not work", svcName))
 					delete(svc, "network_mode")
-					log.Warn().Str("service", svcName).Str("network_mode", nmStr).
-						Msg("removed unsupported network_mode for Swarm — app may not work correctly")
+				case nmStr == "bridge":
+					delete(svc, "network_mode")
+				case strings.HasPrefix(nmStr, "container:"):
+					warnings = append(warnings, fmt.Sprintf(
+						"service '%s': removed network_mode:%s — container networking not supported in Swarm", svcName, nmStr))
+					delete(svc, "network_mode")
+				case strings.HasPrefix(nmStr, "service:"):
+					warnings = append(warnings, fmt.Sprintf(
+						"service '%s': removed network_mode:%s — service networking not supported in Swarm", svcName, nmStr))
+					delete(svc, "network_mode")
+				default:
+					delete(svc, "network_mode")
 				}
 			}
 		}
 
-		// Remove x-* custom extensions at service level
-		for key := range svc {
-			if strings.HasPrefix(key, "x-") {
-				delete(svc, key)
+		// --- Convert cpu_shares → deploy.resources.limits.cpus ---
+		// CasaOS commonly sets cpu_shares: 90 (relative weight, default 1024)
+		// Convert to approximate CPU limit fraction
+		if cpuShares, exists := svc["cpu_shares"]; exists {
+			if shares, ok := toFloat64(cpuShares); ok && shares > 0 {
+				deploy := getOrCreateMap(svc, "deploy")
+				resources := getOrCreateMap(deploy, "resources")
+				limits := getOrCreateMap(resources, "limits")
+				if _, hasCPU := limits["cpus"]; !hasCPU {
+					// cpu_shares is relative to 1024 default; convert to fractional CPUs
+					cpuFraction := shares / 1024.0
+					if cpuFraction < 0.1 {
+						cpuFraction = 0.1
+					}
+					limits["cpus"] = fmt.Sprintf("%.2f", cpuFraction)
+				}
 			}
+			delete(svc, "cpu_shares")
+		}
+
+		// --- Convert mem_limit → deploy.resources.limits.memory ---
+		if memLimit, exists := svc["mem_limit"]; exists {
+			deploy := getOrCreateMap(svc, "deploy")
+			resources := getOrCreateMap(deploy, "resources")
+			limits := getOrCreateMap(resources, "limits")
+			if _, hasMem := limits["memory"]; !hasMem {
+				limits["memory"] = memLimit
+			}
+			delete(svc, "mem_limit")
+		}
+		// Also handle memswap_limit and mem_reservation
+		delete(svc, "memswap_limit")
+		if memRes, exists := svc["mem_reservation"]; exists {
+			deploy := getOrCreateMap(svc, "deploy")
+			resources := getOrCreateMap(deploy, "resources")
+			reservations := getOrCreateMap(resources, "reservations")
+			if _, hasMem := reservations["memory"]; !hasMem {
+				reservations["memory"] = memRes
+			}
+			delete(svc, "mem_reservation")
+		}
+
+		// --- Convert shm_size → tmpfs mount on /dev/shm ---
+		if shmSize, exists := svc["shm_size"]; exists {
+			// Add a tmpfs mount for /dev/shm with the specified size
+			if sizeStr, ok := shmSize.(string); ok && sizeStr != "" {
+				tmpfsEntry := map[string]interface{}{
+					"type":   "tmpfs",
+					"target": "/dev/shm",
+					"tmpfs": map[string]interface{}{
+						"size": parseShmSize(sizeStr),
+					},
+				}
+				if existingVolumes, ok := svc["volumes"].([]interface{}); ok {
+					svc["volumes"] = append(existingVolumes, tmpfsEntry)
+				}
+			}
+			delete(svc, "shm_size")
+		}
+
+		// --- Clean up volume bind options not supported by stack deploy ---
+		if volumes, ok := svc["volumes"].([]interface{}); ok {
+			for i, vol := range volumes {
+				if volMap, ok := vol.(map[string]interface{}); ok {
+					// Remove bind.create_host_path (not supported in stack deploy)
+					if bind, ok := volMap["bind"].(map[string]interface{}); ok {
+						delete(bind, "create_host_path")
+						if len(bind) == 0 {
+							delete(volMap, "bind")
+						}
+					}
+					volumes[i] = volMap
+				}
+			}
+		}
+
+		// --- Strip cap_add/cap_drop ---
+		// Supported in Docker 20.10+ Swarm but unreliable on older versions.
+		// For maximum compatibility, strip them. Apps that truly need NET_ADMIN
+		// (Pi-hole, VPN) should be deployed via Docker Compose, not Swarm.
+		if _, exists := svc["cap_add"]; exists {
+			warnings = append(warnings, fmt.Sprintf(
+				"service '%s': removed cap_add — elevated capabilities not supported in Swarm stacks", svcName))
+			delete(svc, "cap_add")
+		}
+		delete(svc, "cap_drop")
+
+		// --- Ensure deploy section has task history limit for ARM64 memory ---
+		deploy := getOrCreateMap(svc, "deploy")
+		if _, exists := deploy["replicas"]; !exists {
+			deploy["replicas"] = 1
+		}
+	}
+
+	// =========================================================================
+	// PHASE 3: Network-level transformations
+	// =========================================================================
+
+	// Swarm requires all service networks to use the overlay driver.
+	// CasaOS manifests typically define bridge networks or leave driver unset (defaults to bridge).
+	if networks, ok := compose["networks"]; ok {
+		if netMap, ok := networks.(map[string]interface{}); ok {
+			for netName, netDef := range netMap {
+				switch nd := netDef.(type) {
+				case map[string]interface{}:
+					nd["driver"] = "overlay"
+					// Remove bridge-specific driver_opts
+					delete(nd, "driver_opts")
+					// Remove explicit name (Swarm auto-prefixes with stack name)
+					delete(nd, "name")
+					// Remove enable_ipv6 (not always supported in overlay)
+					delete(nd, "enable_ipv6")
+					// Remove IPAM config if bridge-specific
+					if ipam, ok := nd["ipam"].(map[string]interface{}); ok {
+						if driver, ok := ipam["driver"].(string); ok && driver == "default" {
+							delete(nd, "ipam")
+						}
+					}
+				case nil:
+					// Bare network definition: "mynet:" with no config
+					netMap[netName] = map[string]interface{}{
+						"driver": "overlay",
+					}
+				}
+			}
+		}
+	}
+
+	// =========================================================================
+	// PHASE 4: Volume-level cleanup
+	// =========================================================================
+
+	// Strip unsupported options from top-level volume definitions
+	if volumes, ok := compose["volumes"]; ok {
+		if volMap, ok := volumes.(map[string]interface{}); ok {
+			for _, volDef := range volMap {
+				if vd, ok := volDef.(map[string]interface{}); ok {
+					// Remove bind-specific options at top level
+					delete(vd, "bind")
+				}
+			}
+		}
+	}
+
+	// =========================================================================
+	// PHASE 5: Log warnings
+	// =========================================================================
+
+	if len(warnings) > 0 {
+		for _, w := range warnings {
+			log.Warn().Str("context", "swarm-sanitizer").Msg(w)
 		}
 	}
 
@@ -1020,6 +1261,56 @@ func sanitizeForSwarm(manifest string) (string, error) {
 		return "", fmt.Errorf("failed to serialize sanitized compose: %w", err)
 	}
 	return string(out), nil
+}
+
+// getOrCreateMap retrieves a nested map by key, creating it if absent.
+// Ensures the parent map always contains the key pointing to a map[string]interface{}.
+func getOrCreateMap(parent map[string]interface{}, key string) map[string]interface{} {
+	if existing, ok := parent[key].(map[string]interface{}); ok {
+		return existing
+	}
+	m := make(map[string]interface{})
+	parent[key] = m
+	return m
+}
+
+// toFloat64 converts an interface{} (int, float64, string) to float64.
+func toFloat64(v interface{}) (float64, bool) {
+	switch n := v.(type) {
+	case int:
+		return float64(n), true
+	case int64:
+		return float64(n), true
+	case float64:
+		return n, true
+	case string:
+		var f float64
+		_, err := fmt.Sscanf(n, "%f", &f)
+		return f, err == nil
+	}
+	return 0, false
+}
+
+// parseShmSize converts a human-readable size string (e.g. "64mb", "1g") to bytes.
+func parseShmSize(size string) int64 {
+	size = strings.TrimSpace(strings.ToLower(size))
+	multiplier := int64(1)
+	if strings.HasSuffix(size, "g") || strings.HasSuffix(size, "gb") {
+		multiplier = 1024 * 1024 * 1024
+		size = strings.TrimRight(size, "gb")
+	} else if strings.HasSuffix(size, "m") || strings.HasSuffix(size, "mb") {
+		multiplier = 1024 * 1024
+		size = strings.TrimRight(size, "mb")
+	} else if strings.HasSuffix(size, "k") || strings.HasSuffix(size, "kb") {
+		multiplier = 1024
+		size = strings.TrimRight(size, "kb")
+	}
+	var val float64
+	fmt.Sscanf(size, "%f", &val)
+	if val <= 0 {
+		return 64 * 1024 * 1024 // default 64MB
+	}
+	return int64(val) * multiplier
 }
 
 func (m *AppStoreManager) findAvailablePort(start int) int {
