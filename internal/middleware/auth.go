@@ -39,6 +39,15 @@ func JWTAuth(cfg *config.Config) func(http.Handler) http.Handler {
 	return func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			authHeader := r.Header.Get("Authorization")
+
+			// Fallback: check ?token= query param (needed for browser file downloads
+			// via window.open() which cannot set Authorization headers)
+			if authHeader == "" {
+				if qToken := r.URL.Query().Get("token"); qToken != "" {
+					authHeader = "Bearer " + qToken
+				}
+			}
+
 			if authHeader == "" {
 				writeJSONError(w, http.StatusUnauthorized, "Missing authorization header")
 				return
