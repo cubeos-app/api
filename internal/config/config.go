@@ -2,8 +2,9 @@ package config
 
 import (
 	"fmt"
-	"log"
 	"os"
+
+	"github.com/rs/zerolog/log"
 	"strconv"
 	"strings"
 
@@ -158,15 +159,15 @@ func Load() *Config {
 	if err := godotenv.Load(envPath); err != nil {
 		// Check if file exists but has other issues
 		if _, statErr := os.Stat(envPath); os.IsNotExist(statErr) {
-			log.Fatalf("FATAL: Configuration file not found: %s\nCubeOS cannot start without configuration.", envPath)
+			log.Fatal().Str("path", envPath).Msg("configuration file not found, CubeOS cannot start")
 		}
-		log.Fatalf("FATAL: Failed to load configuration from %s: %v", envPath, err)
+		log.Fatal().Err(err).Str("path", envPath).Msg("failed to load configuration")
 	}
 
 	// Also try to load secrets.env (optional, but log if missing)
 	secretsPath := "/cubeos/config/secrets.env"
 	if err := godotenv.Load(secretsPath); err != nil {
-		log.Printf("Warning: Could not load secrets from %s: %v", secretsPath, err)
+		log.Warn().Err(err).Str("path", secretsPath).Msg("could not load secrets")
 	}
 
 	return &Config{
@@ -238,7 +239,7 @@ func IsCoreService(name string) bool {
 func mustGetEnv(key string) string {
 	val := os.Getenv(key)
 	if val == "" {
-		log.Fatalf("FATAL: Required environment variable %s is not set.\nCheck /cubeos/config/defaults.env", key)
+		log.Fatal().Str("key", key).Msg("required environment variable not set, check /cubeos/config/defaults.env")
 	}
 	return val
 }
@@ -247,11 +248,11 @@ func mustGetEnv(key string) string {
 func mustGetEnvInt(key string) int {
 	val := os.Getenv(key)
 	if val == "" {
-		log.Fatalf("FATAL: Required environment variable %s is not set.\nCheck /cubeos/config/defaults.env", key)
+		log.Fatal().Str("key", key).Msg("required environment variable not set, check /cubeos/config/defaults.env")
 	}
 	i, err := strconv.Atoi(val)
 	if err != nil {
-		log.Fatalf("FATAL: Environment variable %s must be an integer, got: %s", key, val)
+		log.Fatal().Str("key", key).Str("value", val).Msg("environment variable must be an integer")
 	}
 	return i
 }

@@ -3,7 +3,6 @@ package handlers
 import (
 	"context"
 	"encoding/json"
-	"log"
 	"net/http"
 	"strconv"
 	"sync"
@@ -11,6 +10,7 @@ import (
 
 	"github.com/go-chi/chi/v5"
 	"github.com/gorilla/websocket"
+	"github.com/rs/zerolog/log"
 
 	"cubeos-api/internal/managers"
 )
@@ -49,7 +49,7 @@ func (m *WSManager) Connect(conn *websocket.Conn) {
 	m.lock.Lock()
 	defer m.lock.Unlock()
 	m.connections[conn] = true
-	log.Printf("WebSocket connected, total connections: %d", len(m.connections))
+	log.Info().Int("connections", len(m.connections)).Msg("WebSocket connected")
 }
 
 // Disconnect removes a connection
@@ -58,7 +58,7 @@ func (m *WSManager) Disconnect(conn *websocket.Conn) {
 	defer m.lock.Unlock()
 	delete(m.connections, conn)
 	conn.Close()
-	log.Printf("WebSocket disconnected, total connections: %d", len(m.connections))
+	log.Info().Int("connections", len(m.connections)).Msg("WebSocket disconnected")
 }
 
 // Count returns the number of active connections
@@ -238,7 +238,7 @@ func (h *WSHandlers) StatsWebSocket(w http.ResponseWriter, r *http.Request) {
 	// Upgrade connection
 	conn, err := upgrader.Upgrade(w, r, nil)
 	if err != nil {
-		log.Printf("WebSocket upgrade error: %v", err)
+		log.Error().Err(err).Msg("WebSocket upgrade error")
 		return
 	}
 

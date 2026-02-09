@@ -4,13 +4,13 @@ import (
 	"database/sql"
 	"encoding/json"
 	"fmt"
-	"log"
 	"net/http"
 	"strconv"
 	"time"
 
 	"github.com/go-chi/chi/v5"
 	"github.com/jmoiron/sqlx"
+	"github.com/rs/zerolog/log"
 	"golang.org/x/crypto/bcrypt"
 
 	"cubeos-api/internal/config"
@@ -51,7 +51,7 @@ func writeJSON(w http.ResponseWriter, status int, data interface{}) {
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(status)
 	if err := json.NewEncoder(w).Encode(data); err != nil {
-		log.Printf("ERROR: failed to encode JSON response: %v", err)
+		log.Error().Err(err).Msg("failed to encode JSON response")
 	}
 }
 

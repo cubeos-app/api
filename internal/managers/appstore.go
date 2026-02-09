@@ -8,7 +8,6 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
-	"log"
 	"net"
 	"net/http"
 	"os"
@@ -24,6 +23,7 @@ import (
 	"cubeos-api/internal/config"
 	"cubeos-api/internal/models"
 
+	"github.com/rs/zerolog/log"
 	"gopkg.in/yaml.v3"
 )
 
@@ -117,7 +117,7 @@ func (m *AppStoreManager) loadStores() {
 		m.stores[store.ID] = &store
 	}
 	if err := rows.Err(); err != nil {
-		log.Printf("Warning: error iterating app stores: %v", err)
+		log.Warn().Err(err).Msg("error iterating app stores")
 	}
 
 	// Add default stores if none exist
@@ -155,7 +155,7 @@ func (m *AppStoreManager) loadInstalledApps() {
 		m.installed[app.ID] = &app
 	}
 	if err := rows.Err(); err != nil {
-		log.Printf("Warning: error iterating installed apps: %v", err)
+		log.Warn().Err(err).Msg("error iterating installed apps")
 	}
 }
 
@@ -688,7 +688,7 @@ func (m *AppStoreManager) InstallApp(req *models.AppInstallRequest) (*models.Ins
 	// Create NPM proxy host for FQDN access (non-fatal)
 	var npmProxyID int
 	if proxyID, err := m.addNPMProxyHost(req.AppName, appFQDN, appPort, "http", true); err != nil {
-		log.Printf("Warning: Failed to create NPM proxy for %s: %v", appFQDN, err)
+		log.Warn().Err(err).Str("fqdn", appFQDN).Msg("failed to create NPM proxy")
 	} else {
 		npmProxyID = proxyID
 	}
@@ -696,7 +696,7 @@ func (m *AppStoreManager) InstallApp(req *models.AppInstallRequest) (*models.Ins
 	// Create Pi-hole DNS entry for FQDN (non-fatal)
 	if m.pihole != nil {
 		if err := m.pihole.AddEntry(appFQDN, m.gatewayIP); err != nil {
-			log.Printf("Warning: Failed to add DNS entry for %s: %v", appFQDN, err)
+			log.Warn().Err(err).Str("fqdn", appFQDN).Msg("failed to add DNS entry")
 		}
 	}
 
@@ -830,13 +830,16 @@ func (m *AppStoreManager) findAvailablePort(start int) int {
 // GetInstalledApps returns all installed apps
 func (m *AppStoreManager) GetInstalledApps() []*models.InstalledApp {
 	m.mu.RLock()
-	defer m.mu.RUnlock()
-
 	apps := make([]*models.InstalledApp, 0, len(m.installed))
 	for _, app := range m.installed {
-		// Refresh status
-		m.refreshAppStatus(app)
 		apps = append(apps, app)
+	}
+	m.mu.RUnlock()
+
+	// Refresh status outside the lock — refreshAppStatus spawns Docker CLI
+	// commands with 5s timeouts, which would starve writers if held under RLock
+	for _, app := range apps {
+		m.refreshAppStatus(app)
 	}
 
 	sort.Slice(apps, func(i, j int) bool {
@@ -849,9 +852,9 @@ func (m *AppStoreManager) GetInstalledApps() []*models.InstalledApp {
 // GetInstalledApp returns a specific installed app
 func (m *AppStoreManager) GetInstalledApp(appID string) *models.InstalledApp {
 	m.mu.RLock()
-	defer m.mu.RUnlock()
-
 	app := m.installed[appID]
+	m.mu.RUnlock()
+
 	if app != nil {
 		m.refreshAppStatus(app)
 	}
@@ -1078,14 +1081,14 @@ func (m *AppStoreManager) RemoveApp(appID string, deleteData bool) error {
 		appID).Scan(&npmProxyID)
 	if npmProxyID > 0 {
 		if err := m.removeNPMProxyHost(npmProxyID); err != nil {
-			log.Printf("Warning: Failed to remove NPM proxy: %v", err)
+			log.Warn().Err(err).Int("proxyID", npmProxyID).Msg("failed to remove NPM proxy")
 		}
 	}
 
 	// Remove DNS entry via PiholeManager
 	appFQDN := fmt.Sprintf("%s.%s", appID, m.baseDomain)
 	if err := m.removePiholeDNS(appFQDN); err != nil {
-		log.Printf("Warning: Failed to remove DNS entry for %s: %v", appFQDN, err)
+		log.Warn().Err(err).Str("fqdn", appFQDN).Msg("failed to remove DNS entry")
 	}
 
 	ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
@@ -1210,7 +1213,7 @@ func (m *AppStoreManager) initNPMToken() {
 
 	token, err := m.getNPMToken(creds)
 	if err != nil {
-		log.Printf("Warning: Failed to get NPM token: %v", err)
+		log.Warn().Err(err).Msg("failed to get NPM token")
 		return
 	}
 
@@ -1218,7 +1221,7 @@ func (m *AppStoreManager) initNPMToken() {
 	m.npmToken = token
 	m.mu.Unlock()
 
-	log.Println("NPM API token acquired successfully")
+	log.Info().Msg("NPM API token acquired successfully")
 }
 
 // getNPMToken requests a token from NPM API

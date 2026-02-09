@@ -28,6 +28,12 @@ run:
 test:
 	$(GO) test -v ./...
 
+test-handlers:
+	$(GO) test -v -count=1 ./internal/handlers/...
+
+verify-routes:
+	bash scripts/verify-routes.sh
+
 clean:
 	rm -rf $(BUILD_DIR)
 

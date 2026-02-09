@@ -51,6 +51,21 @@ test:
     - if: $CI_PIPELINE_SOURCE == "merge_request_event"
     - if: $CI_COMMIT_BRANCH == "main"
 
+verify-routes:
+  stage: test
+  tags: [multiarch]
+  image: ${BUILDER_IMAGE}
+  script:
+    - cp -r . /app/
+    - cd /app
+    - go install github.com/swaggo/swag/cmd/swag@latest
+    - export PATH=$PATH:$(go env GOPATH)/bin
+    - swag init --generalInfo cmd/cubeos-api/main.go --dir ./ --output docs --parseDependency --parseInternal
+    - bash scripts/verify-routes.sh
+  rules:
+    - if: $CI_PIPELINE_SOURCE == "merge_request_event"
+    - if: $CI_COMMIT_BRANCH == "main"
+
 # -----------------------------------------------------------------------------
 # BUILD - Generate Swagger docs and compile binaries
 # -----------------------------------------------------------------------------

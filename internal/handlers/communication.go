@@ -4,11 +4,11 @@ import (
 	"bufio"
 	"encoding/json"
 	"io"
-	"log"
 	"net/http"
 	"strconv"
 
 	"github.com/go-chi/chi/v5"
+	"github.com/rs/zerolog/log"
 
 	"cubeos-api/internal/hal"
 )
@@ -1658,7 +1658,7 @@ func proxySSE(w http.ResponseWriter, r *http.Request, halResp *http.Response) {
 			if !scanner.Scan() {
 				// HAL stream ended or read error
 				if err := scanner.Err(); err != nil {
-					log.Printf("SSE proxy read error: %v", err)
+					log.Error().Err(err).Msg("SSE proxy read error")
 				}
 				return
 			}

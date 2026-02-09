@@ -6,7 +6,6 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
-	"log"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -17,6 +16,7 @@ import (
 	"cubeos-api/internal/config"
 	"cubeos-api/internal/models"
 
+	"github.com/rs/zerolog/log"
 	"golang.org/x/crypto/bcrypt"
 )
 
@@ -365,7 +365,7 @@ func (m *SetupManager) ApplySetupConfig(cfg *models.SetupConfig) error {
 	if cfg.NPMAdminEmail != "" && cfg.NPMAdminPassword != "" {
 		if err := m.configureNPM(cfg.NPMAdminEmail, cfg.NPMAdminPassword); err != nil {
 			// Log but don't fail - NPM might not be running yet
-			log.Printf("Warning: Failed to configure NPM: %v", err)
+			log.Warn().Err(err).Msg("failed to configure NPM")
 		}
 	}
 	m.updateStep(9)
