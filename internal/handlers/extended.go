@@ -1125,21 +1125,6 @@ func (h *ExtendedHandlers) GetMonitoringStats(w http.ResponseWriter, r *http.Req
 	writeJSON(w, http.StatusOK, stats)
 }
 
-// GetWSConnections godoc
-// @Summary Get WebSocket connections
-// @Description Returns count of active WebSocket connections
-// @Tags Monitoring
-// @Produce json
-// @Security BearerAuth
-// @Success 200 {object} map[string]interface{} "WebSocket connections"
-// @Router /monitoring/websocket [get]
-func (h *ExtendedHandlers) GetWSConnections(w http.ResponseWriter, r *http.Request) {
-	// This would need access to WebSocket manager
-	writeJSON(w, http.StatusOK, map[string]interface{}{
-		"active_connections": 0,
-	})
-}
-
 // GetStatsHistory godoc
 // @Summary Get statistics history
 // @Description Returns historical monitoring statistics

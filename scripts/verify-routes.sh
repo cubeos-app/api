@@ -1,14 +1,16 @@
 #!/usr/bin/env bash
 # =============================================================================
-# verify-routes.sh — Cross-reference Swagger @Router annotations with
-# actual route registrations in handler Routes() methods.
+# verify-routes.sh — Verify every Swagger @Router annotation has a handler
+# function that is registered in a chi route call.
+#
+# Strategy:
+#   1. Extract (method, path, funcName, file) from @Router annotations
+#   2. Check each funcName appears in a r.Get/Post/Put/Delete() call
+#   3. Check each Routes() method is Mount()ed in main.go
 #
 # Exit codes:
-#   0 = all routes verified (or warnings only)
-#   1 = missing routes found (errors)
-#
-# Usage:
-#   ./scripts/verify-routes.sh [--strict]
+#   0 = all routes verified
+#   1 = unregistered handlers found
 # =============================================================================
 set -euo pipefail
 
@@ -22,147 +24,160 @@ fi
 
 ERRORS=0
 WARNINGS=0
+MATCHED=0
+
+HANDLER_DIR="$REPO_ROOT/internal/handlers"
+MAIN_GO="$REPO_ROOT/cmd/cubeos-api/main.go"
 
 echo "========================================"
 echo " CubeOS Route Verification"
 echo "========================================"
 echo ""
 
-# Step 1: Extract @Router annotations
-echo "Step 1: Extracting @Router annotations from handlers..."
+# ============================================================================
+# Step 1: Extract (@Router path, method, function_name, file) tuples
+# ============================================================================
+echo "Step 1: Extracting @Router annotations and handler functions..."
 
-SWAGGER_ROUTES=$(mktemp)
-grep -rh '@Router' "$REPO_ROOT/internal/handlers/" 2>/dev/null \
-    | grep -v '_test.go' \
-    | while IFS= read -r line; do
-        # Extract: @Router /path [method]
-        path=$(echo "$line" | grep -oP '@Router\s+\K\S+')
-        method=$(echo "$line" | grep -oP '\[\K\w+')
-        if [[ -n "$path" && -n "$method" ]]; then
-            echo "${method^^} /api/v1${path}"
+PAIRS=$(mktemp)
+
+# Process each handler file individually to avoid pipefail issues
+for file in "$HANDLER_DIR"/*.go; do
+    [[ "$file" == *_test.go ]] && continue
+    [[ ! -f "$file" ]] && continue
+
+    # Skip files without @Router
+    grep -q '@Router' "$file" 2>/dev/null || continue
+
+    short_file=$(basename "$file")
+
+    # Extract line numbers with @Router
+    grep -n '@Router' "$file" | while IFS=: read -r lineno line; do
+        # Extract path and method
+        path=$(echo "$line" | sed -n 's|.*@Router[[:space:]]\+\(/[^[:space:]]*\).*|\1|p')
+        method=$(echo "$line" | sed -n 's|.*\[\([a-z]\+\)\].*|\1|p')
+
+        if [[ -z "$path" || -z "$method" ]]; then
+            continue
         fi
-    done \
-    | sort -u \
-    > "$SWAGGER_ROUTES"
 
-SWAGGER_COUNT=$(wc -l < "$SWAGGER_ROUTES")
-echo "  Found $SWAGGER_COUNT @Router annotations"
-
-# Step 2: Extract route registrations from handler Routes() methods
-echo ""
-echo "Step 2: Extracting registered routes from code..."
-
-REGISTERED_ROUTES=$(mktemp)
-
-extract_routes() {
-    local file=$1
-    local prefix=$2
-
-    grep -E 'r\.(Get|Post|Put|Delete|Patch)\(' "$file" 2>/dev/null \
-        | grep -v '//' \
-        | while IFS= read -r line; do
-            method=$(echo "$line" | grep -oP 'r\.\K(Get|Post|Put|Delete|Patch)')
-            path=$(echo "$line" | grep -oP 'r\.\w+\("\K[^"]+')
-            if [[ -n "$method" && -n "$path" ]]; then
-                echo "${method^^} /api/v1${prefix}${path}"
+        # Find the func declaration in the next few lines
+        func_name=""
+        for offset in 1 2 3 4 5; do
+            target_line=$(sed -n "$((lineno + offset))p" "$file")
+            if [[ "$target_line" =~ ^func ]]; then
+                func_name=$(echo "$target_line" | sed -n 's/^func[[:space:]]\+\(([^)]*)[[:space:]]\+\)\?\([A-Za-z_][A-Za-z0-9_]*\)(.*$/\2/p')
+                break
             fi
         done
-}
 
-# Known mount points from main.go
-declare -A HANDLER_MOUNTS=(
-    ["apps.go"]="/apps"
-    ["appstore.go"]="/appstore"
-    ["network.go"]="/network"
-    ["firewall.go"]="/firewall"
-    ["fqdns.go"]="/fqdns"
-    ["backups.go"]="/backups"
-    ["chat.go"]="/chat"
-    ["docs.go"]="/documentation"
-    ["vpn.go"]="/vpn"
-    ["registry.go"]="/registry"
-    ["media.go"]="/media"
-    ["mounts.go"]="/mounts"
-    ["smb.go"]="/smb"
-    ["ports.go"]="/ports"
-    ["profiles.go"]="/profiles"
-)
+        [[ -z "$func_name" ]] && continue
 
-for handler_file in "${!HANDLER_MOUNTS[@]}"; do
-    local_prefix="${HANDLER_MOUNTS[$handler_file]}"
-    handler_path="$REPO_ROOT/internal/handlers/$handler_file"
-    if [[ -f "$handler_path" ]]; then
-        extract_routes "$handler_path" "$local_prefix" >> "$REGISTERED_ROUTES"
+        echo "${method}|${path}|${func_name}|${short_file}"
+    done || true  # prevent pipefail from grep|while
+done | sort -t'|' -k4,4 -k2,2 > "$PAIRS"
+
+TOTAL=$(wc -l < "$PAIRS")
+echo "  Found $TOTAL @Router -> handler function pairs"
+
+# ============================================================================
+# Step 2: Verify each handler function is in a route registration
+# ============================================================================
+echo ""
+echo "Step 2: Checking handler functions are registered in routes..."
+echo ""
+
+# Build combined text of all route registration lines
+ROUTE_CALLS=$(mktemp)
+{
+    grep -rh 'r\.\(Get\|Post\|Put\|Delete\|Patch\)(' "$MAIN_GO" 2>/dev/null || true
+    for f in "$HANDLER_DIR"/*.go; do
+        [[ "$f" == *_test.go ]] && continue
+        grep -h 'r\.\(Get\|Post\|Put\|Delete\|Patch\)(' "$f" 2>/dev/null || true
+    done
+} | grep -v '^[[:space:]]*//' > "$ROUTE_CALLS" || true
+
+while IFS='|' read -r method path func_name file; do
+    if grep -qE "\\.${func_name}[^A-Za-z0-9_]" "$ROUTE_CALLS" 2>/dev/null; then
+        MATCHED=$((MATCHED + 1))
+    else
+        echo "  [MISSING] ${method^^} ${path} -> ${func_name}() in ${file}"
+        ERRORS=$((ERRORS + 1))
+    fi
+done < "$PAIRS"
+
+if [[ $MATCHED -gt 0 && $ERRORS -eq 0 ]]; then
+    echo "  All $MATCHED handler functions are registered."
+fi
+
+# ============================================================================
+# Step 3: Verify all Routes() methods are Mount()ed in main.go
+# ============================================================================
+echo ""
+echo "Step 3: Checking handler Routes() methods are mounted..."
+echo ""
+
+UNMOUNTED=0
+MOUNTED=0
+
+for handler_file in "$HANDLER_DIR"/*.go; do
+    [[ "$handler_file" == *_test.go ]] && continue
+
+    grep -q 'func.*Routes().*chi\.Router' "$handler_file" 2>/dev/null || continue
+
+    short=$(basename "$handler_file")
+
+    handler_type=$(grep 'func.*Routes().*chi\.Router' "$handler_file" | \
+        sed -n 's/func[[:space:]]*(h[[:space:]]*\*\([A-Za-z]*\))[[:space:]]*Routes().*/\1/p' | head -1)
+
+    [[ -z "$handler_type" ]] && continue
+
+    # Find the variable name: fooHandler := handlers.NewFooHandler(...)
+    # Also handles: var fooHandler ... then fooHandler = handlers.NewFooHandler(...)
+    var_name=$(grep "New${handler_type}" "$MAIN_GO" 2>/dev/null | \
+        sed -n 's/^[[:space:]]*\([a-zA-Z]*\)[[:space:]]*:\?=.*/\1/p' | head -1)
+
+    if [[ -n "$var_name" ]] && grep -q "${var_name}\.Routes()" "$MAIN_GO" 2>/dev/null; then
+        echo "  [OK] ${short} -> ${var_name}.Routes()"
+        MOUNTED=$((MOUNTED + 1))
+    else
+        echo "  [UNMOUNTED] ${short} -> ${handler_type}.Routes()"
+        UNMOUNTED=$((UNMOUNTED + 1))
+        if [[ "$STRICT" == "true" ]]; then
+            WARNINGS=$((WARNINGS + 1))
+        fi
     fi
 done
 
-# Extract inline routes from main.go
-extract_routes "$REPO_ROOT/cmd/cubeos-api/main.go" "" >> "$REGISTERED_ROUTES" 2>/dev/null || true
-
-sort -u -o "$REGISTERED_ROUTES" "$REGISTERED_ROUTES"
-REGISTERED_COUNT=$(wc -l < "$REGISTERED_ROUTES")
-echo "  Found $REGISTERED_COUNT registered routes"
-
-# Step 3: Cross-reference
-echo ""
-echo "Step 3: Cross-referencing..."
-echo ""
-
-# Normalize {param} forms for comparison
-SWAGGER_NORM=$(mktemp)
-REGISTERED_NORM=$(mktemp)
-sed -E 's/\{[^}]+\}/{param}/g; s|/$||' "$SWAGGER_ROUTES" | sort -u > "$SWAGGER_NORM"
-sed -E 's/\{[^}]+\}/{param}/g; s|/$||' "$REGISTERED_ROUTES" | sort -u > "$REGISTERED_NORM"
-
-# Documented but not registered
-MISSING=$(comm -23 "$SWAGGER_NORM" "$REGISTERED_NORM" || true)
-if [[ -n "$MISSING" ]]; then
-    echo "ERRORS — Documented routes NOT found in code:"
-    while IFS= read -r route; do
-        echo "  [MISSING] $route"
-        ERRORS=$((ERRORS + 1))
-    done <<< "$MISSING"
-    echo ""
-fi
-
-# Registered but not documented
-UNDOCUMENTED=$(comm -13 "$SWAGGER_NORM" "$REGISTERED_NORM" || true)
-if [[ -n "$UNDOCUMENTED" ]]; then
-    echo "WARNINGS — Registered routes without @Router annotation:"
-    while IFS= read -r route; do
-        echo "  [UNDOC]   $route"
-        WARNINGS=$((WARNINGS + 1))
-    done <<< "$UNDOCUMENTED"
-    echo ""
-fi
-
-MATCHED=$(comm -12 "$SWAGGER_NORM" "$REGISTERED_NORM" | wc -l)
-
+# ============================================================================
 # Step 4: Summary
+# ============================================================================
+echo ""
 echo "========================================"
 echo " Summary"
 echo "========================================"
-echo "  Swagger annotations:  $SWAGGER_COUNT"
-echo "  Registered routes:    $REGISTERED_COUNT"
-echo "  Matched:              $MATCHED"
-echo "  Missing (errors):     $ERRORS"
-echo "  Undocumented (warns): $WARNINGS"
+echo "  Total @Router annotations:   $TOTAL"
+echo "  Matched (func registered):   $MATCHED"
+echo "  Missing (func NOT in route): $ERRORS"
+echo "  Mounted Routes() methods:    $MOUNTED"
+echo "  Unmounted Routes() methods:  $UNMOUNTED"
 echo "========================================"
 
-rm -f "$SWAGGER_ROUTES" "$REGISTERED_ROUTES" "$SWAGGER_NORM" "$REGISTERED_NORM"
+rm -f "$PAIRS" "$ROUTE_CALLS"
 
 if [[ $ERRORS -gt 0 ]]; then
     echo ""
-    echo "FAIL: $ERRORS documented routes are not registered in code."
+    echo "FAIL: $ERRORS handler functions have @Router but no route registration."
+    echo "Fix: Add the route call or remove the stale @Router annotation."
     exit 1
 fi
 
 if [[ "$STRICT" == "true" && $WARNINGS -gt 0 ]]; then
     echo ""
-    echo "FAIL (strict): $WARNINGS registered routes lack Swagger annotations."
+    echo "FAIL (strict): $WARNINGS Routes() methods not Mount()ed in main.go."
     exit 1
 fi
 
 echo ""
-echo "PASS: All documented routes are registered."
+echo "PASS: All @Router-annotated handlers are registered in routes."
 exit 0
