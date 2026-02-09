@@ -333,6 +333,56 @@ func (s *SwarmManager) GetStackServices(stackName string) ([]StackService, error
 	return result, nil
 }
 
+// GetStackStatus returns aggregate status across all services in a stack.
+// Unlike GetServiceStatus (which requires exact service name), this checks
+// all services by stack namespace label — correct for CasaOS apps where
+// the compose service name differs from the app/stack name.
+func (s *SwarmManager) GetStackStatus(stackName string) (*ServiceStatus, error) {
+	services, err := s.GetStackServices(stackName)
+	if err != nil {
+		return nil, err
+	}
+	if len(services) == 0 {
+		return nil, fmt.Errorf("no services found for stack %s", stackName)
+	}
+
+	totalRunning := 0
+	totalDesired := 0
+	allHealthy := true
+
+	for _, svc := range services {
+		running, desired := parseReplicas(svc.Replicas)
+		totalRunning += running
+		totalDesired += desired
+		if running < desired {
+			allHealthy = false
+		}
+	}
+
+	health := "unknown"
+	isRunning := totalRunning > 0 && totalRunning == totalDesired
+	if isRunning {
+		if allHealthy {
+			health = "healthy"
+		} else {
+			health = "degraded"
+		}
+	} else if totalRunning > 0 {
+		health = "degraded"
+	} else {
+		health = "stopped"
+	}
+
+	replicas := fmt.Sprintf("%d/%d", totalRunning, totalDesired)
+
+	return &ServiceStatus{
+		Name:     stackName,
+		Running:  isRunning,
+		Replicas: replicas,
+		Health:   health,
+	}, nil
+}
+
 // GetServiceStatus returns the current status of a service.
 // The serviceName can be the full name (stack_service) or just the service name.
 // FIXED: Now uses context with timeout to prevent blocking forever.

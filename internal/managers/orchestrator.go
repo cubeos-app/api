@@ -609,12 +609,14 @@ func (o *Orchestrator) getAppStatus(ctx context.Context, app *models.App) *model
 	}
 
 	if app.UsesSwarm() {
-		// Get status from Swarm with timeout
-		svcStatus, err := o.swarm.GetServiceStatus(app.Name + "_" + app.Name)
-		if err == nil && svcStatus != nil {
-			status.Running = svcStatus.Running
-			status.Replicas = svcStatus.Replicas
-			status.Health = svcStatus.Health
+		// Get aggregate status across all services in the stack.
+		// Uses stack namespace label — works for CasaOS apps where the
+		// compose service name differs from the app/stack name.
+		stackStatus, err := o.swarm.GetStackStatus(app.Name)
+		if err == nil && stackStatus != nil {
+			status.Running = stackStatus.Running
+			status.Replicas = stackStatus.Replicas
+			status.Health = stackStatus.Health
 			if !status.Running {
 				status.Health = "stopped"
 			}
