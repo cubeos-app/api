@@ -728,6 +728,13 @@ func (m *AppStoreManager) InstallApp(req *models.AppInstallRequest) (*models.Ins
 	// Process manifest with variable substitution
 	processedManifest := m.processManifest(string(manifestData), req.AppName, appData, req)
 
+	// Remap the main published port to our allocated CubeOS port (6100-6999)
+	// This prevents CasaOS manifests from colliding with infrastructure ports
+	processedManifest, err = remapPorts(processedManifest, allocatedPort, storeApp.PortMap)
+	if err != nil {
+		log.Warn().Err(err).Str("app", req.AppName).Msg("port remapping failed, using original ports")
+	}
+
 	// Write docker-compose.yml to appconfig
 	composePath := filepath.Join(appConfig, "docker-compose.yml")
 	if err := os.WriteFile(composePath, []byte(processedManifest), 0644); err != nil {
@@ -751,9 +758,9 @@ func (m *AppStoreManager) InstallApp(req *models.AppInstallRequest) (*models.Ins
 		return nil, fmt.Errorf("stack deploy failed: %s", string(output))
 	}
 
-	// Build WebUI URL using configured gateway IP (not hardcoded)
+	// Build WebUI URL using configured gateway IP and the ALLOCATED port (not original)
 	webUI := ""
-	appPort := 0
+	appPort := allocatedPort
 	if storeApp.PortMap != "" {
 		scheme := storeApp.Scheme
 		if scheme == "" {
@@ -763,8 +770,7 @@ func (m *AppStoreManager) InstallApp(req *models.AppInstallRequest) (*models.Ins
 		if index == "" {
 			index = "/"
 		}
-		webUI = fmt.Sprintf("%s://%s:%s%s", scheme, m.gatewayIP, storeApp.PortMap, index)
-		fmt.Sscanf(storeApp.PortMap, "%d", &appPort)
+		webUI = fmt.Sprintf("%s://%s:%d%s", scheme, m.gatewayIP, allocatedPort, index)
 	}
 	if appPort == 0 {
 		appPort = allocatedPort
@@ -913,6 +919,152 @@ func (m *AppStoreManager) processManifest(manifest, appID, dataDir string, req *
 		return result
 	}
 	return sanitized
+}
+
+// remapPorts rewrites the host-published port in a compose manifest so that the
+// app's main web UI port uses the CubeOS-allocated port (6100-6999 range) instead
+// of whatever the CasaOS manifest originally declared.
+//
+// Without this, CasaOS manifests like LibreTranslate (5000:5000) would collide
+// with CubeOS infrastructure services (registry uses 5000).
+//
+// portMap is the original web UI port from x-casaos metadata (e.g. "5000").
+// If portMap is empty, the first published port of the first service is remapped.
+func remapPorts(manifest string, allocatedPort int, portMap string) (string, error) {
+	var compose map[string]interface{}
+	if err := yaml.Unmarshal([]byte(manifest), &compose); err != nil {
+		return manifest, fmt.Errorf("failed to parse compose for port remapping: %w", err)
+	}
+
+	services, ok := compose["services"]
+	if !ok {
+		return manifest, nil
+	}
+	svcMap, ok := services.(map[string]interface{})
+	if !ok {
+		return manifest, nil
+	}
+
+	// Determine the original host port to find and replace
+	var originalPort int
+	if portMap != "" {
+		fmt.Sscanf(portMap, "%d", &originalPort)
+	}
+
+	remapped := false
+	for svcName, svcDef := range svcMap {
+		svc, ok := svcDef.(map[string]interface{})
+		if !ok {
+			continue
+		}
+
+		ports, ok := svc["ports"].([]interface{})
+		if !ok || len(ports) == 0 {
+			continue
+		}
+
+		for i, p := range ports {
+			switch port := p.(type) {
+			case string:
+				// Short form: "5000:5000", "5000:5000/tcp", "0.0.0.0:5000:5000"
+				hostPort, containerPort, extra := parseShortPort(port)
+				if originalPort > 0 && hostPort != originalPort {
+					continue
+				}
+				// Remap
+				newMapping := fmt.Sprintf("%d:%s", allocatedPort, containerPort)
+				if extra != "" {
+					newMapping = fmt.Sprintf("%s:%s", extra, newMapping)
+				}
+				ports[i] = newMapping
+				log.Info().Str("service", svcName).
+					Str("from", port).Str("to", newMapping).
+					Msg("remapped port for CubeOS allocation")
+				remapped = true
+
+			case map[string]interface{}:
+				// Long form: {target: 5000, published: 5000, protocol: tcp}
+				published := toInt(port["published"])
+				if originalPort > 0 && published != originalPort {
+					continue
+				}
+				port["published"] = allocatedPort
+				log.Info().Str("service", svcName).
+					Int("from", published).Int("to", allocatedPort).
+					Msg("remapped port for CubeOS allocation")
+				remapped = true
+			}
+
+			// If we had no portMap hint, remap only the first port found
+			if originalPort == 0 && remapped {
+				break
+			}
+		}
+		if remapped {
+			break
+		}
+	}
+
+	if !remapped {
+		log.Warn().Int("allocatedPort", allocatedPort).Msg("no ports found to remap in manifest")
+	}
+
+	out, err := yaml.Marshal(compose)
+	if err != nil {
+		return manifest, fmt.Errorf("failed to serialize port-remapped compose: %w", err)
+	}
+	return string(out), nil
+}
+
+// parseShortPort parses Docker compose short port syntax.
+// Returns (hostPort, containerPortWithProto, bindIP).
+// Examples:
+//
+//	"5000:5000"           → (5000, "5000", "")
+//	"5000:5000/tcp"       → (5000, "5000/tcp", "")
+//	"0.0.0.0:5000:5000"  → (5000, "5000", "0.0.0.0")
+//	"8080:80"             → (8080, "80", "")
+func parseShortPort(s string) (hostPort int, containerPort string, bindIP string) {
+	// Strip protocol suffix for parsing, re-add to containerPort
+	proto := ""
+	if idx := strings.LastIndex(s, "/"); idx > 0 {
+		proto = s[idx:]
+		s = s[:idx]
+	}
+
+	parts := strings.Split(s, ":")
+	switch len(parts) {
+	case 3:
+		// bindIP:hostPort:containerPort
+		bindIP = parts[0]
+		fmt.Sscanf(parts[1], "%d", &hostPort)
+		containerPort = parts[2] + proto
+	case 2:
+		// hostPort:containerPort
+		fmt.Sscanf(parts[0], "%d", &hostPort)
+		containerPort = parts[1] + proto
+	case 1:
+		// Just containerPort (no host mapping)
+		containerPort = parts[0] + proto
+	}
+	return
+}
+
+// toInt converts an interface{} to int (handles int, float64, string).
+func toInt(v interface{}) int {
+	switch n := v.(type) {
+	case int:
+		return n
+	case int64:
+		return int(n)
+	case float64:
+		return int(n)
+	case string:
+		var i int
+		fmt.Sscanf(n, "%d", &i)
+		return i
+	}
+	return 0
 }
 
 // sanitizeForSwarm transforms a CasaOS docker-compose.yml into a format compatible
