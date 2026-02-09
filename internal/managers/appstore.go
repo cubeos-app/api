@@ -803,8 +803,19 @@ func (m *AppStoreManager) InstallApp(req *models.AppInstallRequest) (*models.Ins
 		appPort = allocatedPort
 	}
 
-	// Build FQDN for this app
-	appFQDN := fmt.Sprintf("%s.%s", req.AppName, m.baseDomain)
+	// Build FQDN for this app using a clean subdomain
+	subdomain := prettifySubdomain(req.AppName, req.StoreID)
+	log.Info().Str("app", req.AppName).Str("store", req.StoreID).Str("subdomain", subdomain).Msg("prettified subdomain for FQDN")
+
+	// Check for FQDN collision with existing DNS entries
+	appFQDN := fmt.Sprintf("%s.%s", subdomain, m.baseDomain)
+	if m.pihole != nil {
+		if existing, _ := m.pihole.GetEntry(appFQDN); existing != nil {
+			// Collision — fall back to full app name
+			log.Warn().Str("fqdn", appFQDN).Msg("FQDN collision, using full app name")
+			appFQDN = fmt.Sprintf("%s.%s", req.AppName, m.baseDomain)
+		}
+	}
 
 	// Create NPM proxy host for FQDN access (non-fatal)
 	var npmProxyID int
@@ -880,13 +891,15 @@ func (m *AppStoreManager) InstallApp(req *models.AppInstallRequest) (*models.Ins
 		return nil, fmt.Errorf("failed to save app record: %w", err)
 	}
 
-	// Store NPM proxy ID and FQDN in the fqdns table (replaces old installed_apps.npm_proxy_id)
-	if npmProxyID > 0 && appFQDN != "" {
+	// Store FQDN in the fqdns table (for DNS cleanup during uninstall)
+	if appFQDN != "" {
+		// Extract subdomain from the (possibly prettified) FQDN
+		fqdnSubdomain := strings.TrimSuffix(appFQDN, "."+m.baseDomain)
 		var appID int64
 		if err := m.db.db.QueryRow("SELECT id FROM apps WHERE name = ?", installed.Name).Scan(&appID); err == nil {
 			m.db.db.Exec(`INSERT INTO fqdns (app_id, fqdn, subdomain, backend_port, npm_proxy_id)
 				VALUES (?, ?, ?, ?, ?) ON CONFLICT DO NOTHING`,
-				appID, appFQDN, installed.Name, appPort, npmProxyID)
+				appID, appFQDN, fqdnSubdomain, appPort, npmProxyID)
 		}
 	}
 
@@ -1102,6 +1115,55 @@ func toInt(v interface{}) int {
 func fileExists(path string) bool {
 	_, err := os.Stat(path)
 	return err == nil
+}
+
+// prettifySubdomain strips common CasaOS store prefixes from app names
+// to produce clean, user-friendly FQDNs.
+//
+// Examples:
+//
+//	"big-bear-libretranslate", "big-bear"     → "libretranslate"
+//	"big-bear-ghostfolio", "big-bear"         → "ghostfolio"
+//	"linuxserver-plex", "linuxserver"         → "plex"
+//	"nextcloud", "casaos-official"            → "nextcloud"
+//	"big-bear-npm", "big-bear"               → "npm"
+func prettifySubdomain(appName, storeID string) string {
+	// Known store prefixes to strip (order: longest first)
+	knownPrefixes := []string{
+		"big-bear-",
+		"linuxserver-",
+	}
+
+	// Also try the store ID as a prefix (handles future stores dynamically)
+	if storeID != "" && !strings.Contains(storeID, "official") {
+		storePrefix := storeID + "-"
+		// Add to front so it's tried first
+		knownPrefixes = append([]string{storePrefix}, knownPrefixes...)
+	}
+
+	// Deduplicate (store ID might match a known prefix)
+	seen := make(map[string]bool)
+	var prefixes []string
+	for _, p := range knownPrefixes {
+		if !seen[p] {
+			seen[p] = true
+			prefixes = append(prefixes, p)
+		}
+	}
+
+	result := appName
+	for _, prefix := range prefixes {
+		if strings.HasPrefix(appName, prefix) {
+			stripped := strings.TrimPrefix(appName, prefix)
+			// Don't strip if it leaves an empty string or a single character
+			if len(stripped) > 1 {
+				result = stripped
+				break
+			}
+		}
+	}
+
+	return result
 }
 
 // preCreateBindMounts parses a compose YAML and creates all bind mount host
@@ -1876,10 +1938,16 @@ func (m *AppStoreManager) RemoveApp(appID string, deleteData bool) error {
 		}
 	}
 
-	// Remove DNS entry via PiholeManager
-	appFQDN := fmt.Sprintf("%s.%s", appID, m.baseDomain)
-	if err := m.removePiholeDNS(appFQDN); err != nil {
-		log.Warn().Err(err).Str("fqdn", appFQDN).Msg("failed to remove DNS entry")
+	// Remove DNS entry via PiholeManager — use FQDN from database (may be prettified)
+	var storedFQDN string
+	m.db.db.QueryRow(`SELECT f.fqdn FROM fqdns f
+		JOIN apps a ON a.id = f.app_id WHERE a.name = ? LIMIT 1`, appID).Scan(&storedFQDN)
+	if storedFQDN == "" {
+		// Fallback: reconstruct from app ID
+		storedFQDN = fmt.Sprintf("%s.%s", appID, m.baseDomain)
+	}
+	if err := m.removePiholeDNS(storedFQDN); err != nil {
+		log.Warn().Err(err).Str("fqdn", storedFQDN).Msg("failed to remove DNS entry")
 	}
 
 	ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
