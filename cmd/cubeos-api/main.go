@@ -460,6 +460,7 @@ func main() {
 				r.Get("/timezones", h.GetTimezones)
 				r.Post("/reboot", h.Reboot)
 				r.Post("/shutdown", h.Shutdown)
+				r.Get("/browse", appStoreHandler.BrowseDirectories)
 			})
 
 			// Network Management (all routes via NetworkHandler)
