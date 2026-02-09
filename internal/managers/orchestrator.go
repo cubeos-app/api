@@ -488,6 +488,11 @@ func (o *Orchestrator) ListApps(ctx context.Context, filter *models.AppFilter) (
 		// Get runtime status
 		app.Status = o.getAppStatus(ctx, &app)
 
+		// Load related data (ports, FQDNs) so frontend can build URLs
+		if err := o.loadAppRelations(ctx, &app); err != nil {
+			log.Warn().Err(err).Str("app", app.Name).Msg("failed to load app relations")
+		}
+
 		apps = append(apps, &app)
 	}
 
