@@ -456,6 +456,11 @@ func (h *AppStoreHandler) InstallApp(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	if h.manager == nil {
+		writeError(w, http.StatusInternalServerError, "app store manager not initialized")
+		return
+	}
+
 	job := h.jobTracker.CreateJob("install", req.AppName)
 
 	// Run install in background goroutine
@@ -510,6 +515,11 @@ func (h *AppStoreHandler) GetInstalledApp(w http.ResponseWriter, r *http.Request
 func (h *AppStoreHandler) RemoveApp(w http.ResponseWriter, r *http.Request) {
 	appID := chi.URLParam(r, "appID")
 	deleteData := r.URL.Query().Get("delete_data") == "true"
+
+	if h.manager == nil {
+		writeError(w, http.StatusInternalServerError, "app store manager not initialized")
+		return
+	}
 
 	job := h.jobTracker.CreateJob("uninstall", appID)
 
