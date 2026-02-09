@@ -904,8 +904,12 @@ func (m *AppStoreManager) processManifest(manifest, appID, dataDir string, req *
 	}
 
 	// Replace data path references
+	// CasaOS manifests use both variable form and hardcoded app name:
+	//   /DATA/AppData/$AppID/...     (variable)
+	//   /DATA/AppData/big-bear-xxx/  (hardcoded)
 	result = strings.ReplaceAll(result, "/DATA/AppData/$AppID", dataDir)
 	result = strings.ReplaceAll(result, "/DATA/AppData/${AppID}", dataDir)
+	result = strings.ReplaceAll(result, "/DATA/AppData/"+appID, dataDir)
 
 	// Apply env overrides
 	for key, val := range req.EnvOverrides {
