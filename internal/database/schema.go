@@ -9,7 +9,7 @@ import (
 )
 
 // CurrentSchemaVersion tracks the database schema version for migrations.
-const CurrentSchemaVersion = 11
+const CurrentSchemaVersion = 12
 
 // Schema defines the unified CubeOS database schema.
 // Design Principles:
@@ -48,6 +48,9 @@ CREATE TABLE IF NOT EXISTS apps (
     
     -- Deployment mode
     deploy_mode     TEXT DEFAULT 'stack',           -- 'stack' (Swarm) or 'compose' (host network)
+    
+    -- Web UI behavior
+    webui_type      TEXT DEFAULT 'browser',         -- 'browser' (open in new tab) or 'api' (show status modal)
     
     -- Metadata
     icon_url        TEXT DEFAULT '',

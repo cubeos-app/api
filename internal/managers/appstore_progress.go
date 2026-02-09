@@ -236,6 +236,16 @@ func (m *AppStoreManager) InstallAppWithProgress(req *models.AppInstallRequest, 
 		}
 	}
 
+	// Auto-detect web UI type (browser vs API) via Content-Type sniffing
+	webuiType := detectWebUIType(webUI)
+	installed.WebUIType = webuiType
+	if webuiType != "browser" {
+		log.Info().Str("app", req.AppName).Str("type", webuiType).Str("url", webUI).
+			Msg("detected non-browser web UI type")
+	}
+	// Persist to DB
+	m.db.db.Exec("UPDATE apps SET webui_type = ? WHERE name = ?", webuiType, installed.Name)
+
 	// Update in-memory state
 	m.mu.Lock()
 	m.installed[installed.ID] = installed
@@ -410,4 +420,54 @@ func (m *AppStoreManager) healthCheckFQDN(fqdn string, timeout time.Duration) er
 		time.Sleep(2 * time.Second)
 	}
 	return fmt.Errorf("health check timed out for %s", fqdn)
+}
+
+// detectWebUIType does a HEAD request to the app's web UI URL and checks
+// Content-Type to determine if it's a browser-friendly page or an API endpoint.
+// Returns "browser" (text/html) or "api" (application/json, etc.).
+// Defaults to "browser" on any error or ambiguous response.
+func detectWebUIType(webUIURL string) string {
+	if webUIURL == "" {
+		return "browser"
+	}
+
+	client := &http.Client{
+		Timeout: 5 * time.Second,
+		CheckRedirect: func(req *http.Request, via []*http.Request) error {
+			if len(via) >= 3 {
+				return fmt.Errorf("too many redirects")
+			}
+			return nil
+		},
+	}
+
+	// Try HEAD first (fastest)
+	resp, err := client.Head(webUIURL)
+	if err != nil {
+		log.Debug().Err(err).Str("url", webUIURL).Msg("HEAD failed for webui detection, defaulting to browser")
+		return "browser"
+	}
+	resp.Body.Close()
+
+	ct := strings.ToLower(resp.Header.Get("Content-Type"))
+
+	// Some servers don't return Content-Type on HEAD, fall back to GET
+	if ct == "" {
+		resp, err = client.Get(webUIURL)
+		if err != nil {
+			return "browser"
+		}
+		resp.Body.Close()
+		ct = strings.ToLower(resp.Header.Get("Content-Type"))
+	}
+
+	if strings.Contains(ct, "text/html") || strings.Contains(ct, "text/xhtml") {
+		return "browser"
+	}
+	if strings.Contains(ct, "application/json") || strings.Contains(ct, "text/plain") || strings.Contains(ct, "application/xml") {
+		return "api"
+	}
+
+	// Default: assume browser-friendly
+	return "browser"
 }

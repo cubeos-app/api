@@ -511,6 +511,18 @@ var migrations = []Migration{
 			return nil
 		},
 	},
+	{
+		Version:     12,
+		Description: "Add webui_type column to apps table for UI click behavior",
+		Up: func(db *sql.DB) error {
+			_, err := db.Exec(`ALTER TABLE apps ADD COLUMN webui_type TEXT DEFAULT 'browser'`)
+			if err != nil && !isDuplicateColumnError(err) {
+				return fmt.Errorf("failed to add webui_type column: %w", err)
+			}
+			log.Info().Msg("Migration 12: Added webui_type column to apps table")
+			return nil
+		},
+	},
 }
 
 // isDuplicateColumnError checks if an error is a "duplicate column" error

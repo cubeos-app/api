@@ -136,6 +136,7 @@ func (m *AppStoreManager) loadInstalledApps() {
 		name, COALESCE(display_name, name) as title, COALESCE(description, '') as description,
 		COALESCE(icon_url, '') as icon, COALESCE(category, '') as category,
 		COALESCE(version, '') as version, COALESCE(homepage, '') as webui,
+		COALESCE(webui_type, 'browser') as webui_type,
 		COALESCE(compose_path, '') as compose_file, COALESCE(data_path, '') as data_path,
 		created_at, updated_at
 		FROM apps WHERE source = 'casaos'`)
@@ -149,7 +150,8 @@ func (m *AppStoreManager) loadInstalledApps() {
 		var app models.InstalledApp
 		var installedAt, updatedAt string
 		rows.Scan(&app.ID, &app.StoreID, &app.StoreAppID, &app.Name, &app.Title, &app.Description,
-			&app.Icon, &app.Category, &app.Version, &app.WebUI, &app.ComposeFile,
+			&app.Icon, &app.Category, &app.Version, &app.WebUI, &app.WebUIType,
+			&app.ComposeFile,
 			&app.DataPath, &installedAt, &updatedAt)
 		app.InstalledAt, _ = time.Parse(time.RFC3339, installedAt)
 		app.UpdatedAt, _ = time.Parse(time.RFC3339, updatedAt)
@@ -1708,6 +1710,35 @@ func (m *AppStoreManager) GetInstalledApp(appID string) *models.InstalledApp {
 		}
 	}
 	return app
+}
+
+// UpdateWebUIType changes the webui_type for an installed app.
+// Valid values: "browser" (open in new tab) or "api" (show status modal).
+func (m *AppStoreManager) UpdateWebUIType(appID string, webuiType string) error {
+	if webuiType != "browser" && webuiType != "api" {
+		return fmt.Errorf("invalid webui_type: %q (must be 'browser' or 'api')", webuiType)
+	}
+
+	app := m.GetInstalledApp(appID)
+	if app == nil {
+		return fmt.Errorf("app not found: %s", appID)
+	}
+
+	_, err := m.db.db.Exec("UPDATE apps SET webui_type = ?, updated_at = ? WHERE name = ?",
+		webuiType, time.Now().Format(time.RFC3339), appID)
+	if err != nil {
+		return fmt.Errorf("failed to update webui_type: %w", err)
+	}
+
+	// Update in-memory state
+	m.mu.Lock()
+	if installed, ok := m.installed[appID]; ok {
+		installed.WebUIType = webuiType
+	}
+	m.mu.Unlock()
+
+	log.Info().Str("app", appID).Str("webui_type", webuiType).Msg("updated webui_type")
+	return nil
 }
 
 func (m *AppStoreManager) refreshAppStatus(app *models.InstalledApp) {

@@ -51,6 +51,7 @@ type App struct {
 	TorEnabled  bool       `db:"tor_enabled" json:"tor_enabled"`
 	VPNEnabled  bool       `db:"vpn_enabled" json:"vpn_enabled"`
 	DeployMode  DeployMode `db:"deploy_mode" json:"deploy_mode"`
+	WebUIType   string     `db:"webui_type" json:"webui_type"` // "browser" or "api"
 	IconURL     string     `db:"icon_url" json:"icon_url"`
 	Version     string     `db:"version" json:"version"`
 	Homepage    string     `db:"homepage" json:"homepage"`

@@ -63,6 +63,7 @@ type InstalledApp struct {
 	Version     string         `json:"version,omitempty" db:"version"`
 	Status      string         `json:"status" db:"status"`
 	WebUI       string         `json:"webui,omitempty" db:"webui"`
+	WebUIType   string         `json:"webui_type,omitempty" db:"webui_type"`
 	ComposeFile string         `json:"-" db:"compose_file"`
 	DataPath    string         `json:"data_path,omitempty" db:"data_path"`
 	InstalledAt time.Time      `json:"installed_at" db:"installed_at"`

@@ -74,6 +74,9 @@ func (h *AppStoreHandler) Routes() chi.Router {
 	r.Put("/installed/{appID}/volumes", h.UpdateVolumeMappings)
 	r.Get("/stores/{storeID}/apps/{appName}/volumes", h.PreviewVolumes)
 
+	// Web UI behavior
+	r.Put("/installed/{appID}/webui-type", h.UpdateWebUIType)
+
 	// Core apps (/cubeos/coreapps/) - protected with extra warnings
 	r.Get("/coreapps", h.ListCoreApps)
 	r.Get("/coreapps/{appID}/config", h.GetCoreAppConfig)
@@ -771,6 +774,47 @@ func (h *AppStoreHandler) RestartApp(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	writeJSON(w, http.StatusOK, map[string]interface{}{"success": true})
+}
+
+// UpdateWebUIType godoc
+// @Summary Set web UI click behavior
+// @Description Sets whether clicking an app opens a browser tab or shows a status modal.
+// @Description Auto-detected on install via Content-Type sniffing; this endpoint lets users override.
+// @Tags AppStore - Installed
+// @Accept json
+// @Produce json
+// @Security BearerAuth
+// @Param appID path string true "App ID"
+// @Param request body object true "webui_type: 'browser' or 'api'"
+// @Success 200 {object} map[string]interface{} "success, webui_type"
+// @Failure 400 {object} ErrorResponse "Invalid type"
+// @Failure 404 {object} ErrorResponse "App not found"
+// @Router /appstore/installed/{appID}/webui-type [put]
+func (h *AppStoreHandler) UpdateWebUIType(w http.ResponseWriter, r *http.Request) {
+	appID := chi.URLParam(r, "appID")
+
+	var req struct {
+		WebUIType string `json:"webui_type"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		writeError(w, http.StatusBadRequest, "invalid request")
+		return
+	}
+
+	if err := h.manager.UpdateWebUIType(appID, req.WebUIType); err != nil {
+		errMsg := err.Error()
+		if errMsg == "app not found: "+appID {
+			writeError(w, http.StatusNotFound, errMsg)
+		} else {
+			writeError(w, http.StatusBadRequest, errMsg)
+		}
+		return
+	}
+
+	writeJSON(w, http.StatusOK, map[string]interface{}{
+		"success":    true,
+		"webui_type": req.WebUIType,
+	})
 }
 
 // AppAction godoc

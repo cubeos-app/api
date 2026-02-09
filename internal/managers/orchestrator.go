@@ -411,13 +411,15 @@ func (o *Orchestrator) GetApp(ctx context.Context, name string) (*models.App, er
 	err := o.db.QueryRowContext(ctx, `
 		SELECT id, name, display_name, description, type, category, source, store_id,
 			compose_path, data_path, enabled, tor_enabled, vpn_enabled,
-			deploy_mode, icon_url, version, homepage, created_at, updated_at
+			deploy_mode, COALESCE(webui_type, 'browser') as webui_type,
+			icon_url, version, homepage, created_at, updated_at
 		FROM apps WHERE name = ?
 	`, name).Scan(
 		&app.ID, &app.Name, &app.DisplayName, &app.Description, &app.Type,
 		&app.Category, &app.Source, &app.StoreID, &app.ComposePath, &app.DataPath,
 		&app.Enabled, &app.TorEnabled, &app.VPNEnabled,
-		&app.DeployMode, &app.IconURL, &app.Version, &app.Homepage,
+		&app.DeployMode, &app.WebUIType,
+		&app.IconURL, &app.Version, &app.Homepage,
 		&app.CreatedAt, &app.UpdatedAt,
 	)
 	if err == sql.ErrNoRows {
@@ -443,7 +445,8 @@ func (o *Orchestrator) ListApps(ctx context.Context, filter *models.AppFilter) (
 	query := `
 		SELECT id, name, display_name, description, type, category, source, store_id,
 			compose_path, data_path, enabled, tor_enabled, vpn_enabled,
-			deploy_mode, icon_url, version, homepage, created_at, updated_at
+			deploy_mode, COALESCE(webui_type, 'browser') as webui_type,
+			icon_url, version, homepage, created_at, updated_at
 		FROM apps WHERE 1=1
 	`
 	var args []interface{}
@@ -474,7 +477,8 @@ func (o *Orchestrator) ListApps(ctx context.Context, filter *models.AppFilter) (
 			&app.ID, &app.Name, &app.DisplayName, &app.Description, &app.Type,
 			&app.Category, &app.Source, &app.StoreID, &app.ComposePath, &app.DataPath,
 			&app.Enabled, &app.TorEnabled, &app.VPNEnabled,
-			&app.DeployMode, &app.IconURL, &app.Version, &app.Homepage,
+			&app.DeployMode, &app.WebUIType,
+			&app.IconURL, &app.Version, &app.Homepage,
 			&app.CreatedAt, &app.UpdatedAt,
 		)
 		if err != nil {
