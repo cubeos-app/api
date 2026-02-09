@@ -917,6 +917,8 @@ func (m *AppStoreManager) processManifest(manifest, appID, dataDir string, req *
 
 // sanitizeForSwarm transforms a CasaOS docker-compose.yml to be compatible with
 // docker stack deploy. Handles known incompatibilities:
+// Root level: name, x-casaos and other x- extensions not allowed by stack deploy
+// Service level:
 // - depends_on: map with conditions → simple list of service names
 // - container_name: not supported in Swarm, removed
 // - privileged: not supported in Swarm stacks, removed
@@ -926,6 +928,23 @@ func sanitizeForSwarm(manifest string) (string, error) {
 	var compose map[string]interface{}
 	if err := yaml.Unmarshal([]byte(manifest), &compose); err != nil {
 		return "", fmt.Errorf("failed to parse compose YAML: %w", err)
+	}
+
+	// Remove root-level properties not allowed by docker stack deploy
+	rootDisallowed := []string{"name"}
+	for _, key := range rootDisallowed {
+		if _, exists := compose[key]; exists {
+			delete(compose, key)
+			log.Info().Str("key", key).Msg("removed disallowed root-level property for Swarm")
+		}
+	}
+
+	// Remove x-casaos and other custom extensions (x-*) at root level
+	for key := range compose {
+		if strings.HasPrefix(key, "x-") {
+			delete(compose, key)
+			log.Info().Str("key", key).Msg("removed custom extension for Swarm compatibility")
+		}
 	}
 
 	services, ok := compose["services"]
@@ -985,6 +1004,13 @@ func sanitizeForSwarm(manifest string) (string, error) {
 					log.Warn().Str("service", svcName).Str("network_mode", nmStr).
 						Msg("removed unsupported network_mode for Swarm — app may not work correctly")
 				}
+			}
+		}
+
+		// Remove x-* custom extensions at service level
+		for key := range svc {
+			if strings.HasPrefix(key, "x-") {
+				delete(svc, key)
 			}
 		}
 	}
