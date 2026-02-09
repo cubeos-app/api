@@ -296,10 +296,26 @@ func (o *Orchestrator) UninstallApp(ctx context.Context, name string, keepData b
 		return fmt.Errorf("failed to delete app from database: %w", err)
 	}
 
+	// Remove compose config directory (always removed on uninstall)
+	if app.ComposePath != "" {
+		configDir := filepath.Dir(app.ComposePath)
+		if err := os.RemoveAll(configDir); err != nil {
+			log.Warn().Err(err).Str("path", configDir).Msg("Failed to remove config directory during uninstall")
+		}
+	}
+
 	// Optionally remove data
 	if !keepData && app.DataPath != "" {
 		if err := os.RemoveAll(app.DataPath); err != nil {
 			log.Warn().Err(err).Str("path", app.DataPath).Msg("Failed to remove data directory during uninstall")
+		}
+	}
+
+	// Clean up parent app directory if empty
+	if app.ComposePath != "" {
+		parentDir := filepath.Dir(filepath.Dir(app.ComposePath)) // e.g. /cubeos/apps/appname
+		if entries, err := os.ReadDir(parentDir); err == nil && len(entries) == 0 {
+			os.Remove(parentDir) // Remove only if empty
 		}
 	}
 

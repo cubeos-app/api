@@ -1974,6 +1974,10 @@ func (m *AppStoreManager) RemoveApp(appID string, deleteData bool) error {
 	} else {
 		// Remove only appconfig, keep appdata
 		os.RemoveAll(appConfigDir)
+		// Clean up parent directory if empty (no appdata existed)
+		if entries, err := os.ReadDir(appBaseDir); err == nil && len(entries) == 0 {
+			os.Remove(appBaseDir)
+		}
 	}
 
 	// Remove from database (unified apps table)
