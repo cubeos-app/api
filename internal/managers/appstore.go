@@ -762,6 +762,11 @@ func (m *AppStoreManager) InstallApp(req *models.AppInstallRequest) (*models.Ins
 		return nil, fmt.Errorf("failed to write compose file: %w", err)
 	}
 
+	// Pre-create bind mount source directories.
+	// Docker Swarm (unlike docker compose) does NOT auto-create host paths for bind mounts.
+	// Parse the written compose and mkdir -p every host path under /cubeos/apps/.
+	preCreateBindMounts(processedManifest)
+
 	// Deploy as Swarm stack instead of docker compose
 	// --resolve-image=never is critical for ARM64 compatibility
 	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Minute)
@@ -1096,6 +1101,57 @@ func toInt(v interface{}) int {
 func fileExists(path string) bool {
 	_, err := os.Stat(path)
 	return err == nil
+}
+
+// preCreateBindMounts parses a compose YAML and creates all bind mount host
+// directories. Docker Swarm does NOT auto-create bind mount source paths
+// (unlike docker compose), so containers get "bind source path does not exist"
+// rejections without this step.
+func preCreateBindMounts(manifest string) {
+	var compose map[string]interface{}
+	if err := yaml.Unmarshal([]byte(manifest), &compose); err != nil {
+		return
+	}
+	services, ok := compose["services"].(map[string]interface{})
+	if !ok {
+		return
+	}
+
+	for _, svcDef := range services {
+		svc, ok := svcDef.(map[string]interface{})
+		if !ok {
+			continue
+		}
+		volumes, ok := svc["volumes"].([]interface{})
+		if !ok {
+			continue
+		}
+		for _, v := range volumes {
+			var hostPath string
+			switch vol := v.(type) {
+			case string:
+				// Short form: "/host/path:/container/path" or "/host/path:/container/path:ro"
+				parts := strings.SplitN(vol, ":", 3)
+				if len(parts) >= 2 && strings.HasPrefix(parts[0], "/") {
+					hostPath = parts[0]
+				}
+			case map[string]interface{}:
+				// Long form: {type: bind, source: /host/path, target: /container/path}
+				if t, _ := vol["type"].(string); t == "bind" || t == "" {
+					if src, ok := vol["source"].(string); ok && strings.HasPrefix(src, "/") {
+						hostPath = src
+					}
+				}
+			}
+			if hostPath != "" {
+				if err := os.MkdirAll(hostPath, 0755); err != nil {
+					log.Warn().Err(err).Str("path", hostPath).Msg("failed to pre-create bind mount directory")
+				} else {
+					log.Debug().Str("path", hostPath).Msg("pre-created bind mount directory for Swarm")
+				}
+			}
+		}
+	}
 }
 
 // swarmStackExists returns true if a Docker Swarm stack with the given name
