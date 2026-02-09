@@ -8,13 +8,13 @@ import (
 	"database/sql"
 	"encoding/json"
 	"fmt"
-	"log"
 	"net/http"
 	"strings"
 	"time"
 
 	"cubeos-api/internal/managers"
 	"github.com/go-chi/chi/v5"
+	"github.com/rs/zerolog/log"
 )
 
 // FQDNsHandler handles FQDN management endpoints
@@ -245,7 +245,7 @@ func (h *FQDNsHandler) CreateFQDN(w http.ResponseWriter, r *http.Request) {
 		}
 		created, err := h.npm.CreateProxyHost(host)
 		if err != nil {
-			log.Printf("Warning: Failed to create NPM proxy host for %s: %v", fullFQDN, err)
+			log.Warn().Err(err).Str("fqdn", fullFQDN).Msg("failed to create NPM proxy host")
 		} else if created != nil {
 			npmProxyID = created.ID
 		}
@@ -254,10 +254,10 @@ func (h *FQDNsHandler) CreateFQDN(w http.ResponseWriter, r *http.Request) {
 	// Add Pi-hole DNS record if manager available
 	if h.pihole != nil {
 		if err := h.pihole.AddEntry(fullFQDN, ""); err != nil {
-			log.Printf("Warning: Failed to add Pi-hole DNS record for %s: %v", fullFQDN, err)
+			log.Warn().Err(err).Str("fqdn", fullFQDN).Msg("failed to add Pi-hole DNS record")
 		} else {
 			if err := h.pihole.ReloadDNS(); err != nil {
-				log.Printf("Warning: Failed to reload Pi-hole DNS after adding %s: %v", fullFQDN, err)
+				log.Warn().Err(err).Str("fqdn", fullFQDN).Msg("failed to reload Pi-hole DNS after adding record")
 			}
 		}
 	}
@@ -373,7 +373,7 @@ func (h *FQDNsHandler) UpdateFQDN(w http.ResponseWriter, r *http.Request) {
 				ForwardScheme: "http",
 			}
 			if _, err := h.npm.UpdateProxyHost(proxyID, update); err != nil {
-				log.Printf("Warning: Failed to update NPM proxy host %d for %s: %v", proxyID, fullFQDN, err)
+				log.Warn().Err(err).Int("proxyID", proxyID).Str("fqdn", fullFQDN).Msg("failed to update NPM proxy host")
 			}
 		}
 	}
@@ -422,16 +422,16 @@ func (h *FQDNsHandler) DeleteFQDN(w http.ResponseWriter, r *http.Request) {
 	// Cleanup: Delete NPM proxy host if we have the ID and manager is available
 	if h.npm != nil && npmProxyID > 0 {
 		if err := h.npm.DeleteProxyHost(npmProxyID); err != nil {
-			log.Printf("Warning: Failed to delete NPM proxy host %d for %s: %v", npmProxyID, fullFQDN, err)
+			log.Warn().Err(err).Int("proxyID", npmProxyID).Str("fqdn", fullFQDN).Msg("failed to delete NPM proxy host")
 		}
 	} else if h.npm != nil {
 		// Fallback: try to find proxy host by domain name
 		host, err := h.npm.FindProxyHostByDomain(fullFQDN)
 		if err != nil {
-			log.Printf("Warning: Failed to find NPM proxy host for %s: %v", fullFQDN, err)
+			log.Warn().Err(err).Str("fqdn", fullFQDN).Msg("failed to find NPM proxy host")
 		} else if host != nil {
 			if err := h.npm.DeleteProxyHost(host.ID); err != nil {
-				log.Printf("Warning: Failed to delete NPM proxy host for %s: %v", fullFQDN, err)
+				log.Warn().Err(err).Str("fqdn", fullFQDN).Msg("failed to delete NPM proxy host by domain")
 			}
 		}
 	}
@@ -439,10 +439,10 @@ func (h *FQDNsHandler) DeleteFQDN(w http.ResponseWriter, r *http.Request) {
 	// Cleanup: Delete Pi-hole DNS record if manager available
 	if h.pihole != nil {
 		if err := h.pihole.RemoveEntry(fullFQDN); err != nil {
-			log.Printf("Warning: Failed to delete Pi-hole DNS record for %s: %v", fullFQDN, err)
+			log.Warn().Err(err).Str("fqdn", fullFQDN).Msg("failed to delete Pi-hole DNS record")
 		} else {
 			if err := h.pihole.ReloadDNS(); err != nil {
-				log.Printf("Warning: Failed to reload Pi-hole DNS after deleting %s: %v", fullFQDN, err)
+				log.Warn().Err(err).Str("fqdn", fullFQDN).Msg("failed to reload Pi-hole DNS after deleting record")
 			}
 		}
 	}

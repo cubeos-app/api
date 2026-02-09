@@ -7,7 +7,6 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
-	"log"
 	"net/http"
 	"os"
 	"path/filepath"
@@ -16,6 +15,8 @@ import (
 	"time"
 
 	"cubeos-api/internal/config"
+
+	"github.com/rs/zerolog/log"
 )
 
 // NPMManager handles Nginx Proxy Manager API interactions
@@ -145,7 +146,7 @@ func NewNPMManager(cfg *config.Config, configDir string) *NPMManager {
 func (m *NPMManager) Init() error {
 	// Step 1: Try existing token
 	if m.tryLoadToken() {
-		log.Printf("NPM: Using existing API token")
+		log.Info().Msg("NPM: using existing API token")
 		m.initialized = true
 		return nil
 	}
@@ -153,17 +154,17 @@ func (m *NPMManager) Init() error {
 	// Step 2: Try service account credentials from secrets.env
 	if password := m.loadServiceAccountPassword(); password != "" {
 		if err := m.authenticateServiceAccount(password); err == nil {
-			log.Printf("NPM: Authenticated with service account")
+			log.Info().Msg("NPM: authenticated with service account")
 			m.initialized = true
 			return nil
 		}
-		log.Printf("NPM: Service account auth failed, will try bootstrap\n")
+		log.Warn().Msg("NPM: service account auth failed, will try bootstrap")
 	}
 
 	// Step 3: Bootstrap - create service account using admin credentials
 	if err := m.bootstrapServiceAccount(); err != nil {
-		log.Printf("NPM Warning: Bootstrap failed: %v\n", err)
-		log.Printf("NPM: Will operate in degraded mode (some features unavailable)")
+		log.Warn().Err(err).Msg("NPM: bootstrap failed")
+		log.Warn().Msg("NPM: will operate in degraded mode (some features unavailable)")
 		// Don't return error - NPM integration is optional
 		return nil
 	}
@@ -261,7 +262,7 @@ func (m *NPMManager) authenticate(email, password string) error {
 
 	// Save token to file
 	if err := m.saveToken(tokenResp.Token); err != nil {
-		log.Printf("NPM Warning: Failed to save token: %v\n", err)
+		log.Warn().Err(err).Msg("NPM: failed to save token")
 	}
 
 	return nil
@@ -286,7 +287,7 @@ func (m *NPMManager) bootstrapServiceAccount() error {
 		return fmt.Errorf("bootstrap credentials not configured (set %s and %s)", npmBootstrapEmailKey, npmBootstrapPasswordKey)
 	}
 
-	log.Printf("NPM: Bootstrapping service account...")
+	log.Info().Msg("NPM: bootstrapping service account")
 
 	// Step 1: Authenticate as admin
 	if err := m.authenticate(adminEmail, adminPassword); err != nil {
@@ -301,7 +302,7 @@ func (m *NPMManager) bootstrapServiceAccount() error {
 
 	for _, user := range users {
 		if user.Email == npmServiceEmail {
-			log.Printf("NPM: Service account already exists")
+			log.Info().Msg("NPM: service account already exists")
 			// Service account exists but we don't have the password
 			// Generate new password and update it
 			return m.resetServiceAccountPassword()
@@ -329,7 +330,7 @@ func (m *NPMManager) bootstrapServiceAccount() error {
 		return fmt.Errorf("failed to authenticate service account: %w", err)
 	}
 
-	log.Printf("NPM: Service account bootstrap complete")
+	log.Info().Msg("NPM: service account bootstrap complete")
 	return nil
 }
 

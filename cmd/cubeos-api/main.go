@@ -139,7 +139,6 @@ package main
 import (
 	"context"
 	"fmt"
-	"log"
 	"net/http"
 	"os"
 	"os/signal"
@@ -151,6 +150,7 @@ import (
 	chimw "github.com/go-chi/chi/v5/middleware"
 	"github.com/go-chi/cors"
 	"github.com/jmoiron/sqlx"
+	"github.com/rs/zerolog/log"
 	httpSwagger "github.com/swaggo/http-swagger"
 	"golang.org/x/crypto/bcrypt"
 
@@ -168,20 +168,19 @@ func main() {
 	// Load configuration
 	cfg := config.Load()
 
-	// Setup logging
-	log.SetFlags(log.LstdFlags | log.Lshortfile)
-	log.Printf("Starting CubeOS API v%s", cfg.Version)
+	// Setup logging (zerolog)
+	log.Info().Str("version", cfg.Version).Msg("starting CubeOS API")
 
 	// Warn if using default JWT secret
 	if cfg.JWTSecret == "cubeos-dev-secret-change-in-production" {
-		log.Printf("WARNING: Using default JWT secret — set JWT_SECRET in secrets.env for production!")
+		log.Warn().Msg("using default JWT secret — set JWT_SECRET in secrets.env for production")
 	}
 
 	// Connect to database
 	// Open database using pure-Go driver
 	rawDB, err := database.Open(cfg.DatabasePath)
 	if err != nil {
-		log.Fatalf("Failed to open database: %v", err)
+		log.Fatal().Err(err).Msg("failed to open database")
 	}
 	db := sqlx.NewDb(rawDB, "sqlite")
 	defer db.Close()
@@ -189,25 +188,25 @@ func main() {
 	// Initialize database schema + run migrations (single source of truth: database/schema.go)
 	// Schema init is critical — without tables, the API cannot function.
 	// Migration failures are non-critical — existing schema can still serve traffic.
-	log.Printf("Initializing database schema and running migrations...")
+	log.Info().Msg("initializing database schema and running migrations")
 	if err := database.InitSchema(db.DB); err != nil {
-		log.Fatalf("FATAL: Failed to initialize database schema: %v", err)
+		log.Fatal().Err(err).Msg("failed to initialize database schema")
 	}
 	if err := database.Migrate(db.DB); err != nil {
-		log.Printf("WARNING: Database migration failed (existing schema still usable): %v", err)
+		log.Warn().Err(err).Msg("database migration failed (existing schema still usable)")
 	} else {
-		log.Printf("Database schema and migrations completed successfully")
+		log.Info().Msg("database schema and migrations completed successfully")
 	}
 
 	// Seed default admin user (after schema is created)
 	if err := seedDefaultAdmin(db); err != nil {
-		log.Printf("Warning: Failed to seed admin user: %v", err)
+		log.Warn().Err(err).Msg("failed to seed admin user")
 	}
 
 	// Create Docker manager
 	docker, err := managers.NewDockerManager(cfg)
 	if err != nil {
-		log.Printf("Warning: Failed to connect to Docker: %v", err)
+		log.Warn().Err(err).Msg("failed to connect to Docker")
 		docker = nil
 	}
 	if docker != nil {
@@ -221,7 +220,7 @@ func main() {
 		halURL = hal.DefaultHALURL
 	}
 	halClient := hal.NewClient(halURL)
-	log.Printf("HAL client initialized (endpoint: %s)", halURL)
+	log.Info().Str("endpoint", halURL).Msg("HAL client initialized")
 
 	// Create core managers (with HAL client for hardware access)
 	systemMgr := managers.NewSystemManager()
@@ -243,7 +242,7 @@ func main() {
 
 	// Create PiholeManager early so it can be used by AppStoreManager
 	piholeMgr := managers.NewPiholeManager(cfg, "/cubeos")
-	log.Printf("PiholeManager initialized")
+	log.Info().Msg("PiholeManager initialized")
 
 	appStoreMgr := managers.NewAppStoreManager(cfg, dbMgr, cfg.DataDir, piholeMgr)
 
@@ -257,34 +256,34 @@ func main() {
 		NPMConfigDir: "/cubeos/coreapps/npm/appdata",
 	})
 	if err != nil {
-		log.Printf("Warning: Failed to create Orchestrator: %v", err)
+		log.Warn().Err(err).Msg("failed to create Orchestrator")
 		// Continue without orchestrator for backward compatibility
 	} else {
 		defer orchestrator.Close()
-		log.Printf("Orchestrator initialized successfully")
+		log.Info().Msg("Orchestrator initialized successfully")
 	}
 
 	// Create VPN manager (Sprint 3 - with HAL client)
 	vpnMgr := managers.NewVPNManager(cfg, halClient)
-	log.Printf("VPNManager initialized (HAL-enabled)")
+	log.Info().Msg("VPNManager initialized (HAL-enabled)")
 
 	// Create Mounts manager (Sprint 3 - with HAL client)
 	mountsMgr := managers.NewMountsManager(cfg, halClient)
-	log.Printf("MountsManager initialized (HAL-enabled)")
+	log.Info().Msg("MountsManager initialized (HAL-enabled)")
 	mountsMgr.SetDB(db.DB) // FIX: Wire database connection
 
 	// Create NPM manager for proxy host management (Sprint 4)
 	npmMgr := managers.NewNPMManager(cfg, "/cubeos/config")
 	// Initialize NPM authentication (creates service account if needed)
 	if err := npmMgr.Init(); err != nil {
-		log.Printf("Warning: NPM authentication failed: %v", err)
+		log.Warn().Err(err).Msg("NPM authentication failed")
 	} else {
-		log.Printf("NPMManager initialized successfully")
+		log.Info().Msg("NPMManager initialized successfully")
 	}
 
 	// Create PortManager for port allocation (Sprint 4)
 	portMgr := managers.NewPortManager(db.DB)
-	log.Printf("PortManager initialized")
+	log.Info().Msg("PortManager initialized")
 
 	// Create Setup manager (first boot wizard)
 	setupMgr := managers.NewSetupManager(cfg, db.DB)
@@ -307,7 +306,7 @@ func main() {
 	if orchestrator != nil {
 		appsHandler = handlers.NewAppsHandler(orchestrator)
 		profilesHandler = handlers.NewProfilesHandler(orchestrator)
-		log.Printf("AppsHandler and ProfilesHandler initialized")
+		log.Info().Msg("AppsHandler and ProfilesHandler initialized")
 	}
 
 	// Create NetworkHandler for network mode management (Sprint 3)
@@ -315,12 +314,12 @@ func main() {
 
 	// Create FirewallHandler for firewall management (Sprint 5C)
 	firewallHandler := handlers.NewFirewallHandler(firewallMgr, halClient)
-	log.Printf("FirewallHandler initialized")
+	log.Info().Msg("FirewallHandler initialized")
 
 	// Create VPN and Mounts handlers (Sprint 3)
 	vpnHandler := handlers.NewVPNHandler(vpnMgr)
 	mountsHandler := handlers.NewMountsHandler(mountsMgr)
-	log.Printf("VPNHandler and MountsHandler initialized")
+	log.Info().Msg("VPNHandler and MountsHandler initialized")
 
 	// Create Ports, FQDNs, and Registry handlers (Sprint 4)
 	portsHandler := handlers.NewPortsHandler(portMgr)
@@ -337,15 +336,15 @@ func main() {
 		registryPath = "/cubeos/data/registry"
 	}
 	registryHandler := handlers.NewRegistryHandler(registryURL, registryPath)
-	log.Printf("PortsHandler, FQDNsHandler, and RegistryHandler initialized")
+	log.Info().Msg("PortsHandler, FQDNsHandler, and RegistryHandler initialized")
 
 	// Create CasaOS Import handler (Sprint 4D)
 	casaosHandler := handlers.NewCasaOSHandler(appStoreMgr, orchestrator, cfg.GatewayIP, cfg.Domain)
-	log.Printf("CasaOSHandler initialized")
+	log.Info().Msg("CasaOSHandler initialized")
 
 	// Create NPM handler (Sprint 4E)
 	npmHandler := handlers.NewNPMHandler(npmMgr)
-	log.Printf("NPMHandler initialized")
+	log.Info().Msg("NPMHandler initialized")
 
 	// Create HAL-based handlers (Sprint 6)
 	hardwareHandler := handlers.NewHardwareHandler(halClient)
@@ -353,7 +352,7 @@ func main() {
 	communicationHandler := handlers.NewCommunicationHandler(halClient)
 	mediaHandler := handlers.NewMediaHandler(halClient, cfg.Domain)
 	halLogsHandler := handlers.NewLogsHandler(halClient)
-	log.Printf("HAL handlers initialized (Hardware, Storage, Communication, Media, Logs)")
+	log.Info().Msg("HAL handlers initialized (Hardware, Storage, Communication, Media, Logs)")
 
 	// Create WebSocket manager and handlers
 	wsManager := handlers.NewWSManager(systemMgr, networkMgr, monitoringMgr, docker)
@@ -361,11 +360,11 @@ func main() {
 
 	// Create SMB handler
 	smbHandler := handlers.NewSMBHandler(storageMgr)
-	log.Printf("SMBHandler initialized")
+	log.Info().Msg("SMBHandler initialized")
 
 	// Create Backups handler (wired to BackupManager)
 	backupsHandler := handlers.NewBackupsHandler(backupMgr)
-	log.Printf("BackupsHandler initialized (wired to BackupManager)")
+	log.Info().Msg("BackupsHandler initialized (wired to BackupManager)")
 
 	// Create router
 	r := chi.NewRouter()
@@ -669,26 +668,26 @@ func main() {
 	signal.Notify(quit, syscall.SIGINT, syscall.SIGTERM)
 
 	go func() {
-		log.Printf("API listening on %s", addr)
-		log.Printf("Swagger UI: http://%s/api/v1/docs/index.html", addr)
-		log.Printf("HAL endpoints: /hardware, /hal/storage, /communication, /media, /hal/logs, /support/bundle.zip")
+		log.Info().Str("addr", addr).Msg("API listening")
+		log.Info().Str("url", "http://"+addr+"/api/v1/docs/index.html").Msg("Swagger UI available")
+		log.Info().Msg("HAL endpoints: /hardware, /hal/storage, /communication, /media, /hal/logs, /support/bundle.zip")
 		if err := srv.ListenAndServe(); err != nil && err != http.ErrServerClosed {
-			log.Fatalf("Server failed: %v", err)
+			log.Fatal().Err(err).Msg("server failed")
 		}
 	}()
 
 	// Block until signal received
 	sig := <-quit
-	log.Printf("Received signal %s, shutting down gracefully...", sig)
+	log.Info().Str("signal", sig.String()).Msg("received signal, shutting down gracefully")
 
 	// Give active connections 15 seconds to finish
 	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
 	defer cancel()
 
 	if err := srv.Shutdown(ctx); err != nil {
-		log.Fatalf("Server forced to shutdown: %v", err)
+		log.Fatal().Err(err).Msg("server forced to shutdown")
 	}
-	log.Println("Server stopped")
+	log.Info().Msg("server stopped")
 }
 
 // unavailableHandler returns a chi router that responds with 503 for all routes.
@@ -726,7 +725,7 @@ func seedDefaultAdmin(db *sqlx.DB) error {
 		if err != nil {
 			return err
 		}
-		log.Println("Created default admin user (change password on first login)")
+		log.Info().Msg("created default admin user (change password on first login)")
 	}
 
 	return nil

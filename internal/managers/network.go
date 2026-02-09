@@ -7,7 +7,6 @@ import (
 	"context"
 	"database/sql"
 	"fmt"
-	"log"
 	"net/http"
 	"os"
 	"os/exec"
@@ -19,6 +18,7 @@ import (
 	"cubeos-api/internal/models"
 
 	"github.com/jmoiron/sqlx"
+	"github.com/rs/zerolog/log"
 )
 
 // NetworkMode, VPNMode, WiFiNetwork, and NetworkConfig types are defined in
@@ -98,7 +98,7 @@ func NewNetworkManager(cfg *config.Config, halClient *hal.Client, db *sqlx.DB) *
 
 	// Load mode and VPN from database
 	mode, vpnMode := loadConfigFromDB(db)
-	log.Printf("NetworkManager: loaded mode '%s', vpn '%s' from database", mode, vpnMode)
+	log.Info().Str("mode", string(mode)).Str("vpn", string(vpnMode)).Msg("NetworkManager: loaded config from database")
 
 	return &NetworkManager{
 		cfg:                 cfg,
@@ -118,7 +118,7 @@ func NewNetworkManager(cfg *config.Config, halClient *hal.Client, db *sqlx.DB) *
 // loadConfigFromDB loads the network mode and VPN mode from database (V2)
 func loadConfigFromDB(db *sqlx.DB) (models.NetworkMode, models.VPNMode) {
 	if db == nil {
-		log.Printf("NetworkManager: no database connection, defaulting to offline")
+		log.Warn().Msg("NetworkManager: no database connection, defaulting to offline")
 		return models.NetworkModeOffline, models.VPNModeNone
 	}
 
@@ -126,9 +126,9 @@ func loadConfigFromDB(db *sqlx.DB) (models.NetworkMode, models.VPNMode) {
 	err := db.QueryRow("SELECT mode, COALESCE(vpn_mode, 'none') FROM network_config WHERE id = 1").Scan(&mode, &vpnMode)
 	if err != nil {
 		if err == sql.ErrNoRows {
-			log.Printf("NetworkManager: no network_config row, defaulting to offline")
+			log.Info().Msg("NetworkManager: no network_config row, defaulting to offline")
 		} else {
-			log.Printf("NetworkManager: failed to load config from database: %v", err)
+			log.Error().Err(err).Msg("NetworkManager: failed to load config from database")
 		}
 		return models.NetworkModeOffline, models.VPNModeNone
 	}
@@ -182,9 +182,9 @@ func (m *NetworkManager) saveConfigToDB(mode models.NetworkMode, vpnMode models.
 			updated_at = CURRENT_TIMESTAMP`,
 		string(mode), string(vpnMode), wifiSSID)
 	if err != nil {
-		log.Printf("NetworkManager: failed to persist config to database: %v", err)
+		log.Error().Err(err).Msg("NetworkManager: failed to persist config to database")
 	} else {
-		log.Printf("NetworkManager: persisted mode '%s', vpn '%s' to database", mode, vpnMode)
+		log.Info().Str("mode", string(mode)).Str("vpn", string(vpnMode)).Msg("NetworkManager: persisted config to database")
 	}
 }
 
@@ -396,7 +396,7 @@ func (m *NetworkManager) SetMode(ctx context.Context, mode models.NetworkMode, w
 
 	// If switching to mode without internet, disable VPN
 	if !m.HasInternet() && m.currentVPNMode != models.VPNModeNone {
-		log.Printf("NetworkManager: disabling VPN because mode has no internet")
+		log.Warn().Msg("NetworkManager: disabling VPN because mode has no internet")
 		_ = m.SetVPNMode(ctx, models.VPNModeNone, nil)
 	}
 
@@ -416,7 +416,7 @@ func (m *NetworkManager) SetVPNMode(ctx context.Context, mode models.VPNMode, co
 	// Stop current VPN if active
 	if m.currentVPNMode != models.VPNModeNone {
 		if err := m.stopVPN(ctx); err != nil {
-			log.Printf("NetworkManager: failed to stop current VPN: %v", err)
+			log.Error().Err(err).Msg("NetworkManager: failed to stop current VPN")
 		}
 	}
 
@@ -491,7 +491,7 @@ func (m *NetworkManager) setOfflineMode(ctx context.Context) error {
 	// Ensure AP is running (for non-server recovery)
 	if m.IsServerMode() {
 		if err := m.hal.StartAP(ctx, m.apInterface); err != nil {
-			log.Printf("NetworkManager: failed to start AP: %v", err)
+			log.Error().Err(err).Msg("NetworkManager: failed to start AP")
 		}
 	}
 
@@ -515,7 +515,7 @@ func (m *NetworkManager) setOnlineETHMode(ctx context.Context) error {
 	// Ensure AP is running
 	if m.IsServerMode() {
 		if err := m.hal.StartAP(ctx, m.apInterface); err != nil {
-			log.Printf("NetworkManager: failed to start AP: %v", err)
+			log.Error().Err(err).Msg("NetworkManager: failed to start AP")
 		}
 	}
 
@@ -558,7 +558,7 @@ func (m *NetworkManager) setOnlineWiFiMode(ctx context.Context, ssid, password s
 	// Ensure AP is running
 	if m.IsServerMode() {
 		if err := m.hal.StartAP(ctx, m.apInterface); err != nil {
-			log.Printf("NetworkManager: failed to start AP: %v", err)
+			log.Error().Err(err).Msg("NetworkManager: failed to start AP")
 		}
 	}
 
@@ -579,11 +579,11 @@ func (m *NetworkManager) setOnlineWiFiMode(ctx context.Context, ssid, password s
 // setServerETHMode configures server mode via Ethernet (V2)
 // No AP, just connects to existing network
 func (m *NetworkManager) setServerETHMode(ctx context.Context) error {
-	log.Printf("NetworkManager: switching to SERVER_ETH mode")
+	log.Info().Msg("NetworkManager: switching to SERVER_ETH mode")
 
 	// Stop the access point
 	if err := m.hal.StopAP(ctx, m.apInterface); err != nil {
-		log.Printf("NetworkManager: failed to stop AP (may not be running): %v", err)
+		log.Warn().Err(err).Msg("NetworkManager: failed to stop AP (may not be running)")
 	}
 
 	// Disable NAT (we're a client now, not a router)
@@ -597,7 +597,7 @@ func (m *NetworkManager) setServerETHMode(ctx context.Context) error {
 
 	// Request DHCP
 	if err := m.hal.RequestDHCP(ctx, m.wanInterface); err != nil {
-		log.Printf("NetworkManager: DHCP request failed, using fallback IP %s (gw %s): %v", m.fallbackIP, m.fallbackGateway, err)
+		log.Warn().Err(err).Str("fallbackIP", m.fallbackIP).Str("fallbackGateway", m.fallbackGateway).Msg("NetworkManager: DHCP request failed, using fallback")
 		// Fall back to static IP with proper gateway
 		if err := m.hal.SetStaticIP(ctx, m.wanInterface, m.fallbackIP, m.fallbackGateway); err != nil {
 			return fmt.Errorf("failed to set fallback IP: %w", err)
@@ -614,11 +614,11 @@ func (m *NetworkManager) setServerETHMode(ctx context.Context) error {
 // setServerWiFiMode configures server mode via WiFi (V2)
 // No AP, connects wlan0 to existing WiFi network
 func (m *NetworkManager) setServerWiFiMode(ctx context.Context, ssid, password string) error {
-	log.Printf("NetworkManager: switching to SERVER_WIFI mode, connecting to %s", ssid)
+	log.Info().Str("ssid", ssid).Msg("NetworkManager: switching to SERVER_WIFI mode")
 
 	// Stop the access point (this frees wlan0 for client use)
 	if err := m.hal.StopAP(ctx, m.apInterface); err != nil {
-		log.Printf("NetworkManager: failed to stop AP: %v", err)
+		log.Warn().Err(err).Msg("NetworkManager: failed to stop AP")
 	}
 
 	// Disable NAT
@@ -639,7 +639,7 @@ func (m *NetworkManager) setServerWiFiMode(ctx context.Context, ssid, password s
 	// Verify we got an IP
 	iface, err := m.hal.GetInterface(ctx, m.apInterface)
 	if err != nil || len(iface.IPv4Addresses) == 0 {
-		log.Printf("NetworkManager: no IP assigned, using fallback %s (gw %s)", m.fallbackIP, m.fallbackGateway)
+		log.Warn().Str("fallbackIP", m.fallbackIP).Str("fallbackGateway", m.fallbackGateway).Msg("NetworkManager: no IP assigned, using fallback")
 		if err := m.hal.SetStaticIP(ctx, m.apInterface, m.fallbackIP, m.fallbackGateway); err != nil {
 			return fmt.Errorf("failed to set fallback IP: %w", err)
 		}
@@ -884,7 +884,7 @@ func (m *NetworkManager) GetAPConfig(ctx context.Context) (*APConfig, error) {
 		}
 		// Fall through to defaults on error (including sql.ErrNoRows)
 		if err != sql.ErrNoRows {
-			log.Printf("NetworkManager: failed to read AP config from DB: %v", err)
+			log.Error().Err(err).Msg("NetworkManager: failed to read AP config from DB")
 		}
 	}
 
@@ -919,7 +919,7 @@ func (m *NetworkManager) UpdateAPConfig(ctx context.Context, ssid, password stri
 		return fmt.Errorf("failed to persist AP config: %w", err)
 	}
 
-	log.Printf("NetworkManager: AP config updated (ssid=%s, channel=%d, hidden=%v) — will apply on next AP restart", ssid, channel, hidden)
+	log.Info().Str("ssid", ssid).Int("channel", channel).Bool("hidden", hidden).Msg("NetworkManager: AP config updated — will apply on next AP restart")
 	return nil
 }
 
@@ -1154,7 +1154,7 @@ func (m *NetworkManager) GetSavedNetworks(ctx context.Context) ([]SavedNetwork, 
 			return networks, nil
 		}
 		// Fall through to local methods if HAL fails
-		log.Printf("NetworkManager: HAL GetSavedWiFiNetworks failed: %v, trying local methods", err)
+		log.Warn().Err(err).Msg("NetworkManager: HAL GetSavedWiFiNetworks failed, trying local methods")
 	}
 
 	// Try NetworkManager first (nmcli)
@@ -1238,7 +1238,7 @@ func (m *NetworkManager) ForgetNetwork(ctx context.Context, ssid string) error {
 			return nil
 		}
 		// Fall through to local methods if HAL fails
-		log.Printf("NetworkManager: HAL ForgetWiFiNetwork failed: %v, trying local methods", err)
+		log.Warn().Err(err).Msg("NetworkManager: HAL ForgetWiFiNetwork failed, trying local methods")
 	}
 
 	// Try NetworkManager first (nmcli)
