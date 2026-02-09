@@ -16,6 +16,35 @@ import (
 	"gopkg.in/yaml.v3"
 )
 
+// hostRootPrefix is the path inside the API container where the host root
+// filesystem is bind-mounted. When set (e.g., "/host-root"), all filesystem
+// browse and mkdir operations go through this prefix so the API sees the
+// real host paths — not the container's own filesystem.
+// Set via CUBEOS_HOST_ROOT env var. Empty string = direct access (dev mode).
+var hostRootPrefix = os.Getenv("CUBEOS_HOST_ROOT")
+
+// toHostPath translates a user-facing path (e.g., "/media/usb") to the actual
+// filesystem path inside the container (e.g., "/host-root/media/usb").
+func toHostPath(userPath string) string {
+	if hostRootPrefix == "" {
+		return userPath
+	}
+	return filepath.Join(hostRootPrefix, userPath)
+}
+
+// toUserPath strips the host root prefix, returning the clean path the user
+// and Docker Swarm expect (e.g., "/host-root/media/usb" → "/media/usb").
+func toUserPath(fsPath string) string {
+	if hostRootPrefix == "" {
+		return fsPath
+	}
+	clean := strings.TrimPrefix(fsPath, hostRootPrefix)
+	if clean == "" {
+		return "/"
+	}
+	return clean
+}
+
 // VolumeMapping represents a single bind mount mapping for an app.
 type VolumeMapping struct {
 	ID               int64  `json:"id,omitempty"`
@@ -658,12 +687,13 @@ func (m *AppStoreManager) UpdateVolumeMappings(appID string, updates []VolumeMap
 		}
 	}
 
-	// Create new host directories
+	// Create new host directories (via host-root mount if containerised)
 	for _, u := range updates {
-		if err := os.MkdirAll(u.NewHostPath, 0777); err != nil {
+		hostDir := toHostPath(u.NewHostPath)
+		if err := os.MkdirAll(hostDir, 0777); err != nil {
 			log.Warn().Err(err).Str("path", u.NewHostPath).Msg("failed to create volume directory")
 		} else {
-			os.Chmod(u.NewHostPath, 0777)
+			os.Chmod(hostDir, 0777)
 		}
 	}
 
@@ -809,15 +839,20 @@ func (m *AppStoreManager) getServiceTaskError(stackName string) string {
 	return ""
 }
 
-// BrowseDirectories lists subdirectories at a given path.
+// BrowseDirectories lists subdirectories at a given path on the HOST filesystem.
 // Returns only directories, not files. Used by the directory picker UI.
+// Paths are translated through hostRootPrefix so the API browses the real host
+// filesystem even when running inside a container.
 func BrowseDirectories(path string) ([]DirEntry, error) {
 	if path == "" {
 		path = "/"
 	}
 	cleanPath := filepath.Clean(path)
 
-	info, err := os.Stat(cleanPath)
+	// Translate to actual filesystem path (inside container → host-root mount)
+	fsPath := toHostPath(cleanPath)
+
+	info, err := os.Stat(fsPath)
 	if err != nil {
 		return nil, fmt.Errorf("path not found: %s", cleanPath)
 	}
@@ -825,7 +860,7 @@ func BrowseDirectories(path string) ([]DirEntry, error) {
 		return nil, fmt.Errorf("not a directory: %s", cleanPath)
 	}
 
-	entries, err := os.ReadDir(cleanPath)
+	entries, err := os.ReadDir(fsPath)
 	if err != nil {
 		return nil, fmt.Errorf("cannot read directory: %w", err)
 	}
@@ -841,10 +876,11 @@ func BrowseDirectories(path string) ([]DirEntry, error) {
 			continue
 		}
 
-		fullPath := filepath.Join(cleanPath, name)
+		// User-facing path (clean, no host-root prefix)
+		userFullPath := filepath.Join(cleanPath, name)
 		isRestricted := false
 		for _, r := range restrictedPaths {
-			if fullPath == r {
+			if userFullPath == r {
 				isRestricted = true
 				break
 			}
@@ -852,7 +888,7 @@ func BrowseDirectories(path string) ([]DirEntry, error) {
 
 		dirs = append(dirs, DirEntry{
 			Name:         name,
-			Path:         fullPath,
+			Path:         userFullPath,
 			IsRestricted: isRestricted,
 		})
 	}
