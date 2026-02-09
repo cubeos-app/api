@@ -285,6 +285,21 @@ func (h *Handlers) ChangePassword(w http.ResponseWriter, r *http.Request) {
 func (h *Handlers) GetSystemInfo(w http.ResponseWriter, r *http.Request) {
 	info := h.system.GetSystemInfo()
 
+	// Override hostname from HAL (host-level access) — same as GetHostname handler
+	if halHostname, err := h.hal.GetHostname(r.Context()); err == nil {
+		info.Hostname = halHostname.Hostname
+	}
+
+	// Override OS info from HAL (reads host /etc/os-release, not container's Alpine)
+	if halOS, err := h.hal.GetOSInfo(r.Context()); err == nil {
+		if halOS.Name != "" {
+			info.OSName = halOS.Name
+		}
+		if halOS.Version != "" {
+			info.OSVersion = halOS.Version
+		}
+	}
+
 	// Check if admin account still uses default credentials
 	var passwordHash string
 	err := h.db.Get(&passwordHash, "SELECT password_hash FROM users WHERE username = 'admin'")

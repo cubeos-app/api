@@ -129,6 +129,14 @@ type HostnameInfo struct {
 	Hostname string `json:"hostname"`
 }
 
+// OSInfo represents host OS information from HAL
+type OSInfo struct {
+	Name    string `json:"name"`
+	Version string `json:"version"`
+	ID      string `json:"id"`
+	Pretty  string `json:"pretty_name"`
+}
+
 // ServiceStatus represents a systemd service status
 type ServiceStatus struct {
 	Name        string `json:"name"`
@@ -1281,6 +1289,15 @@ func (c *Client) GetHostname(ctx context.Context) (*HostnameInfo, error) {
 // SetHostname sets the system hostname via HAL
 func (c *Client) SetHostname(ctx context.Context, hostname string) error {
 	return c.doPost(ctx, "/system/hostname", map[string]string{"hostname": hostname})
+}
+
+// GetOSInfo returns host OS information from HAL
+func (c *Client) GetOSInfo(ctx context.Context) (*OSInfo, error) {
+	var result OSInfo
+	if err := c.doGet(ctx, "/system/os", &result); err != nil {
+		return nil, err
+	}
+	return &result, nil
 }
 
 // Reboot reboots the system
