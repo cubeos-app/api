@@ -38,8 +38,7 @@ type AppStoreManager struct {
 	appDataPath  string // deprecated - now per-app at /cubeos/apps/{app}/appdata
 	baseDomain   string
 	gatewayIP    string
-	npmAPIURL    string // NPM API endpoint
-	npmToken     string // NPM API token (cached)
+	npm          *NPMManager // NPM service account (managed by npm.go)
 	stores       map[string]*models.AppStore
 	catalog      map[string]*models.StoreApp
 	installed    map[string]*models.InstalledApp
@@ -47,7 +46,7 @@ type AppStoreManager struct {
 }
 
 // NewAppStoreManager creates a new app store manager with centralized config
-func NewAppStoreManager(cfg *config.Config, db *DatabaseManager, dataPath string, pihole *PiholeManager) *AppStoreManager {
+func NewAppStoreManager(cfg *config.Config, db *DatabaseManager, dataPath string, pihole *PiholeManager, npm *NPMManager) *AppStoreManager {
 	// Directory structure:
 	// /cubeos/coreapps/ - NPM, Pi-hole, dashboard (system critical)
 	// /cubeos/apps/{app}/appconfig/ - docker-compose.yml, .env
@@ -63,6 +62,7 @@ func NewAppStoreManager(cfg *config.Config, db *DatabaseManager, dataPath string
 	m := &AppStoreManager{
 		db:           db,
 		pihole:       pihole,
+		npm:          npm,
 		dataPath:     dataPath,
 		cachePath:    cachePath,
 		appsPath:     appsPath,
@@ -70,7 +70,6 @@ func NewAppStoreManager(cfg *config.Config, db *DatabaseManager, dataPath string
 		appDataPath:  "", // deprecated - now per-app
 		baseDomain:   cfg.Domain,
 		gatewayIP:    cfg.GatewayIP,
-		npmAPIURL:    fmt.Sprintf("%s/api", cfg.GetNPMURL()),
 		stores:       make(map[string]*models.AppStore),
 		catalog:      make(map[string]*models.StoreApp),
 		installed:    make(map[string]*models.InstalledApp),
@@ -79,9 +78,6 @@ func NewAppStoreManager(cfg *config.Config, db *DatabaseManager, dataPath string
 	m.initDB()
 	m.loadStores()
 	m.loadInstalledApps()
-
-	// Initialize NPM API token
-	go m.initNPMToken()
 
 	return m
 }
@@ -687,10 +683,20 @@ func (m *AppStoreManager) InstallApp(req *models.AppInstallRequest) (*models.Ins
 
 	// Create NPM proxy host for FQDN access (non-fatal)
 	var npmProxyID int
-	if proxyID, err := m.addNPMProxyHost(req.AppName, appFQDN, appPort, "http", true); err != nil {
-		log.Warn().Err(err).Str("fqdn", appFQDN).Msg("failed to create NPM proxy")
+	if m.npm != nil && m.npm.IsAuthenticated() {
+		host := &NPMProxyHostExtended{
+			DomainNames:   []string{appFQDN},
+			ForwardHost:   m.gatewayIP,
+			ForwardPort:   appPort,
+			ForwardScheme: "http",
+		}
+		if created, err := m.npm.CreateProxyHost(host); err != nil {
+			log.Warn().Err(err).Str("fqdn", appFQDN).Msg("failed to create NPM proxy")
+		} else {
+			npmProxyID = created.ID
+		}
 	} else {
-		npmProxyID = proxyID
+		log.Warn().Str("fqdn", appFQDN).Msg("NPM not available, skipping proxy creation")
 	}
 
 	// Create Pi-hole DNS entry for FQDN (non-fatal)
@@ -1080,8 +1086,10 @@ func (m *AppStoreManager) RemoveApp(appID string, deleteData bool) error {
 		JOIN apps a ON a.id = f.app_id WHERE a.name = ? AND f.npm_proxy_id > 0 LIMIT 1`,
 		appID).Scan(&npmProxyID)
 	if npmProxyID > 0 {
-		if err := m.removeNPMProxyHost(npmProxyID); err != nil {
-			log.Warn().Err(err).Int("proxyID", npmProxyID).Msg("failed to remove NPM proxy")
+		if m.npm != nil && m.npm.IsAuthenticated() {
+			if err := m.npm.DeleteProxyHost(npmProxyID); err != nil {
+				log.Warn().Err(err).Int("proxyID", npmProxyID).Msg("failed to remove NPM proxy")
+			}
 		}
 	}
 
@@ -1147,236 +1155,13 @@ func ValidateAppName(name string) bool {
 }
 
 // ============================================================================
-// NPM (Nginx Proxy Manager) API Integration
+// NPM Types (shared with npm.go)
 // ============================================================================
 
-// NPMCredentials for API authentication
-type NPMCredentials struct {
-	Identity string `json:"identity"`
-	Secret   string `json:"secret"`
-}
-
-// NPMTokenResponse from /api/tokens
+// NPMTokenResponse from /api/tokens — used by NPMManager.authenticate()
 type NPMTokenResponse struct {
 	Token   string `json:"token"`
 	Expires string `json:"expires"`
-}
-
-// NPMProxyHost represents a proxy host in NPM
-type NPMProxyHost struct {
-	ID                    int      `json:"id,omitempty"`
-	DomainNames           []string `json:"domain_names"`
-	ForwardHost           string   `json:"forward_host"`
-	ForwardPort           int      `json:"forward_port"`
-	ForwardScheme         string   `json:"forward_scheme"`
-	CertificateID         int      `json:"certificate_id,omitempty"`
-	SSLForced             bool     `json:"ssl_forced"`
-	BlockExploits         bool     `json:"block_exploits"`
-	CachingEnabled        bool     `json:"caching_enabled"`
-	AllowWebsocketUpgrade bool     `json:"allow_websocket_upgrade"`
-	AccessListID          int      `json:"access_list_id"`
-	AdvancedConfig        string   `json:"advanced_config"`
-	Enabled               bool     `json:"enabled"`
-	Meta                  struct {
-		LetsencryptAgree bool   `json:"letsencrypt_agree"`
-		DNSChallenge     bool   `json:"dns_challenge"`
-		NginxOnline      bool   `json:"nginx_online"`
-		NginxErr         string `json:"nginx_err"`
-	} `json:"meta"`
-}
-
-// initNPMToken obtains an API token from NPM
-func (m *AppStoreManager) initNPMToken() {
-	// Wait for NPM to be ready
-	time.Sleep(10 * time.Second)
-
-	// Try to get token with default credentials
-	// In production, these should be read from /cubeos/coreapps/npm/.env
-	creds := NPMCredentials{
-		Identity: "admin@cubeos.cube",
-		Secret:   "changeme",
-	}
-
-	// Read actual credentials from NPM env if available
-	envPath := filepath.Join(m.coreAppsPath, "npm", ".env")
-	if data, err := os.ReadFile(envPath); err == nil {
-		lines := strings.Split(string(data), "\n")
-		for _, line := range lines {
-			if strings.HasPrefix(line, "NPM_ADMIN_EMAIL=") {
-				creds.Identity = strings.TrimPrefix(line, "NPM_ADMIN_EMAIL=")
-			}
-			if strings.HasPrefix(line, "NPM_ADMIN_PASSWORD=") {
-				creds.Secret = strings.TrimPrefix(line, "NPM_ADMIN_PASSWORD=")
-			}
-		}
-	}
-
-	token, err := m.getNPMToken(creds)
-	if err != nil {
-		log.Warn().Err(err).Msg("failed to get NPM token")
-		return
-	}
-
-	m.mu.Lock()
-	m.npmToken = token
-	m.mu.Unlock()
-
-	log.Info().Msg("NPM API token acquired successfully")
-}
-
-// getNPMToken requests a token from NPM API
-func (m *AppStoreManager) getNPMToken(creds NPMCredentials) (string, error) {
-	payload := map[string]string{
-		"identity": creds.Identity,
-		"secret":   creds.Secret,
-	}
-
-	jsonData, _ := json.Marshal(payload)
-
-	resp, err := http.Post(
-		m.npmAPIURL+"/tokens",
-		"application/json",
-		strings.NewReader(string(jsonData)),
-	)
-	if err != nil {
-		return "", err
-	}
-	defer resp.Body.Close()
-
-	if resp.StatusCode != http.StatusOK {
-		body, _ := io.ReadAll(resp.Body)
-		return "", fmt.Errorf("NPM API error %d: %s", resp.StatusCode, string(body))
-	}
-
-	var tokenResp NPMTokenResponse
-	if err := json.NewDecoder(resp.Body).Decode(&tokenResp); err != nil {
-		return "", err
-	}
-
-	return tokenResp.Token, nil
-}
-
-// addNPMProxyHost creates a proxy host in NPM for an app and returns the proxy host ID
-func (m *AppStoreManager) addNPMProxyHost(appName, fqdn string, port int, scheme string, websocket bool) (int, error) {
-	m.mu.RLock()
-	token := m.npmToken
-	m.mu.RUnlock()
-
-	if token == "" {
-		return 0, fmt.Errorf("NPM API token not available")
-	}
-
-	proxyHost := NPMProxyHost{
-		DomainNames:           []string{fqdn},
-		ForwardHost:           m.gatewayIP,
-		ForwardPort:           port,
-		ForwardScheme:         scheme,
-		SSLForced:             false, // User can enable later
-		BlockExploits:         true,
-		CachingEnabled:        false,
-		AllowWebsocketUpgrade: websocket,
-		AccessListID:          0,
-		AdvancedConfig:        "",
-		Enabled:               true,
-	}
-
-	jsonData, _ := json.Marshal(proxyHost)
-
-	req, err := http.NewRequest("POST", m.npmAPIURL+"/nginx/proxy-hosts", strings.NewReader(string(jsonData)))
-	if err != nil {
-		return 0, err
-	}
-
-	req.Header.Set("Authorization", "Bearer "+token)
-	req.Header.Set("Content-Type", "application/json")
-
-	client := &http.Client{Timeout: 30 * time.Second}
-	resp, err := client.Do(req)
-	if err != nil {
-		return 0, err
-	}
-	defer resp.Body.Close()
-
-	if resp.StatusCode != http.StatusOK && resp.StatusCode != http.StatusCreated {
-		body, _ := io.ReadAll(resp.Body)
-		return 0, fmt.Errorf("NPM API error %d: %s", resp.StatusCode, string(body))
-	}
-
-	// Parse the response to get the proxy host ID
-	var result NPMProxyHost
-	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
-		return 0, fmt.Errorf("failed to parse NPM response: %w", err)
-	}
-
-	return result.ID, nil
-}
-
-// removeNPMProxyHost removes a proxy host from NPM
-func (m *AppStoreManager) removeNPMProxyHost(proxyID int) error {
-	if proxyID == 0 {
-		return nil // No proxy to remove
-	}
-
-	m.mu.RLock()
-	token := m.npmToken
-	m.mu.RUnlock()
-
-	if token == "" {
-		return fmt.Errorf("NPM API token not available")
-	}
-
-	req, err := http.NewRequest("DELETE", fmt.Sprintf("%s/nginx/proxy-hosts/%d", m.npmAPIURL, proxyID), nil)
-	if err != nil {
-		return err
-	}
-
-	req.Header.Set("Authorization", "Bearer "+token)
-
-	client := &http.Client{Timeout: 30 * time.Second}
-	resp, err := client.Do(req)
-	if err != nil {
-		return err
-	}
-	defer resp.Body.Close()
-
-	if resp.StatusCode != http.StatusOK && resp.StatusCode != http.StatusNoContent {
-		body, _ := io.ReadAll(resp.Body)
-		return fmt.Errorf("NPM API error %d: %s", resp.StatusCode, string(body))
-	}
-
-	return nil
-}
-
-// GetNPMProxyHosts returns all proxy hosts from NPM
-func (m *AppStoreManager) GetNPMProxyHosts() ([]NPMProxyHost, error) {
-	m.mu.RLock()
-	token := m.npmToken
-	m.mu.RUnlock()
-
-	if token == "" {
-		return nil, fmt.Errorf("NPM API token not available")
-	}
-
-	req, err := http.NewRequest("GET", m.npmAPIURL+"/nginx/proxy-hosts", nil)
-	if err != nil {
-		return nil, err
-	}
-
-	req.Header.Set("Authorization", "Bearer "+token)
-
-	client := &http.Client{Timeout: 30 * time.Second}
-	resp, err := client.Do(req)
-	if err != nil {
-		return nil, err
-	}
-	defer resp.Body.Close()
-
-	var hosts []NPMProxyHost
-	if err := json.NewDecoder(resp.Body).Decode(&hosts); err != nil {
-		return nil, err
-	}
-
-	return hosts, nil
 }
 
 // ============================================================================

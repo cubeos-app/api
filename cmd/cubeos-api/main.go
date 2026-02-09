@@ -244,7 +244,16 @@ func main() {
 	piholeMgr := managers.NewPiholeManager(cfg, "/cubeos")
 	log.Info().Msg("PiholeManager initialized")
 
-	appStoreMgr := managers.NewAppStoreManager(cfg, dbMgr, cfg.DataDir, piholeMgr)
+	// Create NPM manager for proxy host management (Sprint 4)
+	// Must be initialized before AppStoreManager which depends on it
+	npmMgr := managers.NewNPMManager(cfg, "/cubeos/config")
+	if err := npmMgr.Init(); err != nil {
+		log.Warn().Err(err).Msg("NPM authentication failed")
+	} else {
+		log.Info().Msg("NPMManager initialized successfully")
+	}
+
+	appStoreMgr := managers.NewAppStoreManager(cfg, dbMgr, cfg.DataDir, piholeMgr, npmMgr)
 
 	// Create Orchestrator for unified app management (Sprint 3)
 	orchestrator, err := managers.NewOrchestrator(managers.OrchestratorConfig{
@@ -271,15 +280,6 @@ func main() {
 	mountsMgr := managers.NewMountsManager(cfg, halClient)
 	log.Info().Msg("MountsManager initialized (HAL-enabled)")
 	mountsMgr.SetDB(db.DB) // FIX: Wire database connection
-
-	// Create NPM manager for proxy host management (Sprint 4)
-	npmMgr := managers.NewNPMManager(cfg, "/cubeos/config")
-	// Initialize NPM authentication (creates service account if needed)
-	if err := npmMgr.Init(); err != nil {
-		log.Warn().Err(err).Msg("NPM authentication failed")
-	} else {
-		log.Info().Msg("NPMManager initialized successfully")
-	}
 
 	// Create PortManager for port allocation (Sprint 4)
 	portMgr := managers.NewPortManager(db.DB)
