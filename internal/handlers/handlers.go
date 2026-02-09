@@ -365,21 +365,30 @@ func (h *Handlers) Shutdown(w http.ResponseWriter, r *http.Request) {
 
 // GetHostname godoc
 // @Summary Get hostname
-// @Description Returns the system hostname
+// @Description Returns the system hostname via HAL (host-level access). Falls back to container hostname if HAL is unreachable.
 // @Tags System
 // @Produce json
 // @Security BearerAuth
 // @Success 200 {object} map[string]string "Hostname"
 // @Router /system/hostname [get]
 func (h *Handlers) GetHostname(w http.ResponseWriter, r *http.Request) {
+	info, err := h.hal.GetHostname(r.Context())
+	if err != nil {
+		// Fallback: if HAL is unreachable, return container hostname
+		log.Warn().Err(err).Msg("HAL hostname request failed, using fallback")
+		writeJSON(w, http.StatusOK, map[string]string{
+			"hostname": h.system.GetHostname(),
+		})
+		return
+	}
 	writeJSON(w, http.StatusOK, map[string]string{
-		"hostname": h.system.GetHostname(),
+		"hostname": info.Hostname,
 	})
 }
 
 // SetHostname godoc
 // @Summary Set hostname
-// @Description Sets the system hostname
+// @Description Sets the system hostname via HAL (host-level access)
 // @Tags System
 // @Accept json
 // @Produce json
@@ -401,8 +410,8 @@ func (h *Handlers) SetHostname(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, "Hostname is required")
 		return
 	}
-	if err := h.system.SetHostname(req.Hostname); err != nil {
-		writeError(w, http.StatusInternalServerError, err.Error())
+	if err := h.hal.SetHostname(r.Context(), req.Hostname); err != nil {
+		writeError(w, http.StatusInternalServerError, "Failed to set hostname: "+err.Error())
 		return
 	}
 	writeJSON(w, http.StatusOK, models.SuccessResponse{

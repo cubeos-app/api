@@ -124,6 +124,11 @@ type UptimeInfo struct {
 	LoadAverage []float64 `json:"load_average"`
 }
 
+// HostnameInfo represents the system hostname from HAL
+type HostnameInfo struct {
+	Hostname string `json:"hostname"`
+}
+
 // ServiceStatus represents a systemd service status
 type ServiceStatus struct {
 	Name        string `json:"name"`
@@ -1262,6 +1267,20 @@ func (c *Client) GetUptime(ctx context.Context) (*UptimeInfo, error) {
 		return nil, err
 	}
 	return &result, nil
+}
+
+// GetHostname returns the system hostname from HAL
+func (c *Client) GetHostname(ctx context.Context) (*HostnameInfo, error) {
+	var result HostnameInfo
+	if err := c.doGet(ctx, "/system/hostname", &result); err != nil {
+		return nil, err
+	}
+	return &result, nil
+}
+
+// SetHostname sets the system hostname via HAL
+func (c *Client) SetHostname(ctx context.Context, hostname string) error {
+	return c.doPost(ctx, "/system/hostname", map[string]string{"hostname": hostname})
 }
 
 // Reboot reboots the system
