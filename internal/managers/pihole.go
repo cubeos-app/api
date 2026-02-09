@@ -30,7 +30,7 @@ type DNSEntry struct {
 // NewPiholeManager creates a new Pi-hole manager using centralized config
 func NewPiholeManager(cfg *config.Config, basePath string) *PiholeManager {
 	return &PiholeManager{
-		customListPath: filepath.Join(basePath, "coreapps/pihole/appdata/etc-pihole/custom.list"),
+		customListPath: filepath.Join(basePath, "coreapps/pihole/appdata/etc-pihole/hosts/custom.list"),
 		cubeosIP:       cfg.GatewayIP,
 		domain:         cfg.Domain,
 	}
@@ -201,11 +201,11 @@ func (m *PiholeManager) GetCubeOSDomains() ([]DNSEntry, error) {
 
 // ReloadDNS tells Pi-hole to reload its DNS configuration
 func (m *PiholeManager) ReloadDNS() error {
-	// Try docker exec first (most common setup)
-	cmd := exec.Command("docker", "exec", "cubeos-pihole", "pihole", "restartdns", "reload")
+	// Pi-hole v6: use 'pihole reloaddns' (not restartdns)
+	cmd := exec.Command("docker", "exec", "cubeos-pihole", "pihole", "reloaddns")
 	if err := cmd.Run(); err != nil {
 		// Try direct pihole command
-		cmd = exec.Command("pihole", "restartdns", "reload")
+		cmd = exec.Command("pihole", "reloaddns")
 		if err := cmd.Run(); err != nil {
 			// Last resort: send SIGHUP to pihole-FTL
 			cmd = exec.Command("pkill", "-HUP", "pihole-FTL")
