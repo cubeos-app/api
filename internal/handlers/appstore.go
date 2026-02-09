@@ -2,6 +2,7 @@ package handlers
 
 import (
 	"encoding/json"
+	"fmt"
 	"net/http"
 	"os"
 	"strconv"
@@ -16,11 +17,16 @@ import (
 type AppStoreHandler struct {
 	manager    *managers.AppStoreManager
 	npmManager *managers.NPMManager
+	jobTracker *managers.JobTracker
 }
 
 // NewAppStoreHandler creates a new app store handler
 func NewAppStoreHandler(manager *managers.AppStoreManager, npmManager *managers.NPMManager) *AppStoreHandler {
-	return &AppStoreHandler{manager: manager, npmManager: npmManager}
+	return &AppStoreHandler{
+		manager:    manager,
+		npmManager: npmManager,
+		jobTracker: managers.NewJobTracker(),
+	}
 }
 
 // Routes returns the router for app store endpoints
@@ -52,6 +58,9 @@ func (h *AppStoreHandler) Routes() chi.Router {
 	r.Post("/installed/{appID}/stop", h.StopApp)
 	r.Post("/installed/{appID}/restart", h.RestartApp)
 	r.Post("/installed/{appID}/action", h.AppAction)
+
+	// Job progress (SSE)
+	r.Get("/jobs/{jobID}", h.JobProgress)
 
 	// Config editor for user apps (/cubeos/apps/)
 	r.Get("/installed/{appID}/config", h.GetAppConfig)
@@ -421,15 +430,14 @@ func (h *AppStoreHandler) GetInstalledApps(w http.ResponseWriter, r *http.Reques
 
 // InstallApp godoc
 // @Summary Install an app from store
-// @Description Installs an app from the catalog. Downloads manifest, creates Docker stack, and starts the app.
+// @Description Starts async app installation. Returns a job_id immediately. Use GET /appstore/jobs/{jobID} (SSE) to track progress.
 // @Tags AppStore - Installed
 // @Accept json
 // @Produce json
 // @Security BearerAuth
 // @Param request body models.AppInstallRequest true "Installation request"
-// @Success 201 {object} models.InstalledApp "Installed app details"
+// @Success 202 {object} map[string]interface{} "Job started: job_id, status"
 // @Failure 400 {object} ErrorResponse "Invalid request, missing fields, or invalid app name"
-// @Failure 500 {object} ErrorResponse "Installation failed"
 // @Router /appstore/installed [post]
 func (h *AppStoreHandler) InstallApp(w http.ResponseWriter, r *http.Request) {
 	var req models.AppInstallRequest
@@ -448,13 +456,25 @@ func (h *AppStoreHandler) InstallApp(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	app, err := h.manager.InstallApp(&req)
-	if err != nil {
-		writeError(w, http.StatusInternalServerError, err.Error())
-		return
-	}
+	job := h.jobTracker.CreateJob("install", req.AppName)
 
-	writeJSON(w, http.StatusCreated, app)
+	// Run install in background goroutine
+	go func() {
+		defer job.Close()
+
+		_, err := h.manager.InstallAppWithProgress(&req, job)
+		if err != nil {
+			job.EmitError("error", job.GetProgress(), err.Error())
+			return
+		}
+
+		job.EmitDone("App installed successfully!")
+	}()
+
+	writeJSON(w, http.StatusAccepted, map[string]interface{}{
+		"job_id": job.ID,
+		"status": "installing",
+	})
 }
 
 // GetInstalledApp godoc
@@ -479,24 +499,84 @@ func (h *AppStoreHandler) GetInstalledApp(w http.ResponseWriter, r *http.Request
 
 // RemoveApp godoc
 // @Summary Uninstall an app
-// @Description Removes an installed app. Optionally deletes app data volumes.
+// @Description Starts async app removal. Returns a job_id immediately. Use GET /appstore/jobs/{jobID} (SSE) to track progress.
 // @Tags AppStore - Installed
 // @Security BearerAuth
 // @Param appID path string true "App ID"
 // @Param delete_data query boolean false "Also delete app data volumes"
-// @Success 204 "App removed successfully"
+// @Success 202 {object} map[string]interface{} "Job started: job_id, status"
 // @Failure 500 {object} ErrorResponse "Removal failed"
 // @Router /appstore/installed/{appID} [delete]
 func (h *AppStoreHandler) RemoveApp(w http.ResponseWriter, r *http.Request) {
 	appID := chi.URLParam(r, "appID")
 	deleteData := r.URL.Query().Get("delete_data") == "true"
 
-	if err := h.manager.RemoveApp(appID, deleteData); err != nil {
-		writeError(w, http.StatusInternalServerError, err.Error())
+	job := h.jobTracker.CreateJob("uninstall", appID)
+
+	go func() {
+		defer job.Close()
+
+		if err := h.manager.RemoveAppWithProgress(appID, deleteData, job); err != nil {
+			job.EmitError("error", job.GetProgress(), err.Error())
+			return
+		}
+
+		job.EmitDone("App uninstalled successfully!")
+	}()
+
+	writeJSON(w, http.StatusAccepted, map[string]interface{}{
+		"job_id": job.ID,
+		"status": "uninstalling",
+	})
+}
+
+// JobProgress godoc
+// @Summary Stream job progress via SSE
+// @Description Opens a Server-Sent Events stream for a running install/uninstall job. Each event is a JSON ProgressEvent. The stream closes when the job completes or fails.
+// @Tags AppStore - Jobs
+// @Produce text/event-stream
+// @Security BearerAuth
+// @Param jobID path string true "Job ID returned from install/uninstall"
+// @Success 200 {object} managers.ProgressEvent "SSE stream of progress events"
+// @Failure 404 {object} ErrorResponse "Job not found"
+// @Failure 500 {object} ErrorResponse "Streaming not supported"
+// @Router /appstore/jobs/{jobID} [get]
+func (h *AppStoreHandler) JobProgress(w http.ResponseWriter, r *http.Request) {
+	jobID := chi.URLParam(r, "jobID")
+	job := h.jobTracker.GetJob(jobID)
+	if job == nil {
+		writeError(w, http.StatusNotFound, "job not found")
 		return
 	}
 
-	w.WriteHeader(http.StatusNoContent)
+	flusher, ok := w.(http.Flusher)
+	if !ok {
+		writeError(w, http.StatusInternalServerError, "streaming not supported")
+		return
+	}
+
+	w.Header().Set("Content-Type", "text/event-stream")
+	w.Header().Set("Cache-Control", "no-cache")
+	w.Header().Set("Connection", "keep-alive")
+	w.Header().Set("X-Accel-Buffering", "no") // Disable Nginx buffering (NPM reverse proxy)
+
+	// Stream events until channel closes or client disconnects
+	for {
+		select {
+		case event, ok := <-job.Events:
+			if !ok {
+				// Channel closed — job finished
+				return
+			}
+			data, _ := json.Marshal(event)
+			fmt.Fprintf(w, "data: %s\n\n", data)
+			flusher.Flush()
+
+		case <-r.Context().Done():
+			// Client disconnected
+			return
+		}
+	}
 }
 
 // StartApp godoc
