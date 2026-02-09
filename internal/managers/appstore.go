@@ -144,6 +144,7 @@ func (m *AppStoreManager) loadInstalledApps() {
 	}
 	defer rows.Close()
 
+	var orphans []string
 	for rows.Next() {
 		var app models.InstalledApp
 		var installedAt, updatedAt string
@@ -152,11 +153,31 @@ func (m *AppStoreManager) loadInstalledApps() {
 			&app.DataPath, &installedAt, &updatedAt)
 		app.InstalledAt, _ = time.Parse(time.RFC3339, installedAt)
 		app.UpdatedAt, _ = time.Parse(time.RFC3339, updatedAt)
+
+		// Reconcile: if the compose file is gone AND no Swarm stack exists,
+		// the app was removed outside the API (manual rm -rf / stack rm).
+		// Mark for cleanup instead of loading a ghost record.
+		composeExists := app.ComposeFile != "" && fileExists(app.ComposeFile)
+		stackExists := swarmStackExists(app.ID)
+		if !composeExists && !stackExists {
+			log.Warn().Str("app", app.ID).
+				Str("compose", app.ComposeFile).
+				Msg("orphaned installed app record — compose and stack both missing, cleaning up")
+			orphans = append(orphans, app.ID)
+			continue
+		}
+
 		app.Status = "unknown" // Will be refreshed from Swarm at query time
 		m.installed[app.ID] = &app
 	}
 	if err := rows.Err(); err != nil {
 		log.Warn().Err(err).Msg("error iterating installed apps")
+	}
+
+	// Remove orphaned records from DB
+	for _, id := range orphans {
+		m.db.db.Exec("DELETE FROM apps WHERE name = ?", id)
+		log.Info().Str("app", id).Msg("removed orphaned installed app record from database")
 	}
 }
 
@@ -1071,6 +1092,25 @@ func toInt(v interface{}) int {
 	return 0
 }
 
+// fileExists returns true if the path exists and is accessible.
+func fileExists(path string) bool {
+	_, err := os.Stat(path)
+	return err == nil
+}
+
+// swarmStackExists returns true if a Docker Swarm stack with the given name
+// has any services (running or otherwise).
+func swarmStackExists(stackName string) bool {
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	cmd := exec.CommandContext(ctx, "docker", "stack", "services", stackName, "--format", "{{.ID}}")
+	output, err := cmd.Output()
+	if err != nil {
+		return false
+	}
+	return strings.TrimSpace(string(output)) != ""
+}
+
 // sanitizeForSwarm transforms a CasaOS docker-compose.yml into a format compatible
 // with `docker stack deploy`. This is a comprehensive, single-pass sanitizer based on
 // the full CasaOS manifest specification and Docker Swarm's compose file restrictions.
@@ -1500,11 +1540,19 @@ func (m *AppStoreManager) GetInstalledApps() []*models.InstalledApp {
 		m.refreshAppStatus(app)
 	}
 
-	sort.Slice(apps, func(i, j int) bool {
-		return apps[i].Name < apps[j].Name
+	// Filter out apps that were auto-removed during reconciliation
+	live := make([]*models.InstalledApp, 0, len(apps))
+	for _, app := range apps {
+		if app.Status != "removed" {
+			live = append(live, app)
+		}
+	}
+
+	sort.Slice(live, func(i, j int) bool {
+		return live[i].Name < live[j].Name
 	})
 
-	return apps
+	return live
 }
 
 // GetInstalledApp returns a specific installed app
@@ -1515,11 +1563,26 @@ func (m *AppStoreManager) GetInstalledApp(appID string) *models.InstalledApp {
 
 	if app != nil {
 		m.refreshAppStatus(app)
+		if app.Status == "removed" {
+			return nil
+		}
 	}
 	return app
 }
 
 func (m *AppStoreManager) refreshAppStatus(app *models.InstalledApp) {
+	// Runtime reconciliation: if both compose file and stack are gone,
+	// auto-remove the ghost record so the UI stays consistent.
+	if app.ComposeFile != "" && !fileExists(app.ComposeFile) && !swarmStackExists(app.ID) {
+		log.Warn().Str("app", app.ID).Msg("app compose and stack both missing at runtime — removing ghost record")
+		m.mu.Lock()
+		delete(m.installed, app.ID)
+		m.mu.Unlock()
+		m.db.db.Exec("DELETE FROM apps WHERE name = ?", app.ID)
+		app.Status = "removed"
+		return
+	}
+
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
 
