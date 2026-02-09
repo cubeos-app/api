@@ -163,7 +163,7 @@ func (m *AppStoreManager) loadInstalledApps() {
 // loadCatalog loads cached catalog entries from SQLite.
 // This ensures the catalog survives API restarts without requiring a network sync.
 func (m *AppStoreManager) loadCatalog() {
-	rows, err := m.db.db.Query(`SELECT id, data FROM app_catalog WHERE data != '' AND data != '{}'`)
+	rows, err := m.db.db.Query(`SELECT id, data, COALESCE(manifest_path, '') FROM app_catalog WHERE data != '' AND data != '{}'`)
 	if err != nil {
 		log.Warn().Err(err).Msg("failed to query app_catalog")
 		return
@@ -172,8 +172,8 @@ func (m *AppStoreManager) loadCatalog() {
 
 	count := 0
 	for rows.Next() {
-		var id, data string
-		if err := rows.Scan(&id, &data); err != nil {
+		var id, data, manifestPath string
+		if err := rows.Scan(&id, &data, &manifestPath); err != nil {
 			continue
 		}
 		var app models.StoreApp
@@ -181,6 +181,9 @@ func (m *AppStoreManager) loadCatalog() {
 			log.Warn().Str("id", id).Err(err).Msg("failed to unmarshal catalog entry")
 			continue
 		}
+
+		// Restore ManifestPath (excluded from JSON via json:"-")
+		app.ManifestPath = manifestPath
 
 		// Cross-reference installed status
 		for _, inst := range m.installed {
