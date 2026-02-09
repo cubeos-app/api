@@ -292,7 +292,10 @@ func (h *Handlers) GetSystemInfo(w http.ResponseWriter, r *http.Request) {
 
 	// Override OS info from HAL (reads host /etc/os-release, not container's Alpine)
 	if halOS, err := h.hal.GetOSInfo(r.Context()); err == nil {
-		if halOS.Name != "" {
+		// Prefer PRETTY_NAME ("Ubuntu 24.04.3 LTS") over bare NAME ("Ubuntu")
+		if halOS.Pretty != "" {
+			info.OSName = halOS.Pretty
+		} else if halOS.Name != "" {
 			info.OSName = halOS.Name
 		}
 		if halOS.Version != "" {
