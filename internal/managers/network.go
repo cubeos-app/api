@@ -815,6 +815,14 @@ func (m *NetworkManager) GetAPClients(ctx context.Context) ([]models.APClient, e
 		return nil, err
 	}
 
+	// Fetch blocklist to populate Blocked field (best-effort)
+	blockedMACs := make(map[string]bool)
+	if blocklist, err := m.hal.GetAPBlocklist(ctx); err == nil {
+		for _, mac := range blocklist.MACs {
+			blockedMACs[strings.ToUpper(mac)] = true
+		}
+	}
+
 	// Convert hal.APClient to models.APClient
 	clients := make([]models.APClient, len(resp.Clients))
 	for i, c := range resp.Clients {
@@ -826,6 +834,7 @@ func (m *NetworkManager) GetAPClients(ctx context.Context) ([]models.APClient, e
 			Signal:        c.Signal,
 			TXBytes:       c.TXBytes,
 			RXBytes:       c.RXBytes,
+			Blocked:       blockedMACs[strings.ToUpper(c.MACAddress)],
 		}
 	}
 	return clients, nil

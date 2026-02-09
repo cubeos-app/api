@@ -78,6 +78,7 @@ func NewAppStoreManager(cfg *config.Config, db *DatabaseManager, dataPath string
 	m.initDB()
 	m.loadStores()
 	m.loadInstalledApps()
+	m.loadCatalog()
 
 	return m
 }
@@ -88,6 +89,10 @@ func NewAppStoreManager(cfg *config.Config, db *DatabaseManager, dataPath string
 func (m *AppStoreManager) initDB() {
 	// Ensure store_app_id column exists for older databases
 	m.db.db.Exec(`ALTER TABLE apps ADD COLUMN store_app_id TEXT DEFAULT NULL`)
+
+	// Add data column to app_catalog for full JSON roundtrip (existing columns
+	// miss fields like tagline, tips, author, screenshots, etc.)
+	m.db.db.Exec(`ALTER TABLE app_catalog ADD COLUMN data TEXT DEFAULT '{}'`)
 }
 
 // loadStores loads stores from database
@@ -155,6 +160,84 @@ func (m *AppStoreManager) loadInstalledApps() {
 	}
 }
 
+// loadCatalog loads cached catalog entries from SQLite.
+// This ensures the catalog survives API restarts without requiring a network sync.
+func (m *AppStoreManager) loadCatalog() {
+	rows, err := m.db.db.Query(`SELECT id, data FROM app_catalog WHERE data != '' AND data != '{}'`)
+	if err != nil {
+		log.Warn().Err(err).Msg("failed to query app_catalog")
+		return
+	}
+	defer rows.Close()
+
+	count := 0
+	for rows.Next() {
+		var id, data string
+		if err := rows.Scan(&id, &data); err != nil {
+			continue
+		}
+		var app models.StoreApp
+		if err := json.Unmarshal([]byte(data), &app); err != nil {
+			log.Warn().Str("id", id).Err(err).Msg("failed to unmarshal catalog entry")
+			continue
+		}
+
+		// Cross-reference installed status
+		for _, inst := range m.installed {
+			if inst.StoreAppID == app.ID {
+				app.Installed = true
+				break
+			}
+		}
+
+		m.catalog[id] = &app
+		count++
+	}
+	if err := rows.Err(); err != nil {
+		log.Warn().Err(err).Msg("error iterating app_catalog rows")
+	}
+
+	if count > 0 {
+		log.Info().Int("count", count).Msg("loaded app catalog from database")
+	}
+}
+
+// persistCatalog writes catalog entries for a store to SQLite.
+// Called after SyncStore() populates m.catalog from parsed manifests.
+func (m *AppStoreManager) persistCatalog(storeID string) {
+	m.mu.RLock()
+	defer m.mu.RUnlock()
+
+	// Delete old entries for this store, then insert fresh
+	m.db.db.Exec(`DELETE FROM app_catalog WHERE store_id = ?`, storeID)
+
+	for _, app := range m.catalog {
+		if app.StoreID != storeID {
+			continue
+		}
+
+		dataJSON, err := json.Marshal(app)
+		if err != nil {
+			log.Warn().Str("id", app.ID).Err(err).Msg("failed to marshal catalog entry")
+			continue
+		}
+
+		titleJSON, _ := json.Marshal(app.Title)
+		descJSON, _ := json.Marshal(app.Description)
+		archJSON, _ := json.Marshal(app.Architectures)
+
+		_, err = m.db.db.Exec(`INSERT OR REPLACE INTO app_catalog 
+			(id, store_id, name, title, description, icon_url, category, version, architectures, manifest_path, data, cached_at)
+			VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+			app.ID, app.StoreID, app.Name, string(titleJSON), string(descJSON),
+			app.Icon, app.Category, app.Version, string(archJSON), app.ManifestPath,
+			string(dataJSON), time.Now().Format(time.RFC3339))
+		if err != nil {
+			log.Warn().Str("id", app.ID).Err(err).Msg("failed to persist catalog entry")
+		}
+	}
+}
+
 func (m *AppStoreManager) addStore(store *models.AppStore) error {
 	store.CreatedAt = time.Now()
 	_, err := m.db.db.Exec(
@@ -207,6 +290,9 @@ func (m *AppStoreManager) RemoveStore(storeID string) error {
 	if err != nil {
 		return err
 	}
+
+	// Clean catalog from DB (CASCADE should handle this, but be explicit)
+	m.db.db.Exec(`DELETE FROM app_catalog WHERE store_id = ?`, storeID)
 
 	delete(m.stores, storeID)
 
@@ -312,6 +398,9 @@ func (m *AppStoreManager) SyncStore(storeID string) error {
 		appCount++
 	}
 	m.mu.Unlock()
+
+	// Persist catalog to SQLite for restart survival
+	m.persistCatalog(storeID)
 
 	// Update store
 	store.AppCount = appCount

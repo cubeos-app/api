@@ -258,6 +258,11 @@ type APClientsResponse struct {
 	Count   int        `json:"count"`
 }
 
+// APBlocklistResponse is the response from GetAPBlocklist
+type APBlocklistResponse struct {
+	MACs []string `json:"macs"`
+}
+
 // TrafficStats represents traffic statistics for interfaces
 // HAL returns: {"interfaces": {"eth0": {...}, "wlan0": {...}}, "source": "..."}
 type TrafficStats struct {
@@ -1616,6 +1621,15 @@ func (c *Client) DisconnectAPClient(ctx context.Context, mac string) error {
 // BlockAPClient blocks a MAC address from the AP
 func (c *Client) BlockAPClient(ctx context.Context, mac string) error {
 	return c.doPost(ctx, "/network/ap/block", map[string]string{"mac": mac})
+}
+
+// GetAPBlocklist returns the list of blocked MAC addresses from the AP deny list
+func (c *Client) GetAPBlocklist(ctx context.Context) (*APBlocklistResponse, error) {
+	var result APBlocklistResponse
+	if err := c.doGet(ctx, "/network/ap/blocklist", &result); err != nil {
+		return nil, err
+	}
+	return &result, nil
 }
 
 // =============================================================================

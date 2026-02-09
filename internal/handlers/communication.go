@@ -6,6 +6,7 @@ import (
 	"io"
 	"net/http"
 	"strconv"
+	"strings"
 
 	"github.com/go-chi/chi/v5"
 	"github.com/rs/zerolog/log"
@@ -1310,6 +1311,18 @@ func (h *CommunicationHandler) StreamIridiumEvents(w http.ResponseWriter, r *htt
 // Bluetooth Endpoints
 // =============================================================================
 
+// isHardwareAbsentError checks if a HAL error indicates missing hardware
+// (vs a transient/internal failure). Hardware absence won't resolve on retry.
+func isHardwareAbsentError(err error) bool {
+	msg := strings.ToLower(err.Error())
+	return strings.Contains(msg, "not found") ||
+		strings.Contains(msg, "no adapter") ||
+		strings.Contains(msg, "not available") ||
+		strings.Contains(msg, "not detected") ||
+		strings.Contains(msg, "no such device") ||
+		strings.Contains(msg, "not present")
+}
+
 // GetBluetoothStatus godoc
 // @Summary Get Bluetooth status
 // @Description Returns Bluetooth adapter status and power state
@@ -1318,7 +1331,7 @@ func (h *CommunicationHandler) StreamIridiumEvents(w http.ResponseWriter, r *htt
 // @Produce json
 // @Success 200 {object} hal.BluetoothStatus
 // @Failure 500 {object} ErrorResponse "Failed to get Bluetooth status"
-// @Failure 503 {object} ErrorResponse "HAL unavailable"
+// @Failure 503 {object} ErrorResponse "Bluetooth hardware not available"
 // @Security BearerAuth
 // @Router /communication/bluetooth [get]
 func (h *CommunicationHandler) GetBluetoothStatus(w http.ResponseWriter, r *http.Request) {
@@ -1331,6 +1344,10 @@ func (h *CommunicationHandler) GetBluetoothStatus(w http.ResponseWriter, r *http
 
 	status, err := h.halClient.GetBluetoothStatus(ctx)
 	if err != nil {
+		if isHardwareAbsentError(err) {
+			writeError(w, http.StatusServiceUnavailable, "Bluetooth hardware not available")
+			return
+		}
 		writeError(w, http.StatusInternalServerError, "Failed to get Bluetooth status: "+err.Error())
 		return
 	}
@@ -1358,6 +1375,10 @@ func (h *CommunicationHandler) PowerOnBluetooth(w http.ResponseWriter, r *http.R
 	}
 
 	if err := h.halClient.PowerOnBluetooth(ctx); err != nil {
+		if isHardwareAbsentError(err) {
+			writeError(w, http.StatusServiceUnavailable, "Bluetooth hardware not available")
+			return
+		}
 		writeError(w, http.StatusInternalServerError, "Failed to power on Bluetooth: "+err.Error())
 		return
 	}
@@ -1388,6 +1409,10 @@ func (h *CommunicationHandler) PowerOffBluetooth(w http.ResponseWriter, r *http.
 	}
 
 	if err := h.halClient.PowerOffBluetooth(ctx); err != nil {
+		if isHardwareAbsentError(err) {
+			writeError(w, http.StatusServiceUnavailable, "Bluetooth hardware not available")
+			return
+		}
 		writeError(w, http.StatusInternalServerError, "Failed to power off Bluetooth: "+err.Error())
 		return
 	}
@@ -1419,6 +1444,10 @@ func (h *CommunicationHandler) GetBluetoothDevices(w http.ResponseWriter, r *htt
 
 	devices, err := h.halClient.GetBluetoothDevices(ctx)
 	if err != nil {
+		if isHardwareAbsentError(err) {
+			writeError(w, http.StatusServiceUnavailable, "Bluetooth hardware not available")
+			return
+		}
 		writeError(w, http.StatusInternalServerError, "Failed to get Bluetooth devices: "+err.Error())
 		return
 	}
@@ -1461,6 +1490,10 @@ func (h *CommunicationHandler) ScanBluetoothDevices(w http.ResponseWriter, r *ht
 	}
 
 	if err := h.halClient.ScanBluetoothDevices(ctx, duration); err != nil {
+		if isHardwareAbsentError(err) {
+			writeError(w, http.StatusServiceUnavailable, "Bluetooth hardware not available")
+			return
+		}
 		writeError(w, http.StatusInternalServerError, "Failed to start Bluetooth scan: "+err.Error())
 		return
 	}
@@ -1499,6 +1532,10 @@ func (h *CommunicationHandler) PairBluetoothDevice(w http.ResponseWriter, r *htt
 	}
 
 	if err := h.halClient.PairBluetoothDevice(ctx, address); err != nil {
+		if isHardwareAbsentError(err) {
+			writeError(w, http.StatusServiceUnavailable, "Bluetooth hardware not available")
+			return
+		}
 		writeError(w, http.StatusInternalServerError, "Failed to pair Bluetooth device: "+err.Error())
 		return
 	}
@@ -1537,6 +1574,10 @@ func (h *CommunicationHandler) ConnectBluetoothDevice(w http.ResponseWriter, r *
 	}
 
 	if err := h.halClient.ConnectBluetoothDevice(ctx, address); err != nil {
+		if isHardwareAbsentError(err) {
+			writeError(w, http.StatusServiceUnavailable, "Bluetooth hardware not available")
+			return
+		}
 		writeError(w, http.StatusInternalServerError, "Failed to connect Bluetooth device: "+err.Error())
 		return
 	}
@@ -1575,6 +1616,10 @@ func (h *CommunicationHandler) DisconnectBluetoothDevice(w http.ResponseWriter, 
 	}
 
 	if err := h.halClient.DisconnectBluetoothDevice(ctx, address); err != nil {
+		if isHardwareAbsentError(err) {
+			writeError(w, http.StatusServiceUnavailable, "Bluetooth hardware not available")
+			return
+		}
 		writeError(w, http.StatusInternalServerError, "Failed to disconnect Bluetooth device: "+err.Error())
 		return
 	}
@@ -1613,6 +1658,10 @@ func (h *CommunicationHandler) RemoveBluetoothDevice(w http.ResponseWriter, r *h
 	}
 
 	if err := h.halClient.RemoveBluetoothDevice(ctx, address); err != nil {
+		if isHardwareAbsentError(err) {
+			writeError(w, http.StatusServiceUnavailable, "Bluetooth hardware not available")
+			return
+		}
 		writeError(w, http.StatusInternalServerError, "Failed to remove Bluetooth device: "+err.Error())
 		return
 	}

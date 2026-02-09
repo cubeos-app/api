@@ -403,4 +403,5 @@ type APClient struct {
 	Signal        int    `json:"signal" db:"signal"`
 	TXBytes       int64  `json:"tx_bytes" db:"tx_bytes"`
 	RXBytes       int64  `json:"rx_bytes" db:"rx_bytes"`
+	Blocked       bool   `json:"blocked" db:"blocked"`
 }
