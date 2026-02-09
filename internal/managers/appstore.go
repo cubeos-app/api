@@ -903,7 +903,94 @@ func (m *AppStoreManager) processManifest(manifest, appID, dataDir string, req *
 		result = strings.ReplaceAll(result, fmt.Sprintf("${%s}", key), val)
 	}
 
-	return result
+	// Sanitize Swarm-incompatible directives (depends_on map, container_name, etc.)
+	sanitized, err := sanitizeForSwarm(result)
+	if err != nil {
+		log.Warn().Err(err).Str("app", appID).Msg("failed to sanitize manifest for Swarm, using as-is")
+		return result
+	}
+	return sanitized
+}
+
+// sanitizeForSwarm transforms a CasaOS docker-compose.yml to be compatible with
+// docker stack deploy. Handles known incompatibilities:
+// - depends_on: map with conditions → simple list of service names
+// - container_name: not supported in Swarm, removed
+// - privileged: not supported in Swarm stacks, removed
+// - devices: not supported in Swarm stacks, removed
+// - network_mode: "host"/"bridge" not supported in Swarm stacks, removed
+func sanitizeForSwarm(manifest string) (string, error) {
+	var compose map[string]interface{}
+	if err := yaml.Unmarshal([]byte(manifest), &compose); err != nil {
+		return "", fmt.Errorf("failed to parse compose YAML: %w", err)
+	}
+
+	services, ok := compose["services"]
+	if !ok {
+		// No services section, nothing to sanitize
+		return manifest, nil
+	}
+
+	svcMap, ok := services.(map[string]interface{})
+	if !ok {
+		return manifest, nil
+	}
+
+	for svcName, svcDef := range svcMap {
+		svc, ok := svcDef.(map[string]interface{})
+		if !ok {
+			continue
+		}
+
+		// Convert depends_on map → list
+		if deps, exists := svc["depends_on"]; exists {
+			switch d := deps.(type) {
+			case map[string]interface{}:
+				// Map form: {postgres: {condition: service_healthy}} → [postgres]
+				depList := make([]string, 0, len(d))
+				for depName := range d {
+					depList = append(depList, depName)
+				}
+				sort.Strings(depList)
+				svc["depends_on"] = depList
+				log.Info().Str("service", svcName).
+					Int("count", len(depList)).
+					Msg("converted depends_on map to list for Swarm compatibility")
+			case []interface{}:
+				// Already a list, keep as-is
+			default:
+				// Unexpected type, remove to be safe
+				delete(svc, "depends_on")
+			}
+		}
+
+		// Remove Swarm-incompatible keys
+		incompatible := []string{"container_name", "privileged", "devices"}
+		for _, key := range incompatible {
+			if _, exists := svc[key]; exists {
+				delete(svc, key)
+				log.Info().Str("service", svcName).Str("key", key).
+					Msg("removed Swarm-incompatible directive")
+			}
+		}
+
+		// Remove network_mode if host/bridge (unsupported in stack deploy)
+		if nm, exists := svc["network_mode"]; exists {
+			if nmStr, ok := nm.(string); ok {
+				if nmStr == "host" || nmStr == "bridge" {
+					delete(svc, "network_mode")
+					log.Warn().Str("service", svcName).Str("network_mode", nmStr).
+						Msg("removed unsupported network_mode for Swarm — app may not work correctly")
+				}
+			}
+		}
+	}
+
+	out, err := yaml.Marshal(compose)
+	if err != nil {
+		return "", fmt.Errorf("failed to serialize sanitized compose: %w", err)
+	}
+	return string(out), nil
 }
 
 func (m *AppStoreManager) findAvailablePort(start int) int {
