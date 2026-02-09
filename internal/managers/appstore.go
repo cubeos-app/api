@@ -741,7 +741,7 @@ func (m *AppStoreManager) InstallApp(req *models.AppInstallRequest) (*models.Ins
 	appConfig := filepath.Join(appBase, "appconfig")
 	appData := filepath.Join(appBase, "appdata")
 	os.MkdirAll(appConfig, 0755)
-	os.MkdirAll(appData, 0755)
+	os.MkdirAll(appData, 0777) // 0777: containers may run as non-root users
 
 	// Allocate a port in the user app range (6100-6999)
 	allocatedPort := m.findAvailablePort(6100)
@@ -1144,7 +1144,10 @@ func preCreateBindMounts(manifest string) {
 				}
 			}
 			if hostPath != "" {
-				if err := os.MkdirAll(hostPath, 0755); err != nil {
+				// Use 0777 because containers may run as non-root users
+				// (e.g. libretranslate runs as uid 1032). The container's
+				// entrypoint can tighten permissions as needed.
+				if err := os.MkdirAll(hostPath, 0777); err != nil {
 					log.Warn().Err(err).Str("path", hostPath).Msg("failed to pre-create bind mount directory")
 				} else {
 					log.Debug().Str("path", hostPath).Msg("pre-created bind mount directory for Swarm")
