@@ -55,6 +55,8 @@ verify-routes:
   stage: test
   tags: [multiarch]
   image: ${BUILDER_IMAGE}
+  before_script:
+    - apk add --no-cache bash grep
   script:
     - cp -r . /app/
     - cd /app
