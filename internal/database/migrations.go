@@ -475,6 +475,42 @@ var migrations = []Migration{
 			return nil
 		},
 	},
+
+	// Version 11: Add volume_mappings table for tracking bind mount remappings
+	{
+		Version:     11,
+		Description: "Add volume_mappings table for app volume management",
+		Up: func(db *sql.DB) error {
+			_, err := db.Exec(`
+				CREATE TABLE IF NOT EXISTS volume_mappings (
+					id              INTEGER PRIMARY KEY AUTOINCREMENT,
+					app_id          INTEGER NOT NULL,
+					container_path  TEXT NOT NULL,
+					original_host_path TEXT NOT NULL,
+					current_host_path TEXT NOT NULL,
+					description     TEXT DEFAULT '',
+					is_remapped     BOOLEAN DEFAULT FALSE,
+					is_config       BOOLEAN DEFAULT FALSE,
+					read_only       BOOLEAN DEFAULT FALSE,
+					created_at      DATETIME DEFAULT CURRENT_TIMESTAMP,
+					updated_at      DATETIME DEFAULT CURRENT_TIMESTAMP,
+					FOREIGN KEY (app_id) REFERENCES apps(id) ON DELETE CASCADE,
+					UNIQUE(app_id, container_path)
+				)
+			`)
+			if err != nil {
+				return fmt.Errorf("failed to create volume_mappings table: %w", err)
+			}
+
+			_, err = db.Exec(`CREATE INDEX IF NOT EXISTS idx_volume_mappings_app ON volume_mappings(app_id)`)
+			if err != nil {
+				log.Warn().Err(err).Msg("Migration 11: Failed to create volume_mappings index")
+			}
+
+			log.Info().Msg("Migration 11: Created volume_mappings table")
+			return nil
+		},
+	},
 }
 
 // isDuplicateColumnError checks if an error is a "duplicate column" error
@@ -549,6 +585,7 @@ func MigrateAndSeed(db *sql.DB) error {
 // WARNING: This is destructive and should only be used for testing/reset.
 func DropAllTables(db *sql.DB) error {
 	tables := []string{
+		"volume_mappings",
 		"profile_apps",
 		"port_allocations",
 		"fqdns",

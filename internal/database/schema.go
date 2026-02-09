@@ -9,7 +9,7 @@ import (
 )
 
 // CurrentSchemaVersion tracks the database schema version for migrations.
-const CurrentSchemaVersion = 10
+const CurrentSchemaVersion = 11
 
 // Schema defines the unified CubeOS database schema.
 // Design Principles:
@@ -351,6 +351,27 @@ CREATE TABLE IF NOT EXISTS app_catalog (
 );
 
 CREATE INDEX IF NOT EXISTS idx_app_catalog_store ON app_catalog(store_id);
+
+-- =============================================================================
+-- VOLUME_MAPPINGS: Track per-app volume mount remappings
+-- =============================================================================
+CREATE TABLE IF NOT EXISTS volume_mappings (
+    id              INTEGER PRIMARY KEY AUTOINCREMENT,
+    app_id          INTEGER NOT NULL,
+    container_path  TEXT NOT NULL,           -- mount target inside container (e.g., /movies)
+    original_host_path TEXT NOT NULL,        -- path from manifest (e.g., /DATA/Media/Movies)
+    current_host_path TEXT NOT NULL,         -- actual path on host (e.g., /cubeos/apps/bazarr/appdata/movies)
+    description     TEXT DEFAULT '',         -- human-readable label (e.g., "Movies")
+    is_remapped     BOOLEAN DEFAULT FALSE,   -- TRUE if we changed it from original
+    is_config       BOOLEAN DEFAULT FALSE,   -- TRUE if config-like mount (/config, /data)
+    read_only       BOOLEAN DEFAULT FALSE,   -- TRUE if mount is read-only
+    created_at      DATETIME DEFAULT CURRENT_TIMESTAMP,
+    updated_at      DATETIME DEFAULT CURRENT_TIMESTAMP,
+    FOREIGN KEY (app_id) REFERENCES apps(id) ON DELETE CASCADE,
+    UNIQUE(app_id, container_path)
+);
+
+CREATE INDEX IF NOT EXISTS idx_volume_mappings_app ON volume_mappings(app_id);
 
 -- =============================================================================
 -- SETUP_STATUS: First-boot setup wizard state

@@ -757,6 +757,17 @@ func (m *AppStoreManager) InstallApp(req *models.AppInstallRequest) (*models.Ins
 		log.Warn().Err(err).Str("app", req.AppName).Msg("port remapping failed, using original ports")
 	}
 
+	// Remap external bind mounts to safe defaults under /cubeos/apps/{app}/appdata/
+	overrides := req.VolumeOverrides
+	if overrides == nil {
+		overrides = make(map[string]string)
+	}
+	var remapResults []RemapResult
+	processedManifest, remapResults, err = RemapExternalVolumes(processedManifest, req.AppName, appData, overrides)
+	if err != nil {
+		log.Warn().Err(err).Str("app", req.AppName).Msg("volume remapping failed, using original paths")
+	}
+
 	// Write docker-compose.yml to appconfig
 	composePath := filepath.Join(appConfig, "docker-compose.yml")
 	if err := os.WriteFile(composePath, []byte(processedManifest), 0644); err != nil {
@@ -901,6 +912,11 @@ func (m *AppStoreManager) InstallApp(req *models.AppInstallRequest) (*models.Ins
 				VALUES (?, ?, ?, ?, ?) ON CONFLICT DO NOTHING`,
 				appID, appFQDN, fqdnSubdomain, appPort, npmProxyID)
 		}
+	}
+
+	// Store volume mappings
+	if len(remapResults) > 0 {
+		m.StoreVolumeMappings(req.AppName, remapResults)
 	}
 
 	m.mu.Lock()

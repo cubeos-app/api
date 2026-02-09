@@ -69,6 +69,11 @@ func (h *AppStoreHandler) Routes() chi.Router {
 	r.Get("/installed/{appID}/config/backups", h.GetConfigBackups)
 	r.Post("/installed/{appID}/config/restore/{backup}", h.RestoreConfigBackup)
 
+	// Volume management
+	r.Get("/installed/{appID}/volumes", h.GetVolumeMappings)
+	r.Put("/installed/{appID}/volumes", h.UpdateVolumeMappings)
+	r.Get("/stores/{storeID}/apps/{appName}/volumes", h.PreviewVolumes)
+
 	// Core apps (/cubeos/coreapps/) - protected with extra warnings
 	r.Get("/coreapps", h.ListCoreApps)
 	r.Get("/coreapps/{appID}/config", h.GetCoreAppConfig)
@@ -587,6 +592,128 @@ func (h *AppStoreHandler) JobProgress(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 	}
+}
+
+// ============================================================================
+// Volume Management Handlers
+// ============================================================================
+
+// GetVolumeMappings godoc
+// @Summary Get volume mappings for an installed app
+// @Description Returns current volume mount mappings showing original and remapped paths
+// @Tags AppStore - Volumes
+// @Produce json
+// @Security BearerAuth
+// @Param appID path string true "App ID"
+// @Success 200 {object} managers.VolumeMappingsResponse "Volume mappings"
+// @Failure 404 {object} ErrorResponse "App not found"
+// @Failure 500 {object} ErrorResponse "Internal error"
+// @Router /appstore/installed/{appID}/volumes [get]
+func (h *AppStoreHandler) GetVolumeMappings(w http.ResponseWriter, r *http.Request) {
+	appID := chi.URLParam(r, "appID")
+
+	resp, err := h.manager.GetVolumeMappings(appID)
+	if err != nil {
+		if err.Error() == "app not found: "+appID {
+			writeError(w, http.StatusNotFound, err.Error())
+			return
+		}
+		writeError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+
+	writeJSON(w, http.StatusOK, resp)
+}
+
+// UpdateVolumeMappings godoc
+// @Summary Update volume mappings for an installed app
+// @Description Changes volume mount paths, rewrites compose file, and redeploys the stack
+// @Tags AppStore - Volumes
+// @Accept json
+// @Produce json
+// @Security BearerAuth
+// @Param appID path string true "App ID"
+// @Param body body []managers.VolumeMappingUpdate true "Volume updates"
+// @Success 200 {object} map[string]interface{} "success: true"
+// @Failure 400 {object} ErrorResponse "Invalid request or path"
+// @Failure 500 {object} ErrorResponse "Update failed"
+// @Router /appstore/installed/{appID}/volumes [put]
+func (h *AppStoreHandler) UpdateVolumeMappings(w http.ResponseWriter, r *http.Request) {
+	appID := chi.URLParam(r, "appID")
+
+	var updates []managers.VolumeMappingUpdate
+	if err := json.NewDecoder(r.Body).Decode(&updates); err != nil {
+		writeError(w, http.StatusBadRequest, "invalid request body")
+		return
+	}
+
+	if len(updates) == 0 {
+		writeError(w, http.StatusBadRequest, "no volume updates provided")
+		return
+	}
+
+	if err := h.manager.UpdateVolumeMappings(appID, updates); err != nil {
+		writeError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+
+	writeJSON(w, http.StatusOK, map[string]interface{}{
+		"success": true,
+		"message": fmt.Sprintf("Updated %d volume mapping(s) and redeployed %s", len(updates), appID),
+	})
+}
+
+// PreviewVolumes godoc
+// @Summary Preview volume mappings for a store app before install
+// @Description Analyzes the app manifest and shows which volumes would be remapped
+// @Tags AppStore - Volumes
+// @Produce json
+// @Security BearerAuth
+// @Param storeID path string true "Store ID"
+// @Param appName path string true "App name"
+// @Success 200 {object} managers.VolumePreviewResponse "Volume preview"
+// @Failure 404 {object} ErrorResponse "App not found"
+// @Failure 500 {object} ErrorResponse "Internal error"
+// @Router /appstore/stores/{storeID}/apps/{appName}/volumes [get]
+func (h *AppStoreHandler) PreviewVolumes(w http.ResponseWriter, r *http.Request) {
+	storeID := chi.URLParam(r, "storeID")
+	appName := chi.URLParam(r, "appName")
+
+	resp, err := h.manager.PreviewVolumes(storeID, appName)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+
+	writeJSON(w, http.StatusOK, resp)
+}
+
+// BrowseDirectories godoc
+// @Summary Browse host directories
+// @Description Lists subdirectories at a given path for the directory picker UI
+// @Tags System
+// @Produce json
+// @Security BearerAuth
+// @Param path query string false "Directory path to browse (default: /)"
+// @Success 200 {object} map[string]interface{} "path, entries array"
+// @Failure 400 {object} ErrorResponse "Invalid path"
+// @Router /system/browse [get]
+func (h *AppStoreHandler) BrowseDirectories(w http.ResponseWriter, r *http.Request) {
+	path := r.URL.Query().Get("path")
+	if path == "" {
+		path = "/"
+	}
+
+	entries, err := managers.BrowseDirectories(path)
+	if err != nil {
+		writeError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+
+	writeJSON(w, http.StatusOK, map[string]interface{}{
+		"path":    path,
+		"entries": entries,
+	})
 }
 
 // StartApp godoc

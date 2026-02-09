@@ -61,6 +61,28 @@ func (m *AppStoreManager) InstallAppWithProgress(req *models.AppInstallRequest, 
 		log.Warn().Err(err).Str("app", req.AppName).Msg("port remapping failed, using original ports")
 	}
 
+	// Step 4.5: Remap external volumes to safe defaults (27%)
+	job.Emit("volumes", 27, "Configuring volume mounts...")
+	var remapResults []RemapResult
+	overrides := req.VolumeOverrides
+	if overrides == nil {
+		overrides = make(map[string]string)
+	}
+	processedManifest, remapResults, err = RemapExternalVolumes(processedManifest, req.AppName, appData, overrides)
+	if err != nil {
+		log.Warn().Err(err).Str("app", req.AppName).Msg("volume remapping failed, using original paths")
+	} else if len(remapResults) > 0 {
+		remapped := 0
+		for _, r := range remapResults {
+			if r.WasRemapped {
+				remapped++
+			}
+		}
+		if remapped > 0 {
+			job.Emit("volumes", 28, fmt.Sprintf("Remapped %d external volume(s) to safe defaults", remapped))
+		}
+	}
+
 	// Write docker-compose.yml
 	composePath := filepath.Join(appConfig, "docker-compose.yml")
 	if err := os.WriteFile(composePath, []byte(processedManifest), 0644); err != nil {
@@ -198,6 +220,11 @@ func (m *AppStoreManager) InstallAppWithProgress(req *models.AppInstallRequest, 
 				VALUES (?, ?, ?, ?, ?) ON CONFLICT DO NOTHING`,
 				appID, appFQDN, fqdnSubdomain, appPort, npmProxyID)
 		}
+	}
+
+	// Store volume mappings (after DB insert so app_id exists)
+	if len(remapResults) > 0 {
+		m.StoreVolumeMappings(req.AppName, remapResults)
 	}
 
 	// Step 10: Health check (95%)
@@ -352,6 +379,14 @@ func (m *AppStoreManager) waitForSwarmServices(stackName string, job *Job) {
 
 			if ready >= total {
 				return
+			}
+
+			// After 30 seconds of 0/N, surface the actual Docker error
+			if attempt > 10 && ready == 0 {
+				errMsg := m.getServiceTaskError(stackName)
+				if errMsg != "" {
+					job.Emit("services", pct, fmt.Sprintf("Warning: %s", errMsg))
+				}
 			}
 		}
 	}
