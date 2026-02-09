@@ -742,6 +742,7 @@ func (m *AppStoreManager) InstallApp(req *models.AppInstallRequest) (*models.Ins
 	appData := filepath.Join(appBase, "appdata")
 	os.MkdirAll(appConfig, 0755)
 	os.MkdirAll(appData, 0777) // 0777: containers may run as non-root users
+	os.Chmod(appData, 0777)    // Explicit chmod to override umask
 
 	// Allocate a port in the user app range (6100-6999)
 	allocatedPort := m.findAvailablePort(6100)
@@ -1147,9 +1148,11 @@ func preCreateBindMounts(manifest string) {
 				// Use 0777 because containers may run as non-root users
 				// (e.g. libretranslate runs as uid 1032). The container's
 				// entrypoint can tighten permissions as needed.
+				// Note: os.MkdirAll respects umask, so we must chmod explicitly.
 				if err := os.MkdirAll(hostPath, 0777); err != nil {
 					log.Warn().Err(err).Str("path", hostPath).Msg("failed to pre-create bind mount directory")
 				} else {
+					os.Chmod(hostPath, 0777)
 					log.Debug().Str("path", hostPath).Msg("pre-created bind mount directory for Swarm")
 				}
 			}
@@ -1636,6 +1639,12 @@ func (m *AppStoreManager) refreshAppStatus(app *models.InstalledApp) {
 		log.Warn().Str("app", app.ID).Msg("app compose and stack both missing at runtime — removing ghost record")
 		m.mu.Lock()
 		delete(m.installed, app.ID)
+		// Clear the "Installed" flag on the catalog entry so the UI updates
+		if app.StoreAppID != "" {
+			if storeApp, ok := m.catalog[app.StoreAppID]; ok {
+				storeApp.Installed = false
+			}
+		}
 		m.mu.Unlock()
 		m.db.db.Exec("DELETE FROM apps WHERE name = ?", app.ID)
 		app.Status = "removed"
