@@ -13,6 +13,7 @@ import (
 	"github.com/rs/zerolog/log"
 
 	"cubeos-api/internal/config"
+	"cubeos-api/internal/hal"
 	"cubeos-api/internal/models"
 )
 
@@ -26,6 +27,7 @@ type Orchestrator struct {
 	npm    *NPMManager
 	pihole *PiholeManager
 	ports  *PortManager
+	hal    *hal.Client
 	ctx    context.Context
 	cancel context.CancelFunc
 }
@@ -38,6 +40,7 @@ type OrchestratorConfig struct {
 	AppsPath     string
 	PiholePath   string
 	NPMConfigDir string
+	HALClient    *hal.Client
 }
 
 // NewOrchestrator creates a new Orchestrator instance
@@ -54,6 +57,7 @@ func NewOrchestrator(cfg OrchestratorConfig) (*Orchestrator, error) {
 	o := &Orchestrator{
 		db:     cfg.DB,
 		cfg:    cfg.Config,
+		hal:    cfg.HALClient,
 		ctx:    ctx,
 		cancel: cancel,
 	}
@@ -780,7 +784,18 @@ func (o *Orchestrator) GetAppLogs(ctx context.Context, name string, lines int, s
 // Routing Operations (Tor/VPN)
 // =============================================================================
 
+// torTransparentPort is the Tor transparent proxy port exposed by the Tor coreapp.
+const torTransparentPort = "9040"
+
+// torDNSPort is the Tor DNS resolver port.
+const torDNSPort = "5353"
+
 // SetAppTor enables or disables Tor routing for an app.
+// When enabled, the app's outbound TCP traffic is redirected through the Tor
+// transparent proxy via iptables DNAT rules on the host (applied via HAL).
+// The preference is always persisted to the database; actual iptables rules
+// are only applied if the Tor service is reachable and the app container is
+// running.
 func (o *Orchestrator) SetAppTor(ctx context.Context, name string, enabled bool) error {
 	app, err := o.GetApp(ctx, name)
 	if err != nil {
@@ -800,15 +815,86 @@ func (o *Orchestrator) SetAppTor(ctx context.Context, name string, enabled bool)
 		return fmt.Errorf("failed to update tor setting: %w", err)
 	}
 
-	// TODO: Actually configure Tor proxy for this app's network
-	// This will be implemented when Tor coreapp is fully integrated
-	log.Warn().Str("app", name).Bool("enabled", enabled).
-		Msg("routing preference saved, actual routing not yet implemented")
+	// Attempt to apply iptables rules via HAL
+	if o.hal == nil {
+		log.Warn().Str("app", name).Bool("enabled", enabled).
+			Msg("tor preference saved, HAL client unavailable — rules not applied")
+		return nil
+	}
+
+	if err := o.applyTorRouting(ctx, name, enabled); err != nil {
+		// Log but don't fail — the preference is saved, rules can be reconciled later
+		log.Warn().Err(err).Str("app", name).Bool("enabled", enabled).
+			Msg("tor preference saved, failed to apply iptables rules (will reconcile)")
+	}
+
+	return nil
+}
+
+// applyTorRouting adds or removes iptables rules to redirect an app's traffic
+// through the Tor transparent proxy.
+func (o *Orchestrator) applyTorRouting(ctx context.Context, appName string, enabled bool) error {
+	// Resolve the app's container IP on docker_gwbridge
+	containerIP, err := o.resolveContainerIP(ctx, appName)
+	if err != nil {
+		return fmt.Errorf("cannot resolve container IP for %s: %w", appName, err)
+	}
+
+	if enabled {
+		// Verify Tor is running before adding rules
+		torStatus, err := o.hal.GetTorStatus(ctx)
+		if err != nil || torStatus == nil || !torStatus.Running {
+			return fmt.Errorf("tor service is not running — start Tor before enabling per-app routing")
+		}
+
+		// Redirect TCP traffic from this container through Tor transparent proxy
+		// nat/PREROUTING: DNAT TCP from container → Tor TransPort
+		err = o.hal.AddFirewallRule(ctx, "nat", "PREROUTING", []string{
+			"-s", containerIP, "-p", "tcp",
+			"!", "-d", "10.42.24.0/24",
+			"-j", "REDIRECT", "--to-ports", torTransparentPort,
+			"-m", "comment", "--comment", "cubeos-tor:" + appName,
+		})
+		if err != nil {
+			return fmt.Errorf("failed to add Tor TCP redirect rule: %w", err)
+		}
+
+		// Redirect DNS from this container through Tor DNS
+		err = o.hal.AddFirewallRule(ctx, "nat", "PREROUTING", []string{
+			"-s", containerIP, "-p", "udp", "--dport", "53",
+			"-j", "REDIRECT", "--to-ports", torDNSPort,
+			"-m", "comment", "--comment", "cubeos-tor-dns:" + appName,
+		})
+		if err != nil {
+			return fmt.Errorf("failed to add Tor DNS redirect rule: %w", err)
+		}
+
+		log.Info().Str("app", appName).Str("ip", containerIP).
+			Msg("tor routing enabled via iptables")
+	} else {
+		// Remove Tor rules for this app (best-effort, ignore errors for missing rules)
+		_ = o.hal.DeleteFirewallRule(ctx, "nat", "PREROUTING", []string{
+			"-s", containerIP, "-p", "tcp",
+			"!", "-d", "10.42.24.0/24",
+			"-j", "REDIRECT", "--to-ports", torTransparentPort,
+			"-m", "comment", "--comment", "cubeos-tor:" + appName,
+		})
+		_ = o.hal.DeleteFirewallRule(ctx, "nat", "PREROUTING", []string{
+			"-s", containerIP, "-p", "udp", "--dport", "53",
+			"-j", "REDIRECT", "--to-ports", torDNSPort,
+			"-m", "comment", "--comment", "cubeos-tor-dns:" + appName,
+		})
+
+		log.Info().Str("app", appName).Str("ip", containerIP).
+			Msg("tor routing disabled, iptables rules removed")
+	}
 
 	return nil
 }
 
 // SetAppVPN enables or disables VPN routing for an app.
+// When enabled, the app's outbound traffic is policy-routed through the active
+// VPN tunnel interface via iptables mark + ip rule on the host (applied via HAL).
 func (o *Orchestrator) SetAppVPN(ctx context.Context, name string, enabled bool) error {
 	app, err := o.GetApp(ctx, name)
 	if err != nil {
@@ -828,12 +914,115 @@ func (o *Orchestrator) SetAppVPN(ctx context.Context, name string, enabled bool)
 		return fmt.Errorf("failed to update vpn setting: %w", err)
 	}
 
-	// TODO: Actually configure VPN routing for this app's network
-	// This will be implemented when WireGuard/OpenVPN coreapps are fully integrated
-	log.Warn().Str("app", name).Bool("enabled", enabled).
-		Msg("routing preference saved, actual routing not yet implemented")
+	// Attempt to apply iptables rules via HAL
+	if o.hal == nil {
+		log.Warn().Str("app", name).Bool("enabled", enabled).
+			Msg("vpn preference saved, HAL client unavailable — rules not applied")
+		return nil
+	}
+
+	if err := o.applyVPNRouting(ctx, name, enabled); err != nil {
+		log.Warn().Err(err).Str("app", name).Bool("enabled", enabled).
+			Msg("vpn preference saved, failed to apply iptables rules (will reconcile)")
+	}
 
 	return nil
+}
+
+// vpnFwMark is the fwmark value used for VPN policy routing.
+// Traffic from VPN-enabled containers is marked with this value,
+// and an ip rule routes marked traffic through the VPN table.
+const vpnFwMark = "0x1"
+
+// applyVPNRouting adds or removes iptables mark rules for VPN policy routing.
+func (o *Orchestrator) applyVPNRouting(ctx context.Context, appName string, enabled bool) error {
+	containerIP, err := o.resolveContainerIP(ctx, appName)
+	if err != nil {
+		return fmt.Errorf("cannot resolve container IP for %s: %w", appName, err)
+	}
+
+	if enabled {
+		// Verify VPN is active before adding rules
+		vpnStatus, err := o.hal.GetVPNStatus(ctx)
+		if err != nil {
+			return fmt.Errorf("failed to check VPN status: %w", err)
+		}
+		if vpnStatus == nil || (!vpnStatus.WireGuard.Active && !vpnStatus.OpenVPN.Active) {
+			return fmt.Errorf("no active VPN tunnel — connect a VPN before enabling per-app routing")
+		}
+
+		// Mark traffic from this container for VPN routing
+		// mangle/PREROUTING: set fwmark on packets from container
+		err = o.hal.AddFirewallRule(ctx, "mangle", "PREROUTING", []string{
+			"-s", containerIP,
+			"!", "-d", "10.42.24.0/24",
+			"-j", "MARK", "--set-mark", vpnFwMark,
+			"-m", "comment", "--comment", "cubeos-vpn:" + appName,
+		})
+		if err != nil {
+			return fmt.Errorf("failed to add VPN mark rule: %w", err)
+		}
+
+		log.Info().Str("app", appName).Str("ip", containerIP).
+			Msg("vpn routing enabled via fwmark")
+	} else {
+		// Remove VPN mark rule (best-effort)
+		_ = o.hal.DeleteFirewallRule(ctx, "mangle", "PREROUTING", []string{
+			"-s", containerIP,
+			"!", "-d", "10.42.24.0/24",
+			"-j", "MARK", "--set-mark", vpnFwMark,
+			"-m", "comment", "--comment", "cubeos-vpn:" + appName,
+		})
+
+		log.Info().Str("app", appName).Str("ip", containerIP).
+			Msg("vpn routing disabled, iptables rules removed")
+	}
+
+	return nil
+}
+
+// resolveContainerIP finds the container's IP on the docker_gwbridge network
+// by inspecting Docker containers matching the app's Swarm service name.
+func (o *Orchestrator) resolveContainerIP(ctx context.Context, appName string) (string, error) {
+	if o.docker == nil {
+		return "", fmt.Errorf("docker manager unavailable")
+	}
+
+	// Swarm service naming: stack_service → try the swarm task container name
+	// Convention: services are named as "{appName}_{appName}" or just "{appName}"
+	// Try the most common patterns
+	candidates := []string{
+		appName + "_" + appName, // stack_service pattern
+		appName,                 // direct name
+	}
+
+	for _, name := range candidates {
+		ip, err := o.docker.GetContainerIP(ctx, name)
+		if err == nil && ip != "" {
+			return ip, nil
+		}
+	}
+
+	// Fallback: scan all containers for a match
+	containers, err := o.docker.ListContainers(ctx)
+	if err != nil {
+		return "", fmt.Errorf("failed to list containers: %w", err)
+	}
+
+	for _, c := range containers {
+		if c.State != "running" {
+			continue
+		}
+		if strings.HasPrefix(c.Name, appName+"_") || strings.HasPrefix(c.Name, appName+".") {
+			// Found a matching container — inspect it for IP
+			ip, err := o.docker.GetContainerIP(ctx, c.ID)
+			if err == nil && ip != "" {
+				return ip, nil
+			}
+		}
+	}
+
+	return "", fmt.Errorf("no running container found for app %s", appName)
 }
 
 // =============================================================================

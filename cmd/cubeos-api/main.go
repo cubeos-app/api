@@ -263,6 +263,7 @@ func main() {
 		AppsPath:     "/cubeos/apps",
 		PiholePath:   "/cubeos/coreapps/pihole/appdata",
 		NPMConfigDir: "/cubeos/coreapps/npm/appdata",
+		HALClient:    halClient,
 	})
 	if err != nil {
 		log.Warn().Err(err).Msg("failed to create Orchestrator")
@@ -563,6 +564,9 @@ func main() {
 			r.Post("/preferences", ext.SetPreferences)
 			r.Put("/preferences", ext.SetPreferences)
 			r.Post("/preferences/reset", ext.ResetPreferences) // Added
+			r.Post("/preferences/wallpaper", ext.UploadWallpaper)
+			r.Get("/preferences/wallpaper", ext.GetWallpaper)
+			r.Delete("/preferences/wallpaper", ext.DeleteWallpaper)
 
 			// Favorites
 			r.Get("/favorites", ext.GetFavorites)

@@ -1260,6 +1260,110 @@ func (h *ExtendedHandlers) ResetPreferences(w http.ResponseWriter, r *http.Reque
 	})
 }
 
+// UploadWallpaper godoc
+// @Summary Upload custom wallpaper
+// @Description Uploads a custom wallpaper image (JPEG, PNG, or WebP, max 5 MB).
+// @Description The image is validated and stored server-side for persistence across devices.
+// @Tags Preferences
+// @Accept multipart/form-data
+// @Produce json
+// @Security BearerAuth
+// @Param wallpaper formData file true "Wallpaper image file (JPEG, PNG, or WebP, max 5 MB)"
+// @Success 200 {object} map[string]interface{} "Upload successful"
+// @Failure 400 {object} ErrorResponse "Invalid file or unsupported format"
+// @Failure 413 {object} ErrorResponse "File too large"
+// @Failure 500 {object} ErrorResponse "Failed to save wallpaper"
+// @Router /preferences/wallpaper [post]
+func (h *ExtendedHandlers) UploadWallpaper(w http.ResponseWriter, r *http.Request) {
+	// Limit request body to 5 MB + overhead for multipart encoding
+	r.Body = http.MaxBytesReader(w, r.Body, 6*1024*1024)
+
+	if err := r.ParseMultipartForm(5 << 20); err != nil {
+		writeError(w, http.StatusBadRequest, "Failed to parse upload: "+err.Error())
+		return
+	}
+
+	file, header, err := r.FormFile("wallpaper")
+	if err != nil {
+		writeError(w, http.StatusBadRequest, "Missing 'wallpaper' file field")
+		return
+	}
+	defer file.Close()
+
+	// Determine content type from the file header
+	contentType := header.Header.Get("Content-Type")
+	if contentType == "" || contentType == "application/octet-stream" {
+		// Sniff content type from first 512 bytes
+		buf := make([]byte, 512)
+		n, _ := file.Read(buf)
+		contentType = http.DetectContentType(buf[:n])
+		// Seek back to start for the manager to read the full file
+		if seeker, ok := file.(interface {
+			Seek(int64, int) (int64, error)
+		}); ok {
+			seeker.Seek(0, 0)
+		} else {
+			writeError(w, http.StatusInternalServerError, "Cannot re-read file after sniffing")
+			return
+		}
+	}
+
+	if err := h.preferences.SaveWallpaper(file, contentType, header.Size); err != nil {
+		if strings.Contains(err.Error(), "too large") {
+			writeError(w, http.StatusRequestEntityTooLarge, err.Error())
+			return
+		}
+		if strings.Contains(err.Error(), "unsupported") || strings.Contains(err.Error(), "invalid") {
+			writeError(w, http.StatusBadRequest, err.Error())
+			return
+		}
+		writeError(w, http.StatusInternalServerError, "Failed to save wallpaper: "+err.Error())
+		return
+	}
+
+	writeJSON(w, http.StatusOK, map[string]interface{}{
+		"status":  "ok",
+		"message": "Wallpaper uploaded successfully",
+	})
+}
+
+// GetWallpaper godoc
+// @Summary Get custom wallpaper
+// @Description Returns the stored custom wallpaper image. Returns 404 if no custom wallpaper is set.
+// @Tags Preferences
+// @Produce image/jpeg,image/png,image/webp
+// @Security BearerAuth
+// @Success 200 {file} binary "Wallpaper image"
+// @Failure 404 {object} ErrorResponse "No custom wallpaper set"
+// @Router /preferences/wallpaper [get]
+func (h *ExtendedHandlers) GetWallpaper(w http.ResponseWriter, r *http.Request) {
+	path, mime := h.preferences.GetWallpaperPath()
+	if path == "" {
+		writeError(w, http.StatusNotFound, "No custom wallpaper set")
+		return
+	}
+
+	w.Header().Set("Content-Type", mime)
+	w.Header().Set("Cache-Control", "public, max-age=3600")
+	http.ServeFile(w, r, path)
+}
+
+// DeleteWallpaper godoc
+// @Summary Delete custom wallpaper
+// @Description Removes the stored custom wallpaper image.
+// @Tags Preferences
+// @Produce json
+// @Security BearerAuth
+// @Success 200 {object} map[string]interface{} "Wallpaper deleted"
+// @Router /preferences/wallpaper [delete]
+func (h *ExtendedHandlers) DeleteWallpaper(w http.ResponseWriter, r *http.Request) {
+	h.preferences.DeleteWallpaper()
+	writeJSON(w, http.StatusOK, map[string]interface{}{
+		"status":  "ok",
+		"message": "Custom wallpaper removed",
+	})
+}
+
 // =============================================================================
 // Favorites
 // =============================================================================

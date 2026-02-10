@@ -595,13 +595,14 @@ func (h *Handlers) GetStorage(w http.ResponseWriter, r *http.Request) {
 }
 
 // =============================================================================
-// Services
+// Services (DEPRECATED — use /apps/* via Orchestrator instead)
 // =============================================================================
 
 // ListServices godoc
 // @Summary List Docker services
-// @Description Returns list of all Docker services/containers
+// @Description Returns list of all Docker services/containers. Deprecated: use GET /apps instead.
 // @Tags Services
+// @Deprecated
 // @Produce json
 // @Security BearerAuth
 // @Success 200 {object} map[string]interface{} "Docker services"
@@ -622,8 +623,9 @@ func (h *Handlers) ListServices(w http.ResponseWriter, r *http.Request) {
 
 // GetService godoc
 // @Summary Get Docker service
-// @Description Returns details of a specific Docker service/container
+// @Description Returns details of a specific Docker service/container. Deprecated: use GET /apps/{name} instead.
 // @Tags Services
+// @Deprecated
 // @Produce json
 // @Security BearerAuth
 // @Param name path string true "Service name"
@@ -646,8 +648,9 @@ func (h *Handlers) GetService(w http.ResponseWriter, r *http.Request) {
 
 // StartService godoc
 // @Summary Start Docker service
-// @Description Starts a Docker service/container
+// @Description Starts a Docker service/container. Deprecated: use POST /apps/{name}/start instead.
 // @Tags Services
+// @Deprecated
 // @Produce json
 // @Security BearerAuth
 // @Param name path string true "Service name"
@@ -679,8 +682,9 @@ func (h *Handlers) StartService(w http.ResponseWriter, r *http.Request) {
 
 // StopService godoc
 // @Summary Stop Docker service
-// @Description Stops a Docker service/container
+// @Description Stops a Docker service/container. Deprecated: use POST /apps/{name}/stop instead.
 // @Tags Services
+// @Deprecated
 // @Produce json
 // @Security BearerAuth
 // @Param name path string true "Service name"
@@ -712,8 +716,9 @@ func (h *Handlers) StopService(w http.ResponseWriter, r *http.Request) {
 
 // RestartService godoc
 // @Summary Restart Docker service
-// @Description Restarts a Docker service/container
+// @Description Restarts a Docker service/container. Deprecated: use POST /apps/{name}/restart instead.
 // @Tags Services
+// @Deprecated
 // @Produce json
 // @Security BearerAuth
 // @Param name path string true "Service name"
@@ -740,8 +745,9 @@ func (h *Handlers) RestartService(w http.ResponseWriter, r *http.Request) {
 
 // EnableService godoc
 // @Summary Enable Docker service
-// @Description Enables a Docker service for auto-start
+// @Description Enables a Docker service for auto-start. Deprecated: use POST /apps/{name}/enable instead.
 // @Tags Services
+// @Deprecated
 // @Produce json
 // @Security BearerAuth
 // @Param name path string true "Service name"
@@ -769,8 +775,9 @@ func (h *Handlers) EnableService(w http.ResponseWriter, r *http.Request) {
 
 // DisableService godoc
 // @Summary Disable Docker service
-// @Description Disables a Docker service from auto-start
+// @Description Disables a Docker service from auto-start. Deprecated: use POST /apps/{name}/disable instead.
 // @Tags Services
+// @Deprecated
 // @Produce json
 // @Security BearerAuth
 // @Param name path string true "Service name"

@@ -507,23 +507,35 @@ type StatsHistoryResponse struct {
 // =============================================================================
 
 type Preferences struct {
-	SetupComplete       bool     `json:"setupComplete"`
-	TourComplete        bool     `json:"tourComplete"`
-	Favorites           []string `json:"favorites"`
-	RecentServices      []string `json:"recentServices"`
-	Theme               string   `json:"theme"`
-	CollapsedCategories []string `json:"collapsedCategories"`
-	AdminExpanded       bool     `json:"adminExpanded"`
+	SetupComplete       bool           `json:"setupComplete"`
+	TourComplete        bool           `json:"tourComplete"`
+	Favorites           []string       `json:"favorites"`
+	RecentServices      []string       `json:"recentServices"`
+	Theme               string         `json:"theme"`
+	CollapsedCategories []string       `json:"collapsedCategories"`
+	AdminExpanded       bool           `json:"adminExpanded"`
+	UIMode              string         `json:"ui_mode"`
+	Wallpaper           *WallpaperPref `json:"wallpaper,omitempty"`
+}
+
+// WallpaperPref stores wallpaper configuration for Standard mode.
+// Type is one of: "preset", "custom", "none".
+// Value holds the preset ID (e.g. "topo-dark") or the serve URL for custom.
+type WallpaperPref struct {
+	Type  string `json:"type"`            // "preset" | "custom" | "none"
+	Value string `json:"value,omitempty"` // preset ID or URL, empty for "none"
 }
 
 type PreferencesUpdate struct {
-	SetupComplete       *bool    `json:"setupComplete,omitempty"`
-	TourComplete        *bool    `json:"tourComplete,omitempty"`
-	Favorites           []string `json:"favorites,omitempty"`
-	RecentServices      []string `json:"recentServices,omitempty"`
-	Theme               *string  `json:"theme,omitempty"`
-	CollapsedCategories []string `json:"collapsedCategories,omitempty"`
-	AdminExpanded       *bool    `json:"adminExpanded,omitempty"`
+	SetupComplete       *bool          `json:"setupComplete,omitempty"`
+	TourComplete        *bool          `json:"tourComplete,omitempty"`
+	Favorites           []string       `json:"favorites,omitempty"`
+	RecentServices      []string       `json:"recentServices,omitempty"`
+	Theme               *string        `json:"theme,omitempty"`
+	CollapsedCategories []string       `json:"collapsedCategories,omitempty"`
+	AdminExpanded       *bool          `json:"adminExpanded,omitempty"`
+	UIMode              *string        `json:"ui_mode,omitempty"`
+	Wallpaper           *WallpaperPref `json:"wallpaper,omitempty"`
 }
 
 // =============================================================================

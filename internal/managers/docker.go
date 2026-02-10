@@ -168,6 +168,39 @@ func (m *DockerManager) GetContainerStatus(ctx context.Context, name string) (st
 	return inspect.State.Status, nil
 }
 
+// GetContainerIP returns the first non-empty IP address found for a container.
+// It prefers the docker_gwbridge network (used for outbound traffic in Swarm),
+// then falls back to any other network, and finally the global NetworkSettings IP.
+func (m *DockerManager) GetContainerIP(ctx context.Context, name string) (string, error) {
+	inspect, err := m.client.ContainerInspect(ctx, name)
+	if err != nil {
+		return "", fmt.Errorf("failed to inspect container %s: %w", name, err)
+	}
+
+	if inspect.NetworkSettings == nil {
+		return "", fmt.Errorf("container %s has no network settings", name)
+	}
+
+	// Prefer docker_gwbridge (Swarm outbound)
+	if gw, ok := inspect.NetworkSettings.Networks["docker_gwbridge"]; ok && gw.IPAddress != "" {
+		return gw.IPAddress, nil
+	}
+
+	// Fall back to any network with an IP
+	for _, net := range inspect.NetworkSettings.Networks {
+		if net.IPAddress != "" {
+			return net.IPAddress, nil
+		}
+	}
+
+	// Global fallback
+	if inspect.NetworkSettings.IPAddress != "" {
+		return inspect.NetworkSettings.IPAddress, nil
+	}
+
+	return "", fmt.Errorf("container %s has no IP address", name)
+}
+
 // StartContainer starts a container
 func (m *DockerManager) StartContainer(ctx context.Context, name string) error {
 	return m.client.ContainerStart(ctx, name, container.StartOptions{})
