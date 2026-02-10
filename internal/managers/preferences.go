@@ -304,6 +304,10 @@ func mergeDashboardLayout(existing, update *models.DashboardLayoutConfig) *model
 	if update.ShowCoreServices != nil {
 		existing.ShowCoreServices = update.ShowCoreServices
 	}
+	// Layout lock (Session 6)
+	if update.LayoutLocked != nil {
+		existing.LayoutLocked = update.LayoutLocked
+	}
 	return existing
 }
 

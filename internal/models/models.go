@@ -557,6 +557,9 @@ type DashboardLayoutConfig struct {
 	ShowInfoBar      *bool `json:"show_info_bar,omitempty"`
 	ShowSwarm        *bool `json:"show_swarm,omitempty"`
 	ShowCoreServices *bool `json:"show_core_services,omitempty"`
+
+	// Layout lock (Session 6) — prevents entering edit mode
+	LayoutLocked *bool `json:"layout_locked,omitempty"`
 }
 
 // DashboardConfig holds per-mode dashboard customization.
