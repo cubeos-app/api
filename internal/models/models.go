@@ -506,16 +506,55 @@ type StatsHistoryResponse struct {
 // Preferences
 // =============================================================================
 
+// QuickAction represents a user-configured quick action button on the dashboard.
+type QuickAction struct {
+	ID    string `json:"id"`              // unique action identifier (e.g. "reboot", "vpn-toggle")
+	Label string `json:"label,omitempty"` // display label override
+	Icon  string `json:"icon,omitempty"`  // icon name override
+}
+
+// DashboardLayoutConfig holds layout-specific settings per UI mode.
+type DashboardLayoutConfig struct {
+	MyAppsRows   *int     `json:"my_apps_rows,omitempty"`  // rows shown in My Apps grid
+	FavoriteCols *int     `json:"favorite_cols,omitempty"` // columns in favorites grid
+	WidgetOrder  []string `json:"widget_order,omitempty"`  // ordered list of widget IDs
+}
+
+// DashboardConfig holds all dashboard customization settings.
+// Stored as a nested object inside Preferences.
+type DashboardConfig struct {
+	// Widget visibility toggles (pointer bools for optional/omit-if-unset)
+	ShowClock       *bool `json:"show_clock,omitempty"`
+	ShowSystemVital *bool `json:"show_system_vitals,omitempty"`
+	ShowNetwork     *bool `json:"show_network,omitempty"`
+	ShowAlerts      *bool `json:"show_alerts,omitempty"`
+	ShowFavorites   *bool `json:"show_favorites,omitempty"`
+	ShowMyApps      *bool `json:"show_my_apps,omitempty"`
+	ShowServiceGrid *bool `json:"show_service_grid,omitempty"`
+
+	// Display format preferences
+	ClockFormat string `json:"clock_format,omitempty"` // "12h" or "24h"
+	DateFormat  string `json:"date_format,omitempty"`  // e.g. "long", "short", "iso"
+
+	// Quick actions shown in the dashboard
+	QuickActions []QuickAction `json:"quick_actions,omitempty"`
+
+	// Per-mode layout settings
+	Standard *DashboardLayoutConfig `json:"standard,omitempty"`
+	Advanced *DashboardLayoutConfig `json:"advanced,omitempty"`
+}
+
 type Preferences struct {
-	SetupComplete       bool           `json:"setupComplete"`
-	TourComplete        bool           `json:"tourComplete"`
-	Favorites           []string       `json:"favorites"`
-	RecentServices      []string       `json:"recentServices"`
-	Theme               string         `json:"theme"`
-	CollapsedCategories []string       `json:"collapsedCategories"`
-	AdminExpanded       bool           `json:"adminExpanded"`
-	UIMode              string         `json:"ui_mode"`
-	Wallpaper           *WallpaperPref `json:"wallpaper,omitempty"`
+	SetupComplete       bool             `json:"setupComplete"`
+	TourComplete        bool             `json:"tourComplete"`
+	Favorites           []string         `json:"favorites"`
+	RecentServices      []string         `json:"recentServices"`
+	Theme               string           `json:"theme"`
+	CollapsedCategories []string         `json:"collapsedCategories"`
+	AdminExpanded       bool             `json:"adminExpanded"`
+	UIMode              string           `json:"ui_mode"`
+	Wallpaper           *WallpaperPref   `json:"wallpaper,omitempty"`
+	Dashboard           *DashboardConfig `json:"dashboard,omitempty"`
 }
 
 // WallpaperPref stores wallpaper configuration for Standard mode.
@@ -527,15 +566,16 @@ type WallpaperPref struct {
 }
 
 type PreferencesUpdate struct {
-	SetupComplete       *bool          `json:"setupComplete,omitempty"`
-	TourComplete        *bool          `json:"tourComplete,omitempty"`
-	Favorites           []string       `json:"favorites,omitempty"`
-	RecentServices      []string       `json:"recentServices,omitempty"`
-	Theme               *string        `json:"theme,omitempty"`
-	CollapsedCategories []string       `json:"collapsedCategories,omitempty"`
-	AdminExpanded       *bool          `json:"adminExpanded,omitempty"`
-	UIMode              *string        `json:"ui_mode,omitempty"`
-	Wallpaper           *WallpaperPref `json:"wallpaper,omitempty"`
+	SetupComplete       *bool            `json:"setupComplete,omitempty"`
+	TourComplete        *bool            `json:"tourComplete,omitempty"`
+	Favorites           []string         `json:"favorites,omitempty"`
+	RecentServices      []string         `json:"recentServices,omitempty"`
+	Theme               *string          `json:"theme,omitempty"`
+	CollapsedCategories []string         `json:"collapsedCategories,omitempty"`
+	AdminExpanded       *bool            `json:"adminExpanded,omitempty"`
+	UIMode              *string          `json:"ui_mode,omitempty"`
+	Wallpaper           *WallpaperPref   `json:"wallpaper,omitempty"`
+	Dashboard           *DashboardConfig `json:"dashboard,omitempty"`
 }
 
 // =============================================================================

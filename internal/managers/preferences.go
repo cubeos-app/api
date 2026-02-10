@@ -106,6 +106,7 @@ func (pm *PreferencesManager) load() {
 	pm.prefs.TourComplete = loaded.TourComplete
 	pm.prefs.AdminExpanded = loaded.AdminExpanded
 	pm.prefs.Wallpaper = loaded.Wallpaper
+	pm.prefs.Dashboard = loaded.Dashboard
 
 	if loaded.Favorites != nil {
 		pm.prefs.Favorites = loaded.Favorites
@@ -182,6 +183,52 @@ func (pm *PreferencesManager) Update(update models.PreferencesUpdate) (models.Pr
 	}
 	if update.Wallpaper != nil {
 		pm.prefs.Wallpaper = update.Wallpaper
+	}
+	if update.Dashboard != nil {
+		// Merge dashboard config: if existing config is nil, use the update directly.
+		// Otherwise merge at the top level so partial updates don't wipe sibling fields.
+		if pm.prefs.Dashboard == nil {
+			pm.prefs.Dashboard = update.Dashboard
+		} else {
+			d := pm.prefs.Dashboard
+			u := update.Dashboard
+			if u.ShowClock != nil {
+				d.ShowClock = u.ShowClock
+			}
+			if u.ShowSystemVital != nil {
+				d.ShowSystemVital = u.ShowSystemVital
+			}
+			if u.ShowNetwork != nil {
+				d.ShowNetwork = u.ShowNetwork
+			}
+			if u.ShowAlerts != nil {
+				d.ShowAlerts = u.ShowAlerts
+			}
+			if u.ShowFavorites != nil {
+				d.ShowFavorites = u.ShowFavorites
+			}
+			if u.ShowMyApps != nil {
+				d.ShowMyApps = u.ShowMyApps
+			}
+			if u.ShowServiceGrid != nil {
+				d.ShowServiceGrid = u.ShowServiceGrid
+			}
+			if u.ClockFormat != "" {
+				d.ClockFormat = u.ClockFormat
+			}
+			if u.DateFormat != "" {
+				d.DateFormat = u.DateFormat
+			}
+			if u.QuickActions != nil {
+				d.QuickActions = u.QuickActions
+			}
+			if u.Standard != nil {
+				d.Standard = u.Standard
+			}
+			if u.Advanced != nil {
+				d.Advanced = u.Advanced
+			}
+		}
 	}
 
 	// Save to file
