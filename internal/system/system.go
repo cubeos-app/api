@@ -1,14 +1,12 @@
-// Package system provides system information and monitoring.
+// Package system provides system information and monitoring types.
 //
-// This package will be fully implemented in Sprint 1.1 to support:
+// Supported data:
 // - System info (hostname, OS, architecture, uptime)
 // - Raspberry Pi info (model, serial, revision)
 // - CPU stats (usage, temperature)
 // - Memory stats (total, used, available)
 // - Disk stats (per mount point)
 // - Network interfaces
-//
-// See CUBEOS_PROJECT_PLAN.md tasks BE-006 and BE-007.
 package system
 
 // Info represents static system information.
@@ -41,9 +39,3 @@ type Stats struct {
 	LoadAvg5       float64 `json:"load_avg_5"`
 	LoadAvg15      float64 `json:"load_avg_15"`
 }
-
-// TODO: Implement in Sprint 1.1:
-// - GetInfo() (*Info, error)
-// - GetStats() (*Stats, error)
-// - Reboot() error
-// - Shutdown() error
