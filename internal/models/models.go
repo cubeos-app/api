@@ -506,40 +506,41 @@ type StatsHistoryResponse struct {
 // Preferences
 // =============================================================================
 
-// QuickAction represents a user-configured quick action button on the dashboard.
-type QuickAction struct {
-	ID    string `json:"id"`              // unique action identifier (e.g. "reboot", "vpn-toggle")
-	Label string `json:"label,omitempty"` // display label override
-	Icon  string `json:"icon,omitempty"`  // icon name override
-}
-
-// DashboardLayoutConfig holds layout-specific settings per UI mode.
+// DashboardLayoutConfig holds all settings for a single UI mode (Standard or Advanced).
+// Every field uses a pointer or omitempty so partial updates don't wipe sibling fields.
 type DashboardLayoutConfig struct {
-	MyAppsRows   *int     `json:"my_apps_rows,omitempty"`  // rows shown in My Apps grid
-	FavoriteCols *int     `json:"favorite_cols,omitempty"` // columns in favorites grid
-	WidgetOrder  []string `json:"widget_order,omitempty"`  // ordered list of widget IDs
+	// Widget visibility
+	ShowClock        *bool `json:"show_clock,omitempty"`
+	ShowSearch       *bool `json:"show_search,omitempty"`
+	ShowStatusPill   *bool `json:"show_status_pill,omitempty"`
+	ShowSystemVitals *bool `json:"show_system_vitals,omitempty"`
+	ShowNetwork      *bool `json:"show_network_widget,omitempty"`
+	ShowDisk         *bool `json:"show_disk_widget,omitempty"`
+	ShowSignals      *bool `json:"show_signals_widget,omitempty"`
+	ShowQuickActions *bool `json:"show_quick_actions,omitempty"`
+	ShowFavorites    *bool `json:"show_favorites,omitempty"`
+	ShowRecent       *bool `json:"show_recent,omitempty"`
+	ShowMyApps       *bool `json:"show_my_apps,omitempty"`
+	ShowAlerts       *bool `json:"show_alerts,omitempty"`
+
+	// Clock settings
+	ClockFormat  string `json:"clock_format,omitempty"` // "12h" | "24h"
+	DateFormat   string `json:"date_format,omitempty"`  // "long" | "medium" | "short" | "iso" | "us" | "eu"
+	ShowSeconds  *bool  `json:"show_seconds,omitempty"`
+	ShowGreeting *bool  `json:"show_greeting,omitempty"`
+
+	// Layout settings
+	MyAppsRows   int      `json:"my_apps_rows,omitempty"`  // 1-5, 0 = show all
+	FavoriteCols int      `json:"favorite_cols,omitempty"` // 2-6
+	QuickActions []string `json:"quick_actions,omitempty"` // ordered list of action IDs
+
+	// Widget order (for future drag-and-drop)
+	WidgetOrder []string `json:"widget_order,omitempty"` // e.g. ["clock","search","status","vitals","network","actions","launcher"]
 }
 
-// DashboardConfig holds all dashboard customization settings.
-// Stored as a nested object inside Preferences.
+// DashboardConfig holds per-mode dashboard customization.
+// Each UI mode (Standard, Advanced) has its own independent layout config.
 type DashboardConfig struct {
-	// Widget visibility toggles (pointer bools for optional/omit-if-unset)
-	ShowClock       *bool `json:"show_clock,omitempty"`
-	ShowSystemVital *bool `json:"show_system_vitals,omitempty"`
-	ShowNetwork     *bool `json:"show_network,omitempty"`
-	ShowAlerts      *bool `json:"show_alerts,omitempty"`
-	ShowFavorites   *bool `json:"show_favorites,omitempty"`
-	ShowMyApps      *bool `json:"show_my_apps,omitempty"`
-	ShowServiceGrid *bool `json:"show_service_grid,omitempty"`
-
-	// Display format preferences
-	ClockFormat string `json:"clock_format,omitempty"` // "12h" or "24h"
-	DateFormat  string `json:"date_format,omitempty"`  // e.g. "long", "short", "iso"
-
-	// Quick actions shown in the dashboard
-	QuickActions []QuickAction `json:"quick_actions,omitempty"`
-
-	// Per-mode layout settings
 	Standard *DashboardLayoutConfig `json:"standard,omitempty"`
 	Advanced *DashboardLayoutConfig `json:"advanced,omitempty"`
 }

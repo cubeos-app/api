@@ -185,48 +185,16 @@ func (pm *PreferencesManager) Update(update models.PreferencesUpdate) (models.Pr
 		pm.prefs.Wallpaper = update.Wallpaper
 	}
 	if update.Dashboard != nil {
-		// Merge dashboard config: if existing config is nil, use the update directly.
-		// Otherwise merge at the top level so partial updates don't wipe sibling fields.
+		// Merge dashboard config: each mode (Standard/Advanced) is merged independently
+		// so that updating one mode doesn't wipe the other.
 		if pm.prefs.Dashboard == nil {
 			pm.prefs.Dashboard = update.Dashboard
 		} else {
-			d := pm.prefs.Dashboard
-			u := update.Dashboard
-			if u.ShowClock != nil {
-				d.ShowClock = u.ShowClock
+			if update.Dashboard.Standard != nil {
+				pm.prefs.Dashboard.Standard = mergeDashboardLayout(pm.prefs.Dashboard.Standard, update.Dashboard.Standard)
 			}
-			if u.ShowSystemVital != nil {
-				d.ShowSystemVital = u.ShowSystemVital
-			}
-			if u.ShowNetwork != nil {
-				d.ShowNetwork = u.ShowNetwork
-			}
-			if u.ShowAlerts != nil {
-				d.ShowAlerts = u.ShowAlerts
-			}
-			if u.ShowFavorites != nil {
-				d.ShowFavorites = u.ShowFavorites
-			}
-			if u.ShowMyApps != nil {
-				d.ShowMyApps = u.ShowMyApps
-			}
-			if u.ShowServiceGrid != nil {
-				d.ShowServiceGrid = u.ShowServiceGrid
-			}
-			if u.ClockFormat != "" {
-				d.ClockFormat = u.ClockFormat
-			}
-			if u.DateFormat != "" {
-				d.DateFormat = u.DateFormat
-			}
-			if u.QuickActions != nil {
-				d.QuickActions = u.QuickActions
-			}
-			if u.Standard != nil {
-				d.Standard = u.Standard
-			}
-			if u.Advanced != nil {
-				d.Advanced = u.Advanced
+			if update.Dashboard.Advanced != nil {
+				pm.prefs.Dashboard.Advanced = mergeDashboardLayout(pm.prefs.Dashboard.Advanced, update.Dashboard.Advanced)
 			}
 		}
 	}
@@ -237,6 +205,80 @@ func (pm *PreferencesManager) Update(update models.PreferencesUpdate) (models.Pr
 	}
 
 	return pm.prefs, nil
+}
+
+// mergeDashboardLayout merges an incoming DashboardLayoutConfig update into an
+// existing config. If the existing config is nil, the update is returned as-is.
+// Only non-nil/non-zero fields from the update overwrite existing values, so
+// partial updates (e.g. toggling a single widget) don't wipe sibling fields.
+func mergeDashboardLayout(existing, update *models.DashboardLayoutConfig) *models.DashboardLayoutConfig {
+	if existing == nil {
+		return update
+	}
+	// Widget visibility
+	if update.ShowClock != nil {
+		existing.ShowClock = update.ShowClock
+	}
+	if update.ShowSearch != nil {
+		existing.ShowSearch = update.ShowSearch
+	}
+	if update.ShowStatusPill != nil {
+		existing.ShowStatusPill = update.ShowStatusPill
+	}
+	if update.ShowSystemVitals != nil {
+		existing.ShowSystemVitals = update.ShowSystemVitals
+	}
+	if update.ShowNetwork != nil {
+		existing.ShowNetwork = update.ShowNetwork
+	}
+	if update.ShowDisk != nil {
+		existing.ShowDisk = update.ShowDisk
+	}
+	if update.ShowSignals != nil {
+		existing.ShowSignals = update.ShowSignals
+	}
+	if update.ShowQuickActions != nil {
+		existing.ShowQuickActions = update.ShowQuickActions
+	}
+	if update.ShowFavorites != nil {
+		existing.ShowFavorites = update.ShowFavorites
+	}
+	if update.ShowRecent != nil {
+		existing.ShowRecent = update.ShowRecent
+	}
+	if update.ShowMyApps != nil {
+		existing.ShowMyApps = update.ShowMyApps
+	}
+	if update.ShowAlerts != nil {
+		existing.ShowAlerts = update.ShowAlerts
+	}
+	// Clock settings
+	if update.ClockFormat != "" {
+		existing.ClockFormat = update.ClockFormat
+	}
+	if update.DateFormat != "" {
+		existing.DateFormat = update.DateFormat
+	}
+	if update.ShowSeconds != nil {
+		existing.ShowSeconds = update.ShowSeconds
+	}
+	if update.ShowGreeting != nil {
+		existing.ShowGreeting = update.ShowGreeting
+	}
+	// Layout settings
+	if update.MyAppsRows != 0 {
+		existing.MyAppsRows = update.MyAppsRows
+	}
+	if update.FavoriteCols != 0 {
+		existing.FavoriteCols = update.FavoriteCols
+	}
+	if update.QuickActions != nil {
+		existing.QuickActions = update.QuickActions
+	}
+	if update.WidgetOrder != nil {
+		existing.WidgetOrder = update.WidgetOrder
+	}
+	return existing
 }
 
 // Reset resets preferences to defaults and removes custom wallpaper.
