@@ -297,13 +297,28 @@ func (m *AppStoreManager) RemoveAppWithProgress(appID string, deleteData bool, j
 	job.Emit("remove_dns", 55, "Removing DNS entry...")
 
 	var storedFQDN string
+	var storeID string
 	m.db.db.QueryRow(`SELECT f.fqdn FROM fqdns f
 		JOIN apps a ON a.id = f.app_id WHERE a.name = ? LIMIT 1`, appID).Scan(&storedFQDN)
 	if storedFQDN == "" {
-		storedFQDN = fmt.Sprintf("%s.%s", appID, m.baseDomain)
-	}
-	if err := m.removePiholeDNS(storedFQDN); err != nil {
-		log.Warn().Err(err).Str("fqdn", storedFQDN).Msg("failed to remove DNS entry")
+		// Fallback: try prettified subdomain first (matches install behavior), then raw appID
+		m.db.db.QueryRow(`SELECT store_id FROM apps WHERE name = ?`, appID).Scan(&storeID)
+		prettified := prettifySubdomain(appID, storeID)
+		fqdnsToTry := []string{
+			fmt.Sprintf("%s.%s", prettified, m.baseDomain),
+		}
+		if prettified != appID {
+			fqdnsToTry = append(fqdnsToTry, fmt.Sprintf("%s.%s", appID, m.baseDomain))
+		}
+		for _, fqdn := range fqdnsToTry {
+			if err := m.removePiholeDNS(fqdn); err == nil {
+				log.Info().Str("fqdn", fqdn).Msg("removed DNS entry via fallback")
+			}
+		}
+	} else {
+		if err := m.removePiholeDNS(storedFQDN); err != nil {
+			log.Warn().Err(err).Str("fqdn", storedFQDN).Msg("failed to remove DNS entry")
+		}
 	}
 
 	// Step 4: Remove proxy (65%)
