@@ -215,10 +215,19 @@ func (m *AppStoreManager) InstallAppWithProgress(req *models.AppInstallRequest, 
 	if appFQDN != "" {
 		fqdnSubdomain := strings.TrimSuffix(appFQDN, "."+m.baseDomain)
 		var appID int64
-		if err := m.db.db.QueryRow("SELECT id FROM apps WHERE name = ?", installed.Name).Scan(&appID); err == nil {
-			m.db.db.Exec(`INSERT INTO fqdns (app_id, fqdn, subdomain, backend_port, npm_proxy_id)
+		if err := m.db.db.QueryRow("SELECT id FROM apps WHERE name = ?", installed.Name).Scan(&appID); err != nil {
+			log.Error().Err(err).Str("app", installed.Name).Msg("failed to find app_id for FQDN insert")
+		} else {
+			_, fqdnErr := m.db.db.Exec(`INSERT INTO fqdns (app_id, fqdn, subdomain, backend_port, npm_proxy_id)
 				VALUES (?, ?, ?, ?, ?) ON CONFLICT DO NOTHING`,
 				appID, appFQDN, fqdnSubdomain, appPort, npmProxyID)
+			if fqdnErr != nil {
+				log.Error().Err(fqdnErr).Str("fqdn", appFQDN).Int64("app_id", appID).Int("port", appPort).
+					Msg("failed to insert FQDN record")
+			} else {
+				log.Info().Str("fqdn", appFQDN).Int64("app_id", appID).Int("port", appPort).
+					Msg("stored FQDN record")
+			}
 		}
 	}
 

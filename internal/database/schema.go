@@ -9,7 +9,7 @@ import (
 )
 
 // CurrentSchemaVersion tracks the database schema version for migrations.
-const CurrentSchemaVersion = 12
+const CurrentSchemaVersion = 13
 
 // Schema defines the unified CubeOS database schema.
 // Design Principles:

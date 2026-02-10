@@ -523,6 +523,21 @@ var migrations = []Migration{
 			return nil
 		},
 	},
+
+	// Version 13: Add npm_proxy_id column to fqdns table
+	// Fixes silent INSERT failure when install pipeline tried to store npm_proxy_id
+	{
+		Version:     13,
+		Description: "Add npm_proxy_id column to fqdns table",
+		Up: func(db *sql.DB) error {
+			_, err := db.Exec(`ALTER TABLE fqdns ADD COLUMN npm_proxy_id INTEGER DEFAULT NULL`)
+			if err != nil && !isDuplicateColumnError(err) {
+				return fmt.Errorf("failed to add npm_proxy_id column: %w", err)
+			}
+			log.Info().Msg("Migration 13: Added npm_proxy_id column to fqdns table")
+			return nil
+		},
+	},
 }
 
 // isDuplicateColumnError checks if an error is a "duplicate column" error
