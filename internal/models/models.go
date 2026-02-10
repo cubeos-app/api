@@ -547,6 +547,9 @@ type DashboardLayoutConfig struct {
 	// Per-widget opacity map (0=transparent, 100=opaque)
 	WidgetOpacity json.RawMessage `json:"widget_opacity,omitempty"` // e.g. {"clock":0,"vitals":100}
 
+	// Per-widget dimensions (width: 'half'|'full', height: 'auto'|'collapsed'|number)
+	WidgetDimensions json.RawMessage `json:"widget_dimensions,omitempty"` // e.g. {"vitals":{"width":"full","height":"auto"}}
+
 	// Advanced mode section ordering
 	AdvancedSectionOrder json.RawMessage `json:"advanced_section_order,omitempty"` // e.g. ["gauges","infobar","disk-signals",...]
 

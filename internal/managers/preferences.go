@@ -286,6 +286,10 @@ func mergeDashboardLayout(existing, update *models.DashboardLayoutConfig) *model
 	if update.WidgetOpacity != nil {
 		existing.WidgetOpacity = update.WidgetOpacity
 	}
+	// Per-widget dimensions
+	if update.WidgetDimensions != nil {
+		existing.WidgetDimensions = update.WidgetDimensions
+	}
 	// Advanced section order
 	if update.AdvancedSectionOrder != nil {
 		existing.AdvancedSectionOrder = update.AdvancedSectionOrder
