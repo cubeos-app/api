@@ -419,16 +419,16 @@ func main() {
 	// NOTE: WebSocket endpoints moved inside /api/v1/ws (auth-protected).
 	// The /monitoring/websocket endpoint also provides authenticated WS access.
 
-	// Swagger documentation
-	r.Get("/api/v1/docs/*", httpSwagger.Handler(
-		httpSwagger.URL("/api/v1/docs/doc.json"),
-		httpSwagger.DeepLinking(true),
-		httpSwagger.DocExpansion("none"),
-		httpSwagger.DomID("swagger-ui"),
-	))
-
 	// API v1 routes
 	r.Route("/api/v1", func(r chi.Router) {
+		// Swagger documentation (public, no auth required)
+		r.Get("/swagger/*", httpSwagger.Handler(
+			httpSwagger.URL("/api/v1/swagger/doc.json"),
+			httpSwagger.DeepLinking(true),
+			httpSwagger.DocExpansion("none"),
+			httpSwagger.DomID("swagger-ui"),
+		))
+
 		// Public auth routes
 		r.Post("/auth/login", h.Login)
 
@@ -674,7 +674,7 @@ func main() {
 
 	go func() {
 		log.Info().Str("addr", addr).Msg("API listening")
-		log.Info().Str("url", "http://"+addr+"/api/v1/docs/index.html").Msg("Swagger UI available")
+		log.Info().Str("url", "http://"+addr+"/api/v1/swagger/index.html").Msg("Swagger UI available")
 		log.Info().Msg("HAL endpoints: /hardware, /hal/storage, /communication, /media, /hal/logs, /support/bundle.zip")
 		if err := srv.ListenAndServe(); err != nil && err != http.ErrServerClosed {
 			log.Fatal().Err(err).Msg("server failed")
