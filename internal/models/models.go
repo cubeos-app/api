@@ -1,6 +1,9 @@
 package models
 
-import "time"
+import (
+	"encoding/json"
+	"time"
+)
 
 // =============================================================================
 // Authentication
@@ -534,8 +537,23 @@ type DashboardLayoutConfig struct {
 	FavoriteCols int      `json:"favorite_cols,omitempty"` // 2-6
 	QuickActions []string `json:"quick_actions,omitempty"` // ordered list of action IDs
 
-	// Widget order (for future drag-and-drop)
+	// Widget order (legacy flat list, replaced by grid_layout)
 	WidgetOrder []string `json:"widget_order,omitempty"` // e.g. ["clock","search","status","vitals","network","actions","launcher"]
+
+	// Grid layout — row-based layout, each row holds 1-2 widget IDs.
+	// Uses json.RawMessage to pass through arbitrary JSON structures from the frontend.
+	GridLayout json.RawMessage `json:"grid_layout,omitempty"` // e.g. [{"row":["clock"]},{"row":["vitals","network"]}]
+
+	// Per-widget opacity map (0=transparent, 100=opaque)
+	WidgetOpacity json.RawMessage `json:"widget_opacity,omitempty"` // e.g. {"clock":0,"vitals":100}
+
+	// Advanced mode section ordering
+	AdvancedSectionOrder json.RawMessage `json:"advanced_section_order,omitempty"` // e.g. ["gauges","infobar","disk-signals",...]
+
+	// Advanced-specific section visibility
+	ShowInfoBar      *bool `json:"show_info_bar,omitempty"`
+	ShowSwarm        *bool `json:"show_swarm,omitempty"`
+	ShowCoreServices *bool `json:"show_core_services,omitempty"`
 }
 
 // DashboardConfig holds per-mode dashboard customization.

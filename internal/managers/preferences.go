@@ -278,6 +278,28 @@ func mergeDashboardLayout(existing, update *models.DashboardLayoutConfig) *model
 	if update.WidgetOrder != nil {
 		existing.WidgetOrder = update.WidgetOrder
 	}
+	// Grid layout (row-based)
+	if update.GridLayout != nil {
+		existing.GridLayout = update.GridLayout
+	}
+	// Per-widget opacity
+	if update.WidgetOpacity != nil {
+		existing.WidgetOpacity = update.WidgetOpacity
+	}
+	// Advanced section order
+	if update.AdvancedSectionOrder != nil {
+		existing.AdvancedSectionOrder = update.AdvancedSectionOrder
+	}
+	// Advanced-specific section visibility
+	if update.ShowInfoBar != nil {
+		existing.ShowInfoBar = update.ShowInfoBar
+	}
+	if update.ShowSwarm != nil {
+		existing.ShowSwarm = update.ShowSwarm
+	}
+	if update.ShowCoreServices != nil {
+		existing.ShowCoreServices = update.ShowCoreServices
+	}
 	return existing
 }
 
