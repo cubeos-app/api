@@ -4,9 +4,12 @@
 package managers
 
 import (
+	"bytes"
 	"context"
 	"database/sql"
+	"encoding/json"
 	"fmt"
+	"io"
 	"net/http"
 	"os"
 	"os/exec"
@@ -84,6 +87,8 @@ type NetworkManager struct {
 	apSSID              string
 	fallbackIP          string // V2
 	fallbackGateway     string // V2: Gateway for static fallback
+	piholeURL           string // Pi-hole API base URL (e.g. http://10.42.24.1:6001)
+	piholePassword      string // Pi-hole API password
 }
 
 // NewNetworkManager creates a new network manager (V2: loads VPN mode too)
@@ -95,6 +100,10 @@ func NewNetworkManager(cfg *config.Config, halClient *hal.Client, db *sqlx.DB) *
 	apSSID := getEnvOrDefault("CUBEOS_AP_SSID", "CubeOS")
 	fallbackIP := getEnvOrDefault("CUBEOS_FALLBACK_IP", DefaultFallbackIP)
 	fallbackGateway := getEnvOrDefault("CUBEOS_FALLBACK_GATEWAY", DefaultFallbackGateway)
+
+	// Pi-hole configuration (runs on host network, port 6001)
+	piholeURL := getEnvOrDefault("PIHOLE_URL", "http://10.42.24.1:6001")
+	piholePassword := getEnvOrDefault("PIHOLE_PASSWORD", "cubeos")
 
 	// Load mode and VPN from database
 	mode, vpnMode := loadConfigFromDB(db)
@@ -112,6 +121,8 @@ func NewNetworkManager(cfg *config.Config, halClient *hal.Client, db *sqlx.DB) *
 		apSSID:              apSSID,
 		fallbackIP:          fallbackIP,
 		fallbackGateway:     fallbackGateway,
+		piholeURL:           piholeURL,
+		piholePassword:      piholePassword,
 	}
 }
 
@@ -255,13 +266,30 @@ func (m *NetworkManager) GetStatus(ctx context.Context) (*NetworkStatus, error) 
 
 	// Find AP interface (wlan0) - only for non-server modes
 	if !m.IsServerMode() {
-		for _, iface := range interfaces {
-			if iface.Name == m.apInterface {
+		// Try HAL for live AP data first (real SSID/channel from hostapd)
+		if m.hal != nil {
+			halAPStatus, halErr := m.hal.GetAPStatus(ctx)
+			if halErr == nil && halAPStatus != nil && halAPStatus.SSID != "" {
 				status.AP = &AccessPointStatus{
-					Interface: iface.Name,
-					SSID:      m.apSSID,
+					Interface: halAPStatus.Interface,
+					SSID:      halAPStatus.SSID,
+					Channel:   halAPStatus.Channel,
 				}
-				break
+				if halAPStatus.Interface == "" {
+					status.AP.Interface = m.apInterface
+				}
+			}
+		}
+		// Fall back to interface list + stored SSID if HAL didn't work
+		if status.AP == nil {
+			for _, iface := range interfaces {
+				if iface.Name == m.apInterface {
+					status.AP = &AccessPointStatus{
+						Interface: iface.Name,
+						SSID:      m.apSSID,
+					}
+					break
+				}
 			}
 		}
 	}
@@ -654,19 +682,33 @@ func (m *NetworkManager) ScanWiFiNetworks(ctx context.Context) ([]models.WiFiNet
 	// Determine which interface to scan with
 	scanInterface := m.wifiClientInterface
 
-	// For SERVER_WIFI mode or when USB dongle not available, use wlan0
+	// For SERVER_WIFI mode, use wlan0
 	if m.currentMode == models.NetworkModeServerWiFi {
 		scanInterface = m.apInterface
+	} else {
+		// Try dynamic detection first — finds any USB WiFi dongle (wlx* interface)
+		// regardless of MAC address. This fixes the hardcoded interface name issue.
+		detected, err := m.DetectWiFiClientInterface(ctx)
+		if err == nil && detected != "" {
+			log.Info().Str("interface", detected).Msg("NetworkManager: WiFi scan using detected interface")
+			scanInterface = detected
+		} else {
+			log.Debug().Err(err).Str("fallback", scanInterface).
+				Msg("NetworkManager: no USB WiFi dongle detected, using configured interface")
+		}
 	}
 
-	// Try USB dongle first, fall back to wlan0
+	// Try the selected interface first
 	networks, err := m.hal.ScanWiFi(ctx, scanInterface)
 	if err != nil {
-		// Try wlan0 if USB dongle failed
+		// If the detected/configured interface failed and it's not wlan0, try wlan0
+		// Note: wlan0 in AP mode may not scan, but it's worth trying as a last resort
 		if scanInterface != m.apInterface {
+			log.Warn().Str("failed_iface", scanInterface).
+				Msg("NetworkManager: scan failed on selected interface, trying wlan0")
 			networks, err = m.hal.ScanWiFi(ctx, m.apInterface)
 			if err != nil {
-				return nil, fmt.Errorf("WiFi scan failed: %w", err)
+				return nil, fmt.Errorf("WiFi scan failed on all interfaces: %w", err)
 			}
 		} else {
 			return nil, fmt.Errorf("WiFi scan failed: %w", err)
@@ -689,10 +731,15 @@ func (m *NetworkManager) ScanWiFiNetworks(ctx context.Context) ([]models.WiFiNet
 
 // ConnectToWiFi connects to a WiFi network (upstream for ONLINE_WIFI mode)
 func (m *NetworkManager) ConnectToWiFi(ctx context.Context, ssid, password string) error {
-	// For regular modes, use USB dongle. For SERVER_WIFI, use wlan0
+	// For regular modes, use USB dongle (dynamically detected). For SERVER_WIFI, use wlan0.
 	iface := m.wifiClientInterface
 	if m.currentMode == models.NetworkModeServerWiFi {
 		iface = m.apInterface
+	} else {
+		// Try dynamic detection for USB WiFi dongle
+		if detected, err := m.DetectWiFiClientInterface(ctx); err == nil && detected != "" {
+			iface = detected
+		}
 	}
 
 	return m.hal.ConnectWiFi(ctx, iface, ssid, password)
@@ -703,6 +750,10 @@ func (m *NetworkManager) DisconnectWiFi(ctx context.Context) error {
 	iface := m.wifiClientInterface
 	if m.currentMode == models.NetworkModeServerWiFi {
 		iface = m.apInterface
+	} else {
+		if detected, err := m.DetectWiFiClientInterface(ctx); err == nil && detected != "" {
+			iface = detected
+		}
 	}
 	return m.hal.DisconnectWiFi(ctx, iface)
 }
@@ -810,9 +861,25 @@ func (m *NetworkManager) GetAPClients(ctx context.Context) ([]models.APClient, e
 		return []models.APClient{}, nil // No AP in server mode
 	}
 
+	// Try HAL AP clients endpoint (hostapd_cli all_sta)
 	resp, err := m.hal.GetAPClients(ctx)
 	if err != nil {
-		return nil, err
+		log.Warn().Err(err).Msg("NetworkManager: HAL GetAPClients failed, trying DHCP lease fallback")
+
+		// Fallback: parse DHCP leases from Pi-hole/dnsmasq
+		// Pi-hole stores DHCP leases in /etc/pihole/dhcp.leases (dnsmasq format)
+		leaseClients := m.parseDHCPLeases(ctx)
+		if len(leaseClients) > 0 {
+			log.Info().Int("count", len(leaseClients)).Msg("NetworkManager: got clients from DHCP leases")
+			return leaseClients, nil
+		}
+
+		return []models.APClient{}, nil // Graceful degradation: empty list, not error
+	}
+
+	if resp == nil || len(resp.Clients) == 0 {
+		log.Debug().Msg("NetworkManager: HAL returned 0 AP clients")
+		return []models.APClient{}, nil
 	}
 
 	// Fetch blocklist to populate Blocked field (best-effort)
@@ -837,7 +904,59 @@ func (m *NetworkManager) GetAPClients(ctx context.Context) ([]models.APClient, e
 			Blocked:       blockedMACs[strings.ToUpper(c.MACAddress)],
 		}
 	}
+
+	log.Debug().Int("count", len(clients)).Msg("NetworkManager: got AP clients from HAL")
 	return clients, nil
+}
+
+// parseDHCPLeases reads DHCP leases from dnsmasq/Pi-hole lease file.
+// This serves as a fallback when hostapd_cli is unavailable.
+// Lease format: <epoch> <mac> <ip> <hostname> <client-id>
+func (m *NetworkManager) parseDHCPLeases(ctx context.Context) []models.APClient {
+	leasePaths := []string{
+		"/cubeos/coreapps/pihole/appdata/etc-pihole/dhcp.leases",
+		"/host-root/cubeos/coreapps/pihole/appdata/etc-pihole/dhcp.leases",
+		"/host-root/var/lib/misc/dnsmasq.leases",
+		"/var/lib/misc/dnsmasq.leases",
+	}
+
+	for _, path := range leasePaths {
+		data, err := os.ReadFile(path)
+		if err != nil {
+			continue
+		}
+
+		var clients []models.APClient
+		lines := strings.Split(strings.TrimSpace(string(data)), "\n")
+		for _, line := range lines {
+			fields := strings.Fields(line)
+			if len(fields) < 4 {
+				continue
+			}
+			var connTime int64
+			if _, err := fmt.Sscanf(fields[0], "%d", &connTime); err != nil {
+				continue
+			}
+
+			hostname := fields[3]
+			if hostname == "*" {
+				hostname = ""
+			}
+
+			clients = append(clients, models.APClient{
+				MACAddress:    fields[1],
+				IPAddress:     fields[2],
+				Hostname:      hostname,
+				ConnectedTime: connTime,
+			})
+		}
+
+		if len(clients) > 0 {
+			return clients
+		}
+	}
+
+	return nil
 }
 
 // IsValidMode checks if a mode string is valid (V2)
@@ -874,9 +993,41 @@ type APConfig struct {
 	Password string `json:"password,omitempty"`
 }
 
-// GetAPConfig returns current AP configuration
+// GetAPConfig returns current AP configuration.
+// Priority: HAL live hostapd status → DB → environment/defaults.
+// This ensures the dashboard shows the ACTUAL running SSID/channel,
+// not a stale DB value or hardcoded default.
 func (m *NetworkManager) GetAPConfig(ctx context.Context) (*APConfig, error) {
-	// Try to read from database first
+	// 1. Try HAL live AP status first (reads from actual hostapd)
+	if m.hal != nil {
+		halStatus, err := m.hal.GetAPStatus(ctx)
+		if err == nil && halStatus != nil && halStatus.SSID != "" {
+			log.Debug().Str("ssid", halStatus.SSID).Int("channel", halStatus.Channel).
+				Msg("NetworkManager: GetAPConfig from live HAL")
+
+			// Merge hidden flag from DB (HAL doesn't report this)
+			hidden := false
+			if m.db != nil {
+				var dbHidden bool
+				dbErr := m.db.QueryRowContext(ctx,
+					`SELECT COALESCE(ap_hidden, 0) FROM network_config WHERE id = 1`).Scan(&dbHidden)
+				if dbErr == nil {
+					hidden = dbHidden
+				}
+			}
+
+			return &APConfig{
+				SSID:    halStatus.SSID,
+				Channel: halStatus.Channel,
+				Hidden:  hidden,
+			}, nil
+		}
+		if err != nil {
+			log.Warn().Err(err).Msg("NetworkManager: HAL GetAPStatus failed, falling back to DB")
+		}
+	}
+
+	// 2. Fall back to database
 	if m.db != nil {
 		var apSSID string
 		var apChannel int
@@ -891,13 +1042,12 @@ func (m *NetworkManager) GetAPConfig(ctx context.Context) (*APConfig, error) {
 				Hidden:  apHidden,
 			}, nil
 		}
-		// Fall through to defaults on error (including sql.ErrNoRows)
 		if err != sql.ErrNoRows {
 			log.Error().Err(err).Msg("NetworkManager: failed to read AP config from DB")
 		}
 	}
 
-	// Fallback to defaults from environment/config
+	// 3. Fallback to defaults from environment/config
 	return &APConfig{
 		SSID:    m.apSSID,
 		Channel: 7,
@@ -960,16 +1110,35 @@ type DNSConfig struct {
 	DNSServers   []string `json:"dns_servers,omitempty"`
 }
 
-// GetDNSConfig returns the current DNS configuration
+// GetDNSConfig returns the current DNS configuration.
+// Priority: Pi-hole API (upstream servers) → resolv.conf fallback.
+// In CubeOS, Pi-hole is the DNS server. The "DNS config" exposed to users
+// is Pi-hole's upstream forwarders, NOT the system's resolv.conf nameservers.
 func (m *NetworkManager) GetDNSConfig(ctx context.Context) (*DNSConfig, error) {
-	config := &DNSConfig{
-		PrimaryDNS:   models.DefaultGatewayIP, // Pi-hole default
-		SecondaryDNS: "",
-		DNSServers:   []string{models.DefaultGatewayIP},
+	// 1. Try Pi-hole API for upstream DNS servers
+	upstreams, err := m.getPiholeUpstreams(ctx)
+	if err == nil && len(upstreams) > 0 {
+		config := &DNSConfig{
+			PrimaryDNS: upstreams[0],
+			DNSServers: upstreams,
+		}
+		if len(upstreams) > 1 {
+			config.SecondaryDNS = upstreams[1]
+		}
+		log.Debug().Strs("upstreams", upstreams).Msg("NetworkManager: got DNS config from Pi-hole")
+		return config, nil
+	}
+	if err != nil {
+		log.Warn().Err(err).Msg("NetworkManager: Pi-hole API failed, falling back to resolv.conf")
 	}
 
-	// Try to read from /etc/resolv.conf
-	resolvPaths := []string{"/host/etc/resolv.conf", "/etc/resolv.conf"}
+	// 2. Fallback: read from resolv.conf (legacy behavior)
+	config := &DNSConfig{
+		PrimaryDNS: models.DefaultGatewayIP, // Pi-hole default
+		DNSServers: []string{models.DefaultGatewayIP},
+	}
+
+	resolvPaths := []string{"/host-root/etc/resolv.conf", "/etc/resolv.conf"}
 	for _, path := range resolvPaths {
 		data, err := os.ReadFile(path)
 		if err != nil {
@@ -1006,7 +1175,9 @@ func (m *NetworkManager) GetDNSConfig(ctx context.Context) (*DNSConfig, error) {
 	return config, nil
 }
 
-// SetDNSConfig sets the DNS configuration
+// SetDNSConfig sets the DNS configuration.
+// Primary target: Pi-hole upstream servers (via Pi-hole API).
+// Fallback: writes to resolv.conf (legacy behavior for non-Pi-hole setups).
 func (m *NetworkManager) SetDNSConfig(ctx context.Context, cfg *DNSConfig) error {
 	if cfg == nil {
 		return fmt.Errorf("DNS config cannot be nil")
@@ -1024,7 +1195,21 @@ func (m *NetworkManager) SetDNSConfig(ctx context.Context, cfg *DNSConfig) error
 		return fmt.Errorf("invalid secondary DNS server address: %s", cfg.SecondaryDNS)
 	}
 
-	// Build resolv.conf content
+	// Build upstream list
+	upstreams := []string{cfg.PrimaryDNS}
+	if cfg.SecondaryDNS != "" {
+		upstreams = append(upstreams, cfg.SecondaryDNS)
+	}
+
+	// 1. Try Pi-hole API to set upstream DNS servers
+	if err := m.setPiholeUpstreams(ctx, upstreams); err != nil {
+		log.Warn().Err(err).Msg("NetworkManager: Pi-hole API failed, falling back to resolv.conf")
+	} else {
+		log.Info().Strs("upstreams", upstreams).Msg("NetworkManager: DNS upstreams updated via Pi-hole")
+		return nil
+	}
+
+	// 2. Fallback: write to resolv.conf (legacy behavior)
 	var lines []string
 	if cfg.SearchDomain != "" {
 		lines = append(lines, fmt.Sprintf("search %s", cfg.SearchDomain))
@@ -1036,8 +1221,7 @@ func (m *NetworkManager) SetDNSConfig(ctx context.Context, cfg *DNSConfig) error
 
 	content := strings.Join(lines, "\n") + "\n"
 
-	// Try to write to /etc/resolv.conf
-	resolvPaths := []string{"/host/etc/resolv.conf", "/etc/resolv.conf"}
+	resolvPaths := []string{"/host-root/etc/resolv.conf", "/etc/resolv.conf"}
 	var lastErr error
 	for _, path := range resolvPaths {
 		if err := os.WriteFile(path, []byte(content), 0644); err == nil {
@@ -1055,6 +1239,154 @@ func (m *NetworkManager) SetDNSConfig(ctx context.Context, cfg *DNSConfig) error
 	}
 
 	return fmt.Errorf("failed to set DNS config: %w", lastErr)
+}
+
+// =============================================================================
+// Pi-hole API Integration
+// =============================================================================
+
+// piholeAuth authenticates with the Pi-hole v6 API and returns a session ID (SID).
+func (m *NetworkManager) piholeAuth(ctx context.Context) (string, error) {
+	authURL := m.piholeURL + "/api/auth"
+	payload, _ := json.Marshal(map[string]string{"password": m.piholePassword})
+
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, authURL, bytes.NewReader(payload))
+	if err != nil {
+		return "", fmt.Errorf("failed to create auth request: %w", err)
+	}
+	req.Header.Set("Content-Type", "application/json")
+
+	client := &http.Client{Timeout: 5 * time.Second}
+	resp, err := client.Do(req)
+	if err != nil {
+		return "", fmt.Errorf("Pi-hole auth request failed: %w", err)
+	}
+	defer resp.Body.Close()
+
+	body, _ := io.ReadAll(resp.Body)
+	if resp.StatusCode != http.StatusOK {
+		return "", fmt.Errorf("Pi-hole auth failed (HTTP %d): %s", resp.StatusCode, string(body))
+	}
+
+	// Pi-hole v6 returns: {"session": {"valid": true, "sid": "xxx", ...}}
+	var authResp struct {
+		Session struct {
+			Valid bool   `json:"valid"`
+			SID   string `json:"sid"`
+		} `json:"session"`
+	}
+	if err := json.Unmarshal(body, &authResp); err != nil {
+		return "", fmt.Errorf("failed to parse Pi-hole auth response: %w", err)
+	}
+
+	if !authResp.Session.Valid || authResp.Session.SID == "" {
+		return "", fmt.Errorf("Pi-hole auth returned invalid session")
+	}
+
+	return authResp.Session.SID, nil
+}
+
+// getPiholeUpstreams reads the upstream DNS servers from Pi-hole's API.
+func (m *NetworkManager) getPiholeUpstreams(ctx context.Context) ([]string, error) {
+	sid, err := m.piholeAuth(ctx)
+	if err != nil {
+		return nil, err
+	}
+
+	reqURL := m.piholeURL + "/api/config/dns/upstreams"
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, reqURL, nil)
+	if err != nil {
+		return nil, err
+	}
+	req.Header.Set("X-FTL-SID", sid)
+
+	client := &http.Client{Timeout: 5 * time.Second}
+	resp, err := client.Do(req)
+	if err != nil {
+		return nil, fmt.Errorf("Pi-hole config request failed: %w", err)
+	}
+	defer resp.Body.Close()
+
+	body, _ := io.ReadAll(resp.Body)
+	if resp.StatusCode != http.StatusOK {
+		return nil, fmt.Errorf("Pi-hole config request failed (HTTP %d): %s", resp.StatusCode, string(body))
+	}
+
+	// Pi-hole v6 returns: {"config": {"dns": {"upstreams": ["1.1.1.1", "8.8.8.8"]}}}
+	// or possibly: {"dns": {"upstreams": ["1.1.1.1", "8.8.8.8"]}}
+	// Try multiple response structures for robustness
+	var configResp struct {
+		Config struct {
+			DNS struct {
+				Upstreams []string `json:"upstreams"`
+			} `json:"dns"`
+		} `json:"config"`
+		DNS struct {
+			Upstreams []string `json:"upstreams"`
+		} `json:"dns"`
+		Upstreams []string `json:"upstreams"`
+	}
+	if err := json.Unmarshal(body, &configResp); err != nil {
+		return nil, fmt.Errorf("failed to parse Pi-hole config: %w", err)
+	}
+
+	// Check all possible response structures
+	if len(configResp.Config.DNS.Upstreams) > 0 {
+		return configResp.Config.DNS.Upstreams, nil
+	}
+	if len(configResp.DNS.Upstreams) > 0 {
+		return configResp.DNS.Upstreams, nil
+	}
+	if len(configResp.Upstreams) > 0 {
+		return configResp.Upstreams, nil
+	}
+
+	return nil, fmt.Errorf("Pi-hole returned no upstream DNS servers")
+}
+
+// setPiholeUpstreams updates the upstream DNS servers via Pi-hole's API.
+func (m *NetworkManager) setPiholeUpstreams(ctx context.Context, upstreams []string) error {
+	sid, err := m.piholeAuth(ctx)
+	if err != nil {
+		return err
+	}
+
+	// Pi-hole v6 PATCH /api/config/dns/upstreams
+	reqURL := m.piholeURL + "/api/config/dns/upstreams"
+	payload, _ := json.Marshal(upstreams)
+
+	req, err := http.NewRequestWithContext(ctx, http.MethodPut, reqURL, bytes.NewReader(payload))
+	if err != nil {
+		return err
+	}
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("X-FTL-SID", sid)
+
+	client := &http.Client{Timeout: 5 * time.Second}
+	resp, err := client.Do(req)
+	if err != nil {
+		return fmt.Errorf("Pi-hole config update failed: %w", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK && resp.StatusCode != http.StatusCreated {
+		body, _ := io.ReadAll(resp.Body)
+		// Try PATCH if PUT didn't work
+		req2, _ := http.NewRequestWithContext(ctx, http.MethodPatch, reqURL, bytes.NewReader(payload))
+		req2.Header.Set("Content-Type", "application/json")
+		req2.Header.Set("X-FTL-SID", sid)
+		resp2, err2 := client.Do(req2)
+		if err2 != nil {
+			return fmt.Errorf("Pi-hole config update failed (PUT %d: %s, PATCH: %v)", resp.StatusCode, string(body), err2)
+		}
+		defer resp2.Body.Close()
+		if resp2.StatusCode != http.StatusOK && resp2.StatusCode != http.StatusCreated {
+			body2, _ := io.ReadAll(resp2.Body)
+			return fmt.Errorf("Pi-hole config update failed (PUT %d, PATCH %d): %s", resp.StatusCode, resp2.StatusCode, string(body2))
+		}
+	}
+
+	return nil
 }
 
 // WiFiStatus represents the current WiFi connection status
@@ -1185,9 +1517,9 @@ func (m *NetworkManager) GetSavedNetworks(ctx context.Context) ([]SavedNetwork, 
 
 	// Try wpa_supplicant config file
 	wpaConfPaths := []string{
-		"/host/etc/wpa_supplicant/wpa_supplicant.conf",
+		"/host-root/etc/wpa_supplicant/wpa_supplicant.conf",
 		"/etc/wpa_supplicant/wpa_supplicant.conf",
-		"/host/etc/wpa_supplicant/wpa_supplicant-wlan0.conf",
+		"/host-root/etc/wpa_supplicant/wpa_supplicant-wlan0.conf",
 		"/etc/wpa_supplicant/wpa_supplicant-wlan0.conf",
 	}
 

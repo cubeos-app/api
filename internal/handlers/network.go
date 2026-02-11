@@ -398,28 +398,49 @@ func (h *NetworkHandler) ForgetNetwork(w http.ResponseWriter, r *http.Request) {
 // @Router /network/wifi/ap/status [get]
 func (h *NetworkHandler) GetAPStatus(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
-	config, err := h.network.GetAPConfig(ctx)
-	if err != nil {
-		writeError(w, http.StatusInternalServerError, "Failed to get AP config: "+err.Error())
-		return
+
+	// Get live AP status from HAL first (real SSID/channel from hostapd)
+	var ssid string
+	var channel int
+	var hidden bool
+	var hostapdRunning bool
+
+	if h.halClient != nil {
+		halStatus, err := h.halClient.GetAPStatus(ctx)
+		if err == nil && halStatus != nil {
+			ssid = halStatus.SSID
+			channel = halStatus.Channel
+			hostapdRunning = halStatus.Active
+		}
 	}
 
-	clients, _ := h.network.GetConnectedClients(ctx)
-	var hostapdRunning bool
-	if h.halClient != nil {
+	// Fill gaps from config if HAL didn't provide complete data
+	if ssid == "" {
+		config, err := h.network.GetAPConfig(ctx)
+		if err == nil && config != nil {
+			ssid = config.SSID
+			channel = config.Channel
+			hidden = config.Hidden
+		}
+	}
+
+	// Check hostapd service status if HAL AP status didn't report it
+	if !hostapdRunning && h.halClient != nil {
 		status, err := h.halClient.GetServiceStatus(ctx, "hostapd")
 		if err == nil && status != nil {
 			hostapdRunning = status.Active
 		}
 	}
 
+	clients, _ := h.network.GetConnectedClients(ctx)
+
 	writeJSON(w, http.StatusOK, map[string]interface{}{
-		"enabled":   config != nil,
+		"enabled":   true,
 		"running":   hostapdRunning,
-		"ssid":      config.SSID,
-		"channel":   config.Channel,
+		"ssid":      ssid,
+		"channel":   channel,
 		"interface": "wlan0",
-		"hidden":    config.Hidden,
+		"hidden":    hidden,
 		"clients":   len(clients),
 	})
 }

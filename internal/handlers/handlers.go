@@ -547,17 +547,34 @@ func (h *Handlers) GetClientCount(w http.ResponseWriter, r *http.Request) {
 
 // BlockClient godoc
 // @Summary Block a client
-// @Description Blocks a client by MAC address
+// @Description Blocks a client by MAC address from the access point
 // @Tags Clients
 // @Produce json
 // @Security BearerAuth
 // @Param mac path string true "MAC address"
 // @Success 200 {object} models.SuccessResponse "Client blocked"
-// @Failure 501 {object} ErrorResponse "Not implemented"
+// @Failure 400 {object} ErrorResponse "Invalid MAC address"
+// @Failure 500 {object} ErrorResponse "Failed to block client"
+// @Failure 503 {object} ErrorResponse "HAL service unavailable"
 // @Router /clients/{mac}/block [post]
 func (h *Handlers) BlockClient(w http.ResponseWriter, r *http.Request) {
 	mac := chi.URLParam(r, "mac")
-	writeError(w, http.StatusNotImplemented, "Client blocking not yet implemented for MAC: "+mac)
+	if mac == "" {
+		writeError(w, http.StatusBadRequest, "MAC address is required")
+		return
+	}
+	if h.hal == nil {
+		writeError(w, http.StatusServiceUnavailable, "HAL service unavailable")
+		return
+	}
+	if err := h.hal.BlockAPClient(r.Context(), mac); err != nil {
+		writeError(w, http.StatusInternalServerError, "Failed to block client: "+err.Error())
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]interface{}{
+		"success": true,
+		"message": "Client " + mac + " blocked",
+	})
 }
 
 // UnblockClient godoc
@@ -568,11 +585,28 @@ func (h *Handlers) BlockClient(w http.ResponseWriter, r *http.Request) {
 // @Security BearerAuth
 // @Param mac path string true "MAC address"
 // @Success 200 {object} models.SuccessResponse "Client unblocked"
-// @Failure 501 {object} ErrorResponse "Not implemented"
+// @Failure 400 {object} ErrorResponse "Invalid MAC address"
+// @Failure 500 {object} ErrorResponse "Failed to unblock client"
+// @Failure 503 {object} ErrorResponse "HAL service unavailable"
 // @Router /clients/{mac}/unblock [post]
 func (h *Handlers) UnblockClient(w http.ResponseWriter, r *http.Request) {
 	mac := chi.URLParam(r, "mac")
-	writeError(w, http.StatusNotImplemented, "Client unblocking not yet implemented for MAC: "+mac)
+	if mac == "" {
+		writeError(w, http.StatusBadRequest, "MAC address is required")
+		return
+	}
+	if h.hal == nil {
+		writeError(w, http.StatusServiceUnavailable, "HAL service unavailable")
+		return
+	}
+	if err := h.hal.UnblockAPClient(r.Context(), mac); err != nil {
+		writeError(w, http.StatusInternalServerError, "Failed to unblock client: "+err.Error())
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]interface{}{
+		"success": true,
+		"message": "Client " + mac + " unblocked",
+	})
 }
 
 // =============================================================================

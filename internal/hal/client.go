@@ -2853,7 +2853,7 @@ func (c *Client) BlockAPClientLegacy(ctx context.Context, mac string) error {
 
 // UnblockAPClient removes a MAC address from the AP blocklist
 func (c *Client) UnblockAPClient(ctx context.Context, mac string) error {
-	return c.doPost(ctx, "/network/wifi/ap/unblock/"+url.PathEscape(mac), nil)
+	return c.doPost(ctx, "/network/ap/unblock/"+url.PathEscape(mac), nil)
 }
 
 // StartAP starts the WiFi access point
