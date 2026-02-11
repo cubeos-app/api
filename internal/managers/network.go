@@ -916,8 +916,15 @@ func (m *NetworkManager) parseDHCPLeases(ctx context.Context) []models.APClient 
 	leasePaths := []string{
 		"/cubeos/coreapps/pihole/appdata/etc-pihole/dhcp.leases",
 		"/host-root/cubeos/coreapps/pihole/appdata/etc-pihole/dhcp.leases",
+		// Pi-hole v6 stores leases in a different location
+		"/cubeos/coreapps/pihole/appdata/etc-dnsmasq.d/dhcp.leases",
+		"/host-root/cubeos/coreapps/pihole/appdata/etc-dnsmasq.d/dhcp.leases",
+		// Standard dnsmasq lease paths
 		"/host-root/var/lib/misc/dnsmasq.leases",
 		"/var/lib/misc/dnsmasq.leases",
+		// Alternative Pi-hole paths
+		"/host-root/etc/pihole/dhcp.leases",
+		"/etc/pihole/dhcp.leases",
 	}
 
 	for _, path := range leasePaths {

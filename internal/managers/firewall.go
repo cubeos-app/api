@@ -13,6 +13,8 @@ import (
 	"cubeos-api/internal/config"
 	"cubeos-api/internal/hal"
 	"cubeos-api/internal/models"
+
+	"github.com/rs/zerolog/log"
 )
 
 // FirewallManager handles iptables firewall operations via HAL
@@ -80,17 +82,18 @@ func ValidateProtocol(protocol string) error {
 
 // GetStatus returns complete firewall status via HAL
 func (m *FirewallManager) GetStatus(ctx context.Context) (map[string]interface{}, error) {
-	// Get NAT status
+	// Use consolidated HAL firewall status for NAT and forwarding
+	// This is the single source of truth — reads actual iptables state
 	natEnabled := false
-	natStatus, err := m.GetNATStatus(ctx)
-	if err == nil && natStatus != nil {
-		if enabled, ok := natStatus["nat_enabled"].(bool); ok {
-			natEnabled = enabled
-		}
-	}
+	forwardingEnabled := false
 
-	// Get forwarding status
-	forwardingEnabled, _ := m.GetForwardingStatus(ctx)
+	fwStatus, err := m.hal.GetHALFirewallStatus(ctx)
+	if err != nil {
+		log.Warn().Err(err).Msg("FirewallManager: HAL firewall status unavailable, reporting defaults")
+	} else {
+		natEnabled = fwStatus.NAT
+		forwardingEnabled = fwStatus.Forwarding
+	}
 
 	// Get rules count
 	rulesCount := 0
@@ -107,13 +110,20 @@ func (m *FirewallManager) GetStatus(ctx context.Context) (map[string]interface{}
 	}, nil
 }
 
-// GetNATStatus returns NAT/masquerade status via HAL
+// GetNATStatus returns NAT/masquerade status via HAL.
+// Uses the consolidated firewall status endpoint which reports actual NAT state
+// from iptables, not the generic network status endpoint.
 func (m *FirewallManager) GetNATStatus(ctx context.Context) (map[string]interface{}, error) {
-	status, err := m.hal.GetNetworkStatus(ctx)
+	fwStatus, err := m.hal.GetHALFirewallStatus(ctx)
 	if err != nil {
-		return nil, fmt.Errorf("failed to get NAT status: %w", err)
+		return nil, fmt.Errorf("failed to get NAT status from HAL: %w", err)
 	}
-	return status, nil
+
+	return map[string]interface{}{
+		"nat_enabled": fwStatus.NAT,
+		"enabled":     fwStatus.NAT,
+		"forwarding":  fwStatus.Forwarding,
+	}, nil
 }
 
 // EnableNAT enables NAT/masquerade via HAL
