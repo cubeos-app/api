@@ -753,10 +753,10 @@ type IridiumClearRequest struct {
 
 // FirewallStatusResponse represents consolidated HAL firewall status
 type FirewallStatusResponse struct {
-	Active     bool `json:"active"`
-	Rules      int  `json:"rules"`
-	NAT        bool `json:"nat"`
-	Forwarding bool `json:"forwarding"`
+	Active     bool `json:"enabled"`
+	Rules      int  `json:"rules_count"`
+	NAT        bool `json:"nat_enabled"`
+	Forwarding bool `json:"forwarding_enabled"`
 }
 
 // PowerMonitorStatus represents UPS/power monitoring status
