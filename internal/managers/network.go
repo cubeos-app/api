@@ -308,8 +308,9 @@ func (m *NetworkManager) GetStatus(ctx context.Context) (*NetworkStatus, error) 
 			}
 		}
 	case models.NetworkModeOnlineWiFi, models.NetworkModeServerWiFi:
+		resolvedIface := m.resolveWiFiClientInterface(ctx)
 		for _, iface := range interfaces {
-			if iface.Name == m.wifiClientInterface && len(iface.IPv4Addresses) > 0 {
+			if iface.Name == resolvedIface && len(iface.IPv4Addresses) > 0 {
 				status.Upstream = &UpstreamStatus{
 					Interface: iface.Name,
 					IP:        iface.IPv4Addresses[0],
@@ -513,7 +514,7 @@ func (m *NetworkManager) setOfflineMode(ctx context.Context) error {
 
 	// Disconnect any upstream WiFi
 	if m.currentMode == models.NetworkModeOnlineWiFi || m.currentMode == models.NetworkModeServerWiFi {
-		_ = m.hal.DisconnectWiFi(ctx, m.wifiClientInterface)
+		_ = m.hal.DisconnectWiFi(ctx, m.resolveWiFiClientInterface(ctx))
 	}
 
 	// Ensure AP is running (for non-server recovery)
@@ -790,6 +791,15 @@ func (m *NetworkManager) DetectWiFiClientInterface(ctx context.Context) (string,
 	}
 
 	return "", fmt.Errorf("no USB WiFi dongle found")
+}
+
+// resolveWiFiClientInterface returns the WiFi client interface to use.
+// Tries dynamic USB dongle detection first, falls back to configured default.
+func (m *NetworkManager) resolveWiFiClientInterface(ctx context.Context) string {
+	if detected, err := m.DetectWiFiClientInterface(ctx); err == nil && detected != "" {
+		return detected
+	}
+	return m.wifiClientInterface
 }
 
 // GetNetworkConfig returns the persisted network configuration (V2)
@@ -1427,16 +1437,15 @@ type WiFiStatus struct {
 
 // GetWiFiStatus returns the current WiFi connection status
 func (m *NetworkManager) GetWiFiStatus(ctx context.Context) (*WiFiStatus, error) {
-	status := &WiFiStatus{
-		Connected: false,
-		Interface: m.wifiClientInterface,
-	}
-
 	// Determine which interface to check
-	iface := m.wifiClientInterface
+	iface := m.resolveWiFiClientInterface(ctx)
 	if m.currentMode == models.NetworkModeServerWiFi {
 		iface = m.apInterface
-		status.Interface = m.apInterface
+	}
+
+	status := &WiFiStatus{
+		Connected: false,
+		Interface: iface,
 	}
 
 	// Try to get interface info from HAL
@@ -1507,7 +1516,8 @@ func (m *NetworkManager) GetSavedNetworks(ctx context.Context) ([]SavedNetwork, 
 
 	// Try HAL first (works from container)
 	if m.hal != nil {
-		halNetworks, err := m.hal.GetSavedWiFiNetworks(ctx, m.wifiClientInterface)
+		iface := m.resolveWiFiClientInterface(ctx)
+		halNetworks, err := m.hal.GetSavedWiFiNetworks(ctx, iface)
 		if err == nil && halNetworks != nil && len(halNetworks.Networks) > 0 {
 			for _, n := range halNetworks.Networks {
 				networks = append(networks, SavedNetwork{
@@ -1596,9 +1606,11 @@ func (m *NetworkManager) ForgetNetwork(ctx context.Context, ssid string) error {
 		return fmt.Errorf("SSID cannot be empty")
 	}
 
+	iface := m.resolveWiFiClientInterface(ctx)
+
 	// Try HAL first (works from container)
 	if m.hal != nil {
-		err := m.hal.ForgetWiFiNetwork(ctx, ssid, m.wifiClientInterface)
+		err := m.hal.ForgetWiFiNetwork(ctx, ssid, iface)
 		if err == nil {
 			return nil
 		}
@@ -1613,7 +1625,7 @@ func (m *NetworkManager) ForgetNetwork(ctx context.Context, ssid string) error {
 	}
 
 	// Try wpa_cli
-	cmd = exec.CommandContext(ctx, "wpa_cli", "-i", m.wifiClientInterface, "list_networks")
+	cmd = exec.CommandContext(ctx, "wpa_cli", "-i", iface, "list_networks")
 	output, err := cmd.Output()
 	if err != nil {
 		return fmt.Errorf("failed to list networks: %w", err)
@@ -1632,12 +1644,12 @@ func (m *NetworkManager) ForgetNetwork(ctx context.Context, ssid string) error {
 			if len(fields) >= 2 && fields[1] == ssid {
 				networkID := fields[0]
 				// Remove the network
-				cmd = exec.CommandContext(ctx, "wpa_cli", "-i", m.wifiClientInterface, "remove_network", networkID)
+				cmd = exec.CommandContext(ctx, "wpa_cli", "-i", iface, "remove_network", networkID)
 				if err := cmd.Run(); err != nil {
 					return fmt.Errorf("failed to remove network: %w", err)
 				}
 				// Save configuration
-				cmd = exec.CommandContext(ctx, "wpa_cli", "-i", m.wifiClientInterface, "save_config")
+				cmd = exec.CommandContext(ctx, "wpa_cli", "-i", iface, "save_config")
 				cmd.Run() // Ignore error
 				return nil
 			}
