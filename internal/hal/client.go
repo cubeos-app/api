@@ -1604,6 +1604,35 @@ func (c *Client) ConnectWiFi(ctx context.Context, iface, ssid, password string) 
 	return c.doPost(ctx, "/network/wifi/connect", req)
 }
 
+// HALWiFiStatus is the response from HAL's wifi status endpoint
+type HALWiFiStatus struct {
+	Connected      bool     `json:"connected"`
+	SSID           string   `json:"ssid,omitempty"`
+	BSSID          string   `json:"bssid,omitempty"`
+	Frequency      int      `json:"frequency,omitempty"`
+	Channel        int      `json:"channel,omitempty"`
+	SignalDBM      int      `json:"signal_dbm,omitempty"`
+	SignalPercent  int      `json:"signal_percent,omitempty"`
+	Security       string   `json:"security,omitempty"`
+	IPAddress      string   `json:"ip_address,omitempty"`
+	Netmask        string   `json:"netmask,omitempty"`
+	Gateway        string   `json:"gateway,omitempty"`
+	DNS            []string `json:"dns,omitempty"`
+	Interface      string   `json:"interface"`
+	MACAddress     string   `json:"mac_address,omitempty"`
+	WiFiGeneration string   `json:"wifi_generation,omitempty"`
+	TxBitrate      string   `json:"tx_bitrate,omitempty"`
+}
+
+// GetWiFiStatus returns comprehensive WiFi connection status from HAL
+func (c *Client) GetWiFiStatus(ctx context.Context, iface string) (*HALWiFiStatus, error) {
+	var result HALWiFiStatus
+	if err := c.doGet(ctx, "/network/wifi/status/"+url.PathEscape(iface), &result); err != nil {
+		return nil, err
+	}
+	return &result, nil
+}
+
 // DisconnectWiFi disconnects from WiFi
 func (c *Client) DisconnectWiFi(ctx context.Context, iface string) error {
 	return c.doPost(ctx, "/network/wifi/disconnect/"+url.PathEscape(iface), nil)

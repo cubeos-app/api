@@ -1425,14 +1425,22 @@ func (m *NetworkManager) setPiholeUpstreams(ctx context.Context, upstreams []str
 
 // WiFiStatus represents the current WiFi connection status
 type WiFiStatus struct {
-	Connected bool   `json:"connected"`
-	SSID      string `json:"ssid,omitempty"`
-	BSSID     string `json:"bssid,omitempty"`
-	Signal    int    `json:"signal,omitempty"`
-	Frequency int    `json:"frequency,omitempty"`
-	Security  string `json:"security,omitempty"`
-	IPAddress string `json:"ip_address,omitempty"`
-	Interface string `json:"interface"`
+	Connected      bool     `json:"connected"`
+	SSID           string   `json:"ssid,omitempty"`
+	BSSID          string   `json:"bssid,omitempty"`
+	Signal         int      `json:"signal,omitempty"`
+	SignalDBM      int      `json:"signal_dbm,omitempty"`
+	Frequency      int      `json:"frequency,omitempty"`
+	Channel        int      `json:"channel,omitempty"`
+	Security       string   `json:"security,omitempty"`
+	IPAddress      string   `json:"ip_address,omitempty"`
+	Netmask        string   `json:"netmask,omitempty"`
+	Gateway        string   `json:"gateway,omitempty"`
+	DNS            []string `json:"dns,omitempty"`
+	Interface      string   `json:"interface"`
+	MACAddress     string   `json:"mac_address,omitempty"`
+	WiFiGeneration string   `json:"wifi_generation,omitempty"`
+	TxBitrate      string   `json:"tx_bitrate,omitempty"`
 }
 
 // GetWiFiStatus returns the current WiFi connection status
@@ -1448,56 +1456,28 @@ func (m *NetworkManager) GetWiFiStatus(ctx context.Context) (*WiFiStatus, error)
 		Interface: iface,
 	}
 
-	// Try to get interface info from HAL
-	ifaceInfo, err := m.hal.GetInterface(ctx, iface)
-	if err != nil {
-		return status, nil
-	}
-
-	// Check if connected (has IP address)
-	if len(ifaceInfo.IPv4Addresses) > 0 {
-		status.Connected = true
-		status.IPAddress = ifaceInfo.IPv4Addresses[0]
-	}
-
-	// Try to get SSID using iwgetid or nmcli
-	cmd := exec.CommandContext(ctx, "iwgetid", iface, "-r")
-	if output, err := cmd.Output(); err == nil {
-		ssid := strings.TrimSpace(string(output))
-		if ssid != "" {
-			status.Connected = true
-			status.SSID = ssid
+	// Get comprehensive status from HAL (runs on host with access to wpa_cli, iw, etc.)
+	if m.hal != nil {
+		halStatus, err := m.hal.GetWiFiStatus(ctx, iface)
+		if err == nil {
+			status.Connected = halStatus.Connected
+			status.SSID = halStatus.SSID
+			status.BSSID = halStatus.BSSID
+			status.Signal = halStatus.SignalPercent
+			status.SignalDBM = halStatus.SignalDBM
+			status.Frequency = halStatus.Frequency
+			status.Channel = halStatus.Channel
+			status.Security = halStatus.Security
+			status.IPAddress = halStatus.IPAddress
+			status.Netmask = halStatus.Netmask
+			status.Gateway = halStatus.Gateway
+			status.DNS = halStatus.DNS
+			status.MACAddress = halStatus.MACAddress
+			status.WiFiGeneration = halStatus.WiFiGeneration
+			status.TxBitrate = halStatus.TxBitrate
+			return status, nil
 		}
-	}
-
-	// Try to get signal strength using iwconfig
-	cmd = exec.CommandContext(ctx, "iwconfig", iface)
-	if output, err := cmd.Output(); err == nil {
-		outputStr := string(output)
-
-		// Parse signal level
-		if idx := strings.Index(outputStr, "Signal level="); idx >= 0 {
-			// Extract signal value (e.g., "-50 dBm" or "50/100")
-			rest := outputStr[idx+len("Signal level="):]
-			if spaceIdx := strings.IndexAny(rest, " \t\n"); spaceIdx > 0 {
-				signalStr := rest[:spaceIdx]
-				// Handle dBm format
-				signalStr = strings.TrimSuffix(signalStr, "dBm")
-				var signal int
-				if _, err := fmt.Sscanf(signalStr, "%d", &signal); err == nil {
-					status.Signal = signal
-				}
-			}
-		}
-
-		// Parse frequency
-		if idx := strings.Index(outputStr, "Frequency:"); idx >= 0 {
-			rest := outputStr[idx+len("Frequency:"):]
-			var freq float64
-			if _, err := fmt.Sscanf(rest, "%f", &freq); err == nil {
-				status.Frequency = int(freq * 1000) // Convert GHz to MHz
-			}
-		}
+		log.Warn().Err(err).Msg("NetworkManager: HAL GetWiFiStatus failed, returning basic status")
 	}
 
 	return status, nil
