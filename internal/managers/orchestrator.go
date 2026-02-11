@@ -41,6 +41,7 @@ type OrchestratorConfig struct {
 	PiholePath   string
 	NPMConfigDir string
 	HALClient    *hal.Client
+	SwarmManager *SwarmManager // Optional: shared instance; if nil, one is created internally
 }
 
 // NewOrchestrator creates a new Orchestrator instance
@@ -62,12 +63,16 @@ func NewOrchestrator(cfg OrchestratorConfig) (*Orchestrator, error) {
 		cancel: cancel,
 	}
 
-	// Initialize SwarmManager
+	// Initialize SwarmManager (use provided instance or create new)
 	var err error
-	o.swarm, err = NewSwarmManager()
-	if err != nil {
-		cancel()
-		return nil, fmt.Errorf("failed to create swarm manager: %w", err)
+	if cfg.SwarmManager != nil {
+		o.swarm = cfg.SwarmManager
+	} else {
+		o.swarm, err = NewSwarmManager()
+		if err != nil {
+			cancel()
+			return nil, fmt.Errorf("failed to create swarm manager: %w", err)
+		}
 	}
 
 	// Initialize DockerManager

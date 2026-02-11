@@ -8,7 +8,6 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
-	"net"
 	"net/http"
 	"os"
 	"os/exec"
@@ -31,6 +30,7 @@ import (
 type AppStoreManager struct {
 	db           *DatabaseManager
 	pihole       *PiholeManager
+	ports        *PortManager // Port allocation with triple-source validation
 	dataPath     string
 	cachePath    string
 	appsPath     string // /cubeos/apps - user apps, freely removable
@@ -46,7 +46,7 @@ type AppStoreManager struct {
 }
 
 // NewAppStoreManager creates a new app store manager with centralized config
-func NewAppStoreManager(cfg *config.Config, db *DatabaseManager, dataPath string, pihole *PiholeManager, npm *NPMManager) *AppStoreManager {
+func NewAppStoreManager(cfg *config.Config, db *DatabaseManager, dataPath string, pihole *PiholeManager, npm *NPMManager, ports *PortManager) *AppStoreManager {
 	// Directory structure:
 	// /cubeos/coreapps/ - NPM, Pi-hole, dashboard (system critical)
 	// /cubeos/apps/{app}/appconfig/ - docker-compose.yml, .env
@@ -63,6 +63,7 @@ func NewAppStoreManager(cfg *config.Config, db *DatabaseManager, dataPath string
 		db:           db,
 		pihole:       pihole,
 		npm:          npm,
+		ports:        ports,
 		dataPath:     dataPath,
 		cachePath:    cachePath,
 		appsPath:     appsPath,
@@ -746,8 +747,12 @@ func (m *AppStoreManager) InstallApp(req *models.AppInstallRequest) (*models.Ins
 	os.MkdirAll(appData, 0777) // 0777: containers may run as non-root users
 	os.Chmod(appData, 0777)    // Explicit chmod to override umask
 
-	// Allocate a port in the user app range (6100-6999)
-	allocatedPort := m.findAvailablePort(6100)
+	// Allocate a port in the user app range (6100-6999) via triple-source validation
+	allocatedPort, err := m.ports.AllocateUserPort()
+	if err != nil {
+		os.RemoveAll(appBase)
+		return nil, fmt.Errorf("failed to allocate port: %w", err)
+	}
 
 	// Process manifest with variable substitution
 	processedManifest := m.processManifest(string(manifestData), req.AppName, appData, req)
@@ -904,24 +909,34 @@ func (m *AppStoreManager) InstallApp(req *models.AppInstallRequest) (*models.Ins
 		return nil, fmt.Errorf("failed to save app record: %w", err)
 	}
 
+	// Get the app_id for foreign key references (port_allocations, fqdns)
+	var appID int64
+	if err := m.db.db.QueryRow("SELECT id FROM apps WHERE name = ?", installed.Name).Scan(&appID); err != nil {
+		log.Error().Err(err).Str("app", installed.Name).Msg("failed to find app_id after insert")
+	} else {
+		// Record port allocation (ON DELETE CASCADE will clean up on uninstall)
+		if portErr := m.ports.AllocatePort(appID, allocatedPort, "tcp", "Web UI", true); portErr != nil {
+			log.Error().Err(portErr).Int("port", allocatedPort).Int64("app_id", appID).
+				Msg("failed to record port allocation (port is still in use)")
+		} else {
+			log.Info().Int("port", allocatedPort).Int64("app_id", appID).Str("app", installed.Name).
+				Msg("recorded port allocation")
+		}
+	}
+
 	// Store FQDN in the fqdns table (for DNS cleanup during uninstall)
-	if appFQDN != "" {
+	if appFQDN != "" && appID > 0 {
 		// Extract subdomain from the (possibly prettified) FQDN
 		fqdnSubdomain := strings.TrimSuffix(appFQDN, "."+m.baseDomain)
-		var appID int64
-		if err := m.db.db.QueryRow("SELECT id FROM apps WHERE name = ?", installed.Name).Scan(&appID); err != nil {
-			log.Error().Err(err).Str("app", installed.Name).Msg("failed to find app_id for FQDN insert")
+		_, fqdnErr := m.db.db.Exec(`INSERT INTO fqdns (app_id, fqdn, subdomain, backend_port, npm_proxy_id)
+			VALUES (?, ?, ?, ?, ?) ON CONFLICT DO NOTHING`,
+			appID, appFQDN, fqdnSubdomain, appPort, npmProxyID)
+		if fqdnErr != nil {
+			log.Error().Err(fqdnErr).Str("fqdn", appFQDN).Int64("app_id", appID).Int("port", appPort).
+				Msg("failed to insert FQDN record")
 		} else {
-			_, fqdnErr := m.db.db.Exec(`INSERT INTO fqdns (app_id, fqdn, subdomain, backend_port, npm_proxy_id)
-				VALUES (?, ?, ?, ?, ?) ON CONFLICT DO NOTHING`,
-				appID, appFQDN, fqdnSubdomain, appPort, npmProxyID)
-			if fqdnErr != nil {
-				log.Error().Err(fqdnErr).Str("fqdn", appFQDN).Int64("app_id", appID).Int("port", appPort).
-					Msg("failed to insert FQDN record")
-			} else {
-				log.Info().Str("fqdn", appFQDN).Int64("app_id", appID).Int("port", appPort).
-					Msg("stored FQDN record")
-			}
+			log.Info().Str("fqdn", appFQDN).Int64("app_id", appID).Int("port", appPort).
+				Msg("stored FQDN record")
 		}
 	}
 
@@ -949,8 +964,10 @@ func (m *AppStoreManager) processManifest(manifest, appID, dataDir string, req *
 		tz = "UTC"
 	}
 
-	// Find available port if needed
-	webUIPort := m.findAvailablePort(8080)
+	// Default internal web UI port for CasaOS variable substitution.
+	// This is the container-internal port, NOT the host-allocated port.
+	// The host port is determined by remapPorts() using the allocated CubeOS port.
+	webUIPort := 8080
 
 	// Replace CasaOS system variables
 	replacements := map[string]string{
@@ -1658,22 +1675,6 @@ func parseShmSize(size string) int64 {
 		return 64 * 1024 * 1024 // default 64MB
 	}
 	return int64(val) * multiplier
-}
-
-func (m *AppStoreManager) findAvailablePort(start int) int {
-	// User apps should be in range 6100-6999
-	end := 6999
-	if start < 6100 {
-		start = 6100
-	}
-	for port := start; port <= end; port++ {
-		ln, err := net.Listen("tcp", fmt.Sprintf(":%d", port))
-		if err == nil {
-			ln.Close()
-			return port
-		}
-	}
-	return start
 }
 
 // GetInstalledApps returns all installed apps

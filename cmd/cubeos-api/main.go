@@ -253,7 +253,21 @@ func main() {
 		log.Info().Msg("NPMManager initialized successfully")
 	}
 
-	appStoreMgr := managers.NewAppStoreManager(cfg, dbMgr, cfg.DataDir, piholeMgr, npmMgr)
+	// Create shared SwarmManager (used by Orchestrator and PortManager)
+	// Single Docker client instance shared across components.
+	swarmMgr, err := managers.NewSwarmManager()
+	if err != nil {
+		log.Warn().Err(err).Msg("failed to create SwarmManager (port validation will use DB-only mode)")
+		// swarmMgr is nil — PortManager and Orchestrator degrade gracefully
+	} else {
+		log.Info().Msg("SwarmManager initialized (shared instance)")
+	}
+
+	// Create PortManager for port allocation with triple-source validation (DB + Swarm + HAL)
+	portMgr := managers.NewPortManager(db.DB, swarmMgr, halClient)
+	log.Info().Msg("PortManager initialized with triple-source validation")
+
+	appStoreMgr := managers.NewAppStoreManager(cfg, dbMgr, cfg.DataDir, piholeMgr, npmMgr, portMgr)
 
 	// Create Orchestrator for unified app management (Sprint 3)
 	orchestrator, err := managers.NewOrchestrator(managers.OrchestratorConfig{
@@ -264,6 +278,7 @@ func main() {
 		PiholePath:   "/cubeos/coreapps/pihole/appdata",
 		NPMConfigDir: "/cubeos/coreapps/npm/appdata",
 		HALClient:    halClient,
+		SwarmManager: swarmMgr,
 	})
 	if err != nil {
 		log.Warn().Err(err).Msg("failed to create Orchestrator")
@@ -281,13 +296,6 @@ func main() {
 	mountsMgr := managers.NewMountsManager(cfg, halClient)
 	log.Info().Msg("MountsManager initialized (HAL-enabled)")
 	mountsMgr.SetDB(db.DB) // FIX: Wire database connection
-
-	// Create PortManager for port allocation (Sprint 4)
-	// NOTE: Standalone PortManager uses DB-only validation for read endpoints.
-	// The Orchestrator's internal PortManager has full triple-source validation.
-	// Group 3 will wire SwarmManager + HAL here for AppStoreManager integration.
-	portMgr := managers.NewPortManager(db.DB, nil, nil)
-	log.Info().Msg("PortManager initialized")
 
 	// Create Setup manager (first boot wizard)
 	setupMgr := managers.NewSetupManager(cfg, db.DB)

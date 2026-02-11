@@ -52,7 +52,11 @@ func (m *AppStoreManager) InstallAppWithProgress(req *models.AppInstallRequest, 
 
 	// Step 4: Process manifest & allocate port (20-25%)
 	job.Emit("compose", 20, "Preparing Docker configuration...")
-	allocatedPort := m.findAvailablePort(6100)
+	allocatedPort, err := m.ports.AllocateUserPort()
+	if err != nil {
+		os.RemoveAll(appBase)
+		return nil, fmt.Errorf("failed to allocate port: %w", err)
+	}
 	processedManifest := m.processManifest(string(manifestData), req.AppName, appData, req)
 
 	job.Emit("port", 25, fmt.Sprintf("Allocated port %d", allocatedPort))
@@ -211,23 +215,33 @@ func (m *AppStoreManager) InstallAppWithProgress(req *models.AppInstallRequest, 
 		return nil, fmt.Errorf("failed to save app record: %w", err)
 	}
 
-	// Store FQDN in fqdns table
-	if appFQDN != "" {
-		fqdnSubdomain := strings.TrimSuffix(appFQDN, "."+m.baseDomain)
-		var appID int64
-		if err := m.db.db.QueryRow("SELECT id FROM apps WHERE name = ?", installed.Name).Scan(&appID); err != nil {
-			log.Error().Err(err).Str("app", installed.Name).Msg("failed to find app_id for FQDN insert")
+	// Get the app_id for foreign key references (port_allocations, fqdns)
+	var appID int64
+	if err := m.db.db.QueryRow("SELECT id FROM apps WHERE name = ?", installed.Name).Scan(&appID); err != nil {
+		log.Error().Err(err).Str("app", installed.Name).Msg("failed to find app_id after insert")
+	} else {
+		// Record port allocation (ON DELETE CASCADE will clean up on uninstall)
+		if portErr := m.ports.AllocatePort(appID, allocatedPort, "tcp", "Web UI", true); portErr != nil {
+			log.Error().Err(portErr).Int("port", allocatedPort).Int64("app_id", appID).
+				Msg("failed to record port allocation (port is still in use)")
 		} else {
-			_, fqdnErr := m.db.db.Exec(`INSERT INTO fqdns (app_id, fqdn, subdomain, backend_port, npm_proxy_id)
-				VALUES (?, ?, ?, ?, ?) ON CONFLICT DO NOTHING`,
-				appID, appFQDN, fqdnSubdomain, appPort, npmProxyID)
-			if fqdnErr != nil {
-				log.Error().Err(fqdnErr).Str("fqdn", appFQDN).Int64("app_id", appID).Int("port", appPort).
-					Msg("failed to insert FQDN record")
-			} else {
-				log.Info().Str("fqdn", appFQDN).Int64("app_id", appID).Int("port", appPort).
-					Msg("stored FQDN record")
-			}
+			log.Info().Int("port", allocatedPort).Int64("app_id", appID).Str("app", installed.Name).
+				Msg("recorded port allocation")
+		}
+	}
+
+	// Store FQDN in fqdns table
+	if appFQDN != "" && appID > 0 {
+		fqdnSubdomain := strings.TrimSuffix(appFQDN, "."+m.baseDomain)
+		_, fqdnErr := m.db.db.Exec(`INSERT INTO fqdns (app_id, fqdn, subdomain, backend_port, npm_proxy_id)
+			VALUES (?, ?, ?, ?, ?) ON CONFLICT DO NOTHING`,
+			appID, appFQDN, fqdnSubdomain, appPort, npmProxyID)
+		if fqdnErr != nil {
+			log.Error().Err(fqdnErr).Str("fqdn", appFQDN).Int64("app_id", appID).Int("port", appPort).
+				Msg("failed to insert FQDN record")
+		} else {
+			log.Info().Str("fqdn", appFQDN).Int64("app_id", appID).Int("port", appPort).
+				Msg("stored FQDN record")
 		}
 	}
 
