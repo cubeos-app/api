@@ -3055,3 +3055,18 @@ func (c *Client) GetStorageDeviceSMART(ctx context.Context, device string) (*SMA
 	}
 	return &result, nil
 }
+
+// =============================================================================
+// VPN Public IP via HAL
+// =============================================================================
+
+// GetPublicIP returns the public IP as seen from the host network (via HAL).
+// This is needed because the API runs in a Swarm container whose traffic
+// doesn't route through the host's VPN tunnel.
+func (c *Client) GetPublicIP(ctx context.Context) (string, error) {
+	var result map[string]string
+	if err := c.doGet(ctx, "/vpn/public-ip", &result); err != nil {
+		return "", err
+	}
+	return result["public_ip"], nil
+}

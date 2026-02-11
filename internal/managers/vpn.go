@@ -9,9 +9,6 @@ import (
 	"context"
 	"encoding/base64"
 	"fmt"
-	"io"
-	"net"
-	"net/http"
 	"os"
 	"path/filepath"
 	"regexp"
@@ -316,73 +313,15 @@ func (m *VPNManager) SetAutoConnect(ctx context.Context, name string, autoConnec
 	return nil
 }
 
-// GetPublicIP returns the current public IP address by querying external services.
-// This works from inside the container since it only makes outbound HTTP requests.
+// GetPublicIP returns the current public IP address via HAL (host network).
+// HAL runs on the host, so its outbound traffic goes through VPN tunnels when active.
+// The API runs in a Swarm container where traffic doesn't route through VPN.
 func (m *VPNManager) GetPublicIP(ctx context.Context) (string, error) {
-	// List of public IP services to try (in order of preference)
-	services := []string{
-		"https://api.ipify.org",
-		"https://ifconfig.me/ip",
-		"https://icanhazip.com",
-		"https://checkip.amazonaws.com",
+	ip, err := m.hal.GetPublicIP(ctx)
+	if err != nil {
+		return "", fmt.Errorf("failed to get public IP via HAL: %w", err)
 	}
-
-	client := &http.Client{Timeout: 10 * time.Second}
-
-	var lastErr error
-	for _, svc := range services {
-		req, err := http.NewRequestWithContext(ctx, http.MethodGet, svc, nil)
-		if err != nil {
-			lastErr = fmt.Errorf("failed to create request for %s: %w", svc, err)
-			continue
-		}
-
-		// Set a simple user agent
-		req.Header.Set("User-Agent", "CubeOS/1.0")
-
-		resp, err := client.Do(req)
-		if err != nil {
-			lastErr = fmt.Errorf("failed to reach %s: %w", svc, err)
-			continue
-		}
-
-		if resp.StatusCode != http.StatusOK {
-			resp.Body.Close()
-			lastErr = fmt.Errorf("%s returned status %d", svc, resp.StatusCode)
-			continue
-		}
-
-		body, err := io.ReadAll(io.LimitReader(resp.Body, 256))
-		resp.Body.Close()
-		if err != nil {
-			lastErr = fmt.Errorf("failed to read response from %s: %w", svc, err)
-			continue
-		}
-
-		ip := strings.TrimSpace(string(body))
-		if ip == "" {
-			lastErr = fmt.Errorf("empty response from %s", svc)
-			continue
-		}
-
-		// Basic validation - should look like an IP address
-		if !isValidIP(ip) {
-			lastErr = fmt.Errorf("invalid IP format from %s: %s", svc, ip)
-			continue
-		}
-
-		return ip, nil
-	}
-
-	if lastErr != nil {
-		return "", fmt.Errorf("all public IP services failed: %w", lastErr)
-	}
-	return "", fmt.Errorf("no public IP services available")
-}
-
-// isValidIP validates that the string is an IPv4 or IPv6 address
-func isValidIP(ip string) bool {
-	return net.ParseIP(ip) != nil
+	return ip, nil
 }
 
 // WireGuard-specific methods
