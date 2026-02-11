@@ -145,7 +145,7 @@ func (m *VPNManager) GetConfig(ctx context.Context, nameOrID string) (*VPNConfig
 }
 
 // AddConfig adds a new VPN configuration
-func (m *VPNManager) AddConfig(ctx context.Context, name string, vpnType VPNType, configData string) (*VPNConfig, error) {
+func (m *VPNManager) AddConfig(ctx context.Context, name string, vpnType VPNType, configData string, username, password string) (*VPNConfig, error) {
 	// Validate name
 	if name == "" {
 		return nil, fmt.Errorf("configuration name is required")
@@ -186,6 +186,15 @@ func (m *VPNManager) AddConfig(ctx context.Context, name string, vpnType VPNType
 		return nil, fmt.Errorf("failed to write config file: %w", err)
 	}
 
+	// Write OpenVPN auth credentials file if provided
+	if vpnType == VPNTypeOpenVPN && username != "" && password != "" {
+		authPath := filepath.Join(m.openVPNConfDir, name+".auth")
+		authData := username + "\n" + password + "\n"
+		if err := os.WriteFile(authPath, []byte(authData), 0600); err != nil {
+			return nil, fmt.Errorf("failed to write auth file: %w", err)
+		}
+	}
+
 	return &VPNConfig{
 		Name:       name,
 		Type:       vpnType,
@@ -214,6 +223,10 @@ func (m *VPNManager) DeleteConfig(ctx context.Context, name string) error {
 	if err := os.Remove(cfg.ConfigPath); err != nil && !os.IsNotExist(err) {
 		return fmt.Errorf("failed to remove config file: %w", err)
 	}
+
+	// Remove auth file if it exists (OpenVPN credentials)
+	authPath := strings.TrimSuffix(cfg.ConfigPath, filepath.Ext(cfg.ConfigPath)) + ".auth"
+	_ = os.Remove(authPath) // Ignore error if not exists
 
 	return nil
 }

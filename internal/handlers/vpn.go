@@ -119,9 +119,11 @@ func (h *VPNHandler) GetConfig(w http.ResponseWriter, r *http.Request) {
 // @Router /vpn/configs [post]
 func (h *VPNHandler) AddConfig(w http.ResponseWriter, r *http.Request) {
 	var req struct {
-		Name   string           `json:"name"`
-		Type   managers.VPNType `json:"type"`
-		Config string           `json:"config"` // Base64 encoded config file
+		Name     string           `json:"name"`
+		Type     managers.VPNType `json:"type"`
+		Config   string           `json:"config"`   // Base64 encoded config file
+		Username string           `json:"username"` // OpenVPN auth username (optional)
+		Password string           `json:"password"` // OpenVPN auth password (optional)
 	}
 
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
@@ -142,7 +144,7 @@ func (h *VPNHandler) AddConfig(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	cfg, err := h.vpn.AddConfig(r.Context(), req.Name, req.Type, req.Config)
+	cfg, err := h.vpn.AddConfig(r.Context(), req.Name, req.Type, req.Config, req.Username, req.Password)
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, err.Error())
 		return
