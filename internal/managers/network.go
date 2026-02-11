@@ -31,9 +31,9 @@ import (
 const (
 	DefaultAPInterface         = "wlan0"
 	DefaultWANInterface        = "eth0"
-	DefaultWiFiClientInterface = "wlxccbabdb4dd07" // USB dongle
-	DefaultFallbackIP          = "192.168.1.242"   // V2: Server mode fallback
-	DefaultFallbackGateway     = "192.168.1.1"     // V2: Server mode fallback gateway
+	DefaultWiFiClientInterface = "wlan1"         // Fallback; overridden by CUBEOS_WIFI_CLIENT_INTERFACE or runtime detection
+	DefaultFallbackIP          = "192.168.1.242" // V2: Server mode fallback
+	DefaultFallbackGateway     = "192.168.1.1"   // V2: Server mode fallback gateway
 )
 
 // WiFiNetwork is defined in models/network.go
@@ -563,20 +563,30 @@ func (m *NetworkManager) setOnlineETHMode(ctx context.Context) error {
 
 // setOnlineWiFiMode configures online via WiFi client mode
 func (m *NetworkManager) setOnlineWiFiMode(ctx context.Context, ssid, password string) error {
-	// Bring up WiFi client interface (USB dongle)
-	iface, err := m.hal.GetInterface(ctx, m.wifiClientInterface)
+	// Dynamically detect WiFi client interface (USB dongle with wlx* prefix)
+	// Falls back to configured m.wifiClientInterface (default: wlan1)
+	iface := m.wifiClientInterface
+	if detected, err := m.DetectWiFiClientInterface(ctx); err == nil && detected != "" {
+		iface = detected
+	}
+	if iface == "" {
+		return fmt.Errorf("no USB WiFi dongle detected")
+	}
+
+	// Bring up WiFi client interface
+	ifaceInfo, err := m.hal.GetInterface(ctx, iface)
 	if err != nil {
 		return fmt.Errorf("WiFi client interface not available: %w", err)
 	}
-	if !iface.IsUp {
-		if err := m.hal.BringInterfaceUp(ctx, m.wifiClientInterface); err != nil {
+	if !ifaceInfo.IsUp {
+		if err := m.hal.BringInterfaceUp(ctx, iface); err != nil {
 			return fmt.Errorf("failed to bring up WiFi client interface: %w", err)
 		}
 		time.Sleep(time.Second) // Wait for interface to be ready
 	}
 
 	// Connect to upstream WiFi
-	if err := m.hal.ConnectWiFi(ctx, m.wifiClientInterface, ssid, password); err != nil {
+	if err := m.hal.ConnectWiFi(ctx, iface, ssid, password); err != nil {
 		return fmt.Errorf("failed to connect to WiFi: %w", err)
 	}
 
@@ -596,7 +606,7 @@ func (m *NetworkManager) setOnlineWiFiMode(ctx context.Context, ssid, password s
 	}
 
 	// Enable NAT: AP interface -> WiFi client interface
-	if err := m.hal.EnableNAT(ctx, m.apInterface, m.wifiClientInterface); err != nil {
+	if err := m.hal.EnableNAT(ctx, m.apInterface, iface); err != nil {
 		return fmt.Errorf("failed to enable NAT: %w", err)
 	}
 
