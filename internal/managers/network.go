@@ -590,8 +590,15 @@ func (m *NetworkManager) setOnlineWiFiMode(ctx context.Context, ssid, password s
 		return fmt.Errorf("failed to connect to WiFi: %w", err)
 	}
 
-	// Wait for connection
+	// Wait for WiFi association
 	time.Sleep(5 * time.Second)
+
+	// Request DHCP lease on the WiFi interface to get an IP address
+	if err := m.hal.RequestDHCP(ctx, iface); err != nil {
+		log.Warn().Err(err).Str("iface", iface).Msg("NetworkManager: DHCP on WiFi failed, may not have internet")
+	}
+	// Allow DHCP response to settle
+	time.Sleep(2 * time.Second)
 
 	// Ensure AP is running
 	if m.IsServerMode() {
