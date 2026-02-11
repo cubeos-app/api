@@ -91,7 +91,7 @@ func TestPortManagerWithDB(t *testing.T) {
 		t.Fatalf("failed to create schema: %v", err)
 	}
 
-	pm := NewPortManager(db)
+	pm := NewPortManager(db, nil, nil)
 
 	// Test first allocation
 	port1, err := pm.AllocateUserPort()
@@ -146,7 +146,7 @@ func TestPortManagerAutoAllocate(t *testing.T) {
 		t.Fatalf("failed to create schema: %v", err)
 	}
 
-	pm := NewPortManager(db)
+	pm := NewPortManager(db, nil, nil)
 
 	// AllocatePort with port=0 should auto-allocate in user range
 	err = pm.AllocatePort(1, 0, "tcp", "Web UI", true)
@@ -206,7 +206,7 @@ func TestPortManagerConcurrentAllocate(t *testing.T) {
 		}
 	}
 
-	pm := NewPortManager(db)
+	pm := NewPortManager(db, nil, nil)
 	const goroutines = 10
 
 	// Channel to collect results
@@ -310,7 +310,7 @@ func TestPortManagerGapFinding(t *testing.T) {
 		t.Fatalf("failed to delete port: %v", err)
 	}
 
-	pm := NewPortManager(db)
+	pm := NewPortManager(db, nil, nil)
 
 	// Next allocation should return UserPortMin+5 (next after highest)
 	nextPort, err := pm.AllocateUserPort()
@@ -350,7 +350,7 @@ func TestPortManagerExhaustion(t *testing.T) {
 		}
 	}
 
-	pm := NewPortManager(db)
+	pm := NewPortManager(db, nil, nil)
 
 	// Should fail - no ports available
 	_, err = pm.AllocateUserPort()

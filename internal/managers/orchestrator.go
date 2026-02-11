@@ -91,8 +91,8 @@ func NewOrchestrator(cfg OrchestratorConfig) (*Orchestrator, error) {
 	}
 	o.pihole = NewPiholeManager(cfg.Config, piholePath)
 
-	// Initialize PortManager
-	o.ports = NewPortManager(cfg.DB)
+	// Initialize PortManager with triple-source validation (DB + Swarm + HAL)
+	o.ports = NewPortManager(cfg.DB, o.swarm, cfg.HALClient)
 
 	return o, nil
 }

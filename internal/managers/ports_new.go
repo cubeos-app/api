@@ -2,11 +2,16 @@
 package managers
 
 import (
+	"context"
 	"database/sql"
 	"fmt"
 	"sync"
+	"time"
 
+	"cubeos-api/internal/hal"
 	"cubeos-api/internal/models"
+
+	"github.com/rs/zerolog/log"
 )
 
 // Port allocation scheme constants.
@@ -72,90 +77,177 @@ var ReservedSystemPorts = map[int]string{
 	6032: "Docs Indexer",
 }
 
-// PortManager handles port allocation and tracking.
-// It enforces the strict 6xxx port scheme.
+// PortManager handles port allocation and tracking with triple-source validation.
+// It enforces the strict 6xxx port scheme and checks three sources before allocating:
+//   - Database (port_allocations table) — what CubeOS thinks is allocated
+//   - Swarm API (published ports) — what Docker Swarm has claimed
+//   - Host OS (HAL /proc/net scan) — what's actually listening on the host
+//
+// A port is considered FREE only when ALL three sources agree it's available.
 type PortManager struct {
-	db *sql.DB
-	mu sync.RWMutex
+	db    *sql.DB
+	swarm *SwarmManager
+	hal   *hal.Client
+	mu    sync.RWMutex
 }
 
-// NewPortManager creates a new PortManager.
-func NewPortManager(db *sql.DB) *PortManager {
-	return &PortManager{db: db}
+// NewPortManager creates a new PortManager with triple-source validation.
+// Both swarm and hal may be nil for graceful degradation — the manager
+// will fall back to DB-only validation (same as pre-Group 2 behavior).
+func NewPortManager(db *sql.DB, swarm *SwarmManager, hal *hal.Client) *PortManager {
+	return &PortManager{
+		db:    db,
+		swarm: swarm,
+		hal:   hal,
+	}
 }
 
 // AllocateUserPort allocates the next available port in the user range (6100-6999).
-// This acquires the mutex and is safe to call from external code.
+// This is the backward-compatible wrapper that uses a background context.
+// Prefer AllocateUserPortWithContext for new code.
 func (p *PortManager) AllocateUserPort() (int, error) {
-	p.mu.Lock()
-	defer p.mu.Unlock()
-	return p.allocateNextUserPort()
+	return p.AllocateUserPortWithContext(context.Background())
 }
 
-// allocateNextUserPort is the internal, lock-free implementation.
+// AllocateUserPortWithContext allocates the next available port using triple-source
+// validation. It acquires the mutex and is safe to call from external code.
+func (p *PortManager) AllocateUserPortWithContext(ctx context.Context) (int, error) {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	return p.allocateNextUserPort(ctx)
+}
+
+// allocateNextUserPort is the internal, lock-free triple-source implementation.
 // MUST be called with p.mu already held.
-func (p *PortManager) allocateNextUserPort() (int, error) {
-	// Find the highest allocated port in user range
-	var maxPort sql.NullInt64
-	err := p.db.QueryRow(`
-		SELECT MAX(port) FROM port_allocations 
-		WHERE port >= ? AND port <= ?
-	`, UserPortMin, UserPortMax).Scan(&maxPort)
-	if err != nil && err != sql.ErrNoRows {
-		return 0, fmt.Errorf("failed to query max port: %w", err)
+//
+// Validation order:
+//  1. Query port_allocations table → dbUsed set
+//  2. Query Swarm published ports → swarmUsed set (graceful degradation if unavailable)
+//  3. Query HAL host listening ports → hostUsed set (graceful degradation if unavailable)
+//  4. Merge all three sets + reserved system ports
+//  5. Iterate 6100→6999, return first port NOT in merged set
+func (p *PortManager) allocateNextUserPort(ctx context.Context) (int, error) {
+	// Build merged set of all occupied ports
+	occupied := make(map[int]bool)
+
+	// Source 1: Database — port_allocations table
+	dbPorts, err := p.getDBAllocatedPorts()
+	if err != nil {
+		return 0, fmt.Errorf("failed to query port allocations: %w", err)
+	}
+	for _, port := range dbPorts {
+		occupied[port] = true
+	}
+	log.Debug().Int("db_ports", len(dbPorts)).Msg("Port validation: DB ports loaded")
+
+	// Source 2: Swarm published ports (graceful degradation)
+	swarmPorts := p.getSwarmPorts(ctx)
+	for port, svcName := range swarmPorts {
+		if port >= UserPortMin && port <= UserPortMax {
+			if !occupied[port] {
+				log.Warn().Int("port", port).Str("service", svcName).
+					Msg("Port claimed by Swarm but missing from DB — blocking allocation")
+			}
+			occupied[port] = true
+		}
+	}
+	log.Debug().Int("swarm_ports", len(swarmPorts)).Msg("Port validation: Swarm ports loaded")
+
+	// Source 3: Host listening ports via HAL (graceful degradation)
+	hostPorts := p.getHostPorts(ctx)
+	for _, port := range hostPorts {
+		if port >= UserPortMin && port <= UserPortMax {
+			if !occupied[port] {
+				log.Warn().Int("port", port).
+					Msg("Port in use on host but missing from DB and Swarm — blocking allocation")
+			}
+			occupied[port] = true
+		}
+	}
+	log.Debug().Int("host_ports", len(hostPorts)).Msg("Port validation: Host ports loaded")
+
+	// Also block reserved system ports (belt-and-suspenders)
+	for port := range ReservedSystemPorts {
+		occupied[port] = true
 	}
 
-	// Calculate next port
-	nextPort := UserPortMin
-	if maxPort.Valid {
-		nextPort = int(maxPort.Int64) + 1
-	}
-
-	// Check if we've exhausted the range
-	if nextPort > UserPortMax {
-		// Try to find gaps
-		nextPort, err = p.findGapInUserRange()
-		if err != nil {
-			return 0, fmt.Errorf("no available ports in user range (6100-6999)")
+	// Find first free port in user range
+	for port := UserPortMin; port <= UserPortMax; port++ {
+		if !occupied[port] {
+			log.Debug().Int("port", port).Msg("Port validation: allocated port")
+			return port, nil
 		}
 	}
 
-	return nextPort, nil
+	return 0, fmt.Errorf("no available ports in user range (%d-%d): all %d ports occupied",
+		UserPortMin, UserPortMax, UserPortCount)
 }
 
-// findGapInUserRange finds an unused port in the user range.
-func (p *PortManager) findGapInUserRange() (int, error) {
-	// Get all allocated ports in user range
+// getDBAllocatedPorts returns all ports from the port_allocations table in the user range.
+func (p *PortManager) getDBAllocatedPorts() ([]int, error) {
 	rows, err := p.db.Query(`
 		SELECT port FROM port_allocations 
 		WHERE port >= ? AND port <= ?
 		ORDER BY port
 	`, UserPortMin, UserPortMax)
 	if err != nil {
-		return 0, err
+		return nil, err
 	}
 	defer rows.Close()
 
-	allocated := make(map[int]bool)
+	var ports []int
 	for rows.Next() {
 		var port int
 		if err := rows.Scan(&port); err != nil {
-			return 0, fmt.Errorf("failed to scan port allocation: %w", err)
+			return nil, fmt.Errorf("failed to scan port allocation: %w", err)
 		}
-		allocated[port] = true
+		ports = append(ports, port)
 	}
 	if err := rows.Err(); err != nil {
-		return 0, fmt.Errorf("failed to iterate port allocations: %w", err)
+		return nil, fmt.Errorf("failed to iterate port allocations: %w", err)
+	}
+	return ports, nil
+}
+
+// getSwarmPorts queries Swarm for all published ports.
+// Returns empty map if SwarmManager is nil or Swarm is unreachable.
+func (p *PortManager) getSwarmPorts(ctx context.Context) map[int]string {
+	if p.swarm == nil {
+		return make(map[int]string)
 	}
 
-	// Find first gap
-	for port := UserPortMin; port <= UserPortMax; port++ {
-		if !allocated[port] {
-			return port, nil
-		}
+	ports, err := p.swarm.GetAllPublishedPorts(ctx)
+	if err != nil {
+		log.Warn().Err(err).Msg("Port validation: Swarm query failed, proceeding without Swarm data")
+		return make(map[int]string)
+	}
+	return ports
+}
+
+// getHostPorts queries HAL for all listening ports on the host.
+// Returns empty slice if HAL client is nil or HAL is unreachable.
+func (p *PortManager) getHostPorts(ctx context.Context) []int {
+	if p.hal == nil {
+		return nil
 	}
 
-	return 0, fmt.Errorf("all user ports exhausted")
+	// Use a shorter timeout for HAL — don't block installs for too long
+	halCtx, cancel := context.WithTimeout(ctx, 5*time.Second)
+	defer cancel()
+
+	listeningPorts, err := p.hal.GetListeningPorts(halCtx)
+	if err != nil {
+		// GetListeningPorts already does graceful degradation internally,
+		// but handle any unexpected errors here too
+		log.Warn().Err(err).Msg("Port validation: HAL query failed, proceeding without host data")
+		return nil
+	}
+
+	ports := make([]int, 0, len(listeningPorts))
+	for _, lp := range listeningPorts {
+		ports = append(ports, lp.Port)
+	}
+	return ports
 }
 
 // AllocatePort allocates a specific port or auto-allocates if port is 0.
@@ -170,7 +262,7 @@ func (p *PortManager) AllocatePort(appID int64, port int, protocol, description 
 	// If port is 0, auto-allocate (use lock-free variant since we already hold mu)
 	if port == 0 {
 		var err error
-		port, err = p.allocateNextUserPort()
+		port, err = p.allocateNextUserPort(context.Background())
 		if err != nil {
 			return err
 		}
@@ -189,7 +281,7 @@ func (p *PortManager) AllocatePort(appID int64, port int, protocol, description 
 		}
 	}
 
-	// Check if port is already allocated
+	// Check if port is already allocated in DB
 	var count int
 	if err := p.db.QueryRow("SELECT COUNT(*) FROM port_allocations WHERE port = ? AND protocol = ?", port, protocol).Scan(&count); err != nil {
 		return fmt.Errorf("failed to check port allocation: %w", err)

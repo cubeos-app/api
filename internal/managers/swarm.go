@@ -643,6 +643,43 @@ func (s *SwarmManager) CreateOverlayNetwork(name, subnet string) error {
 	return nil
 }
 
+// GetAllPublishedPorts returns all published ports across ALL Swarm services.
+// Used by PortManager for triple-source port validation (DB + Swarm + Host).
+//
+// Returns map[int]string where key = published port, value = service name.
+// This diagnostic mapping lets callers log WHY a port is occupied.
+//
+// Graceful degradation: returns empty map (not error) if Swarm is inactive
+// or unreachable, so port allocation can proceed with DB + Host validation only.
+func (s *SwarmManager) GetAllPublishedPorts(ctx context.Context) (map[int]string, error) {
+	// Fast path: if Swarm is not active, return empty map
+	active, err := s.IsSwarmActive()
+	if err != nil || !active {
+		return make(map[int]string), nil
+	}
+
+	ctx, cancel := context.WithTimeout(ctx, 10*time.Second)
+	defer cancel()
+
+	// List ALL services — no stack filter, we want every published port
+	services, err := s.client.ServiceList(ctx, types.ServiceListOptions{})
+	if err != nil {
+		// Graceful degradation: Swarm query failed, proceed without Swarm data
+		return make(map[int]string), nil
+	}
+
+	ports := make(map[int]string)
+	for _, svc := range services {
+		for _, p := range svc.Endpoint.Ports {
+			if p.PublishedPort > 0 {
+				ports[int(p.PublishedPort)] = svc.Spec.Name
+			}
+		}
+	}
+
+	return ports, nil
+}
+
 // Helper functions
 
 // getReplicaStatusWithContext gets replica status with a context for timeout

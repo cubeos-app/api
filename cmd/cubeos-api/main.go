@@ -283,7 +283,10 @@ func main() {
 	mountsMgr.SetDB(db.DB) // FIX: Wire database connection
 
 	// Create PortManager for port allocation (Sprint 4)
-	portMgr := managers.NewPortManager(db.DB)
+	// NOTE: Standalone PortManager uses DB-only validation for read endpoints.
+	// The Orchestrator's internal PortManager has full triple-source validation.
+	// Group 3 will wire SwarmManager + HAL here for AppStoreManager integration.
+	portMgr := managers.NewPortManager(db.DB, nil, nil)
 	log.Info().Msg("PortManager initialized")
 
 	// Create Setup manager (first boot wizard)
