@@ -317,8 +317,8 @@ func TestPortManagerGapFinding(t *testing.T) {
 	if err != nil {
 		t.Fatalf("AllocateUserPort() error = %v", err)
 	}
-	if nextPort != UserPortMin+5 {
-		t.Errorf("expected port %d (next after highest), got %d", UserPortMin+5, nextPort)
+	if nextPort != gapPort {
+		t.Errorf("expected port %d (gap fill), got %d", gapPort, nextPort)
 	}
 }
 
