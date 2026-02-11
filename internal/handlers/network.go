@@ -3,6 +3,7 @@ package handlers
 
 import (
 	"encoding/json"
+	"fmt"
 	"net/http"
 	"strings"
 
@@ -809,11 +810,22 @@ func (h *NetworkHandler) GetInternetStatus(w http.ResponseWriter, r *http.Reques
 	if h.halClient != nil {
 		status, err := h.halClient.GetNetworkStatus(ctx)
 		if err == nil {
-			writeJSON(w, http.StatusOK, map[string]interface{}{
+			resp := map[string]interface{}{
 				"connected":    status["internet"],
 				"check_target": "1.1.1.1",
+				"target_name":  "1.1.1.1",
 				"method":       "hal",
-			})
+			}
+			// Pass through RTT if HAL returned it
+			if rtt, ok := status["rtt_ms"]; ok {
+				resp["rtt_ms"] = rtt
+			}
+			if target, ok := status["check_target"]; ok {
+				targetStr := fmt.Sprintf("%v", target)
+				resp["check_target"] = targetStr
+				resp["target_name"] = targetStr
+			}
+			writeJSON(w, http.StatusOK, resp)
 			return
 		}
 	}
@@ -827,6 +839,7 @@ func (h *NetworkHandler) GetInternetStatus(w http.ResponseWriter, r *http.Reques
 	writeJSON(w, http.StatusOK, map[string]interface{}{
 		"connected":    netStatus.Internet,
 		"check_target": "1.1.1.1",
+		"target_name":  "1.1.1.1",
 		"method":       "manager",
 	})
 }

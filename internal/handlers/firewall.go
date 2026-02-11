@@ -372,7 +372,13 @@ func (h *FirewallHandler) GetRules(w http.ResponseWriter, r *http.Request) {
 			protocol = ""
 		}
 
-		return map[string]interface{}{
+		// Port (prefer dport, fall back to sport)
+		port := rule.DPort
+		if port == "" {
+			port = rule.SPort
+		}
+
+		result := map[string]interface{}{
 			"action":    action,
 			"direction": direction,
 			"protocol":  protocol,
@@ -382,11 +388,44 @@ func (h *FirewallHandler) GetRules(w http.ResponseWriter, r *http.Request) {
 			"target":    rule.Target,
 			"table":     table,
 		}
+
+		if port != "" {
+			result["port"] = port
+		}
+		if rule.DPort != "" {
+			result["destination_port"] = rule.DPort
+		}
+		if rule.SPort != "" {
+			result["source_port"] = rule.SPort
+		}
+		if rule.InInterface != "" && rule.InInterface != "*" {
+			result["in_interface"] = rule.InInterface
+		}
+		if rule.OutInterface != "" && rule.OutInterface != "*" {
+			result["out_interface"] = rule.OutInterface
+		}
+		// Extract actual iptables comment from /* ... */ markers
+		if rule.Options != "" {
+			if start := strings.Index(rule.Options, "/*"); start >= 0 {
+				if end := strings.Index(rule.Options[start:], "*/"); end >= 0 {
+					comment := strings.TrimSpace(rule.Options[start+2 : start+end])
+					if comment != "" {
+						result["comment"] = comment
+					}
+				}
+			}
+		}
+
+		return result
 	}
 
 	// isSystemRule checks if a rule should be excluded in user_only mode
 	isSystemRule := func(rule hal.FirewallRule) bool {
 		if systemChains[rule.Chain] {
+			return true
+		}
+		// Chains starting with DOCKER are system-managed
+		if strings.HasPrefix(rule.Chain, "DOCKER") {
 			return true
 		}
 		// Rules targeting Docker chains

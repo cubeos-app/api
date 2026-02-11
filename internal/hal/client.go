@@ -2926,11 +2926,18 @@ func (c *Client) IsMounted(ctx context.Context, path string) (bool, error) {
 
 // FirewallRule represents a single iptables rule from HAL
 type FirewallRule struct {
-	Chain       string `json:"chain"`
-	Destination string `json:"destination"`
-	Prot        string `json:"prot"`
-	Source      string `json:"source"`
-	Target      string `json:"target"`
+	Chain        string `json:"chain"`
+	Destination  string `json:"destination"`
+	Prot         string `json:"prot"`
+	Source       string `json:"source"`
+	Target       string `json:"target"`
+	DPort        string `json:"dport,omitempty"`
+	SPort        string `json:"sport,omitempty"`
+	InInterface  string `json:"in_interface,omitempty"`
+	OutInterface string `json:"out_interface,omitempty"`
+	Options      string `json:"options,omitempty"`
+	Pkts         string `json:"pkts,omitempty"`
+	Bytes        string `json:"bytes,omitempty"`
 }
 
 // FirewallRulesResponse represents firewall rules from HAL
