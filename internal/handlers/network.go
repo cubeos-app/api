@@ -849,11 +849,11 @@ func (h *NetworkHandler) CheckConnectivity(w http.ResponseWriter, r *http.Reques
 
 // GetTrafficStats godoc
 // @Summary Get traffic statistics
-// @Description Returns current traffic statistics for all interfaces
+// @Description Returns current traffic statistics for all interfaces as an array
 // @Tags Network
 // @Produce json
 // @Security BearerAuth
-// @Success 200 {object} map[string]interface{} "Traffic statistics"
+// @Success 200 {object} map[string]interface{} "Traffic statistics array"
 // @Failure 503 {object} ErrorResponse "HAL service unavailable"
 // @Router /network/traffic [get]
 func (h *NetworkHandler) GetTrafficStats(w http.ResponseWriter, r *http.Request) {
@@ -867,8 +867,29 @@ func (h *NetworkHandler) GetTrafficStats(w http.ResponseWriter, r *http.Request)
 		writeError(w, http.StatusInternalServerError, "Failed to get traffic stats: "+err.Error())
 		return
 	}
+
+	// Transform HAL's map format {interfaces: {eth0: {...}}} into an array
+	// that the frontend expects: [{interface: "eth0", rx_bytes: ..., ...}]
+	var statsArray []map[string]interface{}
+	if stats != nil && stats.Interfaces != nil {
+		for name, iface := range stats.Interfaces {
+			statsArray = append(statsArray, map[string]interface{}{
+				"interface":  name,
+				"rx_bytes":   iface.RXBytes,
+				"tx_bytes":   iface.TXBytes,
+				"rx_packets": iface.RXPackets,
+				"tx_packets": iface.TXPackets,
+				"rx_errors":  iface.RXErrors,
+				"tx_errors":  iface.TXErrors,
+				"rx_dropped": iface.RXDropped,
+				"tx_dropped": iface.TXDropped,
+			})
+		}
+	}
+
 	writeJSON(w, http.StatusOK, map[string]interface{}{
-		"stats": stats,
+		"stats":  statsArray,
+		"source": stats.Source,
 	})
 }
 
@@ -903,10 +924,23 @@ func (h *NetworkHandler) GetTrafficHistory(w http.ResponseWriter, r *http.Reques
 		writeError(w, http.StatusInternalServerError, "Failed to get traffic history: "+err.Error())
 		return
 	}
+
+	// Normalize field names for frontend (rx_rate → rx_rate_bps)
+	var normalizedHistory []map[string]interface{}
+	for _, point := range history {
+		normalizedHistory = append(normalizedHistory, map[string]interface{}{
+			"timestamp":   point.Timestamp,
+			"rx_bytes":    point.RxBytes,
+			"tx_bytes":    point.TxBytes,
+			"rx_rate_bps": point.RxRate,
+			"tx_rate_bps": point.TxRate,
+		})
+	}
+
 	writeJSON(w, http.StatusOK, map[string]interface{}{
 		"interface": iface,
 		"duration":  duration,
-		"history":   history,
+		"history":   normalizedHistory,
 	})
 }
 

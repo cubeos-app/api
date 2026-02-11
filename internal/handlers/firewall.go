@@ -278,12 +278,13 @@ func (h *FirewallHandler) DisableForwarding(w http.ResponseWriter, r *http.Reque
 
 // GetRules godoc
 // @Summary Get firewall rules
-// @Description Returns current iptables firewall rules with optional filtering by chain or table
+// @Description Returns current iptables firewall rules with optional filtering by chain, table, or user_only mode
 // @Tags Firewall
 // @Produce json
 // @Security BearerAuth
 // @Param chain query string false "Filter by chain (INPUT, OUTPUT, FORWARD)"
 // @Param table query string false "Filter by table (filter, nat, mangle)"
+// @Param user_only query string false "Filter out Docker/system rules (true/false)"
 // @Success 200 {object} map[string]interface{} "rules: map of rules, count: total"
 // @Failure 400 {object} ErrorResponse "Invalid table or chain name"
 // @Failure 500 {object} ErrorResponse "Failed to get firewall rules"
@@ -298,6 +299,7 @@ func (h *FirewallHandler) GetRules(w http.ResponseWriter, r *http.Request) {
 	// Validate query params if provided
 	chainFilter := r.URL.Query().Get("chain")
 	tableFilter := r.URL.Query().Get("table")
+	userOnly := r.URL.Query().Get("user_only") == "true"
 
 	if tableFilter != "" {
 		if err := managers.ValidateTable(tableFilter); err != nil {
@@ -320,24 +322,101 @@ func (h *FirewallHandler) GetRules(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// Docker/system chains to exclude when user_only=true
+	systemChains := map[string]bool{
+		"DOCKER": true, "DOCKER-ISOLATION-STAGE-1": true, "DOCKER-ISOLATION-STAGE-2": true,
+		"DOCKER-USER": true, "DOCKER-INGRESS": true, "DOCKER_OUTPUT": true,
+		"DOCKER_POSTROUTING": true, "KUBE-SERVICES": true, "KUBE-POSTROUTING": true,
+		"KUBE-FIREWALL": true,
+	}
+
+	// Normalize a single HAL rule into a user-friendly format
+	normalizeRule := func(rule hal.FirewallRule, table string) map[string]interface{} {
+		// Map target → action
+		action := strings.ToLower(rule.Target)
+		switch action {
+		case "accept":
+			action = "allow"
+		case "drop":
+			action = "deny"
+		case "reject":
+			action = "reject"
+		}
+
+		// Map chain → direction
+		direction := ""
+		switch rule.Chain {
+		case "INPUT":
+			direction = "in"
+		case "OUTPUT":
+			direction = "out"
+		case "FORWARD":
+			direction = "forward"
+		default:
+			direction = strings.ToLower(rule.Chain)
+		}
+
+		// Normalize source/destination (0.0.0.0/0 = any)
+		from := rule.Source
+		if from == "0.0.0.0/0" || from == "anywhere" {
+			from = ""
+		}
+		to := rule.Destination
+		if to == "0.0.0.0/0" || to == "anywhere" {
+			to = ""
+		}
+
+		// Protocol
+		protocol := rule.Prot
+		if protocol == "all" || protocol == "0" {
+			protocol = ""
+		}
+
+		return map[string]interface{}{
+			"action":    action,
+			"direction": direction,
+			"protocol":  protocol,
+			"from":      from,
+			"to":        to,
+			"chain":     rule.Chain,
+			"target":    rule.Target,
+			"table":     table,
+		}
+	}
+
+	// isSystemRule checks if a rule should be excluded in user_only mode
+	isSystemRule := func(rule hal.FirewallRule) bool {
+		if systemChains[rule.Chain] {
+			return true
+		}
+		// Rules targeting Docker chains
+		if strings.HasPrefix(rule.Target, "DOCKER") {
+			return true
+		}
+		return false
+	}
+
 	// Build response grouped by "table:chain"
 	rulesByTableChain := make(map[string][]interface{})
 
-	for _, rule := range rulesResp.Filter {
-		key := "filter:" + rule.Chain
-		rulesByTableChain[key] = append(rulesByTableChain[key], rule)
+	addRules := func(halRules []hal.FirewallRule, table string) {
+		for _, rule := range halRules {
+			if userOnly && isSystemRule(rule) {
+				continue
+			}
+			key := table + ":" + rule.Chain
+			rulesByTableChain[key] = append(rulesByTableChain[key], normalizeRule(rule, table))
+		}
 	}
-	for _, rule := range rulesResp.NAT {
-		key := "nat:" + rule.Chain
-		rulesByTableChain[key] = append(rulesByTableChain[key], rule)
-	}
-	for _, rule := range rulesResp.Mangle {
-		key := "mangle:" + rule.Chain
-		rulesByTableChain[key] = append(rulesByTableChain[key], rule)
-	}
-	for _, rule := range rulesResp.Raw {
-		key := "raw:" + rule.Chain
-		rulesByTableChain[key] = append(rulesByTableChain[key], rule)
+
+	// When user_only, only include filter table rules
+	if userOnly {
+		addRules(rulesResp.Filter, "filter")
+	} else {
+		addRules(rulesResp.Filter, "filter")
+		addRules(rulesResp.NAT, "nat")
+		addRules(rulesResp.Mangle, "mangle")
+		addRules(rulesResp.Raw, "raw")
 	}
 
 	// Filter by chain/table if specified
