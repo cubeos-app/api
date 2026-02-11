@@ -14,6 +14,7 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
+	"regexp"
 	"strings"
 	"time"
 
@@ -28,6 +29,25 @@ const (
 	VPNTypeWireGuard VPNType = "wireguard"
 	VPNTypeOpenVPN   VPNType = "openvpn"
 )
+
+var reInvalidVPNChar = regexp.MustCompile(`[^a-zA-Z0-9_-]`)
+
+// sanitizeVPNName replaces characters invalid in Linux interface names with hyphens.
+// WireGuard uses the config name as the interface name, so it must be [a-zA-Z0-9_-]{1,15}.
+func sanitizeVPNName(name string) string {
+	s := reInvalidVPNChar.ReplaceAllString(name, "-")
+	// Collapse multiple hyphens
+	for strings.Contains(s, "--") {
+		s = strings.ReplaceAll(s, "--", "-")
+	}
+	s = strings.Trim(s, "-")
+	// Linux interface names are max 15 chars
+	if len(s) > 15 {
+		s = s[:15]
+	}
+	s = strings.TrimRight(s, "-")
+	return s
+}
 
 // VPNConfig represents a VPN configuration
 type VPNConfig struct {
@@ -130,9 +150,14 @@ func (m *VPNManager) AddConfig(ctx context.Context, name string, vpnType VPNType
 	if name == "" {
 		return nil, fmt.Errorf("configuration name is required")
 	}
-	if strings.ContainsAny(name, "/\\. ") {
-		return nil, fmt.Errorf("configuration name contains invalid characters")
+
+	// Sanitize name: replace invalid chars with hyphen, then validate
+	// WireGuard interface names must match [a-zA-Z0-9_-] and be max 15 chars
+	sanitized := sanitizeVPNName(name)
+	if sanitized == "" || sanitized == "-" {
+		return nil, fmt.Errorf("configuration name contains only invalid characters")
 	}
+	name = sanitized
 
 	// Decode base64 config if needed
 	decoded, err := base64.StdEncoding.DecodeString(configData)
