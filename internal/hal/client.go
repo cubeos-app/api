@@ -283,6 +283,20 @@ type InterfaceTraffic struct {
 	TXDropped int64  `json:"tx_dropped"`
 }
 
+// ListeningPort represents a TCP or UDP port in LISTEN state on the host.
+// Used by PortManager for triple-source port validation.
+type ListeningPort struct {
+	Port     int    `json:"port"`
+	Protocol string `json:"protocol"`
+	Process  string `json:"process"`
+	PID      int    `json:"pid"`
+}
+
+// ListeningPortsResponse is the HAL response for host listening ports
+type ListeningPortsResponse struct {
+	Ports []ListeningPort `json:"ports"`
+}
+
 // =============================================================================
 // Response Types - VPN
 // =============================================================================
@@ -2781,6 +2795,23 @@ func (c *Client) GetTrafficStats(ctx context.Context) (*TrafficStats, error) {
 		return nil, err
 	}
 	return &result, nil
+}
+
+// GetListeningPorts returns all TCP/UDP ports currently in LISTEN state on the host.
+// This is used by PortManager for triple-source port validation (DB + Swarm + Host).
+// Returns an empty slice (not error) if HAL is unreachable — graceful degradation
+// ensures that port allocation can proceed with DB + Swarm validation only.
+func (c *Client) GetListeningPorts(ctx context.Context) ([]ListeningPort, error) {
+	var resp ListeningPortsResponse
+	if err := c.doGet(ctx, "/network/ports/listening", &resp); err != nil {
+		// Graceful degradation: HAL unreachable means we can't check host ports,
+		// but install should not be blocked. Return empty slice, not error.
+		return []ListeningPort{}, nil
+	}
+	if resp.Ports == nil {
+		return []ListeningPort{}, nil
+	}
+	return resp.Ports, nil
 }
 
 // GetForwardingStatus returns whether IP forwarding is enabled
