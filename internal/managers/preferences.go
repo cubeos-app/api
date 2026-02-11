@@ -196,6 +196,10 @@ func (pm *PreferencesManager) Update(update models.PreferencesUpdate) (models.Pr
 			if update.Dashboard.Advanced != nil {
 				pm.prefs.Dashboard.Advanced = mergeDashboardLayout(pm.prefs.Dashboard.Advanced, update.Dashboard.Advanced)
 			}
+			// Session 10: User presets are stored as a complete array — replace, not merge
+			if update.Dashboard.UserPresets != nil {
+				pm.prefs.Dashboard.UserPresets = update.Dashboard.UserPresets
+			}
 		}
 	}
 
@@ -252,6 +256,31 @@ func mergeDashboardLayout(existing, update *models.DashboardLayoutConfig) *model
 	if update.ShowAlerts != nil {
 		existing.ShowAlerts = update.ShowAlerts
 	}
+	// Extended visibility (Sessions 7-9)
+	if update.ShowUptimeLoad != nil {
+		existing.ShowUptimeLoad = update.ShowUptimeLoad
+	}
+	if update.ShowNetworkThroughput != nil {
+		existing.ShowNetworkThroughput = update.ShowNetworkThroughput
+	}
+	if update.ShowRecentLogs != nil {
+		existing.ShowRecentLogs = update.ShowRecentLogs
+	}
+	if update.ShowBattery != nil {
+		existing.ShowBattery = update.ShowBattery
+	}
+	if update.ShowCpuGauge != nil {
+		existing.ShowCpuGauge = update.ShowCpuGauge
+	}
+	if update.ShowMemoryGauge != nil {
+		existing.ShowMemoryGauge = update.ShowMemoryGauge
+	}
+	if update.ShowDiskGauge != nil {
+		existing.ShowDiskGauge = update.ShowDiskGauge
+	}
+	if update.ShowTempGauge != nil {
+		existing.ShowTempGauge = update.ShowTempGauge
+	}
 	// Clock settings
 	if update.ClockFormat != "" {
 		existing.ClockFormat = update.ClockFormat
@@ -289,6 +318,10 @@ func mergeDashboardLayout(existing, update *models.DashboardLayoutConfig) *model
 	// Per-widget dimensions
 	if update.WidgetDimensions != nil {
 		existing.WidgetDimensions = update.WidgetDimensions
+	}
+	// Per-widget refresh intervals (Session 5)
+	if update.WidgetRefreshIntervals != nil {
+		existing.WidgetRefreshIntervals = update.WidgetRefreshIntervals
 	}
 	// Advanced section order
 	if update.AdvancedSectionOrder != nil {

@@ -526,6 +526,16 @@ type DashboardLayoutConfig struct {
 	ShowMyApps       *bool `json:"show_my_apps,omitempty"`
 	ShowAlerts       *bool `json:"show_alerts,omitempty"`
 
+	// Extended visibility (Sessions 7-9: decomposed widgets + cross-mode)
+	ShowUptimeLoad        *bool `json:"show_uptime_load,omitempty"`
+	ShowNetworkThroughput *bool `json:"show_network_throughput,omitempty"`
+	ShowRecentLogs        *bool `json:"show_recent_logs,omitempty"`
+	ShowBattery           *bool `json:"show_battery,omitempty"`
+	ShowCpuGauge          *bool `json:"show_cpu_gauge,omitempty"`
+	ShowMemoryGauge       *bool `json:"show_memory_gauge,omitempty"`
+	ShowDiskGauge         *bool `json:"show_disk_gauge,omitempty"`
+	ShowTempGauge         *bool `json:"show_temp_gauge,omitempty"`
+
 	// Clock settings
 	ClockFormat  string `json:"clock_format,omitempty"` // "12h" | "24h"
 	DateFormat   string `json:"date_format,omitempty"`  // "long" | "medium" | "short" | "iso" | "us" | "eu"
@@ -550,7 +560,10 @@ type DashboardLayoutConfig struct {
 	// Per-widget dimensions (width: 'half'|'full', height: 'auto'|'collapsed'|number)
 	WidgetDimensions json.RawMessage `json:"widget_dimensions,omitempty"` // e.g. {"vitals":{"width":"full","height":"auto"}}
 
-	// Advanced mode section ordering
+	// Per-widget refresh intervals in seconds (Session 5)
+	WidgetRefreshIntervals json.RawMessage `json:"widget_refresh_intervals,omitempty"` // e.g. {"vitals":2,"disk":10}
+
+	// Advanced mode section ordering (deprecated — Session 8 migrates to grid_layout)
 	AdvancedSectionOrder json.RawMessage `json:"advanced_section_order,omitempty"` // e.g. ["gauges","infobar","disk-signals",...]
 
 	// Advanced-specific section visibility
@@ -564,9 +577,11 @@ type DashboardLayoutConfig struct {
 
 // DashboardConfig holds per-mode dashboard customization.
 // Each UI mode (Standard, Advanced) has its own independent layout config.
+// UserPresets stores user-created layout presets as a JSON array.
 type DashboardConfig struct {
-	Standard *DashboardLayoutConfig `json:"standard,omitempty"`
-	Advanced *DashboardLayoutConfig `json:"advanced,omitempty"`
+	Standard    *DashboardLayoutConfig `json:"standard,omitempty"`
+	Advanced    *DashboardLayoutConfig `json:"advanced,omitempty"`
+	UserPresets json.RawMessage        `json:"user_presets,omitempty"` // Session 10: user-created presets
 }
 
 type Preferences struct {
