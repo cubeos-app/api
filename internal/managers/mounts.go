@@ -57,6 +57,7 @@ type CreateMountRequest struct {
 	Name       string `json:"name"`
 	Type       string `json:"type"` // "smb" or "nfs"
 	RemotePath string `json:"remote_path"`
+	LocalPath  string `json:"local_path,omitempty"` // defaults to /mnt/{name}
 	Username   string `json:"username,omitempty"`
 	Password   string `json:"password,omitempty"`
 	Options    string `json:"options,omitempty"`
@@ -138,8 +139,11 @@ func (m *MountsManager) CreateMount(ctx context.Context, req *CreateMountRequest
 		return nil, fmt.Errorf("remote path is required")
 	}
 
-	// Create local path
-	localPath := fmt.Sprintf("/cubeos/mounts/%s", req.Name)
+	// Use user-provided local path or default to /mnt/{name}
+	localPath := req.LocalPath
+	if localPath == "" {
+		localPath = fmt.Sprintf("/mnt/%s", req.Name)
+	}
 
 	// Insert into database
 	result, err := m.db.ExecContext(ctx, `

@@ -2726,7 +2726,38 @@ func (c *Client) GetNetworkMounts(ctx context.Context) (*MountsResponse, error) 
 // MountSMB mounts an SMB/CIFS share
 func (c *Client) MountSMB(ctx context.Context, req *MountRequest) (*MountResponse, error) {
 	req.Type = "smb"
-	body, err := c.doRequest(ctx, http.MethodPost, "/mounts/smb", req)
+
+	// HAL expects {server, share, mountpoint} but we store remote_path as //server/share
+	// Parse remote_path into separate fields for HAL
+	server, share, err := parseSMBPath(req.RemotePath)
+	if err != nil {
+		return nil, fmt.Errorf("invalid SMB remote path %q: %w", req.RemotePath, err)
+	}
+
+	halReq := map[string]interface{}{
+		"server":     server,
+		"share":      share,
+		"mountpoint": req.LocalPath,
+	}
+	if req.Username != "" {
+		halReq["username"] = req.Username
+	}
+	if req.Password != "" {
+		halReq["password"] = req.Password
+	}
+	// Extract domain and version from options if present
+	if req.Options != "" {
+		for _, opt := range strings.Split(req.Options, ",") {
+			opt = strings.TrimSpace(opt)
+			if strings.HasPrefix(opt, "domain=") {
+				halReq["domain"] = strings.TrimPrefix(opt, "domain=")
+			} else if strings.HasPrefix(opt, "vers=") {
+				halReq["version"] = strings.TrimPrefix(opt, "vers=")
+			}
+		}
+	}
+
+	body, err := c.doRequest(ctx, http.MethodPost, "/mounts/smb", halReq)
 	if err != nil {
 		return nil, err
 	}
@@ -2742,7 +2773,23 @@ func (c *Client) MountSMB(ctx context.Context, req *MountRequest) (*MountRespons
 // MountNFS mounts an NFS share
 func (c *Client) MountNFS(ctx context.Context, req *MountRequest) (*MountResponse, error) {
 	req.Type = "nfs"
-	body, err := c.doRequest(ctx, http.MethodPost, "/mounts/nfs", req)
+
+	// HAL expects {server, export, mountpoint} but we store remote_path as server:/path
+	server, export, err := parseNFSPath(req.RemotePath)
+	if err != nil {
+		return nil, fmt.Errorf("invalid NFS remote path %q: %w", req.RemotePath, err)
+	}
+
+	halReq := map[string]interface{}{
+		"server":     server,
+		"export":     export,
+		"mountpoint": req.LocalPath,
+	}
+	if req.Options != "" {
+		halReq["options"] = req.Options
+	}
+
+	body, err := c.doRequest(ctx, http.MethodPost, "/mounts/nfs", halReq)
 	if err != nil {
 		return nil, err
 	}
@@ -2753,6 +2800,26 @@ func (c *Client) MountNFS(ctx context.Context, req *MountRequest) (*MountRespons
 	}
 
 	return &resp, nil
+}
+
+// parseSMBPath parses "//server/share" into server and share components
+func parseSMBPath(remotePath string) (server, share string, err error) {
+	// Strip leading //
+	path := strings.TrimPrefix(remotePath, "//")
+	parts := strings.SplitN(path, "/", 2)
+	if len(parts) < 2 || parts[0] == "" || parts[1] == "" {
+		return "", "", fmt.Errorf("expected format //server/share, got %q", remotePath)
+	}
+	return parts[0], parts[1], nil
+}
+
+// parseNFSPath parses "server:/path" into server and export components
+func parseNFSPath(remotePath string) (server, export string, err error) {
+	parts := strings.SplitN(remotePath, ":", 2)
+	if len(parts) < 2 || parts[0] == "" || parts[1] == "" {
+		return "", "", fmt.Errorf("expected format server:/path, got %q", remotePath)
+	}
+	return parts[0], parts[1], nil
 }
 
 // UnmountNetwork unmounts a network mount
