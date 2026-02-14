@@ -714,3 +714,76 @@ func (m *NPMManager) IsAuthenticated() bool {
 func (m *NPMManager) GetBaseURL() string {
 	return m.baseURL
 }
+
+// CoreProxyRule defines a proxy host that must exist for CubeOS to function.
+type CoreProxyRule struct {
+	Domain      string
+	ForwardHost string
+	ForwardPort int
+	WebSocket   bool
+	Description string
+}
+
+// GetCoreProxyRules returns the minimum proxy rules needed for out-of-box operation.
+// All forward to 127.0.0.1 because NPM runs in host network mode.
+func GetCoreProxyRules(gatewayIP string) []CoreProxyRule {
+	return []CoreProxyRule{
+		{Domain: "cubeos.cube", ForwardHost: "127.0.0.1", ForwardPort: 6011, WebSocket: false, Description: "Dashboard"},
+		{Domain: "api.cubeos.cube", ForwardHost: "127.0.0.1", ForwardPort: 6010, WebSocket: true, Description: "API"},
+		{Domain: "pihole.cubeos.cube", ForwardHost: "127.0.0.1", ForwardPort: 6001, WebSocket: false, Description: "Pi-hole Admin"},
+		{Domain: "npm.cubeos.cube", ForwardHost: "127.0.0.1", ForwardPort: 81, WebSocket: false, Description: "NPM Admin"},
+		{Domain: "hal.cubeos.cube", ForwardHost: "127.0.0.1", ForwardPort: 6005, WebSocket: false, Description: "HAL"},
+		{Domain: "dozzle.cubeos.cube", ForwardHost: "127.0.0.1", ForwardPort: 6012, WebSocket: true, Description: "Dozzle"},
+	}
+}
+
+// EnsureCoreProxyHosts creates the minimum NPM proxy rules needed for CubeOS
+// to work out of the box. Skips rules that already exist (idempotent).
+// Returns the number of rules created and any error.
+func (m *NPMManager) EnsureCoreProxyHosts() (int, error) {
+	if !m.initialized {
+		return 0, fmt.Errorf("NPM not initialized")
+	}
+
+	// Get existing proxy hosts to avoid duplicates
+	existing, err := m.ListProxyHosts()
+	if err != nil {
+		return 0, fmt.Errorf("failed to list existing proxy hosts: %w", err)
+	}
+
+	// Build lookup of existing domains
+	existingDomains := make(map[string]bool)
+	for _, host := range existing {
+		for _, d := range host.DomainNames {
+			existingDomains[d] = true
+		}
+	}
+
+	rules := GetCoreProxyRules(m.gatewayIP)
+	created := 0
+
+	for _, rule := range rules {
+		if existingDomains[rule.Domain] {
+			log.Debug().Str("domain", rule.Domain).Msg("NPM: core proxy rule already exists, skipping")
+			continue
+		}
+
+		host := &NPMProxyHostExtended{
+			DomainNames:           []string{rule.Domain},
+			ForwardScheme:         "http",
+			ForwardHost:           rule.ForwardHost,
+			ForwardPort:           rule.ForwardPort,
+			AllowWebsocketUpgrade: rule.WebSocket,
+		}
+
+		if _, err := m.CreateProxyHost(host); err != nil {
+			log.Warn().Err(err).Str("domain", rule.Domain).Msg("NPM: failed to create core proxy rule")
+			continue
+		}
+
+		log.Info().Str("domain", rule.Domain).Int("port", rule.ForwardPort).Str("service", rule.Description).Msg("NPM: created core proxy rule")
+		created++
+	}
+
+	return created, nil
+}

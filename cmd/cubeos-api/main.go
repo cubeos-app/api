@@ -251,6 +251,12 @@ func main() {
 		log.Warn().Err(err).Msg("NPM authentication failed")
 	} else {
 		log.Info().Msg("NPMManager initialized successfully")
+		// Seed core proxy rules on first boot (idempotent — skips existing rules)
+		if created, err := npmMgr.EnsureCoreProxyHosts(); err != nil {
+			log.Warn().Err(err).Msg("NPM: failed to seed core proxy rules")
+		} else if created > 0 {
+			log.Info().Int("count", created).Msg("NPM: seeded core proxy rules for out-of-box experience")
+		}
 	}
 
 	// Create shared SwarmManager (used by Orchestrator and PortManager)
