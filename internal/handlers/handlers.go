@@ -284,6 +284,11 @@ func (h *Handlers) ChangePassword(w http.ResponseWriter, r *http.Request) {
 func (h *Handlers) GetSystemInfo(w http.ResponseWriter, r *http.Request) {
 	info := h.system.GetSystemInfo()
 
+	// Ensure CubeOS version is populated (prefer env var, fallback to config)
+	if info.CubeOSVersion == "" {
+		info.CubeOSVersion = h.cfg.Version
+	}
+
 	// Override hostname from HAL (host-level access) — same as GetHostname handler
 	if halHostname, err := h.hal.GetHostname(r.Context()); err == nil {
 		info.Hostname = halHostname.Hostname

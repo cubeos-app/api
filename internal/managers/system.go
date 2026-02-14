@@ -170,10 +170,46 @@ func (m *SystemManager) GetMACAddresses() map[string]string {
 	return macs
 }
 
-// GetIPAddresses returns IP addresses for all interfaces
+// GetIPAddresses returns IP addresses for all host interfaces.
+// When running inside a Swarm container, uses nsenter to read the host's
+// network namespace (pid:host mode allows this), falling back to container
+// interfaces if nsenter fails.
 func (m *SystemManager) GetIPAddresses() map[string]string {
 	ips := make(map[string]string)
 
+	// Try nsenter first — reads the host network namespace via PID 1
+	// The API container has pid:"host", so nsenter -t 1 -n works.
+	output, err := exec.Command("nsenter", "-t", "1", "-n", "--", "ip", "-4", "-o", "addr", "show").Output()
+	if err == nil {
+		// Parse "ip -4 -o addr show" output lines like:
+		// 2: eth0    inet 192.168.1.100/24 brd 192.168.1.255 scope global eth0
+		scanner := bufio.NewScanner(strings.NewReader(string(output)))
+		for scanner.Scan() {
+			fields := strings.Fields(scanner.Text())
+			if len(fields) >= 4 {
+				// fields[1] = interface name (may have trailing colon)
+				ifName := strings.TrimRight(fields[1], ":")
+				// Skip loopback and docker/veth interfaces
+				if ifName == "lo" || strings.HasPrefix(ifName, "veth") || strings.HasPrefix(ifName, "br-") || strings.HasPrefix(ifName, "docker") {
+					continue
+				}
+				// Find "inet" keyword and extract IP
+				for i, f := range fields {
+					if f == "inet" && i+1 < len(fields) {
+						ip := strings.Split(fields[i+1], "/")[0]
+						ips[ifName] = ip
+						break
+					}
+				}
+			}
+		}
+	}
+
+	if len(ips) > 0 {
+		return ips
+	}
+
+	// Fallback: read container interfaces (may show overlay/bridge IPs)
 	interfaces, err := net.Interfaces()
 	if err != nil {
 		return ips
@@ -203,6 +239,7 @@ func (m *SystemManager) GetSystemInfo() *models.SystemInfo {
 	cpuCount, _ := cpu.Counts(false)
 
 	return &models.SystemInfo{
+		CubeOSVersion: os.Getenv("CUBEOS_VERSION"),
 		Hostname:      m.GetHostname(),
 		OSName:        osName,
 		OSVersion:     osVersion,
@@ -337,7 +374,7 @@ func (m *SystemManager) GetSystemStats() *models.SystemStats {
 	diskTotal, diskUsed, diskFree, diskPercent := m.GetDiskStats()
 	temp := m.GetTemperature()
 
-	return &models.SystemStats{
+	stats := &models.SystemStats{
 		CPUPercent:      m.GetCPUPercent(),
 		MemoryPercent:   memPercent,
 		MemoryTotal:     memTotal,
@@ -350,6 +387,15 @@ func (m *SystemManager) GetSystemStats() *models.SystemStats {
 		TemperatureCPU:  temp.CPUTempC,
 		Timestamp:       time.Now(),
 	}
+
+	// Add swap/ZRAM stats
+	if swap, err := mem.SwapMemory(); err == nil {
+		stats.SwapTotal = swap.Total
+		stats.SwapUsed = swap.Used
+		stats.SwapPercent = swap.UsedPercent
+	}
+
+	return stats
 }
 
 // GetStats returns extended stats for monitoring

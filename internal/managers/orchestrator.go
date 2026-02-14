@@ -512,6 +512,92 @@ func (o *Orchestrator) ListApps(ctx context.Context, filter *models.AppFilter) (
 // Reconciliation Operations
 // =============================================================================
 
+// coreAppMeta holds display metadata for core CubeOS services.
+// Used by SyncAppsFromSwarm to populate the apps table on first boot.
+var coreAppMeta = map[string]struct {
+	DisplayName string
+	Description string
+	Type        models.AppType
+	Category    string
+	DeployMode  models.DeployMode
+}{
+	"cubeos-api":       {"CubeOS API", "CubeOS REST API server", models.AppTypePlatform, "platform", models.DeployModeStack},
+	"cubeos-dashboard": {"CubeOS Dashboard", "Web management dashboard", models.AppTypePlatform, "platform", models.DeployModeStack},
+	"registry":         {"Docker Registry", "Local container image registry", models.AppTypeSystem, "infrastructure", models.DeployModeStack},
+	"dozzle":           {"Dozzle", "Real-time Docker log viewer", models.AppTypePlatform, "monitoring", models.DeployModeStack},
+	"ollama":           {"Ollama", "Local AI model inference server", models.AppTypeAI, "ai", models.DeployModeStack},
+	"chromadb":         {"ChromaDB", "AI vector database", models.AppTypeAI, "ai", models.DeployModeStack},
+	"pihole":           {"Pi-hole", "DNS sinkhole and DHCP server", models.AppTypeSystem, "infrastructure", models.DeployModeCompose},
+	"npm":              {"Nginx Proxy Manager", "Reverse proxy and SSL manager", models.AppTypeSystem, "infrastructure", models.DeployModeCompose},
+}
+
+// SyncAppsFromSwarm discovers running Swarm stacks and ensures matching
+// records exist in the apps table. Called on API startup so the dashboard
+// can display services deployed by first-boot scripts.
+func (o *Orchestrator) SyncAppsFromSwarm(ctx context.Context) error {
+	if o.swarm == nil {
+		log.Warn().Msg("SyncAppsFromSwarm: SwarmManager not available, skipping")
+		return nil
+	}
+
+	stacks, err := o.swarm.ListStacks()
+	if err != nil {
+		return fmt.Errorf("failed to list swarm stacks: %w", err)
+	}
+
+	synced := 0
+	for _, stack := range stacks {
+		// Check if app already registered
+		var count int
+		err := o.db.QueryRowContext(ctx, "SELECT COUNT(*) FROM apps WHERE name = ?", stack.Name).Scan(&count)
+		if err != nil {
+			log.Warn().Err(err).Str("stack", stack.Name).Msg("SyncAppsFromSwarm: failed to check app existence")
+			continue
+		}
+		if count > 0 {
+			continue // Already registered
+		}
+
+		// Look up metadata for core apps, use generic defaults for unknown stacks
+		meta, known := coreAppMeta[stack.Name]
+		if !known {
+			meta.DisplayName = stack.Name
+			meta.Description = fmt.Sprintf("Docker Swarm stack: %s", stack.Name)
+			meta.Type = models.AppTypeUser
+			meta.Category = "other"
+			meta.DeployMode = models.DeployModeStack
+		}
+
+		composePath := filepath.Join("/cubeos/coreapps", stack.Name, "appconfig/docker-compose.yml")
+		if _, err := os.Stat(composePath); err != nil {
+			composePath = ""
+		}
+
+		_, err = o.db.ExecContext(ctx, `
+			INSERT INTO apps (name, display_name, description, type, category, source,
+				compose_path, data_path, enabled, deploy_mode, webui_type,
+				created_at, updated_at)
+			VALUES (?, ?, ?, ?, ?, 'cubeos', ?, ?, 1, ?, 'browser',
+				CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
+		`, stack.Name, meta.DisplayName, meta.Description, meta.Type, meta.Category,
+			composePath, filepath.Join("/cubeos/apps", stack.Name, "data"),
+			meta.DeployMode)
+
+		if err != nil {
+			log.Warn().Err(err).Str("stack", stack.Name).Msg("SyncAppsFromSwarm: failed to insert app")
+			continue
+		}
+
+		synced++
+		log.Info().Str("stack", stack.Name).Str("type", string(meta.Type)).Msg("SyncAppsFromSwarm: registered app from Swarm")
+	}
+
+	if synced > 0 {
+		log.Info().Int("count", synced).Msg("SyncAppsFromSwarm: completed sync")
+	}
+	return nil
+}
+
 // ReconcileState ensures running state matches desired state
 // Called on boot to recover from power loss
 func (o *Orchestrator) ReconcileState(ctx context.Context) error {

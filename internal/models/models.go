@@ -46,6 +46,7 @@ type ChangePasswordRequest struct {
 // =============================================================================
 
 type SystemInfo struct {
+	CubeOSVersion      string            `json:"cubeos_version"`
 	Hostname           string            `json:"hostname"`
 	OSName             string            `json:"os_name"`
 	OSVersion          string            `json:"os_version"`
@@ -70,6 +71,9 @@ type SystemStats struct {
 	MemoryTotal     uint64    `json:"memory_total"`
 	MemoryUsed      uint64    `json:"memory_used"`
 	MemoryAvailable uint64    `json:"memory_available"`
+	SwapTotal       uint64    `json:"swap_total"`
+	SwapUsed        uint64    `json:"swap_used"`
+	SwapPercent     float64   `json:"swap_percent"`
 	DiskPercent     float64   `json:"disk_percent"`
 	DiskTotal       uint64    `json:"disk_total"`
 	DiskUsed        uint64    `json:"disk_used"`

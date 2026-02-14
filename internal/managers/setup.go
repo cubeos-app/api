@@ -439,18 +439,28 @@ func (m *SetupManager) createAdminUser(username, password, email string) error {
 	return nil
 }
 
-// setHostname sets the system hostname
+// setHostname sets the system hostname on the HOST filesystem.
+// The API container has / mounted at /host-root, so we write there.
 func (m *SetupManager) setHostname(hostname string) error {
-	// Write to /etc/hostname
-	if err := os.WriteFile("/etc/hostname", []byte(hostname+"\n"), 0644); err != nil {
-		// If we can't write, save for later
-		m.saveConfig("hostname", hostname)
-		return nil
+	hostRoot := os.Getenv("CUBEOS_HOST_ROOT")
+	if hostRoot == "" {
+		hostRoot = "/host-root"
 	}
 
-	// Update /etc/hosts
-	hostsPath := "/etc/hosts"
-	if data, err := os.ReadFile(hostsPath); err == nil {
+	// Write to HOST's /etc/hostname via host-root mount
+	hostHostname := filepath.Join(hostRoot, "etc/hostname")
+	if err := os.WriteFile(hostHostname, []byte(hostname+"\n"), 0644); err != nil {
+		log.Warn().Err(err).Msg("failed to write host /etc/hostname via host-root, trying container paths")
+		// Fallback to container paths
+		if err2 := os.WriteFile("/etc/hostname", []byte(hostname+"\n"), 0644); err2 != nil {
+			m.saveConfig("hostname", hostname)
+			return nil
+		}
+	}
+
+	// Update HOST's /etc/hosts — replace 127.0.1.1 line
+	hostHosts := filepath.Join(hostRoot, "etc/hosts")
+	if data, err := os.ReadFile(hostHosts); err == nil {
 		lines := strings.Split(string(data), "\n")
 		var newLines []string
 		for _, line := range lines {
@@ -459,33 +469,42 @@ func (m *SetupManager) setHostname(hostname string) error {
 			}
 			newLines = append(newLines, line)
 		}
-		os.WriteFile(hostsPath, []byte(strings.Join(newLines, "\n")), 0644)
+		os.WriteFile(hostHosts, []byte(strings.Join(newLines, "\n")), 0644)
 	}
 
-	// Apply hostname
-	exec.Command("hostname", hostname).Run()
+	// Apply hostname live via nsenter (container has pid: host)
+	exec.Command("nsenter", "-t", "1", "-u", "--", "hostname", hostname).Run()
 
 	m.saveConfig("hostname", hostname)
 	return nil
 }
 
-// configureWiFiAP configures the WiFi access point
+// configureWiFiAP configures the WiFi access point.
+// Writes hostapd.conf (hostapd volume mounted rw from host),
+// then restarts hostapd on the host via nsenter.
 func (m *SetupManager) configureWiFiAP(ssid, password string, channel int) error {
 	if channel == 0 {
 		channel = 6
+	}
+
+	// Get country code from config or default
+	countryCode := m.GetConfig("country_code")
+	if countryCode == "" {
+		countryCode = "US"
 	}
 
 	// Save config values
 	m.saveConfig("wifi_ssid", ssid)
 	m.saveConfig("wifi_channel", fmt.Sprintf("%d", channel))
 
-	// Generate hostapd config
+	// Generate hostapd config with country code for regulatory compliance
 	hostapdConfig := fmt.Sprintf(`# CubeOS WiFi Access Point Configuration
 interface=wlan0
 driver=nl80211
 ssid=%s
 hw_mode=g
 channel=%d
+country_code=%s
 wmm_enabled=0
 macaddr_acl=0
 auth_algs=1
@@ -495,17 +514,19 @@ wpa_passphrase=%s
 wpa_key_mgmt=WPA-PSK
 wpa_pairwise=TKIP
 rsn_pairwise=CCMP
-`, ssid, channel, password)
+`, ssid, channel, countryCode, password)
 
-	// Try to write hostapd config
+	// Write hostapd config — volume is mounted rw from host
 	hostapdPath := "/etc/hostapd/hostapd.conf"
 	if err := os.WriteFile(hostapdPath, []byte(hostapdConfig), 0600); err != nil {
+		log.Warn().Err(err).Str("path", hostapdPath).Msg("failed to write hostapd.conf, trying config dir")
 		// Save to our config dir instead
 		os.WriteFile(filepath.Join(m.configPath, "hostapd.conf"), []byte(hostapdConfig), 0600)
 	}
 
-	// Restart hostapd if available
-	exec.Command("systemctl", "restart", "hostapd").Run()
+	// Set regulatory domain on host via nsenter, then restart hostapd
+	exec.Command("nsenter", "-t", "1", "-m", "-n", "--", "iw", "reg", "set", countryCode).Run()
+	exec.Command("nsenter", "-t", "1", "-m", "--", "systemctl", "restart", "hostapd").Run()
 
 	return nil
 }

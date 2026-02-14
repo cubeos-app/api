@@ -292,6 +292,13 @@ func main() {
 	} else {
 		defer orchestrator.Close()
 		log.Info().Msg("Orchestrator initialized successfully")
+
+		// Sync Swarm stacks into apps table (B22: ensures dashboard shows all services)
+		syncCtx, syncCancel := context.WithTimeout(context.Background(), 30*time.Second)
+		if err := orchestrator.SyncAppsFromSwarm(syncCtx); err != nil {
+			log.Warn().Err(err).Msg("SyncAppsFromSwarm failed (non-fatal)")
+		}
+		syncCancel()
 	}
 
 	// Create VPN manager (Sprint 3 - with HAL client)
