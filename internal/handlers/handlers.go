@@ -5,7 +5,6 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/http"
-	"strconv"
 	"time"
 
 	"github.com/go-chi/chi/v5"
@@ -343,42 +342,46 @@ func (h *Handlers) GetTemperature(w http.ResponseWriter, r *http.Request) {
 
 // Reboot godoc
 // @Summary Reboot system
-// @Description Initiates system reboot with optional delay
+// @Description Initiates system reboot via HAL (privileged host access)
 // @Tags System
 // @Produce json
 // @Security BearerAuth
-// @Param delay query int false "Delay in minutes before reboot" default(0)
-// @Success 200 {object} models.SuccessResponse "Reboot scheduled"
-// @Failure 500 {object} ErrorResponse "Failed to schedule reboot"
+// @Success 200 {object} models.SuccessResponse "Reboot initiated"
+// @Failure 500 {object} ErrorResponse "Failed to initiate reboot"
 // @Router /system/reboot [post]
 func (h *Handlers) Reboot(w http.ResponseWriter, r *http.Request) {
-	delay, _ := strconv.Atoi(r.URL.Query().Get("delay"))
-	result, err := h.system.Reboot(delay)
-	if err != nil {
-		writeError(w, http.StatusInternalServerError, err.Error())
+	// Proxy to HAL which has privileged access (nsenter + pid:host)
+	if err := h.hal.Reboot(r.Context()); err != nil {
+		writeError(w, http.StatusInternalServerError, "reboot failed: "+err.Error())
 		return
 	}
-	writeJSON(w, http.StatusOK, result)
+	writeJSON(w, http.StatusOK, map[string]interface{}{
+		"status":  "initiated",
+		"action":  "reboot",
+		"message": "System rebooting now",
+	})
 }
 
 // Shutdown godoc
 // @Summary Shutdown system
-// @Description Initiates system shutdown with optional delay
+// @Description Initiates system shutdown via HAL (privileged host access)
 // @Tags System
 // @Produce json
 // @Security BearerAuth
-// @Param delay query int false "Delay in minutes before shutdown" default(0)
-// @Success 200 {object} models.SuccessResponse "Shutdown scheduled"
-// @Failure 500 {object} ErrorResponse "Failed to schedule shutdown"
+// @Success 200 {object} models.SuccessResponse "Shutdown initiated"
+// @Failure 500 {object} ErrorResponse "Failed to initiate shutdown"
 // @Router /system/shutdown [post]
 func (h *Handlers) Shutdown(w http.ResponseWriter, r *http.Request) {
-	delay, _ := strconv.Atoi(r.URL.Query().Get("delay"))
-	result, err := h.system.Shutdown(delay)
-	if err != nil {
-		writeError(w, http.StatusInternalServerError, err.Error())
+	// Proxy to HAL which has privileged access (nsenter + pid:host)
+	if err := h.hal.Shutdown(r.Context()); err != nil {
+		writeError(w, http.StatusInternalServerError, "shutdown failed: "+err.Error())
 		return
 	}
-	writeJSON(w, http.StatusOK, result)
+	writeJSON(w, http.StatusOK, map[string]interface{}{
+		"status":  "initiated",
+		"action":  "shutdown",
+		"message": "System shutting down now",
+	})
 }
 
 // GetHostname godoc

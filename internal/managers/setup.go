@@ -208,9 +208,16 @@ func (m *SetupManager) GetSystemRequirements() *models.SystemRequirements {
 		req.HasBluetooth = true
 	}
 
-	// Detect device model
-	if data, err := os.ReadFile("/proc/device-tree/model"); err == nil {
-		req.DeviceModel = strings.TrimSpace(strings.TrimRight(string(data), "\x00"))
+	// Detect device model — try multiple paths (proc bind mount in Swarm
+	// may not expose device-tree; /sys path is the canonical fallback)
+	for _, path := range []string{
+		"/proc/device-tree/model",
+		"/sys/firmware/devicetree/base/model",
+	} {
+		if data, err := os.ReadFile(path); err == nil {
+			req.DeviceModel = strings.TrimSpace(strings.TrimRight(string(data), "\x00"))
+			break
+		}
 	}
 
 	// Get storage info
