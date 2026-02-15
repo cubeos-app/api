@@ -15,3 +15,4 @@ build/
 *.db
 *.db-shm
 *.db-wal
+cmd/cubeos-api/cubeos-api

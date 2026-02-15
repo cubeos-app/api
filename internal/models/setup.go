@@ -15,6 +15,7 @@ type SetupConfig struct {
 	WiFiSSID     string `json:"wifi_ssid"`
 	WiFiPassword string `json:"wifi_password"`
 	WiFiChannel  int    `json:"wifi_channel"` // 1-11, default 6
+	CountryCode  string `json:"country_code"` // ISO 3166-1 alpha-2, e.g. "US", "NL", "DE"
 
 	// Step 4: Localization
 	Timezone string `json:"timezone"`
@@ -156,7 +157,7 @@ var SetupWizardSteps = []SetupStep{
 		Description: "Configure the wireless network",
 		Icon:        "Wifi",
 		Required:    true,
-		Fields:      []string{"wifi_ssid", "wifi_password", "wifi_channel"},
+		Fields:      []string{"wifi_ssid", "wifi_password", "wifi_channel", "country_code"},
 	},
 	{
 		ID:          "locale",

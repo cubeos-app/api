@@ -337,6 +337,19 @@ func (m *SetupManager) ApplySetupConfig(cfg *models.SetupConfig) error {
 	m.updateStep(2)
 
 	// Step 3: Configure WiFi AP
+	// Save country code BEFORE configureWiFiAP — that function reads it from config
+	if cfg.CountryCode != "" {
+		m.saveConfig("country_code", cfg.CountryCode)
+	} else {
+		m.saveConfig("country_code", "US")
+		cfg.CountryCode = "US"
+	}
+	// Also persist to defaults.env so Docker containers and boot scripts can read it
+	defaultsPath := filepath.Join(m.configPath, "defaults.env")
+	appendOrUpdateEnvFile(defaultsPath, map[string]string{
+		"CUBEOS_COUNTRY_CODE": cfg.CountryCode,
+	})
+
 	if err := m.configureWiFiAP(cfg.WiFiSSID, cfg.WiFiPassword, cfg.WiFiChannel); err != nil {
 		return fmt.Errorf("failed to configure WiFi: %w", err)
 	}
@@ -707,6 +720,7 @@ func (m *SetupManager) GenerateDefaultConfig() *models.SetupConfig {
 		WiFiSSID:          "CubeOS",
 		WiFiPassword:      "",
 		WiFiChannel:       6,
+		CountryCode:       "US",
 		Timezone:          "UTC",
 		Language:          "en",
 		Theme:             "dark",

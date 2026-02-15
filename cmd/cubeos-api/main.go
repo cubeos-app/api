@@ -140,6 +140,7 @@ import (
 	"context"
 	"fmt"
 	"net/http"
+	"net/http/pprof"
 	"os"
 	"os/signal"
 	"strings"
@@ -439,6 +440,21 @@ func main() {
 
 	// Public routes
 	r.Get("/health", h.Health)
+
+	// Debug profiling (gated by env var for safety)
+	if os.Getenv("CUBEOS_ENABLE_PPROF") == "1" {
+		r.HandleFunc("/debug/pprof/", pprof.Index)
+		r.HandleFunc("/debug/pprof/cmdline", pprof.Cmdline)
+		r.HandleFunc("/debug/pprof/profile", pprof.Profile)
+		r.HandleFunc("/debug/pprof/symbol", pprof.Symbol)
+		r.HandleFunc("/debug/pprof/trace", pprof.Trace)
+		r.Handle("/debug/pprof/heap", pprof.Handler("heap"))
+		r.Handle("/debug/pprof/goroutine", pprof.Handler("goroutine"))
+		r.Handle("/debug/pprof/allocs", pprof.Handler("allocs"))
+		r.Handle("/debug/pprof/block", pprof.Handler("block"))
+		r.Handle("/debug/pprof/mutex", pprof.Handler("mutex"))
+		log.Warn().Msg("pprof debug endpoints enabled at /debug/pprof/ (CUBEOS_ENABLE_PPROF=1)")
+	}
 
 	// NOTE: WebSocket endpoints moved inside /api/v1/ws (auth-protected).
 	// The /monitoring/websocket endpoint also provides authenticated WS access.
