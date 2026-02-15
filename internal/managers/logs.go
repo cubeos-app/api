@@ -533,6 +533,84 @@ func (m *LogManager) GetKernelLogs(lines int) []string {
 
 // GetBootLogs retrieves logs from a specific boot
 func (m *LogManager) GetBootLogs(bootID int, lines int) []models.LogEntry {
+	// Try cubeos-boot.log first (actual boot telemetry written by boot scripts)
+	if entries := m.readCubeOSBootLog(lines); len(entries) > 0 {
+		return entries
+	}
+
+	// Fallback: journalctl -b (works on host, usually empty in container)
+	return m.getJournalBootLogs(bootID, lines)
+}
+
+// readCubeOSBootLog reads the CubeOS boot log file from the host filesystem.
+// This is the actual boot telemetry written by cubeos-first-boot.sh / cubeos-normal-boot.sh.
+func (m *LogManager) readCubeOSBootLog(lines int) []models.LogEntry {
+	paths := []string{
+		"/var/log/cubeos-boot.log",
+	}
+	if hr := hostRoot(); hr != "" {
+		paths = append([]string{filepath.Join(hr, "var/log/cubeos-boot.log")}, paths...)
+	}
+
+	for _, path := range paths {
+		file, err := os.Open(path)
+		if err != nil {
+			continue
+		}
+		defer file.Close()
+
+		var allEntries []models.LogEntry
+		scanner := bufio.NewScanner(file)
+		// Boot log lines are typically: "2026-02-15 12:34:56 OK: message here"
+		// or plain text lines from the boot script
+		bootLogRegex := regexp.MustCompile(`^(\d{4}-\d{2}-\d{2}\s+\d{2}:\d{2}:\d{2})\s+(\S+:?)\s*(.*)$`)
+
+		for scanner.Scan() {
+			line := scanner.Text()
+			if strings.TrimSpace(line) == "" {
+				continue
+			}
+
+			entry := models.LogEntry{
+				Priority: "info",
+				Message:  line,
+				Unit:     "cubeos-boot",
+			}
+
+			if matches := bootLogRegex.FindStringSubmatch(line); len(matches) >= 4 {
+				if t, err := time.Parse("2006-01-02 15:04:05", matches[1]); err == nil {
+					entry.Timestamp = &t
+				}
+
+				marker := strings.TrimSuffix(matches[2], ":")
+				switch strings.ToUpper(marker) {
+				case "OK":
+					entry.Priority = "info"
+				case "WARN":
+					entry.Priority = "warning"
+				case "FAIL", "ERROR":
+					entry.Priority = "err"
+				}
+
+				entry.Message = matches[3]
+			}
+
+			allEntries = append(allEntries, entry)
+		}
+
+		if len(allEntries) > 0 {
+			if lines > 0 && len(allEntries) > lines {
+				allEntries = allEntries[len(allEntries)-lines:]
+			}
+			return allEntries
+		}
+	}
+
+	return nil
+}
+
+// getJournalBootLogs retrieves boot logs from journalctl -b (fallback)
+func (m *LogManager) getJournalBootLogs(bootID int, lines int) []models.LogEntry {
 	// Find journal directory
 	journalDirs := []string{"/var/log/journal", "/run/log/journal"}
 	if hr := hostRoot(); hr != "" {

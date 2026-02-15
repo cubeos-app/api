@@ -708,7 +708,7 @@ NPM_ADMIN_PASSWORD=%s
 
 // GenerateDefaultConfig creates a default setup configuration
 func (m *SetupManager) GenerateDefaultConfig() *models.SetupConfig {
-	hostname, _ := os.Hostname()
+	hostname := m.getHostHostname()
 	if hostname == "" {
 		hostname = "cubeos"
 	}
@@ -731,6 +731,24 @@ func (m *SetupManager) GenerateDefaultConfig() *models.SetupConfig {
 		EnableAnalytics:   false,
 		EnableAutoUpdates: true,
 	}
+}
+
+// getHostHostname reads the real hostname from the host filesystem.
+// Inside a container, os.Hostname() returns the container name (e.g. "cubeos-api"),
+// not the actual system hostname. We read /etc/hostname from the host root instead.
+func (m *SetupManager) getHostHostname() string {
+	hostRoot := os.Getenv("CUBEOS_HOST_ROOT")
+	if hostRoot != "" {
+		if data, err := os.ReadFile(filepath.Join(hostRoot, "etc/hostname")); err == nil {
+			if h := strings.TrimSpace(string(data)); h != "" {
+				return h
+			}
+		}
+	}
+
+	// Fallback to os.Hostname() (correct when running on host, wrong in container)
+	hostname, _ := os.Hostname()
+	return hostname
 }
 
 // ResetSetup resets the setup wizard (for testing/recovery)

@@ -162,12 +162,16 @@ import (
 	"cubeos-api/internal/managers"
 	"cubeos-api/internal/middleware"
 
-	_ "cubeos-api/docs" // Import generated swagger docs
+	"cubeos-api/docs" // Import generated swagger docs (named for Host override)
 )
 
 func main() {
 	// Load configuration
 	cfg := config.Load()
+
+	// Override swagger host to empty string so it uses the browser's
+	// current host (works correctly through NPM reverse proxy at port 80)
+	docs.SwaggerInfo.Host = ""
 
 	// Setup logging (zerolog)
 	log.Info().Str("version", cfg.Version).Msg("starting CubeOS API")

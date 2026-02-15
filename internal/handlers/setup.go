@@ -305,8 +305,9 @@ func SetupRequiredMiddleware(setupMgr *managers.SetupManager) func(http.Handler)
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			path := r.URL.Path
 
-			// Always allow setup endpoints, health check, and login
+			// Always allow setup endpoints, health check, login, and swagger docs
 			if strings.HasPrefix(path, "/api/v1/setup") ||
+				strings.HasPrefix(path, "/api/v1/swagger") ||
 				path == "/health" ||
 				path == "/api/v1/auth/login" {
 				next.ServeHTTP(w, r)
