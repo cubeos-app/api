@@ -661,7 +661,7 @@ func (m *SetupManager) configureSSL(mode, domain, dnsProvider, apiToken, apiSecr
 
 // configureNPM configures Nginx Proxy Manager credentials
 func (m *SetupManager) configureNPM(email, password string) error {
-	// Write NPM env file
+	// Write NPM env file (for docker compose variable substitution)
 	npmEnvPath := "/cubeos/coreapps/npm/.env"
 	os.MkdirAll(filepath.Dir(npmEnvPath), 0755)
 
@@ -676,6 +676,16 @@ NPM_ADMIN_PASSWORD=%s
 
 	if err := os.WriteFile(npmEnvPath, []byte(envContent), 0600); err != nil {
 		return err
+	}
+
+	// Also write to secrets.env with canonical CUBEOS_NPM_* names
+	// so the API can read them for NPM bootstrap on next restart
+	secretsPath := "/cubeos/config/secrets.env"
+	if err := appendOrUpdateEnvFile(secretsPath, map[string]string{
+		"CUBEOS_NPM_EMAIL":    email,
+		"CUBEOS_NPM_PASSWORD": password,
+	}); err != nil {
+		log.Warn().Err(err).Msg("failed to write NPM credentials to secrets.env")
 	}
 
 	m.saveConfig("npm_admin_email", email)
@@ -734,4 +744,38 @@ func (m *SetupManager) MarkSetupComplete(cfg *models.SetupConfig) error {
 
 	m.setupDone = true
 	return nil
+}
+
+// appendOrUpdateEnvFile updates or appends key=value pairs in an env file.
+// Creates the file if it doesn't exist.
+func appendOrUpdateEnvFile(path string, vars map[string]string) error {
+	if err := os.MkdirAll(filepath.Dir(path), 0755); err != nil {
+		return err
+	}
+
+	var lines []string
+	if data, err := os.ReadFile(path); err == nil {
+		lines = strings.Split(string(data), "\n")
+	}
+
+	for key, value := range vars {
+		found := false
+		prefix := key + "="
+		for i, line := range lines {
+			if strings.HasPrefix(line, prefix) {
+				lines[i] = prefix + value
+				found = true
+				break
+			}
+		}
+		if !found {
+			lines = append(lines, prefix+value)
+		}
+	}
+
+	content := strings.Join(lines, "\n")
+	if !strings.HasSuffix(content, "\n") {
+		content += "\n"
+	}
+	return os.WriteFile(path, []byte(content), 0600)
 }

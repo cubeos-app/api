@@ -43,10 +43,16 @@ const (
 	// Secrets.env keys
 	npmAPIPasswordKey = "NPM_API_PASSWORD"
 
-	// Bootstrap admin credentials (set via INITIAL_ADMIN_* env vars during image build)
-	// These are used ONLY for initial service account creation
-	npmBootstrapEmailKey    = "NPM_ADMIN_EMAIL"
-	npmBootstrapPasswordKey = "NPM_ADMIN_PASSWORD"
+	// Bootstrap admin credentials
+	// first-boot.sh writes CUBEOS_NPM_EMAIL/CUBEOS_NPM_PASSWORD to secrets.env
+	// Setup wizard writes NPM_ADMIN_EMAIL/NPM_ADMIN_PASSWORD to npm/.env
+	// We check both naming conventions for compatibility
+	npmBootstrapEmailKey    = "CUBEOS_NPM_EMAIL"
+	npmBootstrapPasswordKey = "CUBEOS_NPM_PASSWORD"
+
+	// Legacy env var names (wizard / backward compat)
+	npmBootstrapEmailKeyLegacy    = "NPM_ADMIN_EMAIL"
+	npmBootstrapPasswordKeyLegacy = "NPM_ADMIN_PASSWORD"
 )
 
 // FlexBool handles NPM API returning enabled as bool or int
@@ -280,11 +286,20 @@ func (m *NPMManager) saveToken(token string) error {
 // This is called on first boot or when service account doesn't exist
 func (m *NPMManager) bootstrapServiceAccount() error {
 	// Get bootstrap (admin) credentials from environment
+	// Try CUBEOS_NPM_* first (set by first-boot.sh), then NPM_ADMIN_* (set by wizard)
 	adminEmail := os.Getenv(npmBootstrapEmailKey)
+	if adminEmail == "" {
+		adminEmail = os.Getenv(npmBootstrapEmailKeyLegacy)
+	}
 	adminPassword := os.Getenv(npmBootstrapPasswordKey)
+	if adminPassword == "" {
+		adminPassword = os.Getenv(npmBootstrapPasswordKeyLegacy)
+	}
 
 	if adminEmail == "" || adminPassword == "" {
-		return fmt.Errorf("bootstrap credentials not configured (set %s and %s)", npmBootstrapEmailKey, npmBootstrapPasswordKey)
+		return fmt.Errorf("bootstrap credentials not configured (set %s/%s or %s/%s)",
+			npmBootstrapEmailKey, npmBootstrapPasswordKey,
+			npmBootstrapEmailKeyLegacy, npmBootstrapPasswordKeyLegacy)
 	}
 
 	log.Info().Msg("NPM: bootstrapping service account")
