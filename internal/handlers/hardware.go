@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"net/http"
 	"strconv"
+	"strings"
 	"time"
 
 	"github.com/go-chi/chi/v5"
@@ -21,6 +22,33 @@ func NewHardwareHandler(halClient *hal.Client) *HardwareHandler {
 	return &HardwareHandler{
 		halClient: halClient,
 	}
+}
+
+// isHALUnsupported checks if a HAL error indicates the hardware feature
+// is not supported/available, as opposed to a real service error.
+func isHALUnsupported(err error) bool {
+	if err == nil {
+		return false
+	}
+	msg := strings.ToLower(err.Error())
+	return strings.Contains(msg, "not supported") ||
+		strings.Contains(msg, "not available") ||
+		strings.Contains(msg, "no such device") ||
+		strings.Contains(msg, "no rtc") ||
+		strings.Contains(msg, "no watchdog") ||
+		strings.Contains(msg, "not found") ||
+		strings.Contains(msg, "not detected") ||
+		strings.Contains(msg, "status 501")
+}
+
+// writeHALError writes the appropriate HTTP status for a HAL error:
+// 501 for unsupported hardware, 500 for genuine errors.
+func writeHALError(w http.ResponseWriter, err error, feature string) {
+	if isHALUnsupported(err) {
+		writeError(w, http.StatusNotImplemented, feature+" not available on this hardware")
+		return
+	}
+	writeError(w, http.StatusInternalServerError, "Failed to "+strings.ToLower(feature)+": "+err.Error())
 }
 
 // Routes returns the hardware routes.
@@ -630,6 +658,7 @@ func (h *HardwareHandler) StopPowerMonitor(w http.ResponseWriter, r *http.Reques
 // @Produce json
 // @Success 200 {object} hal.RTCStatus
 // @Failure 500 {object} ErrorResponse "Failed to read RTC"
+// @Failure 501 {object} ErrorResponse "RTC not available on this hardware"
 // @Failure 503 {object} ErrorResponse "HAL unavailable"
 // @Security BearerAuth
 // @Router /hardware/rtc [get]
@@ -643,7 +672,7 @@ func (h *HardwareHandler) GetRTCStatus(w http.ResponseWriter, r *http.Request) {
 
 	status, err := h.halClient.GetRTCStatus(ctx)
 	if err != nil {
-		writeError(w, http.StatusInternalServerError, "Failed to get RTC status: "+err.Error())
+		writeHALError(w, err, "RTC status")
 		return
 	}
 
@@ -658,6 +687,7 @@ func (h *HardwareHandler) GetRTCStatus(w http.ResponseWriter, r *http.Request) {
 // @Produce json
 // @Success 200 {object} SuccessResponse
 // @Failure 500 {object} ErrorResponse "Failed to sync time"
+// @Failure 501 {object} ErrorResponse "RTC not available on this hardware"
 // @Failure 503 {object} ErrorResponse "HAL unavailable"
 // @Security BearerAuth
 // @Router /hardware/rtc/sync [post]
@@ -670,7 +700,7 @@ func (h *HardwareHandler) SyncRTCTime(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if err := h.halClient.SyncTimeFromRTC(ctx); err != nil {
-		writeError(w, http.StatusInternalServerError, "Failed to sync time from RTC: "+err.Error())
+		writeHALError(w, err, "RTC time sync")
 		return
 	}
 
@@ -695,6 +725,7 @@ type WakeAlarmRequest struct {
 // @Success 200 {object} SuccessResponse
 // @Failure 400 {object} ErrorResponse "Invalid time format"
 // @Failure 500 {object} ErrorResponse "Failed to set wake alarm"
+// @Failure 501 {object} ErrorResponse "Wake alarm not available on this hardware"
 // @Failure 503 {object} ErrorResponse "HAL unavailable"
 // @Security BearerAuth
 // @Router /hardware/rtc/wake [post]
@@ -719,7 +750,7 @@ func (h *HardwareHandler) SetWakeAlarm(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if err := h.halClient.SetWakeAlarm(ctx, wakeTime); err != nil {
-		writeError(w, http.StatusInternalServerError, "Failed to set wake alarm: "+err.Error())
+		writeHALError(w, err, "Wake alarm")
 		return
 	}
 
@@ -737,6 +768,7 @@ func (h *HardwareHandler) SetWakeAlarm(w http.ResponseWriter, r *http.Request) {
 // @Produce json
 // @Success 200 {object} SuccessResponse
 // @Failure 500 {object} ErrorResponse "Failed to clear wake alarm"
+// @Failure 501 {object} ErrorResponse "Wake alarm not available on this hardware"
 // @Failure 503 {object} ErrorResponse "HAL unavailable"
 // @Security BearerAuth
 // @Router /hardware/rtc/wake [delete]
@@ -749,7 +781,7 @@ func (h *HardwareHandler) ClearWakeAlarm(w http.ResponseWriter, r *http.Request)
 	}
 
 	if err := h.halClient.ClearWakeAlarm(ctx); err != nil {
-		writeError(w, http.StatusInternalServerError, "Failed to clear wake alarm: "+err.Error())
+		writeHALError(w, err, "Wake alarm clear")
 		return
 	}
 
@@ -771,6 +803,7 @@ func (h *HardwareHandler) ClearWakeAlarm(w http.ResponseWriter, r *http.Request)
 // @Produce json
 // @Success 200 {object} hal.WatchdogInfo
 // @Failure 500 {object} ErrorResponse "Failed to read watchdog status"
+// @Failure 501 {object} ErrorResponse "Watchdog not available on this hardware"
 // @Failure 503 {object} ErrorResponse "HAL unavailable"
 // @Security BearerAuth
 // @Router /hardware/watchdog [get]
@@ -784,7 +817,7 @@ func (h *HardwareHandler) GetWatchdogStatus(w http.ResponseWriter, r *http.Reque
 
 	status, err := h.halClient.GetWatchdogStatus(ctx)
 	if err != nil {
-		writeError(w, http.StatusInternalServerError, "Failed to get watchdog status: "+err.Error())
+		writeHALError(w, err, "Watchdog status")
 		return
 	}
 
@@ -799,6 +832,7 @@ func (h *HardwareHandler) GetWatchdogStatus(w http.ResponseWriter, r *http.Reque
 // @Produce json
 // @Success 200 {object} SuccessResponse
 // @Failure 500 {object} ErrorResponse "Failed to pet watchdog"
+// @Failure 501 {object} ErrorResponse "Watchdog not available on this hardware"
 // @Failure 503 {object} ErrorResponse "HAL unavailable"
 // @Security BearerAuth
 // @Router /hardware/watchdog/pet [post]
@@ -811,7 +845,7 @@ func (h *HardwareHandler) PetWatchdog(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if err := h.halClient.PetWatchdog(ctx); err != nil {
-		writeError(w, http.StatusInternalServerError, "Failed to pet watchdog: "+err.Error())
+		writeHALError(w, err, "Watchdog pet")
 		return
 	}
 
@@ -829,6 +863,7 @@ func (h *HardwareHandler) PetWatchdog(w http.ResponseWriter, r *http.Request) {
 // @Produce json
 // @Success 200 {object} SuccessResponse
 // @Failure 500 {object} ErrorResponse "Failed to enable watchdog"
+// @Failure 501 {object} ErrorResponse "Watchdog not available on this hardware"
 // @Failure 503 {object} ErrorResponse "HAL unavailable"
 // @Security BearerAuth
 // @Router /hardware/watchdog/enable [post]
@@ -841,7 +876,7 @@ func (h *HardwareHandler) EnableWatchdog(w http.ResponseWriter, r *http.Request)
 	}
 
 	if err := h.halClient.EnableWatchdog(ctx); err != nil {
-		writeError(w, http.StatusInternalServerError, "Failed to enable watchdog: "+err.Error())
+		writeHALError(w, err, "Watchdog enable")
 		return
 	}
 

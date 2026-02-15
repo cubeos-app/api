@@ -23,6 +23,13 @@ func NewLogManager() *LogManager {
 	return &LogManager{}
 }
 
+// hostRoot returns the CUBEOS_HOST_ROOT path (e.g. "/host-root") or empty string.
+// When the API runs inside a container the host filesystem is bind-mounted at
+// this location so we can read host journals, syslogs and kernel logs.
+func hostRoot() string {
+	return os.Getenv("CUBEOS_HOST_ROOT")
+}
+
 // GetJournalLogs retrieves logs from systemd journal or falls back to syslog
 func (m *LogManager) GetJournalLogs(unit string, lines int, since, until, priority, grep string) []models.LogEntry {
 	var entries []models.LogEntry
@@ -50,6 +57,14 @@ func (m *LogManager) tryJournalctl(unit string, lines int, since, until, priorit
 	journalDirs := []string{
 		"/var/log/journal", // Standard persistent journal location
 		"/run/log/journal", // Runtime journal location
+	}
+
+	// Prepend host-mounted paths (higher priority) when running in a container
+	if hr := hostRoot(); hr != "" {
+		journalDirs = append([]string{
+			filepath.Join(hr, "var/log/journal"),
+			filepath.Join(hr, "run/log/journal"),
+		}, journalDirs...)
 	}
 
 	var journalDir string
@@ -126,8 +141,14 @@ func (m *LogManager) readSyslogFiles(unit string, lines int, grep string) []mode
 		"/var/log/syslog",
 		"/var/log/messages",
 		"/var/log/daemon.log",
-		"/host/var/log/syslog",
-		"/host/var/log/messages",
+	}
+
+	// Add host-mounted paths when running in a container
+	if hr := hostRoot(); hr != "" {
+		logFiles = append(logFiles,
+			filepath.Join(hr, "var/log/syslog"),
+			filepath.Join(hr, "var/log/messages"),
+		)
 	}
 
 	var logFile string
@@ -292,6 +313,12 @@ func (m *LogManager) GetAvailableUnits() []string {
 
 	// Find journal directory
 	journalDirs := []string{"/var/log/journal", "/run/log/journal"}
+	if hr := hostRoot(); hr != "" {
+		journalDirs = append([]string{
+			filepath.Join(hr, "var/log/journal"),
+			filepath.Join(hr, "run/log/journal"),
+		}, journalDirs...)
+	}
 	var journalDir string
 	for _, dir := range journalDirs {
 		if info, err := os.Stat(dir); err == nil && info.IsDir() {
@@ -435,11 +462,15 @@ func (m *LogManager) GetKernelLogs(lines int) []string {
 	// Fallback: read kernel log files
 	kernLogPaths := []string{
 		"/var/log/kern.log",
-		"/host/var/log/kern.log",
 		"/var/log/dmesg",
-		"/host/var/log/dmesg",
 		"/var/log/messages",
-		"/host/var/log/messages",
+	}
+	if hr := hostRoot(); hr != "" {
+		kernLogPaths = append(kernLogPaths,
+			filepath.Join(hr, "var/log/kern.log"),
+			filepath.Join(hr, "var/log/dmesg"),
+			filepath.Join(hr, "var/log/messages"),
+		)
 	}
 
 	for _, path := range kernLogPaths {
@@ -469,7 +500,10 @@ func (m *LogManager) GetKernelLogs(lines int) []string {
 	}
 
 	// Last resort: try reading syslog and filter kernel messages
-	syslogPaths := []string{"/var/log/syslog", "/host/var/log/syslog"}
+	syslogPaths := []string{"/var/log/syslog"}
+	if hr := hostRoot(); hr != "" {
+		syslogPaths = append(syslogPaths, filepath.Join(hr, "var/log/syslog"))
+	}
 	for _, path := range syslogPaths {
 		file, err := os.Open(path)
 		if err != nil {
@@ -501,11 +535,17 @@ func (m *LogManager) GetKernelLogs(lines int) []string {
 func (m *LogManager) GetBootLogs(bootID int, lines int) []models.LogEntry {
 	// Find journal directory
 	journalDirs := []string{"/var/log/journal", "/run/log/journal"}
+	if hr := hostRoot(); hr != "" {
+		journalDirs = append([]string{
+			filepath.Join(hr, "var/log/journal"),
+			filepath.Join(hr, "run/log/journal"),
+		}, journalDirs...)
+	}
 	var journalDir string
 	for _, dir := range journalDirs {
 		if info, err := os.Stat(dir); err == nil && info.IsDir() {
-			entries, _ := os.ReadDir(dir)
-			if len(entries) > 0 {
+			dirEntries, _ := os.ReadDir(dir)
+			if len(dirEntries) > 0 {
 				journalDir = dir
 				break
 			}
@@ -550,7 +590,11 @@ func (m *LogManager) ReadLogFile(path string, lines int, grep string) ([]string,
 	cleanPath := filepath.Clean(path)
 
 	// Allowlist of permitted log directories
-	allowedPrefixes := []string{"/var/log/", "/host/var/log/"}
+	hr := hostRoot()
+	allowedPrefixes := []string{"/var/log/"}
+	if hr != "" {
+		allowedPrefixes = append(allowedPrefixes, filepath.Join(hr, "var/log")+"/")
+	}
 	allowed := false
 	for _, prefix := range allowedPrefixes {
 		if strings.HasPrefix(cleanPath, prefix) {
@@ -562,13 +606,20 @@ func (m *LogManager) ReadLogFile(path string, lines int, grep string) ([]string,
 		return nil, fmt.Errorf("access denied: only /var/log/ paths are allowed")
 	}
 
-	// Try host-mounted path first
+	// Try host-mounted path first if the file doesn't exist in the container
 	actualPath := cleanPath
-	if _, err := os.Stat(cleanPath); os.IsNotExist(err) {
-		actualPath = filepath.Clean("/host" + cleanPath)
-		// Re-validate after prepending /host
-		if !strings.HasPrefix(actualPath, "/host/var/log/") {
-			return nil, fmt.Errorf("access denied: only /var/log/ paths are allowed")
+	if _, err := os.Stat(cleanPath); os.IsNotExist(err) && hr != "" {
+		hostPath := filepath.Clean(hr + cleanPath)
+		// Re-validate after prepending host root
+		validHost := false
+		for _, prefix := range allowedPrefixes {
+			if strings.HasPrefix(hostPath, prefix) {
+				validHost = true
+				break
+			}
+		}
+		if validHost {
+			actualPath = hostPath
 		}
 	}
 

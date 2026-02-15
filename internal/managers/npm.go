@@ -148,7 +148,7 @@ func NewNPMManager(cfg *config.Config, configDir string) *NPMManager {
 // Priority order:
 // 1. Try existing token from file
 // 2. Try service account credentials from secrets.env
-// 3. Bootstrap: create service account using admin credentials
+// 3. Bootstrap: create service account using admin credentials (with retry)
 func (m *NPMManager) Init() error {
 	// Step 1: Try existing token
 	if m.tryLoadToken() {
@@ -167,16 +167,78 @@ func (m *NPMManager) Init() error {
 		log.Warn().Msg("NPM: service account auth failed, will try bootstrap")
 	}
 
-	// Step 3: Bootstrap - create service account using admin credentials
-	if err := m.bootstrapServiceAccount(); err != nil {
-		log.Warn().Err(err).Msg("NPM: bootstrap failed")
-		log.Warn().Msg("NPM: will operate in degraded mode (some features unavailable)")
-		// Don't return error - NPM integration is optional
+	// Step 3: Bootstrap with retry (NPM may not be ready yet on cold boot)
+	var lastErr error
+	for attempt := 1; attempt <= 3; attempt++ {
+		if err := m.bootstrapServiceAccount(); err != nil {
+			lastErr = err
+			log.Warn().Err(err).Int("attempt", attempt).Msg("NPM: bootstrap failed, retrying...")
+			time.Sleep(time.Duration(attempt*10) * time.Second)
+			continue
+		}
+		m.initialized = true
 		return nil
 	}
 
-	m.initialized = true
+	log.Warn().Err(lastErr).Msg("NPM: bootstrap failed after 3 attempts, starting background retry")
+
+	// Start background goroutine to keep trying
+	go m.backgroundInit()
+
+	// Don't return error - NPM integration is optional
 	return nil
+}
+
+// backgroundInit retries NPM initialization periodically until success.
+// This handles the case where NPM starts minutes after the API (cold boot).
+func (m *NPMManager) backgroundInit() {
+	ticker := time.NewTicker(30 * time.Second)
+	defer ticker.Stop()
+
+	for attempt := 0; attempt < 20; attempt++ { // Give up after ~10 minutes
+		<-ticker.C
+
+		m.mu.RLock()
+		ready := m.initialized
+		m.mu.RUnlock()
+		if ready {
+			return
+		}
+
+		// Try token first
+		if m.tryLoadToken() {
+			log.Info().Msg("NPM: background init succeeded with existing token")
+			m.mu.Lock()
+			m.initialized = true
+			m.mu.Unlock()
+			return
+		}
+
+		// Try service account password
+		if password := m.loadServiceAccountPassword(); password != "" {
+			if err := m.authenticateServiceAccount(password); err == nil {
+				log.Info().Msg("NPM: background init authenticated with service account")
+				m.mu.Lock()
+				m.initialized = true
+				m.mu.Unlock()
+				return
+			}
+		}
+
+		// Try full bootstrap
+		if err := m.bootstrapServiceAccount(); err != nil {
+			log.Debug().Err(err).Int("attempt", attempt+1).Msg("NPM: background init attempt failed")
+			continue
+		}
+
+		log.Info().Int("attempt", attempt+1).Msg("NPM: background init bootstrap succeeded")
+		m.mu.Lock()
+		m.initialized = true
+		m.mu.Unlock()
+		return
+	}
+
+	log.Warn().Msg("NPM: background init gave up after 20 attempts (~10 min)")
 }
 
 // tryLoadToken attempts to load and verify existing token
@@ -740,15 +802,21 @@ type CoreProxyRule struct {
 }
 
 // GetCoreProxyRules returns the minimum proxy rules needed for out-of-box operation.
-// All forward to 127.0.0.1 because NPM runs in host network mode.
+// All forward to gatewayIP (10.42.24.1) because NPM runs in host network mode
+// and gatewayIP is future-proof if NPM ever moves to overlay networking.
 func GetCoreProxyRules(gatewayIP string) []CoreProxyRule {
 	return []CoreProxyRule{
-		{Domain: "cubeos.cube", ForwardHost: "127.0.0.1", ForwardPort: 6011, WebSocket: false, Description: "Dashboard"},
-		{Domain: "api.cubeos.cube", ForwardHost: "127.0.0.1", ForwardPort: 6010, WebSocket: true, Description: "API"},
-		{Domain: "pihole.cubeos.cube", ForwardHost: "127.0.0.1", ForwardPort: 6001, WebSocket: false, Description: "Pi-hole Admin"},
-		{Domain: "npm.cubeos.cube", ForwardHost: "127.0.0.1", ForwardPort: 81, WebSocket: false, Description: "NPM Admin"},
-		{Domain: "hal.cubeos.cube", ForwardHost: "127.0.0.1", ForwardPort: 6005, WebSocket: false, Description: "HAL"},
-		{Domain: "dozzle.cubeos.cube", ForwardHost: "127.0.0.1", ForwardPort: 6012, WebSocket: true, Description: "Dozzle"},
+		{Domain: "cubeos.cube", ForwardHost: gatewayIP, ForwardPort: 6011, WebSocket: false, Description: "Dashboard"},
+		{Domain: "api.cubeos.cube", ForwardHost: gatewayIP, ForwardPort: 6010, WebSocket: true, Description: "API"},
+		{Domain: "pihole.cubeos.cube", ForwardHost: gatewayIP, ForwardPort: 6001, WebSocket: false, Description: "Pi-hole Admin"},
+		{Domain: "npm.cubeos.cube", ForwardHost: gatewayIP, ForwardPort: 81, WebSocket: false, Description: "NPM Admin"},
+		{Domain: "hal.cubeos.cube", ForwardHost: gatewayIP, ForwardPort: 6005, WebSocket: false, Description: "HAL"},
+		{Domain: "dozzle.cubeos.cube", ForwardHost: gatewayIP, ForwardPort: 6012, WebSocket: true, Description: "Dozzle"},
+		{Domain: "registry.cubeos.cube", ForwardHost: gatewayIP, ForwardPort: 5000, WebSocket: false, Description: "Registry"},
+		{Domain: "docs.cubeos.cube", ForwardHost: gatewayIP, ForwardPort: 6032, WebSocket: false, Description: "DocsIndex"},
+		{Domain: "ollama.cubeos.cube", ForwardHost: gatewayIP, ForwardPort: 6030, WebSocket: false, Description: "Ollama"},
+		{Domain: "chromadb.cubeos.cube", ForwardHost: gatewayIP, ForwardPort: 6031, WebSocket: false, Description: "ChromaDB"},
+		{Domain: "terminal.cubeos.cube", ForwardHost: gatewayIP, ForwardPort: 6009, WebSocket: true, Description: "Terminal"},
 	}
 }
 
