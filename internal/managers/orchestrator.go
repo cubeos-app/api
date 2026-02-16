@@ -690,6 +690,110 @@ func (o *Orchestrator) SeedSystemApps(ctx context.Context) error {
 	return nil
 }
 
+// SeedSystemPortsAndFQDNs ensures port_allocations and fqdns records exist for
+// all core system services. Called after SyncAppsFromSwarm to fill in the records
+// that SyncAppsFromSwarm doesn't create. Uses INSERT OR IGNORE for idempotency.
+func (o *Orchestrator) SeedSystemPortsAndFQDNs(ctx context.Context) error {
+	type systemEntry struct {
+		appName   string
+		port      int
+		subdomain string // empty = skip FQDN
+		portDesc  string
+	}
+
+	entries := []systemEntry{
+		{"pihole", 6001, "pihole", "Admin UI"},
+		{"npm", 6000, "npm", "Admin UI"},
+		{"cubeos-api", 6010, "api", "REST API"},
+		{"cubeos-dashboard", 6011, "cubeos", "Web Dashboard"},
+		{"cubeos-hal", 6005, "hal", "Hardware Abstraction"},
+		{"registry", 5000, "registry", "Docker Registry"},
+		{"dozzle", 6012, "dozzle", "Log Viewer"},
+		{"ollama", 6030, "ollama", "AI Inference"},
+		{"chromadb", 6031, "chromadb", "Vector DB"},
+		{"cubeos-docsindex", 6032, "docs", "Documentation"},
+	}
+
+	seededPorts := 0
+	seededFQDNs := 0
+
+	for _, e := range entries {
+		// Look up app_id — skip if app doesn't exist yet
+		var appID int64
+		err := o.db.QueryRowContext(ctx,
+			"SELECT id FROM apps WHERE name = ?", e.appName).Scan(&appID)
+		if err != nil {
+			// App not registered (e.g. HAL or docsindex may not have been synced)
+			// Create a minimal app record so ports/fqdns have a valid foreign key
+			appType := models.AppTypeSystem
+			deployMode := models.DeployModeCompose
+			switch {
+			case e.appName == "cubeos-api" || e.appName == "cubeos-dashboard" || e.appName == "dozzle":
+				appType = models.AppTypePlatform
+				deployMode = models.DeployModeStack
+			case e.appName == "ollama" || e.appName == "chromadb" || e.appName == "cubeos-docsindex":
+				appType = models.AppTypeAI
+				deployMode = models.DeployModeStack
+			case e.appName == "registry":
+				deployMode = models.DeployModeStack
+			}
+
+			composePath := fmt.Sprintf("/cubeos/coreapps/%s/appconfig/docker-compose.yml", e.appName)
+			result, insertErr := o.db.ExecContext(ctx, `
+				INSERT OR IGNORE INTO apps (name, display_name, type, category, source,
+					compose_path, data_path, enabled, deploy_mode)
+				VALUES (?, ?, ?, 'infrastructure', 'cubeos', ?, ?, 1, ?)
+			`, e.appName, e.appName, appType, composePath,
+				fmt.Sprintf("/cubeos/coreapps/%s/appdata", e.appName), deployMode)
+			if insertErr != nil {
+				log.Warn().Err(insertErr).Str("app", e.appName).Msg("SeedSystemPortsAndFQDNs: failed to create app record")
+				continue
+			}
+			appID, _ = result.LastInsertId()
+			if appID == 0 {
+				// INSERT OR IGNORE hit a conflict — re-query
+				_ = o.db.QueryRowContext(ctx,
+					"SELECT id FROM apps WHERE name = ?", e.appName).Scan(&appID)
+			}
+			if appID == 0 {
+				continue
+			}
+		}
+
+		// Seed port allocation
+		result, err := o.db.ExecContext(ctx, `
+			INSERT OR IGNORE INTO port_allocations (app_id, port, protocol, description, is_primary)
+			VALUES (?, ?, 'tcp', ?, TRUE)
+		`, appID, e.port, e.portDesc)
+		if err == nil {
+			if rows, _ := result.RowsAffected(); rows > 0 {
+				seededPorts++
+			}
+		}
+
+		// Seed FQDN
+		if e.subdomain != "" {
+			fqdn := fmt.Sprintf("%s.%s", e.subdomain, o.cfg.Domain)
+			result, err = o.db.ExecContext(ctx, `
+				INSERT OR IGNORE INTO fqdns (app_id, fqdn, subdomain, backend_port)
+				VALUES (?, ?, ?, ?)
+			`, appID, fqdn, e.subdomain, e.port)
+			if err == nil {
+				if rows, _ := result.RowsAffected(); rows > 0 {
+					seededFQDNs++
+				}
+			}
+		}
+	}
+
+	if seededPorts > 0 || seededFQDNs > 0 {
+		log.Info().Int("ports", seededPorts).Int("fqdns", seededFQDNs).
+			Msg("SeedSystemPortsAndFQDNs: seeded system records")
+	}
+
+	return nil
+}
+
 // =============================================================================
 // Helper Functions
 // =============================================================================
@@ -713,6 +817,9 @@ func (o *Orchestrator) getAppStatus(ctx context.Context, app *models.App) *model
 	}
 
 	if app.UsesSwarm() {
+		if o.swarm == nil {
+			return status
+		}
 		// Get aggregate status across all services in the stack.
 		// Uses stack namespace label — works for CasaOS apps where the
 		// compose service name differs from the app/stack name.
@@ -726,6 +833,9 @@ func (o *Orchestrator) getAppStatus(ctx context.Context, app *models.App) *model
 			}
 		}
 	} else {
+		if o.docker == nil {
+			return status
+		}
 		// Get status from Docker with timeout context
 		containerName := "cubeos-" + app.Name
 		timeoutCtx, cancel := context.WithTimeout(ctx, 5*time.Second)

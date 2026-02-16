@@ -595,19 +595,49 @@ func (m *SetupManager) setTimezone(timezone string) error {
 		timezone = "UTC"
 	}
 
-	// Try timedatectl first
-	if err := exec.Command("timedatectl", "set-timezone", timezone).Run(); err != nil {
-		// Fallback: create /etc/localtime symlink
-		tzFile := filepath.Join("/usr/share/zoneinfo", timezone)
-		if _, err := os.Stat(tzFile); err == nil {
-			os.Remove("/etc/localtime")
-			os.Symlink(tzFile, "/etc/localtime")
+	// Determine host root mount path from env (default: /host-root)
+	hostRoot := os.Getenv("CUBEOS_HOST_ROOT")
+	if hostRoot == "" {
+		hostRoot = "/host-root"
+	}
+
+	// Validate timezone file exists
+	for _, base := range []string{"/usr/share/zoneinfo", filepath.Join(hostRoot, "usr/share/zoneinfo")} {
+		candidate := filepath.Join(base, timezone)
+		if _, err := os.Stat(candidate); err == nil {
+			break
 		}
 	}
 
-	// Write to /etc/timezone
-	os.WriteFile("/etc/timezone", []byte(timezone+"\n"), 0644)
+	// Try timedatectl first (works on host, not in container)
+	if err := exec.Command("timedatectl", "set-timezone", timezone).Run(); err != nil {
+		// Fallback: write to host paths first (persist across container restarts),
+		// then container paths (for current session).
+		// Host root is mounted at CUBEOS_HOST_ROOT (typically /host-root).
+		tzPaths := []string{
+			filepath.Join(hostRoot, "etc/timezone"),
+			"/host/etc/timezone", // legacy path (some setups)
+			"/etc/timezone",      // container-local
+		}
+		for _, path := range tzPaths {
+			_ = os.WriteFile(path, []byte(timezone+"\n"), 0644)
+		}
 
+		// Update localtime symlink on host and container
+		ltPaths := []string{
+			filepath.Join(hostRoot, "etc/localtime"),
+			"/host/etc/localtime",
+			"/etc/localtime",
+		}
+		for _, path := range ltPaths {
+			os.Remove(path)
+			os.Symlink(filepath.Join("/usr/share/zoneinfo", timezone), path)
+		}
+	}
+
+	log.Debug().Str("timezone", timezone).Str("host_root", hostRoot).Msg("timezone configured")
+
+	// Always persist to DB (source of truth for Settings page display)
 	m.saveConfig("timezone", timezone)
 	return nil
 }

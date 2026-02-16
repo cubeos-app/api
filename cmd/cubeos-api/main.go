@@ -304,6 +304,14 @@ func main() {
 			log.Warn().Err(err).Msg("SyncAppsFromSwarm failed (non-fatal)")
 		}
 		syncCancel()
+
+		// Seed port allocations and FQDNs for system services (B26, B28)
+		// Must run after SyncAppsFromSwarm so app records exist for foreign keys
+		seedCtx, seedCancel := context.WithTimeout(context.Background(), 10*time.Second)
+		if err := orchestrator.SeedSystemPortsAndFQDNs(seedCtx); err != nil {
+			log.Warn().Err(err).Msg("SeedSystemPortsAndFQDNs failed (non-fatal)")
+		}
+		seedCancel()
 	}
 
 	// Create VPN manager (Sprint 3 - with HAL client)

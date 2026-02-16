@@ -69,7 +69,12 @@ func (h *LogsHandler) GetKernelLogs(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	writeJSON(w, http.StatusOK, logs)
+	// Normalize: ensure 'lines' field is populated (HAL may return 'entries' instead)
+	normalized := logs.GetLines()
+	writeJSON(w, http.StatusOK, map[string]interface{}{
+		"lines": normalized,
+		"count": len(normalized),
+	})
 }
 
 // GetJournalLogs godoc
@@ -118,7 +123,12 @@ func (h *LogsHandler) GetJournalLogs(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	writeJSON(w, http.StatusOK, logs)
+	// Normalize: ensure 'lines' field is populated (HAL may return 'entries' instead)
+	normalized := logs.GetLines()
+	writeJSON(w, http.StatusOK, map[string]interface{}{
+		"lines": normalized,
+		"count": len(normalized),
+	})
 }
 
 // GetHardwareLogs godoc

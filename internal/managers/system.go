@@ -11,6 +11,7 @@ import (
 	"runtime"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/shirou/gopsutil/v3/cpu"
@@ -29,11 +30,22 @@ import (
 // SystemManager handles system-level operations
 type SystemManager struct {
 	hal *hal.Client
+
+	// Caching for expensive operations (B20: reduce /system/info + /system/stats latency)
+	infoCache      *models.SystemInfo
+	infoCacheTime  time.Time
+	statsCache     *models.SystemStats
+	statsCacheTime time.Time
+	cacheMu        sync.RWMutex
+	cacheTTL       time.Duration
 }
 
 // NewSystemManager creates a new SystemManager
 func NewSystemManager(halClient *hal.Client) *SystemManager {
-	return &SystemManager{hal: halClient}
+	return &SystemManager{
+		hal:      halClient,
+		cacheTTL: 5 * time.Second,
+	}
 }
 
 // GetHostname returns the system hostname
@@ -229,13 +241,22 @@ func (m *SystemManager) GetIPAddresses() map[string]string {
 
 // GetSystemInfo returns comprehensive system information
 func (m *SystemManager) GetSystemInfo() *models.SystemInfo {
+	// Check cache first (B20: avoid repeated expensive calls)
+	m.cacheMu.RLock()
+	if m.infoCache != nil && time.Since(m.infoCacheTime) < m.cacheTTL {
+		cached := m.infoCache
+		m.cacheMu.RUnlock()
+		return cached
+	}
+	m.cacheMu.RUnlock()
+
 	osName, osVersion := m.GetOSInfo()
 	uptimeSecs, uptimeHuman := m.GetUptime()
 	piModel, piSerial, piRevision := m.GetPiInfo()
 
 	cpuCount, _ := cpu.Counts(false)
 
-	return &models.SystemInfo{
+	info := &models.SystemInfo{
 		CubeOSVersion: os.Getenv("CUBEOS_VERSION"),
 		Hostname:      m.GetHostname(),
 		OSName:        osName,
@@ -253,6 +274,14 @@ func (m *SystemManager) GetSystemInfo() *models.SystemInfo {
 		MACAddresses:  m.GetMACAddresses(),
 		IPAddresses:   m.GetIPAddresses(),
 	}
+
+	// Update cache
+	m.cacheMu.Lock()
+	m.infoCache = info
+	m.infoCacheTime = time.Now()
+	m.cacheMu.Unlock()
+
+	return info
 }
 
 // GetCPUPercent returns current CPU usage percentage
@@ -367,6 +396,15 @@ func (m *SystemManager) GetTemperature() *models.Temperature {
 
 // GetSystemStats returns current system statistics
 func (m *SystemManager) GetSystemStats() *models.SystemStats {
+	// Check cache first (B20: avoid repeated 500ms CPU sampling)
+	m.cacheMu.RLock()
+	if m.statsCache != nil && time.Since(m.statsCacheTime) < m.cacheTTL {
+		cached := m.statsCache
+		m.cacheMu.RUnlock()
+		return cached
+	}
+	m.cacheMu.RUnlock()
+
 	memTotal, memUsed, memAvail, memPercent := m.GetMemoryStats()
 	diskTotal, diskUsed, diskFree, diskPercent := m.GetDiskStats()
 	temp := m.GetTemperature()
@@ -410,6 +448,12 @@ func (m *SystemManager) GetSystemStats() *models.SystemStats {
 			log.Warn().Err(err).Msg("SystemManager: HAL GetMemoryInfo failed for swap stats")
 		}
 	}
+
+	// Update cache
+	m.cacheMu.Lock()
+	m.statsCache = stats
+	m.statsCacheTime = time.Now()
+	m.cacheMu.Unlock()
 
 	return stats
 }
@@ -960,8 +1004,18 @@ func (m *SystemManager) GetTimezone() string {
 		}
 	}
 
-	// Fall back to reading /etc/timezone
-	tzPaths := []string{"/host/etc/timezone", "/etc/timezone"}
+	// Determine host root mount path from env (default: /host-root)
+	hostRoot := os.Getenv("CUBEOS_HOST_ROOT")
+	if hostRoot == "" {
+		hostRoot = "/host-root"
+	}
+
+	// Fall back to reading /etc/timezone from host and container paths
+	tzPaths := []string{
+		filepath.Join(hostRoot, "etc/timezone"),
+		"/host/etc/timezone",
+		"/etc/timezone",
+	}
 	for _, path := range tzPaths {
 		if data, err := os.ReadFile(path); err == nil {
 			tz := strings.TrimSpace(string(data))
@@ -972,7 +1026,11 @@ func (m *SystemManager) GetTimezone() string {
 	}
 
 	// Try reading the localtime symlink
-	localtimePaths := []string{"/host/etc/localtime", "/etc/localtime"}
+	localtimePaths := []string{
+		filepath.Join(hostRoot, "etc/localtime"),
+		"/host/etc/localtime",
+		"/etc/localtime",
+	}
 	for _, path := range localtimePaths {
 		if target, err := os.Readlink(path); err == nil {
 			// Extract timezone from path like /usr/share/zoneinfo/America/New_York

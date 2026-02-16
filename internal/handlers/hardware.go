@@ -1,7 +1,9 @@
 package handlers
 
 import (
+	"context"
 	"encoding/json"
+	"fmt"
 	"log"
 	"net/http"
 	"strconv"
@@ -1508,9 +1510,23 @@ func (h *HardwareHandler) GetSupportBundle(w http.ResponseWriter, r *http.Reques
 		return
 	}
 
-	data, err := h.halClient.GetSupportBundle(ctx)
+	// Use a longer timeout for bundle generation (HAL needs to collect multiple files)
+	bundleCtx, cancel := context.WithTimeout(ctx, 30*time.Second)
+	defer cancel()
+
+	data, err := h.halClient.GetSupportBundle(bundleCtx)
 	if err != nil {
-		writeError(w, http.StatusInternalServerError, "Failed to get support bundle: "+err.Error())
+		// Provide helpful error message
+		errMsg := fmt.Sprintf("Failed to generate support bundle: %s", err.Error())
+		if strings.Contains(err.Error(), "connection refused") || strings.Contains(err.Error(), "timeout") {
+			errMsg = "HAL service unreachable — support bundle requires HAL to collect host diagnostics"
+		}
+		writeError(w, http.StatusInternalServerError, errMsg)
+		return
+	}
+
+	if len(data) == 0 {
+		writeError(w, http.StatusInternalServerError, "Support bundle is empty — HAL may not have generated the archive")
 		return
 	}
 

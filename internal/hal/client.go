@@ -447,8 +447,17 @@ type USBStorageDevice struct {
 
 // LogsResponse represents log output
 type LogsResponse struct {
-	Lines []string `json:"lines"`
-	Count int      `json:"count"`
+	Lines   []string `json:"lines"`
+	Entries []string `json:"entries"` // HAL may return 'entries' instead of 'lines'
+	Count   int      `json:"count"`
+}
+
+// GetLines returns whichever field is populated (lines or entries).
+func (r *LogsResponse) GetLines() []string {
+	if len(r.Lines) > 0 {
+		return r.Lines
+	}
+	return r.Entries
 }
 
 // HardwareLogsResponse represents hardware-specific logs
