@@ -33,9 +33,79 @@ func (h *DocsHandler) Routes() chi.Router {
 	r := chi.NewRouter()
 	r.Get("/", h.ListDocs)
 	r.Get("/tree", h.GetDocsTree)
+	r.Get("/status", h.GetDocsStatus)
 	r.Get("/search", h.SearchDocs)
 	r.Get("/*", h.GetDoc)
 	return r
+}
+
+// ---------------------------------------------------------------------------
+// Built-in fallback documentation (served when /cubeos/docs/ is empty)
+// ---------------------------------------------------------------------------
+
+const builtinGettingStartedContent = `# Getting Started with CubeOS
+
+Welcome to CubeOS — your self-hosted server operating system for Raspberry Pi.
+
+## Quick Links
+
+- **Dashboard:** http://cubeos.cube
+- **API Docs:** http://api.cubeos.cube/api/v1/swagger/index.html
+- **Pi-hole DNS:** http://pihole.cubeos.cube
+- **Logs (Dozzle):** http://dozzle.cubeos.cube
+
+## First Steps
+
+1. Connect to the CubeOS WiFi access point
+2. Open the dashboard at http://cubeos.cube
+3. Complete the Setup Wizard to configure your device
+4. Install additional services from the App Store
+
+## Network Modes
+
+- **Offline** — Access Point only, air-gapped operation
+- **Online (Ethernet)** — AP + internet via Ethernet cable
+- **Online (WiFi)** — AP + internet via USB WiFi dongle
+
+## Documentation
+
+Full documentation is available online at https://docs.cubeos.app.
+
+Offline documentation files will appear here automatically when they are
+available in /cubeos/docs on the device.
+`
+
+var builtinDocsList = []DocFile{
+	{
+		Path:  "getting-started",
+		Name:  "getting-started.md",
+		Title: "Getting Started with CubeOS",
+	},
+}
+
+var builtinDocsContent = map[string]DocContent{
+	"getting-started": {
+		Path:    "getting-started",
+		Title:   "Getting Started with CubeOS",
+		Content: builtinGettingStartedContent,
+	},
+}
+
+// hasDocsOnDisk checks whether /cubeos/docs/ contains any .md files
+func (h *DocsHandler) hasDocsOnDisk() bool {
+	count := 0
+	filepath.WalkDir(h.docsPath, func(path string, d fs.DirEntry, err error) error {
+		if err != nil {
+			return nil
+		}
+		if !d.IsDir() && strings.HasSuffix(strings.ToLower(d.Name()), ".md") &&
+			!strings.HasPrefix(d.Name(), ".") {
+			count++
+			return filepath.SkipAll // found at least one, stop walking
+		}
+		return nil
+	})
+	return count > 0
 }
 
 // DocFile represents a documentation file
@@ -56,7 +126,7 @@ type DocContent struct {
 
 // ListDocs godoc
 // @Summary List all documentation files
-// @Description Returns a flat list of all markdown documentation files sorted by path. Titles are extracted from the first H1 heading in each file.
+// @Description Returns a flat list of all markdown documentation files sorted by path. Titles are extracted from the first H1 heading in each file. Returns built-in fallback docs when /cubeos/docs/ is empty.
 // @Tags Docs
 // @Produce json
 // @Security BearerAuth
@@ -100,8 +170,15 @@ func (h *DocsHandler) ListDocs(w http.ResponseWriter, r *http.Request) {
 		return nil
 	})
 
-	if err != nil {
+	if err != nil && !os.IsNotExist(err) {
 		http.Error(w, `{"error":"Failed to list docs"}`, http.StatusInternalServerError)
+		return
+	}
+
+	// B45: Serve built-in fallback when directory is empty
+	if len(docs) == 0 {
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(builtinDocsList)
 		return
 	}
 
@@ -116,7 +193,7 @@ func (h *DocsHandler) ListDocs(w http.ResponseWriter, r *http.Request) {
 
 // GetDocsTree godoc
 // @Summary Get documentation tree
-// @Description Returns documentation files as a hierarchical tree structure with directories and nested children. Directories are sorted before files.
+// @Description Returns documentation files as a hierarchical tree structure with directories and nested children. Directories are sorted before files. Returns built-in fallback docs when /cubeos/docs/ is empty.
 // @Tags Docs
 // @Produce json
 // @Security BearerAuth
@@ -124,6 +201,13 @@ func (h *DocsHandler) ListDocs(w http.ResponseWriter, r *http.Request) {
 // @Router /documentation/tree [get]
 func (h *DocsHandler) GetDocsTree(w http.ResponseWriter, r *http.Request) {
 	tree := buildDocTree(h.docsPath, h.docsPath)
+
+	// B45: Serve built-in fallback when directory is empty
+	if len(tree) == 0 {
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(builtinDocsList)
+		return
+	}
 
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(tree)
@@ -186,7 +270,7 @@ func buildDocTree(basePath, currentPath string) []DocFile {
 
 // GetDoc godoc
 // @Summary Get documentation file content
-// @Description Returns the content of a specific markdown documentation file. The .md extension is optional in the path. Returns README.md if no path is specified.
+// @Description Returns the content of a specific markdown documentation file. The .md extension is optional in the path. Returns README.md if no path is specified. Falls back to built-in docs when file not found on disk.
 // @Tags Docs
 // @Produce json
 // @Security BearerAuth
@@ -219,6 +303,13 @@ func (h *DocsHandler) GetDoc(w http.ResponseWriter, r *http.Request) {
 	content, err := os.ReadFile(fullPath)
 	if err != nil {
 		if os.IsNotExist(err) {
+			// B45: Check built-in fallback docs before returning 404
+			cleanPath := strings.TrimSuffix(docPath, ".md")
+			if builtin, ok := builtinDocsContent[cleanPath]; ok {
+				w.Header().Set("Content-Type", "application/json")
+				json.NewEncoder(w).Encode(builtin)
+				return
+			}
 			http.Error(w, `{"error":"Document not found"}`, http.StatusNotFound)
 		} else {
 			http.Error(w, `{"error":"Failed to read document"}`, http.StatusInternalServerError)
@@ -294,8 +385,63 @@ func (h *DocsHandler) SearchDocs(w http.ResponseWriter, r *http.Request) {
 		return nil
 	})
 
+	// B45: Search built-in docs as well when directory is empty
+	if len(results) == 0 && !h.hasDocsOnDisk() {
+		for _, doc := range builtinDocsContent {
+			if strings.Contains(strings.ToLower(doc.Content), query) ||
+				strings.Contains(strings.ToLower(doc.Title), query) {
+				results = append(results, DocFile{
+					Path:  doc.Path,
+					Name:  doc.Path + ".md",
+					Title: doc.Title,
+				})
+			}
+		}
+	}
+
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(results)
+}
+
+// DocStatus represents the documentation service status
+type DocStatus struct {
+	Mode          string `json:"mode"`
+	DocsAvailable bool   `json:"docs_available"`
+	DocCount      int    `json:"doc_count"`
+}
+
+// GetDocsStatus godoc
+// @Summary Get documentation status
+// @Description Returns the current status of the documentation system, including whether docs are available on disk and the mode of operation.
+// @Tags Docs
+// @Produce json
+// @Security BearerAuth
+// @Success 200 {object} DocStatus "Documentation status"
+// @Router /documentation/status [get]
+func (h *DocsHandler) GetDocsStatus(w http.ResponseWriter, r *http.Request) {
+	docCount := 0
+	filepath.WalkDir(h.docsPath, func(path string, d fs.DirEntry, err error) error {
+		if err != nil {
+			return nil
+		}
+		if !d.IsDir() && strings.HasSuffix(strings.ToLower(d.Name()), ".md") &&
+			!strings.HasPrefix(d.Name(), ".") {
+			docCount++
+		}
+		return nil
+	})
+
+	mode := "builtin"
+	if docCount > 0 {
+		mode = "filesystem"
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(DocStatus{
+		Mode:          mode,
+		DocsAvailable: docCount > 0,
+		DocCount:      docCount,
+	})
 }
 
 // extractTitle extracts the first H1 heading from markdown content
