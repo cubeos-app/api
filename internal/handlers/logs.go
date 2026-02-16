@@ -69,11 +69,11 @@ func (h *LogsHandler) GetKernelLogs(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Normalize: ensure 'lines' field is populated (HAL may return 'entries' instead)
+	// B39: Return 'entries' to match what dashboard stores/logs.js expects
 	normalized := logs.GetLines()
 	writeJSON(w, http.StatusOK, map[string]interface{}{
-		"lines": normalized,
-		"count": len(normalized),
+		"entries": normalized,
+		"count":   len(normalized),
 	})
 }
 
@@ -123,11 +123,11 @@ func (h *LogsHandler) GetJournalLogs(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Normalize: ensure 'lines' field is populated (HAL may return 'entries' instead)
+	// B39: Return 'entries' to match what dashboard stores/logs.js expects
 	normalized := logs.GetLines()
 	writeJSON(w, http.StatusOK, map[string]interface{}{
-		"lines": normalized,
-		"count": len(normalized),
+		"entries": normalized,
+		"count":   len(normalized),
 	})
 }
 

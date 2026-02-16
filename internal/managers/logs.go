@@ -41,7 +41,15 @@ func (m *LogManager) GetJournalLogs(unit string, lines int, since, until, priori
 	}
 
 	// Fallback: read traditional syslog files
-	return m.readSyslogFiles(unit, lines, grep)
+	entries = m.readSyslogFiles(unit, lines, grep)
+
+	// If a priority filter was requested, apply it to the syslog fallback too.
+	// journalctl handles this natively, but readSyslogFiles doesn't.
+	if priority != "" && len(entries) > 0 {
+		entries = filterByPriority(entries, priority)
+	}
+
+	return entries
 }
 
 // tryJournalctl attempts to use journalctl command
@@ -729,4 +737,32 @@ func (m *LogManager) ReadLogFile(path string, lines int, grep string) ([]string,
 func (m *LogManager) GetRecentErrors(lines int, hours int) []models.LogEntry {
 	since := fmt.Sprintf("%d hours ago", hours)
 	return m.GetJournalLogs("", lines, since, "", "err", "")
+}
+
+// filterByPriority filters log entries to only include entries at or above
+// the specified priority level. Priority mapping matches journalctl conventions:
+//
+//	emerg(0), alert(1), crit(2), err(3), warning(4), notice(5), info(6), debug(7)
+//
+// When priority is "err", entries with priority emerg/alert/crit/err are included.
+func filterByPriority(entries []models.LogEntry, priority string) []models.LogEntry {
+	// Map priority names to numeric levels (lower = more severe)
+	priorityLevels := map[string]int{
+		"emerg": 0, "alert": 1, "crit": 2, "err": 3,
+		"warning": 4, "warn": 4, "notice": 5, "info": 6, "debug": 7,
+	}
+
+	maxLevel, ok := priorityLevels[strings.ToLower(priority)]
+	if !ok {
+		return entries // Unknown priority string, return unfiltered
+	}
+
+	var filtered []models.LogEntry
+	for _, e := range entries {
+		entryLevel, known := priorityLevels[strings.ToLower(e.Priority)]
+		if known && entryLevel <= maxLevel {
+			filtered = append(filtered, e)
+		}
+	}
+	return filtered
 }
