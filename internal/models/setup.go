@@ -109,16 +109,18 @@ type DeploymentPurposeInfo struct {
 
 // SystemRequirements for showing device capabilities
 type SystemRequirements struct {
-	TotalRAM     int64  `json:"total_ram_mb"`
-	AvailableRAM int64  `json:"available_ram_mb"`
-	TotalStorage int64  `json:"total_storage_gb"`
-	AvailStorage int64  `json:"available_storage_gb"`
-	CPUCores     int    `json:"cpu_cores"`
-	Architecture string `json:"architecture"` // arm64, amd64
-	HasWiFi      bool   `json:"has_wifi"`
-	HasBluetooth bool   `json:"has_bluetooth"`
-	HasGPU       bool   `json:"has_gpu"`
-	DeviceModel  string `json:"device_model"` // e.g., "Raspberry Pi 5"
+	TotalRAM       int64  `json:"total_ram_mb"`
+	AvailableRAM   int64  `json:"available_ram_mb"`
+	SwapTotal      int64  `json:"swap_total_mb"`
+	SwapConfigured bool   `json:"swap_configured"`
+	TotalStorage   int64  `json:"total_storage_gb"`
+	AvailStorage   int64  `json:"available_storage_gb"`
+	CPUCores       int    `json:"cpu_cores"`
+	Architecture   string `json:"architecture"` // arm64, amd64
+	HasWiFi        bool   `json:"has_wifi"`
+	HasBluetooth   bool   `json:"has_bluetooth"`
+	HasGPU         bool   `json:"has_gpu"`
+	DeviceModel    string `json:"device_model"` // e.g., "Raspberry Pi 5"
 }
 
 // SetupWizardSteps defines all wizard steps

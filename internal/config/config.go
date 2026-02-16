@@ -174,7 +174,7 @@ func Load() *Config {
 		// Server - REQUIRED
 		Host:    getEnvOptional("API_HOST", "0.0.0.0"),
 		Port:    mustGetEnvInt("API_PORT"),
-		Version: getEnvOptional("VERSION", "2.0.0"),
+		Version: getEnvOptional("CUBEOS_VERSION", "dev"),
 
 		// Database - REQUIRED
 		DatabasePath: mustGetEnv("DATABASE_PATH"),
@@ -204,8 +204,9 @@ func Load() *Config {
 		DashboardPort: mustGetEnvInt("DASHBOARD_PORT"),
 		NPMPort:       mustGetEnvInt("NPM_PORT"),
 		PiholePort:    mustGetEnvInt("PIHOLE_PORT"),
-		OllamaPort:    mustGetEnvInt("OLLAMA_PORT"),
-		ChromaDBPort:  mustGetEnvInt("CHROMADB_PORT"),
+		// B01: Ollama/ChromaDB are optional — API must not crash when AI stack is disabled
+		OllamaPort:   getEnvIntOptional("OLLAMA_PORT", 6030),
+		ChromaDBPort: getEnvIntOptional("CHROMADB_PORT", 6031),
 
 		// Paths - use env vars with fallbacks
 		DataDir:   getEnvOptional("CUBEOS_DATA_DIR", "/cubeos/data"),

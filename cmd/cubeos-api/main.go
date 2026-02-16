@@ -466,8 +466,11 @@ func main() {
 	// API v1 routes
 	r.Route("/api/v1", func(r chi.Router) {
 		// Swagger documentation (public, no auth required)
+		// B06: Use absolute path for doc.json so it resolves correctly through NPM proxy.
+		// Relative "doc.json" can fail when the browser base URL differs from the
+		// API's actual path (e.g., api.cubeos.cube vs 10.42.24.1:6010).
 		r.Get("/swagger/*", httpSwagger.Handler(
-			httpSwagger.URL("doc.json"),
+			httpSwagger.URL("/api/v1/swagger/doc.json"),
 			httpSwagger.DeepLinking(true),
 			httpSwagger.DocExpansion("none"),
 			httpSwagger.DomID("swagger-ui"),

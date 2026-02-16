@@ -258,6 +258,19 @@ func (m *SetupManager) GetSystemRequirements() *models.SystemRequirements {
 		}
 	}
 
+	// B04: Get swap/ZRAM info from HAL (host-level memory info)
+	if m.hal != nil {
+		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		defer cancel()
+		if memInfo, err := m.hal.GetMemoryInfo(ctx); err == nil {
+			swapMB := memInfo.SwapTotal / (1024 * 1024)
+			req.SwapTotal = swapMB
+			req.SwapConfigured = swapMB > 0
+		} else {
+			log.Warn().Err(err).Msg("failed to get swap/ZRAM info from HAL")
+		}
+	}
+
 	return req
 }
 
