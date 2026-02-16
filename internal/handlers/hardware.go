@@ -2,6 +2,7 @@ package handlers
 
 import (
 	"encoding/json"
+	"log"
 	"net/http"
 	"strconv"
 	"strings"
@@ -1065,7 +1066,12 @@ func (h *HardwareHandler) GetGPIOPins(w http.ResponseWriter, r *http.Request) {
 
 	pins, err := h.halClient.GetGPIOPins(ctx)
 	if err != nil {
-		writeError(w, http.StatusInternalServerError, "Failed to get GPIO pins: "+err.Error())
+		// B11: Graceful degradation — return empty response instead of 500.
+		// GPIO may fail if HAL can't access gpiochip (permissions, Pi model, etc.)
+		log.Printf("WARN: GPIO pins fetch failed (non-fatal): %v", err)
+		writeJSON(w, http.StatusOK, GPIOPinsResponse{
+			Pins: []hal.GPIOPin{},
+		})
 		return
 	}
 
