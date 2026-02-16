@@ -2,6 +2,7 @@ package managers
 
 import (
 	"bufio"
+	"context"
 	"fmt"
 	"net"
 	"os"
@@ -19,15 +20,20 @@ import (
 	"github.com/shirou/gopsutil/v3/mem"
 	psnet "github.com/shirou/gopsutil/v3/net"
 
+	"cubeos-api/internal/hal"
 	"cubeos-api/internal/models"
+
+	"github.com/rs/zerolog/log"
 )
 
 // SystemManager handles system-level operations
-type SystemManager struct{}
+type SystemManager struct {
+	hal *hal.Client
+}
 
 // NewSystemManager creates a new SystemManager
-func NewSystemManager() *SystemManager {
-	return &SystemManager{}
+func NewSystemManager(halClient *hal.Client) *SystemManager {
+	return &SystemManager{hal: halClient}
 }
 
 // GetHostname returns the system hostname
@@ -171,42 +177,33 @@ func (m *SystemManager) GetMACAddresses() map[string]string {
 }
 
 // GetIPAddresses returns IP addresses for all host interfaces.
-// When running inside a Swarm container, uses nsenter to read the host's
-// network namespace (pid:host mode allows this), falling back to container
-// interfaces if nsenter fails.
+// Delegates to HAL for host network namespace access, falling back to
+// container interfaces if HAL is unavailable.
 func (m *SystemManager) GetIPAddresses() map[string]string {
 	ips := make(map[string]string)
 
-	// Try nsenter first — reads the host network namespace via PID 1
-	// The API container has pid:"host", so nsenter -t 1 -n works.
-	output, err := exec.Command("nsenter", "-t", "1", "-n", "--", "ip", "-4", "-o", "addr", "show").Output()
-	if err == nil {
-		// Parse "ip -4 -o addr show" output lines like:
-		// 2: eth0    inet 192.168.1.100/24 brd 192.168.1.255 scope global eth0
-		scanner := bufio.NewScanner(strings.NewReader(string(output)))
-		for scanner.Scan() {
-			fields := strings.Fields(scanner.Text())
-			if len(fields) >= 4 {
-				// fields[1] = interface name (may have trailing colon)
-				ifName := strings.TrimRight(fields[1], ":")
+	// Use HAL to read host network interfaces (HAL runs in host namespace)
+	if m.hal != nil {
+		interfaces, err := m.hal.ListInterfaces(context.Background())
+		if err == nil {
+			for _, iface := range interfaces {
 				// Skip loopback and docker/veth interfaces
-				if ifName == "lo" || strings.HasPrefix(ifName, "veth") || strings.HasPrefix(ifName, "br-") || strings.HasPrefix(ifName, "docker") {
+				if iface.Name == "lo" || strings.HasPrefix(iface.Name, "veth") ||
+					strings.HasPrefix(iface.Name, "br-") || strings.HasPrefix(iface.Name, "docker") {
 					continue
 				}
-				// Find "inet" keyword and extract IP
-				for i, f := range fields {
-					if f == "inet" && i+1 < len(fields) {
-						ip := strings.Split(fields[i+1], "/")[0]
-						ips[ifName] = ip
-						break
-					}
+				if len(iface.IPv4Addresses) > 0 {
+					// Strip CIDR notation if present
+					ip := strings.Split(iface.IPv4Addresses[0], "/")[0]
+					ips[iface.Name] = ip
 				}
 			}
+			if len(ips) > 0 {
+				return ips
+			}
+		} else {
+			log.Warn().Err(err).Msg("SystemManager: HAL ListInterfaces failed, falling back to container interfaces")
 		}
-	}
-
-	if len(ips) > 0 {
-		return ips
 	}
 
 	// Fallback: read container interfaces (may show overlay/bridge IPs)
@@ -395,29 +392,22 @@ func (m *SystemManager) GetSystemStats() *models.SystemStats {
 		stats.SwapPercent = swap.UsedPercent
 	}
 
-	// B38: Fallback — read /proc/swaps directly when gopsutil returns 0
-	// This happens inside containers where gopsutil can't detect ZRAM
-	if stats.SwapTotal == 0 {
-		if data, err := os.ReadFile("/proc/swaps"); err == nil {
-			lines := strings.Split(string(data), "\n")
-			var totalKB, usedKB uint64
-			for _, line := range lines[1:] { // Skip header
-				fields := strings.Fields(line)
-				if len(fields) >= 4 {
-					var size, used uint64
-					fmt.Sscanf(fields[2], "%d", &size)
-					fmt.Sscanf(fields[3], "%d", &used)
-					totalKB += size
-					usedKB += used
+	// B38 fix: When gopsutil returns 0 swap (common in containers where ZRAM
+	// is invisible), delegate to HAL which reads host /proc/meminfo directly.
+	if stats.SwapTotal == 0 && m.hal != nil {
+		if memInfo, err := m.hal.GetMemoryInfo(context.Background()); err == nil {
+			if memInfo.SwapTotal > 0 {
+				stats.SwapTotal = uint64(memInfo.SwapTotal)
+				swapUsed := memInfo.SwapTotal - memInfo.SwapFree
+				if swapUsed > 0 {
+					stats.SwapUsed = uint64(swapUsed)
 				}
-			}
-			if totalKB > 0 {
-				stats.SwapTotal = totalKB * 1024 // Convert KB to bytes
-				stats.SwapUsed = usedKB * 1024
 				if stats.SwapTotal > 0 {
 					stats.SwapPercent = float64(stats.SwapUsed) / float64(stats.SwapTotal) * 100
 				}
 			}
+		} else {
+			log.Warn().Err(err).Msg("SystemManager: HAL GetMemoryInfo failed for swap stats")
 		}
 	}
 

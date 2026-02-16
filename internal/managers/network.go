@@ -1123,8 +1123,8 @@ func (m *NetworkManager) UpdateAPConfig(ctx context.Context, ssid, password stri
 	return nil
 }
 
-// applyAPConfig writes hostapd.conf and restarts the hostapd service.
-// Uses the host-root mount (/host-root) available in the API container.
+// applyAPConfig writes hostapd.conf and restarts the hostapd service via HAL.
+// Uses the host-root mount (/host-root) for writing config files.
 func (m *NetworkManager) applyAPConfig(ssid, password string, channel int, hidden bool) error {
 	// Resolve the actual password if empty (keep existing)
 	if password == "" {
@@ -1190,33 +1190,14 @@ logger_stdout_level=2
 	}
 	log.Info().Str("path", confPath).Msg("NetworkManager: wrote hostapd.conf")
 
-	// Restart hostapd via nsenter (API container has SYS_ADMIN + pid:host)
-	cmd := exec.CommandContext(context.Background(),
-		"nsenter", "-t", "1", "-m", "-u", "-i", "-n", "-p", "--",
-		"systemctl", "restart", "hostapd")
-	output, err := cmd.CombinedOutput()
-	if err != nil {
-		log.Warn().Err(err).Str("output", string(output)).Msg("NetworkManager: nsenter hostapd restart failed, trying HAL")
-		// Fallback: try HAL WiFi restart endpoint
-		halURL := os.Getenv("HAL_URL")
-		if halURL == "" {
-			halURL = "http://10.42.24.1:6005/hal"
-		}
-		req, _ := http.NewRequest("POST", halURL+"/wifi/ap/restart", nil)
-		client := &http.Client{Timeout: 10 * time.Second}
-		resp, halErr := client.Do(req)
-		if halErr != nil {
-			return fmt.Errorf("hostapd restart failed via both nsenter (%w) and HAL (%v)", err, halErr)
-		}
-		resp.Body.Close()
-		if resp.StatusCode >= 300 {
-			return fmt.Errorf("HAL AP restart returned %d", resp.StatusCode)
-		}
-		log.Info().Msg("NetworkManager: hostapd restarted via HAL fallback")
-		return nil
+	// Restart hostapd via HAL (HAL owns the host namespace)
+	ctx := context.Background()
+	if err := m.hal.RestartService(ctx, "hostapd"); err != nil {
+		log.Warn().Err(err).Msg("NetworkManager: HAL hostapd restart failed")
+		return fmt.Errorf("hostapd restart failed via HAL: %w", err)
 	}
 
-	log.Info().Msg("NetworkManager: hostapd restarted successfully via nsenter")
+	log.Info().Msg("NetworkManager: hostapd restarted successfully via HAL")
 	return nil
 }
 

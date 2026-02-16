@@ -1431,6 +1431,29 @@ func (c *Client) GetSupportBundle(ctx context.Context) ([]byte, error) {
 // RTC Operations
 // =============================================================================
 
+// MemoryInfo represents host memory information from HAL
+type MemoryInfo struct {
+	Total      int64  `json:"total"`
+	Free       int64  `json:"free"`
+	Available  int64  `json:"available"`
+	Used       int64  `json:"used"`
+	SwapTotal  int64  `json:"swap_total"`
+	SwapFree   int64  `json:"swap_free"`
+	TotalHuman string `json:"total_human"`
+	UsedHuman  string `json:"used_human"`
+	AvailHuman string `json:"avail_human"`
+	UsePercent int    `json:"use_percent"`
+}
+
+// GetMemoryInfo returns host memory and swap info from HAL
+func (c *Client) GetMemoryInfo(ctx context.Context) (*MemoryInfo, error) {
+	var result MemoryInfo
+	if err := c.doGet(ctx, "/system/memory", &result); err != nil {
+		return nil, err
+	}
+	return &result, nil
+}
+
 // GetRTCStatus returns RTC status
 func (c *Client) GetRTCStatus(ctx context.Context) (*RTCStatus, error) {
 	var result RTCStatus

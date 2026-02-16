@@ -1,6 +1,7 @@
 package managers
 
 import (
+	"context"
 	"crypto/rand"
 	"database/sql"
 	"encoding/hex"
@@ -15,6 +16,7 @@ import (
 	"time"
 
 	"cubeos-api/internal/config"
+	"cubeos-api/internal/hal"
 	"cubeos-api/internal/models"
 
 	"github.com/rs/zerolog/log"
@@ -25,15 +27,17 @@ import (
 type SetupManager struct {
 	cfg        *config.Config
 	db         *sql.DB
+	hal        *hal.Client
 	configPath string
 	setupDone  bool
 }
 
 // NewSetupManager creates a new setup manager
-func NewSetupManager(cfg *config.Config, db *sql.DB) *SetupManager {
+func NewSetupManager(cfg *config.Config, db *sql.DB, halClient *hal.Client) *SetupManager {
 	m := &SetupManager{
 		cfg:        cfg,
 		db:         db,
+		hal:        halClient,
 		configPath: "/cubeos/config",
 	}
 
@@ -507,16 +511,19 @@ func (m *SetupManager) setHostname(hostname string) error {
 		os.WriteFile(hostHosts, []byte(strings.Join(newLines, "\n")), 0644)
 	}
 
-	// Apply hostname live via nsenter (container has pid: host)
-	exec.Command("nsenter", "-t", "1", "-u", "--", "hostname", hostname).Run()
+	// Apply hostname live via HAL (HAL runs in host namespace)
+	if m.hal != nil {
+		if err := m.hal.SetHostname(context.Background(), hostname); err != nil {
+			log.Warn().Err(err).Msg("HAL SetHostname failed — hostname will apply on reboot")
+		}
+	}
 
 	m.saveConfig("hostname", hostname)
 	return nil
 }
 
 // configureWiFiAP configures the WiFi access point.
-// Writes hostapd.conf (hostapd volume mounted rw from host),
-// then restarts hostapd on the host via nsenter.
+// Writes hostapd.conf and restarts hostapd via HAL.
 func (m *SetupManager) configureWiFiAP(ssid, password string, channel int) error {
 	if channel == 0 {
 		channel = 6
@@ -559,9 +566,12 @@ rsn_pairwise=CCMP
 		os.WriteFile(filepath.Join(m.configPath, "hostapd.conf"), []byte(hostapdConfig), 0600)
 	}
 
-	// Set regulatory domain on host via nsenter, then restart hostapd
-	exec.Command("nsenter", "-t", "1", "-m", "-n", "--", "iw", "reg", "set", countryCode).Run()
-	exec.Command("nsenter", "-t", "1", "-m", "--", "systemctl", "restart", "hostapd").Run()
+	// Restart hostapd via HAL — country_code in hostapd.conf handles regulatory domain
+	if m.hal != nil {
+		if err := m.hal.RestartService(context.Background(), "hostapd"); err != nil {
+			log.Warn().Err(err).Msg("HAL hostapd restart failed — AP may need manual restart")
+		}
+	}
 
 	return nil
 }

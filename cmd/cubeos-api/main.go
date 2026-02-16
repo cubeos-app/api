@@ -228,7 +228,7 @@ func main() {
 	log.Info().Str("endpoint", halURL).Msg("HAL client initialized")
 
 	// Create core managers (with HAL client for hardware access)
-	systemMgr := managers.NewSystemManager()
+	systemMgr := managers.NewSystemManager(halClient)
 	networkMgr := managers.NewNetworkManager(cfg, halClient, db)
 
 	// Create extended managers
@@ -316,7 +316,7 @@ func main() {
 	mountsMgr.SetDB(db.DB) // FIX: Wire database connection
 
 	// Create Setup manager (first boot wizard)
-	setupMgr := managers.NewSetupManager(cfg, db.DB)
+	setupMgr := managers.NewSetupManager(cfg, db.DB, halClient)
 
 	// Create handlers
 	h := handlers.NewHandlers(cfg, db, docker, halClient, systemMgr, networkMgr)
@@ -467,7 +467,7 @@ func main() {
 	r.Route("/api/v1", func(r chi.Router) {
 		// Swagger documentation (public, no auth required)
 		r.Get("/swagger/*", httpSwagger.Handler(
-			httpSwagger.URL("/api/v1/swagger/doc.json"),
+			httpSwagger.URL("doc.json"),
 			httpSwagger.DeepLinking(true),
 			httpSwagger.DocExpansion("none"),
 			httpSwagger.DomID("swagger-ui"),
