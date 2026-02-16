@@ -202,7 +202,7 @@ func (h *HardwareHandler) GetTemperature(w http.ResponseWriter, r *http.Request)
 
 	temp, err := h.halClient.GetTemperature(ctx)
 	if err != nil {
-		writeError(w, http.StatusInternalServerError, "Failed to get temperature: "+err.Error())
+		writeHALError(w, err, "Temperature")
 		return
 	}
 
@@ -230,7 +230,7 @@ func (h *HardwareHandler) GetThrottleStatus(w http.ResponseWriter, r *http.Reque
 
 	status, err := h.halClient.GetThrottleStatus(ctx)
 	if err != nil {
-		writeError(w, http.StatusInternalServerError, "Failed to get throttle status: "+err.Error())
+		writeHALError(w, err, "Throttle status")
 		return
 	}
 
@@ -258,7 +258,7 @@ func (h *HardwareHandler) GetEEPROMInfo(w http.ResponseWriter, r *http.Request) 
 
 	info, err := h.halClient.GetEEPROMInfo(ctx)
 	if err != nil {
-		writeError(w, http.StatusInternalServerError, "Failed to get EEPROM info: "+err.Error())
+		writeHALError(w, err, "EEPROM info")
 		return
 	}
 
@@ -286,7 +286,7 @@ func (h *HardwareHandler) GetBootConfig(w http.ResponseWriter, r *http.Request) 
 
 	config, err := h.halClient.GetBootConfig(ctx)
 	if err != nil {
-		writeError(w, http.StatusInternalServerError, "Failed to get boot config: "+err.Error())
+		writeHALError(w, err, "Boot config")
 		return
 	}
 
@@ -314,7 +314,7 @@ func (h *HardwareHandler) GetUptime(w http.ResponseWriter, r *http.Request) {
 
 	info, err := h.halClient.GetUptime(ctx)
 	if err != nil {
-		writeError(w, http.StatusInternalServerError, "Failed to get uptime: "+err.Error())
+		writeHALError(w, err, "Uptime")
 		return
 	}
 
@@ -416,7 +416,7 @@ func (h *HardwareHandler) GetPowerStatus(w http.ResponseWriter, r *http.Request)
 
 	status, err := h.halClient.GetPowerStatus(ctx)
 	if err != nil {
-		writeError(w, http.StatusInternalServerError, "Failed to get power status: "+err.Error())
+		writeHALError(w, err, "Power status")
 		return
 	}
 
@@ -444,7 +444,7 @@ func (h *HardwareHandler) GetBatteryStatus(w http.ResponseWriter, r *http.Reques
 
 	status, err := h.halClient.GetBatteryStatus(ctx)
 	if err != nil {
-		writeError(w, http.StatusInternalServerError, "Failed to get battery status: "+err.Error())
+		writeHALError(w, err, "Battery status")
 		return
 	}
 
@@ -472,7 +472,7 @@ func (h *HardwareHandler) GetUPSInfo(w http.ResponseWriter, r *http.Request) {
 
 	info, err := h.halClient.GetUPSInfo(ctx)
 	if err != nil {
-		writeError(w, http.StatusInternalServerError, "Failed to get UPS info: "+err.Error())
+		writeHALError(w, err, "UPS info")
 		return
 	}
 
@@ -582,7 +582,7 @@ func (h *HardwareHandler) GetPowerMonitorStatus(w http.ResponseWriter, r *http.R
 
 	status, err := h.halClient.GetPowerMonitorStatus(ctx)
 	if err != nil {
-		writeError(w, http.StatusInternalServerError, "Failed to get power monitor status: "+err.Error())
+		writeHALError(w, err, "Power monitor status")
 		return
 	}
 
@@ -922,7 +922,7 @@ func (h *HardwareHandler) GetServiceStatus(w http.ResponseWriter, r *http.Reques
 
 	status, err := h.halClient.GetServiceStatus(ctx, name)
 	if err != nil {
-		writeError(w, http.StatusInternalServerError, "Failed to get service status: "+err.Error())
+		writeHALError(w, err, "Service status")
 		return
 	}
 
@@ -1115,7 +1115,7 @@ func (h *HardwareHandler) GetGPIOPin(w http.ResponseWriter, r *http.Request) {
 
 	pinStatus, err := h.halClient.GetGPIOPin(ctx, pin)
 	if err != nil {
-		writeError(w, http.StatusInternalServerError, "Failed to get GPIO pin: "+err.Error())
+		writeHALError(w, err, "GPIO pin")
 		return
 	}
 
@@ -1264,7 +1264,7 @@ func (h *HardwareHandler) ListI2CBuses(w http.ResponseWriter, r *http.Request) {
 
 	buses, err := h.halClient.ListI2CBuses(ctx)
 	if err != nil {
-		writeError(w, http.StatusInternalServerError, "Failed to list I2C buses: "+err.Error())
+		writeHALError(w, err, "I2C buses")
 		return
 	}
 
@@ -1306,7 +1306,7 @@ func (h *HardwareHandler) ScanI2CBus(w http.ResponseWriter, r *http.Request) {
 
 	result, err := h.halClient.ScanI2CBus(ctx, bus)
 	if err != nil {
-		writeError(w, http.StatusInternalServerError, "Failed to scan I2C bus: "+err.Error())
+		writeHALError(w, err, "I2C scan")
 		return
 	}
 
@@ -1352,7 +1352,7 @@ func (h *HardwareHandler) GetI2CDevice(w http.ResponseWriter, r *http.Request) {
 
 	device, err := h.halClient.GetI2CDevice(ctx, bus, int(addr))
 	if err != nil {
-		writeError(w, http.StatusInternalServerError, "Failed to read I2C device: "+err.Error())
+		writeHALError(w, err, "I2C device")
 		return
 	}
 
@@ -1384,7 +1384,7 @@ func (h *HardwareHandler) GetAllSensors(w http.ResponseWriter, r *http.Request) 
 
 	sensors, err := h.halClient.GetAllSensors(ctx)
 	if err != nil {
-		writeError(w, http.StatusInternalServerError, "Failed to get sensors: "+err.Error())
+		writeHALError(w, err, "Sensors")
 		return
 	}
 
@@ -1412,7 +1412,7 @@ func (h *HardwareHandler) Get1WireDevices(w http.ResponseWriter, r *http.Request
 
 	devices, err := h.halClient.Get1WireDevices(ctx)
 	if err != nil {
-		writeError(w, http.StatusInternalServerError, "Failed to get 1-Wire devices: "+err.Error())
+		writeHALError(w, err, "1-Wire devices")
 		return
 	}
 
@@ -1453,7 +1453,7 @@ func (h *HardwareHandler) Read1WireDevice(w http.ResponseWriter, r *http.Request
 
 	device, err := h.halClient.Read1WireDevice(ctx, id)
 	if err != nil {
-		writeError(w, http.StatusInternalServerError, "Failed to read 1-Wire device: "+err.Error())
+		writeHALError(w, err, "1-Wire device")
 		return
 	}
 
@@ -1481,7 +1481,7 @@ func (h *HardwareHandler) ReadBME280(w http.ResponseWriter, r *http.Request) {
 
 	reading, err := h.halClient.ReadBME280(ctx, 1, "0x76")
 	if err != nil {
-		writeError(w, http.StatusInternalServerError, "Failed to read BME280: "+err.Error())
+		writeHALError(w, err, "BME280 sensor")
 		return
 	}
 
