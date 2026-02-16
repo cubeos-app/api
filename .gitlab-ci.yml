@@ -132,23 +132,29 @@ package:
     - if: $CI_COMMIT_BRANCH == "main"
 
 # -----------------------------------------------------------------------------
-# DEPLOY - Host-mode Swarm service deployment
+# DEPLOY - Host-mode Swarm service deployment (robust)
 # -----------------------------------------------------------------------------
-# Host-mode ports require the old container to stop before the new one starts.
-# Uses --update-order stop-first which tells Swarm to handle this atomically:
-#   stop old task → release port → start new task → bind port
+# Host-mode ports require the old container to fully stop before the new one
+# can bind. This deploy stage handles three failure modes:
 #
-# This replaces the fragile scale-down/update/scale-up dance which caused
-# race conditions where Swarm reconciliation deleted the service between steps.
+#   1. Port held by zombie container → force-remove before update
+#   2. Service stuck at 0/1 from previous failure → recover and redeploy
+#   3. Service deleted entirely → fresh stack deploy
+#
+# CRITICAL: Never use --detach=false with host-mode services. Swarm retries
+# indefinitely when the port is held, blocking the CI runner until job timeout.
+# Instead, deploy detached and poll the health endpoint ourselves.
 # -----------------------------------------------------------------------------
 deploy:
   stage: deploy
   tags: [arm64, cubeos, deploy]
+  timeout: 5m
   variables:
     SERVICE_NAME: "cubeos-api_cubeos-api"
     STACK_NAME: "cubeos-api"
     HOST_PORT: "6010"
     COMPOSE_PATH: "/cubeos/coreapps/cubeos-api/appconfig/docker-compose.yml"
+    HEALTH_TIMEOUT: "60"
   before_script:
     - echo "$GHCR_TOKEN" | docker login ghcr.io -u "$GHCR_USER" --password-stdin
   script:
@@ -172,57 +178,94 @@ deploy:
         echo "✅ Docker networking healthy"
       fi
 
-    # Pull the new image first
+    # Pull the new image first (before touching the running service)
     - docker pull ${GHCR_IMAGE}:${CI_COMMIT_SHORT_SHA}
     - docker tag ${GHCR_IMAGE}:${CI_COMMIT_SHORT_SHA} ${GHCR_IMAGE}:latest
 
-    # Check current state
+    # =========================================================================
+    # Pre-flight: kill zombie containers holding the port
+    # =========================================================================
+    # After a failed deploy, Swarm may leave a stopped/dead task whose
+    # docker-proxy still holds the host port. Find and force-remove it.
+    - |
+      echo "🔍 Pre-flight: checking for zombie containers on port ${HOST_PORT}..."
+      PORT_PID=$(ss -tlnp | grep ":${HOST_PORT} " | grep -oP 'pid=\K\d+' | head -1)
+      if [ -n "${PORT_PID}" ]; then
+        # Find which container owns this docker-proxy
+        ZOMBIE=$(docker ps -a --format '{{.ID}} {{.Names}} {{.Status}}' | grep -i "cubeos-api" || true)
+        if [ -n "${ZOMBIE}" ]; then
+          echo "  Found container(s) on port ${HOST_PORT}:"
+          echo "  ${ZOMBIE}"
+          # Check if the running container is already on the target image
+          RUNNING_IMAGE=$(docker ps --filter "name=cubeos-api" --format '{{.Image}}' | head -1)
+          if [ "${RUNNING_IMAGE}" = "${GHCR_IMAGE}:${CI_COMMIT_SHORT_SHA}" ]; then
+            echo "  ✅ Already running target image — skipping update"
+            # Jump straight to health check
+            SKIP_UPDATE=true
+          fi
+        fi
+      else
+        echo "  ✅ Port ${HOST_PORT} is free"
+      fi
+
+    # Show current state
     - |
       echo "📊 Current state:"
       docker service ls | grep ${STACK_NAME} || echo "  No existing services found"
 
     # =========================================================================
-    # Deploy: single atomic update with stop-first ordering
+    # Deploy: detached update + health poll (never --detach=false)
     # =========================================================================
     - |
-      if docker service inspect ${SERVICE_NAME} > /dev/null 2>&1; then
-        echo "📦 Service exists — updating with stop-first ordering..."
+      if [ "${SKIP_UPDATE}" = "true" ]; then
+        echo "⏭️  Skipping update — correct image already running"
+      elif docker service inspect ${SERVICE_NAME} > /dev/null 2>&1; then
+        echo "📦 Service exists — updating image (detached)..."
 
-        # Check current replicas — if 0 (from previous failed deploy), scale up first
-        CURRENT_REPLICAS=$(docker service inspect ${SERVICE_NAME} --format '{{.Spec.Mode.Replicated.Replicas}}' 2>/dev/null || echo "0")
-        if [ "${CURRENT_REPLICAS}" = "0" ]; then
-          echo "  ⚠️  Service at 0 replicas (previous failure?) — updating image and scaling to 1..."
-          docker service update \
-            --image ${GHCR_IMAGE}:${CI_COMMIT_SHORT_SHA} \
-            --update-order stop-first \
-            --replicas 1 \
-            --detach=false \
-            ${SERVICE_NAME}
-        else
-          # Normal case: service is running, do atomic stop-first update
-          docker service update \
-            --image ${GHCR_IMAGE}:${CI_COMMIT_SHORT_SHA} \
-            --update-order stop-first \
-            --detach=false \
-            ${SERVICE_NAME}
-        fi
+        # Force-remove any shutdown/failed tasks first to free the port.
+        # This handles the case where Swarm left a dead task with port held.
+        docker service update \
+          --image ${GHCR_IMAGE}:${CI_COMMIT_SHORT_SHA} \
+          --update-order stop-first \
+          --force \
+          --detach \
+          ${SERVICE_NAME}
+
+        echo "  ⏳ Update issued (detached) — will poll health endpoint..."
+        # Give Swarm a moment to stop old task and start new one
+        sleep 5
       else
         echo "📦 Service doesn't exist — deploying fresh stack..."
       fi
 
     # =========================================================================
-    # Ensure stack exists (handles fresh deploy or recovery)
+    # Recovery: if service vanished (previous failed deploy nuked it),
+    # redeploy the full stack from compose
     # =========================================================================
     - |
-      if ! docker service inspect ${SERVICE_NAME} > /dev/null 2>&1; then
-        echo "🆕 Deploying stack from compose file..."
+      if [ "${SKIP_UPDATE}" != "true" ] && ! docker service inspect ${SERVICE_NAME} > /dev/null 2>&1; then
+        echo "🆕 Service not found — deploying stack from compose..."
 
-        # Wait for port to be free before fresh deploy
-        for i in $(seq 1 10); do
+        # Force-kill any orphan containers still holding the port
+        ORPHANS=$(docker ps -a -q --filter "name=cubeos-api")
+        if [ -n "${ORPHANS}" ]; then
+          echo "  🧹 Removing orphan containers..."
+          echo "${ORPHANS}" | xargs docker rm -f 2>/dev/null || true
+        fi
+
+        # Wait for port to actually be released
+        for i in $(seq 1 15); do
           if ! ss -tlnp | grep -q ":${HOST_PORT} "; then
+            echo "  ✅ Port ${HOST_PORT} is free"
             break
           fi
-          echo "  Waiting for port ${HOST_PORT}... ($i/10)"
+          if [ "$i" = "15" ]; then
+            echo "  ⚠️  Port ${HOST_PORT} still held — killing docker-proxy..."
+            PORT_PID=$(ss -tlnp | grep ":${HOST_PORT} " | grep -oP 'pid=\K\d+' | head -1)
+            [ -n "${PORT_PID}" ] && sudo kill -9 "${PORT_PID}" 2>/dev/null || true
+            sleep 2
+          fi
+          echo "  Waiting for port ${HOST_PORT} to be released... ($i/15)"
           sleep 2
         done
 
@@ -231,30 +274,35 @@ deploy:
           --resolve-image never \
           ${STACK_NAME}
 
-        # Wait for service to be registered
-        sleep 10
+        echo "  ⏳ Stack deployed — waiting for service registration..."
+        sleep 8
 
-        # Pin to exact commit image
-        echo "  🔄 Pinning to commit image..."
-        docker service update \
-          --image ${GHCR_IMAGE}:${CI_COMMIT_SHORT_SHA} \
-          --update-order stop-first \
-          --detach=false \
-          ${SERVICE_NAME}
+        # Pin to exact commit image (detached)
+        if docker service inspect ${SERVICE_NAME} > /dev/null 2>&1; then
+          echo "  🔄 Pinning to commit image..."
+          docker service update \
+            --image ${GHCR_IMAGE}:${CI_COMMIT_SHORT_SHA} \
+            --update-order stop-first \
+            --detach \
+            ${SERVICE_NAME}
+          sleep 5
+        fi
       fi
 
     # =========================================================================
-    # Health check
+    # Health check: poll until healthy (controlled timeout, not Swarm's)
     # =========================================================================
     - |
       echo ""
-      echo "⏳ Waiting for API to be healthy..."
+      echo "⏳ Waiting for API to be healthy (timeout: ${HEALTH_TIMEOUT}s)..."
       HEALTH_URL="http://127.0.0.1:${HOST_PORT}/health"
+      SECONDS_WAITED=0
+      INTERVAL=3
 
-      for i in $(seq 1 30); do
+      while [ ${SECONDS_WAITED} -lt ${HEALTH_TIMEOUT} ]; do
         RESPONSE=$(curl -sf ${HEALTH_URL} 2>/dev/null) && {
           echo ""
-          echo "✅ Health check passed!"
+          echo "✅ Health check passed after ${SECONDS_WAITED}s!"
           echo "   Response: ${RESPONSE}"
           echo ""
           echo "=== Deployment Summary ==="
@@ -267,18 +315,32 @@ deploy:
           exit 0
         }
 
-        if [ $((i % 5)) -eq 0 ]; then
-          echo "  Attempt $i/30 — checking service status..."
-          docker service ps ${SERVICE_NAME} --no-trunc 2>/dev/null | head -3 || true
+        SECONDS_WAITED=$((SECONDS_WAITED + INTERVAL))
+
+        # Every 15s, print service task status for visibility
+        if [ $((SECONDS_WAITED % 15)) -eq 0 ]; then
+          echo "  ⏳ ${SECONDS_WAITED}s — checking task status..."
+          docker service ps ${SERVICE_NAME} --no-trunc --format '{{.CurrentState}} {{.Error}}' 2>/dev/null | head -3 || true
+          # If task shows "port already in use", force-kill and retry
+          TASK_ERR=$(docker service ps ${SERVICE_NAME} --no-trunc --format '{{.Error}}' 2>/dev/null | head -1)
+          if echo "${TASK_ERR}" | grep -qi "port already in use"; then
+            echo "  ⚠️  Port conflict detected — killing holders and forcing update..."
+            docker ps -a -q --filter "name=cubeos-api" | xargs docker rm -f 2>/dev/null || true
+            sleep 2
+            docker service update --force --detach ${SERVICE_NAME} 2>/dev/null || true
+            sleep 3
+          fi
         else
-          echo "  Attempt $i/30..."
+          echo "  ⏳ ${SECONDS_WAITED}/${HEALTH_TIMEOUT}s..."
         fi
-        sleep 3
+        sleep ${INTERVAL}
       done
 
+      # =====================================================================
       # Health check failed — diagnostics
+      # =====================================================================
       echo ""
-      echo "❌ Health check failed after 30 attempts"
+      echo "❌ Health check failed after ${HEALTH_TIMEOUT}s"
       echo ""
       echo "=== Diagnostics ==="
       echo "Service status:"
