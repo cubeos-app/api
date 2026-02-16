@@ -189,7 +189,8 @@ deploy:
     # docker-proxy still holds the host port. Find and force-remove it.
     - |
       echo "🔍 Pre-flight: checking for zombie containers on port ${HOST_PORT}..."
-      PORT_PID=$(ss -tlnp | grep ":${HOST_PORT} " | grep -oP 'pid=\K\d+' | head -1)
+      SKIP_UPDATE=""
+      PORT_PID=$(sudo ss -tlnp | grep ":${HOST_PORT} " | sed -n 's/.*pid=\([0-9]*\).*/\1/p' | head -1 || true)
       if [ -n "${PORT_PID}" ]; then
         # Find which container owns this docker-proxy
         ZOMBIE=$(docker ps -a --format '{{.ID}} {{.Names}} {{.Status}}' | grep -i "cubeos-api" || true)
@@ -197,10 +198,9 @@ deploy:
           echo "  Found container(s) on port ${HOST_PORT}:"
           echo "  ${ZOMBIE}"
           # Check if the running container is already on the target image
-          RUNNING_IMAGE=$(docker ps --filter "name=cubeos-api" --format '{{.Image}}' | head -1)
+          RUNNING_IMAGE=$(docker ps --filter "name=cubeos-api" --format '{{.Image}}' | head -1 || true)
           if [ "${RUNNING_IMAGE}" = "${GHCR_IMAGE}:${CI_COMMIT_SHORT_SHA}" ]; then
             echo "  ✅ Already running target image — skipping update"
-            # Jump straight to health check
             SKIP_UPDATE=true
           fi
         fi
@@ -255,13 +255,13 @@ deploy:
 
         # Wait for port to actually be released
         for i in $(seq 1 15); do
-          if ! ss -tlnp | grep -q ":${HOST_PORT} "; then
+          if ! sudo ss -tlnp | grep -q ":${HOST_PORT} "; then
             echo "  ✅ Port ${HOST_PORT} is free"
             break
           fi
           if [ "$i" = "15" ]; then
             echo "  ⚠️  Port ${HOST_PORT} still held — killing docker-proxy..."
-            PORT_PID=$(ss -tlnp | grep ":${HOST_PORT} " | grep -oP 'pid=\K\d+' | head -1)
+            PORT_PID=$(sudo ss -tlnp | grep ":${HOST_PORT} " | sed -n 's/.*pid=\([0-9]*\).*/\1/p' | head -1 || true)
             [ -n "${PORT_PID}" ] && sudo kill -9 "${PORT_PID}" 2>/dev/null || true
             sleep 2
           fi
@@ -353,7 +353,7 @@ deploy:
       docker service logs ${SERVICE_NAME} --tail 30 2>/dev/null || echo "  No logs available"
       echo ""
       echo "Port status:"
-      ss -tlnp | grep ${HOST_PORT} || echo "  Port ${HOST_PORT} not listening"
+      sudo ss -tlnp | grep ${HOST_PORT} || echo "  Port ${HOST_PORT} not listening"
       echo ""
       echo "iptables DOCKER chain:"
       sudo iptables -t nat -L DOCKER -n 2>&1 | head -5
