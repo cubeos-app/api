@@ -148,13 +148,13 @@ package:
 deploy:
   stage: deploy
   tags: [arm64, cubeos, deploy]
-  timeout: 5m
+  timeout: 8m
   variables:
     SERVICE_NAME: "cubeos-api_cubeos-api"
     STACK_NAME: "cubeos-api"
     HOST_PORT: "6010"
     COMPOSE_PATH: "/cubeos/coreapps/cubeos-api/appconfig/docker-compose.yml"
-    HEALTH_TIMEOUT: "60"
+    HEALTH_TIMEOUT: "120"
   before_script:
     - echo "$GHCR_TOKEN" | docker login ghcr.io -u "$GHCR_USER" --password-stdin
   script:
@@ -232,8 +232,8 @@ deploy:
           ${SERVICE_NAME}
 
         echo "  ⏳ Update issued (detached) — will poll health endpoint..."
-        # Give Swarm a moment to stop old task and start new one
-        sleep 5
+        # Give Swarm time to stop old task, release port, start new task
+        sleep 10
       else
         echo "📦 Service doesn't exist — deploying fresh stack..."
       fi
