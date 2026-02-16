@@ -395,6 +395,32 @@ func (m *SystemManager) GetSystemStats() *models.SystemStats {
 		stats.SwapPercent = swap.UsedPercent
 	}
 
+	// B38: Fallback — read /proc/swaps directly when gopsutil returns 0
+	// This happens inside containers where gopsutil can't detect ZRAM
+	if stats.SwapTotal == 0 {
+		if data, err := os.ReadFile("/proc/swaps"); err == nil {
+			lines := strings.Split(string(data), "\n")
+			var totalKB, usedKB uint64
+			for _, line := range lines[1:] { // Skip header
+				fields := strings.Fields(line)
+				if len(fields) >= 4 {
+					var size, used uint64
+					fmt.Sscanf(fields[2], "%d", &size)
+					fmt.Sscanf(fields[3], "%d", &used)
+					totalKB += size
+					usedKB += used
+				}
+			}
+			if totalKB > 0 {
+				stats.SwapTotal = totalKB * 1024 // Convert KB to bytes
+				stats.SwapUsed = usedKB * 1024
+				if stats.SwapTotal > 0 {
+					stats.SwapPercent = float64(stats.SwapUsed) / float64(stats.SwapTotal) * 100
+				}
+			}
+		}
+	}
+
 	return stats
 }
 

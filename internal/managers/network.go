@@ -13,6 +13,7 @@ import (
 	"net/http"
 	"os"
 	"os/exec"
+	"path/filepath"
 	"strings"
 	"time"
 
@@ -1089,15 +1090,14 @@ func (m *NetworkManager) GetAPConfig(ctx context.Context) (*APConfig, error) {
 	}, nil
 }
 
-// UpdateAPConfig updates AP configuration
-// Note: Runtime hostapd changes require HAL support (not yet available).
-// Config is persisted to DB and will take effect on next AP restart.
+// UpdateAPConfig updates AP configuration and applies it live.
+// Persists to DB, writes hostapd.conf, and restarts hostapd (B58 fix).
 func (m *NetworkManager) UpdateAPConfig(ctx context.Context, ssid, password string, channel int, hidden bool) error {
 	if m.db == nil {
 		return fmt.Errorf("AP configuration update not yet implemented: no database available")
 	}
 
-	// Persist the config to database — it will take effect on next AP restart
+	// Persist the config to database
 	_, err := m.db.ExecContext(ctx, `
 		INSERT INTO network_config (id, ap_ssid, ap_password, ap_channel, ap_hidden, updated_at)
 		VALUES (1, ?, ?, ?, ?, CURRENT_TIMESTAMP)
@@ -1112,7 +1112,111 @@ func (m *NetworkManager) UpdateAPConfig(ctx context.Context, ssid, password stri
 		return fmt.Errorf("failed to persist AP config: %w", err)
 	}
 
-	log.Info().Str("ssid", ssid).Int("channel", channel).Bool("hidden", hidden).Msg("NetworkManager: AP config updated — will apply on next AP restart")
+	log.Info().Str("ssid", ssid).Int("channel", channel).Bool("hidden", hidden).Msg("NetworkManager: AP config persisted to DB")
+
+	// Apply config live: write hostapd.conf and restart hostapd
+	if applyErr := m.applyAPConfig(ssid, password, channel, hidden); applyErr != nil {
+		log.Warn().Err(applyErr).Msg("NetworkManager: failed to apply AP config live — will take effect on next boot")
+		// Don't return error — config is persisted, just not live-applied
+	}
+
+	return nil
+}
+
+// applyAPConfig writes hostapd.conf and restarts the hostapd service.
+// Uses the host-root mount (/host-root) available in the API container.
+func (m *NetworkManager) applyAPConfig(ssid, password string, channel int, hidden bool) error {
+	// Resolve the actual password if empty (keep existing)
+	if password == "" {
+		// Read current password from hostapd.conf
+		data, err := os.ReadFile("/host-root/etc/hostapd/hostapd.conf")
+		if err == nil {
+			for _, line := range strings.Split(string(data), "\n") {
+				if strings.HasPrefix(line, "wpa_passphrase=") {
+					password = strings.TrimPrefix(line, "wpa_passphrase=")
+					break
+				}
+			}
+		}
+		if password == "" {
+			return fmt.Errorf("no password provided and could not read existing password")
+		}
+	}
+
+	hiddenVal := 0
+	if hidden {
+		hiddenVal = 1
+	}
+
+	// Write hostapd.conf via host-root mount
+	hostapdConf := fmt.Sprintf(`# CubeOS WiFi Access Point Configuration
+# Updated by API at %s
+
+interface=wlan0
+driver=nl80211
+
+ssid=%s
+
+hw_mode=g
+channel=%d
+ieee80211n=1
+ieee80211ac=0
+
+wpa=2
+wpa_passphrase=%s
+wpa_key_mgmt=WPA-PSK
+rsn_pairwise=CCMP
+
+wmm_enabled=1
+macaddr_acl=0
+auth_algs=1
+ignore_broadcast_ssid=%d
+max_num_sta=32
+
+logger_syslog=-1
+logger_syslog_level=2
+logger_stdout=-1
+logger_stdout_level=2
+`, time.Now().Format(time.RFC3339), ssid, channel, password, hiddenVal)
+
+	hostRootPath := os.Getenv("CUBEOS_HOST_ROOT")
+	if hostRootPath == "" {
+		hostRootPath = "/host-root"
+	}
+	confPath := filepath.Join(hostRootPath, "etc", "hostapd", "hostapd.conf")
+
+	if err := os.WriteFile(confPath, []byte(hostapdConf), 0600); err != nil {
+		return fmt.Errorf("failed to write hostapd.conf: %w", err)
+	}
+	log.Info().Str("path", confPath).Msg("NetworkManager: wrote hostapd.conf")
+
+	// Restart hostapd via nsenter (API container has SYS_ADMIN + pid:host)
+	cmd := exec.CommandContext(context.Background(),
+		"nsenter", "-t", "1", "-m", "-u", "-i", "-n", "-p", "--",
+		"systemctl", "restart", "hostapd")
+	output, err := cmd.CombinedOutput()
+	if err != nil {
+		log.Warn().Err(err).Str("output", string(output)).Msg("NetworkManager: nsenter hostapd restart failed, trying HAL")
+		// Fallback: try HAL WiFi restart endpoint
+		halURL := os.Getenv("HAL_URL")
+		if halURL == "" {
+			halURL = "http://10.42.24.1:6005/hal"
+		}
+		req, _ := http.NewRequest("POST", halURL+"/wifi/ap/restart", nil)
+		client := &http.Client{Timeout: 10 * time.Second}
+		resp, halErr := client.Do(req)
+		if halErr != nil {
+			return fmt.Errorf("hostapd restart failed via both nsenter (%w) and HAL (%v)", err, halErr)
+		}
+		resp.Body.Close()
+		if resp.StatusCode >= 300 {
+			return fmt.Errorf("HAL AP restart returned %d", resp.StatusCode)
+		}
+		log.Info().Msg("NetworkManager: hostapd restarted via HAL fallback")
+		return nil
+	}
+
+	log.Info().Msg("NetworkManager: hostapd restarted successfully via nsenter")
 	return nil
 }
 

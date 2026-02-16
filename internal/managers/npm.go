@@ -108,16 +108,18 @@ type NPMMeta struct {
 }
 
 // NPMUser represents a user in NPM
+// NOTE: NPM v3 changed is_disabled from int to bool. Using interface{}
+// handles both formats during unmarshal (B56 fix).
 type NPMUser struct {
-	ID         int      `json:"id,omitempty"`
-	CreatedOn  string   `json:"created_on,omitempty"`
-	ModifiedOn string   `json:"modified_on,omitempty"`
-	Name       string   `json:"name"`
-	Nickname   string   `json:"nickname"`
-	Email      string   `json:"email"`
-	Avatar     string   `json:"avatar,omitempty"`
-	IsDisabled int      `json:"is_disabled"`
-	Roles      []string `json:"roles"`
+	ID         int         `json:"id,omitempty"`
+	CreatedOn  string      `json:"created_on,omitempty"`
+	ModifiedOn string      `json:"modified_on,omitempty"`
+	Name       string      `json:"name"`
+	Nickname   string      `json:"nickname"`
+	Email      string      `json:"email"`
+	Avatar     string      `json:"avatar,omitempty"`
+	IsDisabled interface{} `json:"is_disabled"`
+	Roles      []string    `json:"roles"`
 }
 
 // NPMCreateUser is the request body for creating a user
@@ -126,7 +128,7 @@ type NPMCreateUser struct {
 	Nickname   string   `json:"nickname"`
 	Email      string   `json:"email"`
 	Roles      []string `json:"roles"`
-	IsDisabled int      `json:"is_disabled"`
+	IsDisabled bool     `json:"is_disabled"`
 	Secret     string   `json:"secret,omitempty"`
 }
 
@@ -439,7 +441,7 @@ func (m *NPMManager) createServiceAccount(password string) error {
 		Nickname:   "api",
 		Email:      npmServiceEmail,
 		Roles:      []string{"admin"},
-		IsDisabled: 0,
+		IsDisabled: false,
 		Secret:     password,
 	}
 
@@ -489,7 +491,7 @@ func (m *NPMManager) resetServiceAccountPassword() error {
 		"nickname":    serviceUser.Nickname,
 		"email":       serviceUser.Email,
 		"roles":       serviceUser.Roles,
-		"is_disabled": serviceUser.IsDisabled,
+		"is_disabled": false,
 		"secret":      password,
 	}
 

@@ -6,6 +6,7 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
+	"net/http"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -217,6 +218,27 @@ func (m *SetupManager) GetSystemRequirements() *models.SystemRequirements {
 		if data, err := os.ReadFile(path); err == nil {
 			req.DeviceModel = strings.TrimSpace(strings.TrimRight(string(data), "\x00"))
 			break
+		}
+	}
+
+	// B39: HAL fallback for device model — HAL runs on host with full hardware access
+	if req.DeviceModel == "" {
+		halURL := os.Getenv("HAL_URL")
+		if halURL == "" {
+			halURL = "http://10.42.24.1:6005/hal"
+		}
+		client := &http.Client{Timeout: 5 * time.Second}
+		resp, err := client.Get(halURL + "/system/info")
+		if err == nil {
+			defer resp.Body.Close()
+			if resp.StatusCode == http.StatusOK {
+				var halInfo struct {
+					Model string `json:"model"`
+				}
+				if json.NewDecoder(resp.Body).Decode(&halInfo) == nil && halInfo.Model != "" {
+					req.DeviceModel = halInfo.Model
+				}
+			}
 		}
 	}
 
