@@ -777,6 +777,25 @@ type PowerMonitorStatus struct {
 	ACPower  bool   `json:"ac_power,omitempty"`
 }
 
+// UPSDetectionResult represents the result of a read-only I2C probe for UPS HATs
+type UPSDetectionResult struct {
+	SuggestedModel  string   `json:"suggested_model"`
+	SuggestedName   string   `json:"suggested_name"`
+	PiModel         int      `json:"pi_model"`
+	GPIOChip        string   `json:"gpio_chip"`
+	I2CDevicesFound []string `json:"i2c_devices_found"`
+	Confidence      string   `json:"confidence"`
+	Warning         string   `json:"warning"`
+	Details         string   `json:"details"`
+}
+
+// ConfigureUPSResponse represents the response from POST /power/ups/configure
+type ConfigureUPSResponse struct {
+	Status string `json:"status"`
+	Model  string `json:"model"`
+	Driver string `json:"driver"`
+}
+
 // =============================================================================
 // Response Types - Camera
 // =============================================================================
@@ -1417,6 +1436,30 @@ func (c *Client) StopPowerMonitor(ctx context.Context) error {
 func (c *Client) GetPowerMonitorStatus(ctx context.Context) (*PowerMonitorStatus, error) {
 	var result PowerMonitorStatus
 	if err := c.doGet(ctx, "/power/monitor/status", &result); err != nil {
+		return nil, err
+	}
+	return &result, nil
+}
+
+// DetectUPS performs a read-only I2C probe to detect attached UPS HATs.
+// Does NOT activate any driver or start monitoring — safe to call at any time.
+func (c *Client) DetectUPS(ctx context.Context) (*UPSDetectionResult, error) {
+	var result UPSDetectionResult
+	if err := c.doGet(ctx, "/power/ups/detect", &result); err != nil {
+		return nil, err
+	}
+	return &result, nil
+}
+
+// ConfigureUPS tells HAL to activate (or deactivate) a UPS driver.
+// Valid models: "x1202", "x728", "pisugar3", "none".
+// Passing "none" stops the power monitor and clears the driver.
+func (c *Client) ConfigureUPS(ctx context.Context, model string) (*ConfigureUPSResponse, error) {
+	reqBody := struct {
+		Model string `json:"model"`
+	}{Model: model}
+	var result ConfigureUPSResponse
+	if err := c.doPostWithResult(ctx, "/power/ups/configure", reqBody, &result); err != nil {
 		return nil, err
 	}
 	return &result, nil

@@ -13,17 +13,20 @@ import (
 	"github.com/go-chi/chi/v5"
 
 	"cubeos-api/internal/hal"
+	"cubeos-api/internal/managers"
 )
 
 // HardwareHandler handles hardware-related HTTP requests via HAL.
 type HardwareHandler struct {
 	halClient *hal.Client
+	setupMgr  *managers.SetupManager
 }
 
 // NewHardwareHandler creates a new hardware handler.
-func NewHardwareHandler(halClient *hal.Client) *HardwareHandler {
+func NewHardwareHandler(halClient *hal.Client, setupMgr *managers.SetupManager) *HardwareHandler {
 	return &HardwareHandler{
 		halClient: halClient,
+		setupMgr:  setupMgr,
 	}
 }
 
@@ -77,6 +80,11 @@ func (h *HardwareHandler) Routes() chi.Router {
 	r.Get("/ups", h.GetUPSInfo)
 	r.Post("/charging", h.SetChargingEnabled)
 	r.Post("/battery/quickstart", h.QuickStartBattery)
+
+	// UPS Configuration (user-confirmed selection)
+	r.Get("/ups/detect", h.DetectUPSHAT)
+	r.Get("/ups/config", h.GetUPSConfig)
+	r.Post("/ups/config", h.SetUPSConfig)
 
 	// Power Monitor (UPS monitoring daemon)
 	r.Get("/power/monitor", h.GetPowerMonitorStatus)
@@ -1487,6 +1495,142 @@ func (h *HardwareHandler) ReadBME280(w http.ResponseWriter, r *http.Request) {
 	}
 
 	writeJSON(w, http.StatusOK, reading)
+}
+
+// =============================================================================
+// UPS Configuration Endpoints (User-Confirmed Selection)
+// =============================================================================
+
+// UPSConfigResponse represents the current UPS configuration state
+type UPSConfigResponse struct {
+	Configured      bool   `json:"configured"`
+	ConfiguredModel string `json:"configured_model,omitempty"`
+	DriverName      string `json:"driver_name,omitempty"`
+	MonitorRunning  bool   `json:"monitor_running"`
+}
+
+// SetUPSConfigRequest is the request body for POST /hardware/ups/config
+type SetUPSConfigRequest struct {
+	Model string `json:"model"`
+}
+
+// validUPSModels is the whitelist of accepted UPS model identifiers
+var validUPSModels = map[string]bool{
+	"x1202":    true,
+	"x728":     true,
+	"pisugar3": true,
+	"none":     true,
+}
+
+// DetectUPSHAT godoc
+// @Summary Detect attached UPS HAT
+// @Description Performs a read-only I2C probe to detect attached UPS HATs. Does NOT activate any driver or start monitoring.
+// @Tags Hardware
+// @Accept json
+// @Produce json
+// @Success 200 {object} hal.UPSDetectionResult
+// @Failure 500 {object} ErrorResponse "Detection failed"
+// @Failure 503 {object} ErrorResponse "HAL unavailable"
+// @Security BearerAuth
+// @Router /hardware/ups/detect [get]
+func (h *HardwareHandler) DetectUPSHAT(w http.ResponseWriter, r *http.Request) {
+	ctx := r.Context()
+
+	if h.halClient == nil {
+		writeError(w, http.StatusServiceUnavailable, "HAL service unavailable")
+		return
+	}
+
+	result, err := h.halClient.DetectUPS(ctx)
+	if err != nil {
+		writeHALError(w, err, "UPS detection")
+		return
+	}
+
+	writeJSON(w, http.StatusOK, result)
+}
+
+// GetUPSConfig godoc
+// @Summary Get current UPS configuration
+// @Description Returns the user-confirmed UPS model from system_config and HAL monitor status
+// @Tags Hardware
+// @Accept json
+// @Produce json
+// @Success 200 {object} UPSConfigResponse
+// @Failure 503 {object} ErrorResponse "HAL unavailable"
+// @Security BearerAuth
+// @Router /hardware/ups/config [get]
+func (h *HardwareHandler) GetUPSConfig(w http.ResponseWriter, r *http.Request) {
+	resp := UPSConfigResponse{
+		Configured:     false,
+		MonitorRunning: false,
+	}
+
+	// Read saved model from system_config
+	if h.setupMgr != nil {
+		model := h.setupMgr.GetConfig("ups_model")
+		if model != "" && model != "none" {
+			resp.Configured = true
+			resp.ConfiguredModel = model
+		}
+	}
+
+	// Check HAL monitor status for live running state
+	if h.halClient != nil {
+		ctx := r.Context()
+		if status, err := h.halClient.GetPowerMonitorStatus(ctx); err == nil {
+			resp.MonitorRunning = status.Running
+		}
+	}
+
+	writeJSON(w, http.StatusOK, resp)
+}
+
+// SetUPSConfig godoc
+// @Summary Configure UPS model
+// @Description Validates the model, saves to system_config, and tells HAL to activate the driver. Accepted models: x1202, x728, pisugar3, none.
+// @Tags Hardware
+// @Accept json
+// @Produce json
+// @Param request body SetUPSConfigRequest true "UPS model to configure"
+// @Success 200 {object} hal.ConfigureUPSResponse
+// @Failure 400 {object} ErrorResponse "Invalid model"
+// @Failure 500 {object} ErrorResponse "Failed to configure UPS"
+// @Failure 503 {object} ErrorResponse "HAL unavailable"
+// @Security BearerAuth
+// @Router /hardware/ups/config [post]
+func (h *HardwareHandler) SetUPSConfig(w http.ResponseWriter, r *http.Request) {
+	if h.halClient == nil {
+		writeError(w, http.StatusServiceUnavailable, "HAL service unavailable")
+		return
+	}
+
+	var req SetUPSConfigRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		writeError(w, http.StatusBadRequest, "Invalid request body: "+err.Error())
+		return
+	}
+
+	req.Model = strings.TrimSpace(strings.ToLower(req.Model))
+	if !validUPSModels[req.Model] {
+		writeError(w, http.StatusBadRequest, fmt.Sprintf("Invalid UPS model %q — accepted: x1202, x728, pisugar3, none", req.Model))
+		return
+	}
+
+	// Save to system_config (persists across reboots)
+	if h.setupMgr != nil {
+		h.setupMgr.SaveConfig("ups_model", req.Model)
+	}
+
+	// Tell HAL to activate (or deactivate) the driver
+	ctx := r.Context()
+	result, err := h.halClient.ConfigureUPS(ctx, req.Model)
+	if err != nil {
+		writeHALError(w, err, "UPS configuration")
+		return
+	}
+
+	writeJSON(w, http.StatusOK, result)
 }
 
 // =============================================================================

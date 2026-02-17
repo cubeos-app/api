@@ -385,7 +385,7 @@ func main() {
 	log.Info().Msg("NPMHandler initialized")
 
 	// Create HAL-based handlers (Sprint 6)
-	hardwareHandler := handlers.NewHardwareHandler(halClient)
+	hardwareHandler := handlers.NewHardwareHandler(halClient, setupMgr)
 	halStorageHandler := handlers.NewStorageHandler(halClient)
 	communicationHandler := handlers.NewCommunicationHandler(halClient)
 	mediaHandler := handlers.NewMediaHandler(halClient, cfg.Domain)
@@ -403,6 +403,28 @@ func main() {
 	// Create Backups handler (wired to BackupManager)
 	backupsHandler := handlers.NewBackupsHandler(backupMgr)
 	log.Info().Msg("BackupsHandler initialized (wired to BackupManager)")
+
+	// Apply saved UPS configuration to HAL on startup (non-blocking)
+	go func() {
+		// Wait for HAL to be ready
+		time.Sleep(5 * time.Second)
+
+		model := setupMgr.GetConfig("ups_model")
+		if model == "" || model == "none" {
+			log.Info().Msg("UPS: no saved configuration — power monitor idle")
+			return
+		}
+
+		log.Info().Str("model", model).Msg("UPS: applying saved configuration to HAL")
+		ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+		defer cancel()
+
+		if _, err := halClient.ConfigureUPS(ctx, model); err != nil {
+			log.Warn().Err(err).Str("model", model).Msg("UPS: failed to apply saved config to HAL (user can re-apply from dashboard)")
+		} else {
+			log.Info().Str("model", model).Msg("UPS: saved configuration applied successfully")
+		}
+	}()
 
 	// Create router
 	r := chi.NewRouter()

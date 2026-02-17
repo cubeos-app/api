@@ -378,9 +378,9 @@ func (m *SetupManager) ApplySetupConfig(cfg *models.SetupConfig) error {
 	// Step 3: Configure WiFi AP
 	// Save country code BEFORE configureWiFiAP — that function reads it from config
 	if cfg.CountryCode != "" {
-		m.saveConfig("country_code", cfg.CountryCode)
+		m.SaveConfig("country_code", cfg.CountryCode)
 	} else {
-		m.saveConfig("country_code", "US")
+		m.SaveConfig("country_code", "US")
 		cfg.CountryCode = "US"
 	}
 	// Also persist to defaults.env so Docker containers and boot scripts can read it
@@ -430,9 +430,9 @@ func (m *SetupManager) ApplySetupConfig(cfg *models.SetupConfig) error {
 	m.updateStep(9)
 
 	// Step 10: Save optional features
-	m.saveConfig("enable_analytics", fmt.Sprintf("%v", cfg.EnableAnalytics))
-	m.saveConfig("enable_auto_updates", fmt.Sprintf("%v", cfg.EnableAutoUpdates))
-	m.saveConfig("enable_remote_access", fmt.Sprintf("%v", cfg.EnableRemoteAccess))
+	m.SaveConfig("enable_analytics", fmt.Sprintf("%v", cfg.EnableAnalytics))
+	m.SaveConfig("enable_auto_updates", fmt.Sprintf("%v", cfg.EnableAutoUpdates))
+	m.SaveConfig("enable_remote_access", fmt.Sprintf("%v", cfg.EnableRemoteAccess))
 	m.updateStep(10)
 
 	// Save full config as JSON
@@ -451,8 +451,8 @@ func (m *SetupManager) updateStep(step int) {
 	m.db.Exec(`UPDATE setup_status SET current_step = ? WHERE id = 1`, step)
 }
 
-// saveConfig saves a system config value
-func (m *SetupManager) saveConfig(key, value string) {
+// SaveConfig saves a system config value to the system_config table.
+func (m *SetupManager) SaveConfig(key, value string) {
 	m.db.Exec(`INSERT OR REPLACE INTO system_config (key, value, updated_at) VALUES (?, ?, ?)`,
 		key, value, time.Now().Format(time.RFC3339))
 }
@@ -480,13 +480,13 @@ func (m *SetupManager) createAdminUser(username, password, email string) error {
 	}
 
 	// Save as default credentials
-	m.saveConfig("admin_username", username)
-	m.saveConfig("admin_email", email)
+	m.SaveConfig("admin_username", username)
+	m.SaveConfig("admin_email", email)
 
 	// Generate new JWT secret
 	secret := make([]byte, 32)
 	rand.Read(secret)
-	m.saveConfig("jwt_secret", hex.EncodeToString(secret))
+	m.SaveConfig("jwt_secret", hex.EncodeToString(secret))
 
 	return nil
 }
@@ -505,7 +505,7 @@ func (m *SetupManager) setHostname(hostname string) error {
 		log.Warn().Err(err).Msg("failed to write host /etc/hostname via host-root, trying container paths")
 		// Fallback to container paths
 		if err2 := os.WriteFile("/etc/hostname", []byte(hostname+"\n"), 0644); err2 != nil {
-			m.saveConfig("hostname", hostname)
+			m.SaveConfig("hostname", hostname)
 			return nil
 		}
 	}
@@ -531,7 +531,7 @@ func (m *SetupManager) setHostname(hostname string) error {
 		}
 	}
 
-	m.saveConfig("hostname", hostname)
+	m.SaveConfig("hostname", hostname)
 	return nil
 }
 
@@ -549,8 +549,8 @@ func (m *SetupManager) configureWiFiAP(ssid, password string, channel int) error
 	}
 
 	// Save config values
-	m.saveConfig("wifi_ssid", ssid)
-	m.saveConfig("wifi_channel", fmt.Sprintf("%d", channel))
+	m.SaveConfig("wifi_ssid", ssid)
+	m.SaveConfig("wifi_channel", fmt.Sprintf("%d", channel))
 
 	// Generate hostapd config with country code for regulatory compliance
 	hostapdConfig := fmt.Sprintf(`# CubeOS WiFi Access Point Configuration
@@ -638,7 +638,7 @@ func (m *SetupManager) setTimezone(timezone string) error {
 	log.Debug().Str("timezone", timezone).Str("host_root", hostRoot).Msg("timezone configured")
 
 	// Always persist to DB (source of truth for Settings page display)
-	m.saveConfig("timezone", timezone)
+	m.SaveConfig("timezone", timezone)
 	return nil
 }
 
@@ -651,8 +651,8 @@ func (m *SetupManager) saveThemePreferences(theme, accentColor string) error {
 		accentColor = "#60a5fa" // Default blue
 	}
 
-	m.saveConfig("theme", theme)
-	m.saveConfig("accent_color", accentColor)
+	m.SaveConfig("theme", theme)
+	m.SaveConfig("accent_color", accentColor)
 
 	// Write to preferences file for frontend
 	prefsPath := filepath.Join(m.configPath, "preferences.json")
@@ -675,8 +675,8 @@ func (m *SetupManager) setDeploymentPurpose(purpose, branding string) error {
 		branding = "cubeos"
 	}
 
-	m.saveConfig("deployment_purpose", purpose)
-	m.saveConfig("branding_mode", branding)
+	m.SaveConfig("deployment_purpose", purpose)
+	m.SaveConfig("branding_mode", branding)
 
 	// Write branding config
 	brandingPath := filepath.Join(m.configPath, "branding.json")
@@ -692,8 +692,8 @@ func (m *SetupManager) setDeploymentPurpose(purpose, branding string) error {
 
 // configureSSL sets up SSL/TLS certificates
 func (m *SetupManager) configureSSL(mode, domain, dnsProvider, apiToken, apiSecret string) error {
-	m.saveConfig("ssl_mode", mode)
-	m.saveConfig("base_domain", domain)
+	m.SaveConfig("ssl_mode", mode)
+	m.SaveConfig("base_domain", domain)
 
 	if mode == "self-signed" {
 		// Generate self-signed certificate using mkcert pattern
@@ -720,7 +720,7 @@ func (m *SetupManager) configureSSL(mode, domain, dnsProvider, apiToken, apiSecr
 	}
 
 	if mode == "letsencrypt" && domain != "" && dnsProvider != "" {
-		m.saveConfig("dns_provider", dnsProvider)
+		m.SaveConfig("dns_provider", dnsProvider)
 
 		// Write DNS credentials to env file for acme.sh
 		envPath := filepath.Join(m.configPath, "acme-dns.env")
@@ -740,8 +740,8 @@ func (m *SetupManager) configureSSL(mode, domain, dnsProvider, apiToken, apiSecr
 		os.WriteFile(envPath, []byte(envContent), 0600)
 
 		// Schedule certificate request (will be executed by a service)
-		m.saveConfig("acme_pending", "true")
-		m.saveConfig("acme_domain", fmt.Sprintf("*.%s", domain))
+		m.SaveConfig("acme_pending", "true")
+		m.SaveConfig("acme_domain", fmt.Sprintf("*.%s", domain))
 	}
 
 	return nil
@@ -776,7 +776,7 @@ NPM_ADMIN_PASSWORD=%s
 		log.Warn().Err(err).Msg("failed to write NPM credentials to secrets.env")
 	}
 
-	m.saveConfig("npm_admin_email", email)
+	m.SaveConfig("npm_admin_email", email)
 
 	return nil
 }
