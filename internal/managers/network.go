@@ -179,20 +179,21 @@ func parseVPNMode(mode string) models.VPNMode {
 }
 
 // saveConfigToDB persists the network config to database (V2: extended)
-func (m *NetworkManager) saveConfigToDB(mode models.NetworkMode, vpnMode models.VPNMode, wifiSSID string) {
+func (m *NetworkManager) saveConfigToDB(mode models.NetworkMode, vpnMode models.VPNMode, wifiSSID, wifiPassword string) {
 	if m.db == nil {
 		return
 	}
 
 	_, err := m.db.Exec(`
-		INSERT INTO network_config (id, mode, vpn_mode, wifi_ssid, updated_at) 
-		VALUES (1, ?, ?, ?, CURRENT_TIMESTAMP)
+		INSERT INTO network_config (id, mode, vpn_mode, wifi_ssid, wifi_password, updated_at) 
+		VALUES (1, ?, ?, ?, ?, CURRENT_TIMESTAMP)
 		ON CONFLICT(id) DO UPDATE SET 
 			mode = excluded.mode, 
 			vpn_mode = excluded.vpn_mode,
 			wifi_ssid = excluded.wifi_ssid, 
+			wifi_password = excluded.wifi_password,
 			updated_at = CURRENT_TIMESTAMP`,
-		string(mode), string(vpnMode), wifiSSID)
+		string(mode), string(vpnMode), wifiSSID, wifiPassword)
 	if err != nil {
 		log.Error().Err(err).Msg("NetworkManager: failed to persist config to database")
 	} else {
@@ -431,7 +432,7 @@ func (m *NetworkManager) SetMode(ctx context.Context, mode models.NetworkMode, w
 	}
 
 	// Persist to database
-	m.saveConfigToDB(mode, m.currentVPNMode, wifiSSID)
+	m.saveConfigToDB(mode, m.currentVPNMode, wifiSSID, wifiPassword)
 
 	return nil
 }
@@ -458,7 +459,7 @@ func (m *NetworkManager) SetVPNMode(ctx context.Context, mode models.VPNMode, co
 	}
 
 	m.currentVPNMode = mode
-	m.saveConfigToDB(m.currentMode, mode, "")
+	m.saveConfigToDB(m.currentMode, mode, "", "")
 	return nil
 }
 
@@ -542,7 +543,26 @@ func (m *NetworkManager) setOnlineETHMode(ctx context.Context) error {
 		}
 	}
 
-	// Ensure AP is running
+	// Request DHCP lease on eth0 — networkd may not have acquired one yet
+	// (cable plugged after boot, or networkd didn't react to carrier change).
+	// Without an IP on eth0, NAT masquerade has no source address to use.
+	if len(iface.IPv4Addresses) == 0 {
+		log.Info().Str("iface", m.wanInterface).Msg("NetworkManager: no IP on ethernet, requesting DHCP")
+		if err := m.hal.RequestDHCP(ctx, m.wanInterface); err != nil {
+			return fmt.Errorf("failed to obtain DHCP lease on %s: %w", m.wanInterface, err)
+		}
+		// Wait for DHCP response to settle
+		time.Sleep(3 * time.Second)
+
+		// Verify we got an IP
+		iface, err = m.hal.GetInterface(ctx, m.wanInterface)
+		if err != nil || len(iface.IPv4Addresses) == 0 {
+			return fmt.Errorf("ethernet has no IP address after DHCP request — check cable and upstream router")
+		}
+		log.Info().Str("ip", iface.IPv4Addresses[0]).Msg("NetworkManager: DHCP lease acquired on ethernet")
+	}
+
+	// Ensure AP is running (recover if switching from server mode)
 	if m.IsServerMode() {
 		if err := m.hal.StartAP(ctx, m.apInterface); err != nil {
 			log.Error().Err(err).Msg("NetworkManager: failed to start AP")
