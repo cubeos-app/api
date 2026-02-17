@@ -118,7 +118,14 @@ func (m *DockerManager) ListContainers(ctx context.Context) ([]models.ContainerI
 func (m *DockerManager) GetContainer(ctx context.Context, name string) (*models.ContainerInfo, error) {
 	inspect, err := m.client.ContainerInspect(ctx, name)
 	if err != nil {
-		return nil, err
+		// B38/B54/B55: Direct inspect failed — try Swarm-aware lookup.
+		// Swarm tasks are named "{stack}_{service}.{slot}.{hash}", not "{name}".
+		// Search by Docker Swarm stack label first, then by name prefix.
+		resolved, resolveErr := m.resolveSwarmContainer(ctx, name)
+		if resolveErr != nil {
+			return nil, fmt.Errorf("container %s not found (direct or swarm): %w", name, err)
+		}
+		inspect = resolved
 	}
 
 	containerName := strings.TrimPrefix(inspect.Name, "/")
@@ -154,6 +161,51 @@ func (m *DockerManager) GetContainer(ctx context.Context, name string) (*models.
 	}
 
 	return info, nil
+}
+
+// resolveSwarmContainer finds a Swarm task container by stack label or name prefix.
+// Swarm tasks use names like "{stack}_{service}.{slot}.{hash}" which don't match
+// the app name used in API calls. This searches by:
+// 1. com.docker.stack.namespace label (most reliable for Swarm stacks)
+// 2. Name prefix match (fallback for non-labeled containers)
+func (m *DockerManager) resolveSwarmContainer(ctx context.Context, name string) (types.ContainerJSON, error) {
+	// Strategy 1: Search by Swarm stack namespace label
+	labelFilter := filters.NewArgs(
+		filters.Arg("label", "com.docker.stack.namespace="+name),
+	)
+	containers, err := m.client.ContainerList(ctx, container.ListOptions{
+		All:     true,
+		Filters: labelFilter,
+	})
+	if err == nil && len(containers) > 0 {
+		// Prefer a running container if multiple tasks exist
+		targetID := containers[0].ID
+		for _, c := range containers {
+			if c.State == "running" {
+				targetID = c.ID
+				break
+			}
+		}
+		return m.client.ContainerInspect(ctx, targetID)
+	}
+
+	// Strategy 2: Name prefix search — matches "{name}_" pattern
+	allContainers, err := m.client.ContainerList(ctx, container.ListOptions{All: true})
+	if err != nil {
+		return types.ContainerJSON{}, fmt.Errorf("failed to list containers: %w", err)
+	}
+
+	prefix := name + "_"
+	for _, c := range allContainers {
+		for _, cName := range c.Names {
+			clean := strings.TrimPrefix(cName, "/")
+			if strings.HasPrefix(clean, prefix) || clean == name {
+				return m.client.ContainerInspect(ctx, c.ID)
+			}
+		}
+	}
+
+	return types.ContainerJSON{}, fmt.Errorf("no container found for %s", name)
 }
 
 // GetContainerStatus returns the status of a container
@@ -551,10 +603,13 @@ func (m *DockerManager) GetDiskUsage(ctx context.Context) (map[string]interface{
 		return nil, err
 	}
 
-	var imagesSize, containersSize, volumesSize, buildCacheSize int64
+	var imagesSize, imagesReclaimable, containersSize, volumesSize, volumesReclaimable, buildCacheSize, buildCacheReclaimable int64
 
 	for _, img := range usage.Images {
 		imagesSize += img.Size
+		if img.Containers == 0 {
+			imagesReclaimable += img.Size
+		}
 	}
 
 	for _, c := range usage.Containers {
@@ -563,23 +618,45 @@ func (m *DockerManager) GetDiskUsage(ctx context.Context) (map[string]interface{
 
 	for _, v := range usage.Volumes {
 		volumesSize += v.UsageData.Size
+		if v.UsageData.RefCount == 0 {
+			volumesReclaimable += v.UsageData.Size
+		}
 	}
 
 	if usage.BuildCache != nil {
 		for _, bc := range usage.BuildCache {
 			buildCacheSize += bc.Size
+			if !bc.InUse {
+				buildCacheReclaimable += bc.Size
+			}
 		}
 	}
 
+	totalSize := imagesSize + containersSize + volumesSize + buildCacheSize
+
+	// B57: Nested response format matching DockerTab.vue expectations.
+	// Dashboard reads: d.images.total_size, d.images.count, d.containers.total_size, etc.
 	return map[string]interface{}{
-		"images_count":     len(usage.Images),
-		"images_size":      imagesSize,
-		"containers_count": len(usage.Containers),
-		"containers_size":  containersSize,
-		"volumes_count":    len(usage.Volumes),
-		"volumes_size":     volumesSize,
-		"build_cache_size": buildCacheSize,
-		"total_size":       imagesSize + containersSize + volumesSize + buildCacheSize,
+		"images": map[string]interface{}{
+			"count":            len(usage.Images),
+			"total_size":       imagesSize,
+			"reclaimable_size": imagesReclaimable,
+		},
+		"containers": map[string]interface{}{
+			"count":      len(usage.Containers),
+			"total_size": containersSize,
+		},
+		"volumes": map[string]interface{}{
+			"count":            len(usage.Volumes),
+			"total_size":       volumesSize,
+			"reclaimable_size": volumesReclaimable,
+		},
+		"build_cache": map[string]interface{}{
+			"count":            len(usage.BuildCache),
+			"total_size":       buildCacheSize,
+			"reclaimable_size": buildCacheReclaimable,
+		},
+		"total_size": totalSize,
 	}, nil
 }
 

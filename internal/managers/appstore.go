@@ -1320,6 +1320,31 @@ func remapPorts(manifest string, allocatedPort int, portMap string) (string, err
 		log.Warn().Int("allocatedPort", allocatedPort).Msg("no ports found to remap in manifest")
 	}
 
+	// B59: Normalize ALL published ports to int across all services.
+	// yaml.v3 preserves quoted values as strings (e.g. published: "8384"),
+	// which Docker Compose rejects with "ports.published must be a integer".
+	// This ensures every long-form port entry has an integer published value.
+	for _, svcDef := range svcMap {
+		svc, ok := svcDef.(map[string]interface{})
+		if !ok {
+			continue
+		}
+		ports, ok := svc["ports"].([]interface{})
+		if !ok {
+			continue
+		}
+		for _, p := range ports {
+			if port, ok := p.(map[string]interface{}); ok {
+				if pub, exists := port["published"]; exists {
+					port["published"] = toInt(pub)
+				}
+				if tgt, exists := port["target"]; exists {
+					port["target"] = toInt(tgt)
+				}
+			}
+		}
+	}
+
 	out, err := yaml.Marshal(compose)
 	if err != nil {
 		return manifest, fmt.Errorf("failed to serialize port-remapped compose: %w", err)

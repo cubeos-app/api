@@ -41,7 +41,8 @@ func isHALUnsupported(err error) bool {
 		strings.Contains(msg, "no watchdog") ||
 		strings.Contains(msg, "not found") ||
 		strings.Contains(msg, "not detected") ||
-		strings.Contains(msg, "status 501")
+		strings.Contains(msg, "status 501") ||
+		strings.Contains(msg, "status 404")
 }
 
 // writeHALError writes the appropriate HTTP status for a HAL error:
