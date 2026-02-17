@@ -808,7 +808,7 @@ type CoreProxyRule struct {
 // and gatewayIP is future-proof if NPM ever moves to overlay networking.
 func GetCoreProxyRules(gatewayIP string) []CoreProxyRule {
 	return []CoreProxyRule{
-		{Domain: "cubeos.cube", ForwardHost: gatewayIP, ForwardPort: 6011, WebSocket: false, Description: "Dashboard"},
+		{Domain: "cubeos.cube", ForwardHost: gatewayIP, ForwardPort: 6011, WebSocket: true, Description: "Dashboard"},
 		{Domain: "api.cubeos.cube", ForwardHost: gatewayIP, ForwardPort: 6010, WebSocket: true, Description: "API"},
 		{Domain: "pihole.cubeos.cube", ForwardHost: gatewayIP, ForwardPort: 6001, WebSocket: false, Description: "Pi-hole Admin"},
 		{Domain: "npm.cubeos.cube", ForwardHost: gatewayIP, ForwardPort: 81, WebSocket: false, Description: "NPM Admin"},
