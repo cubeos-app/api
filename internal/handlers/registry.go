@@ -55,6 +55,7 @@ func (h *RegistryHandler) Routes() chi.Router {
 	r.Get("/status", h.GetStatus)
 	r.Post("/init", h.InitRegistry)
 	r.Post("/cache", h.CacheImage)
+	r.Get("/check", h.CheckImage)
 	r.Get("/images", h.ListImages)
 	r.Get("/images/{name}/tags", h.GetImageTags)
 	r.Delete("/images/{name}/tags/{tag}", h.DeleteImageTag)
@@ -277,6 +278,50 @@ func (h *RegistryHandler) CacheImage(w http.ResponseWriter, r *http.Request) {
 		"image":       imageRef,
 		"local_image": localImage,
 		"message":     fmt.Sprintf("Image %s cached to local registry as %s", imageRef, localImage),
+	})
+}
+
+// CheckImage godoc
+// @Summary Check if an image exists in local registry
+// @Description Checks whether a specific image:tag combination exists in the local Docker registry.
+// @Description Uses query parameters to avoid URL encoding issues with multi-segment image names (e.g., kiwix/kiwix-serve).
+// @Tags Registry
+// @Produce json
+// @Security BearerAuth
+// @Param image query string true "Image name (e.g., nginx, kiwix/kiwix-serve, tsl0922/ttyd)"
+// @Param tag query string false "Image tag (default: latest)"
+// @Success 200 {object} map[string]interface{} "exists: bool, image: string, tag: string, digest: string (if exists)"
+// @Failure 400 {object} ErrorResponse "Missing image parameter"
+// @Failure 500 {object} ErrorResponse "Registry communication error"
+// @Router /registry/check [get]
+func (h *RegistryHandler) CheckImage(w http.ResponseWriter, r *http.Request) {
+	image := r.URL.Query().Get("image")
+	tag := r.URL.Query().Get("tag")
+
+	if image == "" {
+		registryWriteError(w, http.StatusBadRequest, "Missing required 'image' query parameter")
+		return
+	}
+	if tag == "" {
+		tag = "latest"
+	}
+
+	// Try to get the manifest digest — if it succeeds, the image exists
+	digest, err := h.getManifestDigest(image, tag)
+	if err != nil {
+		registryWriteJSON(w, http.StatusOK, map[string]interface{}{
+			"exists": false,
+			"image":  image,
+			"tag":    tag,
+		})
+		return
+	}
+
+	registryWriteJSON(w, http.StatusOK, map[string]interface{}{
+		"exists": true,
+		"image":  image,
+		"tag":    tag,
+		"digest": digest,
 	})
 }
 

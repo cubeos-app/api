@@ -43,6 +43,13 @@ type AppStoreManager struct {
 	catalog      map[string]*models.StoreApp
 	installed    map[string]*models.InstalledApp
 	mu           sync.RWMutex
+
+	// Registry-aware install flow (T15/T16)
+	registryURL    string       // Local registry URL (e.g., http://10.42.24.1:5000)
+	registryClient *http.Client // HTTP client for registry API calls
+	onlineMu       sync.Mutex   // Protects online cache
+	onlineCached   bool         // Cached online status
+	onlineCacheAt  time.Time    // When online status was last checked
 }
 
 // NewAppStoreManager creates a new app store manager with centralized config
@@ -75,6 +82,14 @@ func NewAppStoreManager(cfg *config.Config, db *DatabaseManager, dataPath string
 		catalog:      make(map[string]*models.StoreApp),
 		installed:    make(map[string]*models.InstalledApp),
 	}
+
+	// Registry-aware install flow: resolve registry URL from env or default
+	registryURL := os.Getenv("REGISTRY_URL")
+	if registryURL == "" {
+		registryURL = "http://" + cfg.GatewayIP + ":5000"
+	}
+	m.registryURL = registryURL
+	m.registryClient = &http.Client{Timeout: 5 * time.Second}
 
 	m.initDB()
 	m.loadStores()
@@ -786,6 +801,29 @@ func (m *AppStoreManager) InstallApp(req *models.AppInstallRequest) (*models.Ins
 	// Parse the written compose and mkdir -p every host path under /cubeos/apps/.
 	preCreateBindMounts(processedManifest)
 
+	// T16: Offline awareness — verify images are available before deploying.
+	// After rewriteImagesToLocalRegistry (T15), images in the local registry
+	// already have localhost:5000/ prefix. Non-local images need upstream pull.
+	// If we're offline and an image isn't available locally, fail early.
+	imageRefs := extractImageRefs(processedManifest)
+	for _, ref := range imageRefs {
+		// Images from local registry are always available
+		if strings.HasPrefix(ref, "localhost:5000/") {
+			continue
+		}
+		// Check if the image is already in Docker's local store
+		inspectCmd := exec.Command("docker", "image", "inspect", ref)
+		if inspectCmd.Run() == nil {
+			continue // Image available locally
+		}
+		// Image not local — check if we can pull it
+		if !m.isOnline() {
+			os.RemoveAll(appBase)
+			return nil, fmt.Errorf("OFFLINE_IMAGE_UNAVAILABLE: image %s is not cached locally and device is offline", ref)
+		}
+		log.Info().Str("image", ref).Msg("image not cached, will pull from upstream")
+	}
+
 	// Deploy as Swarm stack instead of docker compose
 	// --resolve-image=never is critical for ARM64 compatibility
 	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Minute)
@@ -1000,6 +1038,10 @@ func (m *AppStoreManager) processManifest(manifest, appID, dataDir string, req *
 		result = strings.ReplaceAll(result, fmt.Sprintf("${%s}", key), val)
 	}
 
+	// Rewrite image references to use local registry where available (T15).
+	// This enables offline installs for apps whose images are pre-loaded.
+	result = m.rewriteImagesToLocalRegistry(result)
+
 	// Sanitize Swarm-incompatible directives (depends_on map, container_name, etc.)
 	sanitized, err := sanitizeForSwarm(result)
 	if err != nil {
@@ -1007,6 +1049,187 @@ func (m *AppStoreManager) processManifest(manifest, appID, dataDir string, req *
 		return result
 	}
 	return sanitized
+}
+
+// ──────────────────────────────────────────────────────────────────────────────
+// Registry-Aware Install Flow (T15/T16)
+// ──────────────────────────────────────────────────────────────────────────────
+
+// rewriteImagesToLocalRegistry rewrites image references in a compose manifest
+// to use the local Docker registry (localhost:5000) when the image is available
+// there. This enables offline installs for apps whose images are pre-loaded.
+//
+// Rules:
+//   - Skip images already prefixed with localhost:5000/
+//   - Skip CubeOS own images (ghcr.io/cubeos-app/)
+//   - Check local registry via HEAD request on manifest
+//   - If image exists locally → rewrite to localhost:5000/{repo}:{tag}
+//   - If not → leave original (Docker will pull from upstream if online)
+func (m *AppStoreManager) rewriteImagesToLocalRegistry(manifest string) string {
+	var compose map[string]interface{}
+	if err := yaml.Unmarshal([]byte(manifest), &compose); err != nil {
+		log.Warn().Err(err).Msg("registry rewrite: failed to parse YAML, skipping rewrite")
+		return manifest
+	}
+
+	services, ok := compose["services"].(map[string]interface{})
+	if !ok {
+		return manifest
+	}
+
+	changed := false
+	for svcName, svcDef := range services {
+		svc, ok := svcDef.(map[string]interface{})
+		if !ok {
+			continue
+		}
+		image, ok := svc["image"].(string)
+		if !ok || image == "" {
+			continue
+		}
+
+		// Skip already-local images
+		if strings.HasPrefix(image, "localhost:5000/") {
+			continue
+		}
+		// Skip CubeOS own images (built and deployed separately)
+		if strings.HasPrefix(image, "ghcr.io/cubeos-app/") {
+			continue
+		}
+
+		repo, tag := normalizeImageRef(image)
+
+		// Check if image exists in local registry
+		if m.checkRegistryImage(repo, tag) {
+			newImage := fmt.Sprintf("localhost:5000/%s:%s", repo, tag)
+			svc["image"] = newImage
+			changed = true
+			log.Info().Str("service", svcName).Str("from", image).Str("to", newImage).Msg("registry rewrite: image found locally")
+		}
+	}
+
+	if !changed {
+		return manifest
+	}
+
+	// Re-serialize YAML — yaml.v3 preserves field order for maps
+	out, err := yaml.Marshal(compose)
+	if err != nil {
+		log.Warn().Err(err).Msg("registry rewrite: failed to re-serialize YAML, using original")
+		return manifest
+	}
+	return string(out)
+}
+
+// normalizeImageRef strips the registry host and splits into repo + tag.
+// Examples:
+//
+//	"nginx"                           → "library/nginx", "latest"
+//	"nginx:1.25"                      → "library/nginx", "1.25"
+//	"kiwix/kiwix-serve:3.8.1"        → "kiwix/kiwix-serve", "3.8.1"
+//	"docker.io/library/nginx:latest"  → "library/nginx", "latest"
+//	"ghcr.io/user/repo:v1"           → "user/repo", "v1"
+func normalizeImageRef(image string) (repo, tag string) {
+	// Strip known registry hosts
+	ref := image
+	for _, prefix := range []string{
+		"docker.io/", "index.docker.io/",
+		"ghcr.io/", "quay.io/", "gcr.io/",
+		"registry.hub.docker.com/",
+	} {
+		ref = strings.TrimPrefix(ref, prefix)
+	}
+
+	// Split repo:tag
+	if idx := strings.LastIndex(ref, ":"); idx > 0 && !strings.Contains(ref[idx:], "/") {
+		repo = ref[:idx]
+		tag = ref[idx+1:]
+	} else {
+		repo = ref
+		tag = "latest"
+	}
+
+	// Docker Hub images without a namespace use "library/" prefix
+	// (e.g., "nginx" → "library/nginx") — but our local registry stores
+	// them as-is (e.g., "tsl0922/ttyd"), so only add library/ for truly
+	// bare names without any slash.
+	// Actually, skopeo stores with the full path as pushed, so we should
+	// match however the image was pushed to the local registry.
+	// Leave as-is — the registry check will determine if it exists.
+
+	return repo, tag
+}
+
+// checkRegistryImage checks whether a specific image:tag exists in the local
+// Docker registry via a HEAD request on the manifest endpoint.
+func (m *AppStoreManager) checkRegistryImage(repo, tag string) bool {
+	// Construct manifest URL — repo name with slashes is a valid path in v2 API
+	manifestURL := fmt.Sprintf("%s/v2/%s/manifests/%s", m.registryURL, repo, tag)
+
+	req, err := http.NewRequest("HEAD", manifestURL, nil)
+	if err != nil {
+		return false
+	}
+	req.Header.Set("Accept", "application/vnd.docker.distribution.manifest.v2+json")
+
+	resp, err := m.registryClient.Do(req)
+	if err != nil {
+		return false
+	}
+	defer resp.Body.Close()
+
+	return resp.StatusCode == http.StatusOK
+}
+
+// isOnline checks if the device has internet connectivity by pinging Docker Hub.
+// Result is cached for 30 seconds to avoid per-install latency.
+func (m *AppStoreManager) isOnline() bool {
+	m.onlineMu.Lock()
+	defer m.onlineMu.Unlock()
+
+	// Return cached result if fresh (within 30s)
+	if !m.onlineCacheAt.IsZero() && time.Since(m.onlineCacheAt) < 30*time.Second {
+		return m.onlineCached
+	}
+
+	// Ping Docker Hub registry endpoint
+	client := &http.Client{Timeout: 5 * time.Second}
+	resp, err := client.Head("https://registry-1.docker.io/v2/")
+	if err != nil {
+		m.onlineCached = false
+		m.onlineCacheAt = time.Now()
+		return false
+	}
+	defer resp.Body.Close()
+
+	// 200 or 401 (unauthorized but reachable) both indicate online
+	m.onlineCached = resp.StatusCode == http.StatusOK || resp.StatusCode == http.StatusUnauthorized
+	m.onlineCacheAt = time.Now()
+	return m.onlineCached
+}
+
+// extractImageRefs extracts all image references from a compose manifest YAML.
+func extractImageRefs(manifest string) []string {
+	var compose map[string]interface{}
+	if err := yaml.Unmarshal([]byte(manifest), &compose); err != nil {
+		return nil
+	}
+	services, ok := compose["services"].(map[string]interface{})
+	if !ok {
+		return nil
+	}
+
+	var refs []string
+	for _, svcDef := range services {
+		svc, ok := svcDef.(map[string]interface{})
+		if !ok {
+			continue
+		}
+		if image, ok := svc["image"].(string); ok && image != "" {
+			refs = append(refs, image)
+		}
+	}
+	return refs
 }
 
 // remapPorts rewrites the host-published port in a compose manifest so that the

@@ -816,9 +816,8 @@ func GetCoreProxyRules(gatewayIP string) []CoreProxyRule {
 		{Domain: "dozzle.cubeos.cube", ForwardHost: gatewayIP, ForwardPort: 6012, WebSocket: true, Description: "Dozzle"},
 		{Domain: "registry.cubeos.cube", ForwardHost: gatewayIP, ForwardPort: 5000, WebSocket: false, Description: "Registry"},
 		{Domain: "docs.cubeos.cube", ForwardHost: gatewayIP, ForwardPort: 6032, WebSocket: false, Description: "DocsIndex"},
-		{Domain: "ollama.cubeos.cube", ForwardHost: gatewayIP, ForwardPort: 6030, WebSocket: false, Description: "Ollama"},
-		{Domain: "chromadb.cubeos.cube", ForwardHost: gatewayIP, ForwardPort: 6031, WebSocket: false, Description: "ChromaDB"},
-		{Domain: "terminal.cubeos.cube", ForwardHost: gatewayIP, ForwardPort: 6009, WebSocket: true, Description: "Terminal"},
+		{Domain: "terminal.cubeos.cube", ForwardHost: gatewayIP, ForwardPort: 6042, WebSocket: true, Description: "Terminal"},
+		{Domain: "kiwix.cubeos.cube", ForwardHost: gatewayIP, ForwardPort: 6043, WebSocket: false, Description: "Kiwix Offline Library"},
 	}
 }
 
