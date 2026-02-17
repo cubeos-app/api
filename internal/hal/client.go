@@ -2071,7 +2071,9 @@ func (c *Client) GetGPSDevices(ctx context.Context) (*GPSDevicesResponse, error)
 func (c *Client) GetGPSStatus(ctx context.Context, port string) (*GPSStatus, error) {
 	path := "/gps/status"
 	if port != "" {
-		path += "?port=" + url.QueryEscape(port)
+		params := url.Values{}
+		params.Set("port", port)
+		path += "?" + params.Encode()
 	}
 
 	var result GPSStatus
@@ -2084,16 +2086,15 @@ func (c *Client) GetGPSStatus(ctx context.Context, port string) (*GPSStatus, err
 // GetGPSPosition returns current GPS position
 func (c *Client) GetGPSPosition(ctx context.Context, port string, timeout int) (*GPSPosition, error) {
 	path := "/gps/position"
+	params := url.Values{}
 	if port != "" {
-		path += "?port=" + url.QueryEscape(port)
+		params.Set("port", port)
 	}
 	if timeout > 0 {
-		if port != "" {
-			path += "&"
-		} else {
-			path += "?"
-		}
-		path += "timeout=" + strconv.Itoa(timeout)
+		params.Set("timeout", strconv.Itoa(timeout))
+	}
+	if len(params) > 0 {
+		path += "?" + params.Encode()
 	}
 
 	var result GPSPosition
@@ -2281,7 +2282,9 @@ func (c *Client) GetIridiumDevices(ctx context.Context) (*IridiumDevicesResponse
 func (c *Client) ConnectIridium(ctx context.Context, port string) error {
 	path := "/iridium/connect"
 	if port != "" {
-		path += "?port=" + url.QueryEscape(port)
+		params := url.Values{}
+		params.Set("port", port)
+		path += "?" + params.Encode()
 	}
 	return c.doPost(ctx, path, nil)
 }
@@ -3033,7 +3036,9 @@ func (c *Client) TestMountConnection(ctx context.Context, mountType, remotePath,
 
 // IsMounted checks if a path is currently mounted
 func (c *Client) IsMounted(ctx context.Context, path string) (bool, error) {
-	body, err := c.doRequest(ctx, http.MethodGet, "/mounts/check?path="+url.QueryEscape(path), nil)
+	params := url.Values{}
+	params.Set("path", path)
+	body, err := c.doRequest(ctx, http.MethodGet, "/mounts/check?"+params.Encode(), nil)
 	if err != nil {
 		return false, err
 	}
