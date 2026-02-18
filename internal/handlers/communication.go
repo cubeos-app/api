@@ -30,10 +30,10 @@ func NewCommunicationHandler(halClient *hal.Client) *CommunicationHandler {
 func (h *CommunicationHandler) Routes() chi.Router {
 	r := chi.NewRouter()
 
-	// GPS
+	// GPS — port passed as query param (device paths like /dev/ttyACM0 break chi path params)
 	r.Get("/gps", h.GetGPSDevices)
-	r.Get("/gps/{port}/status", h.GetGPSStatus)
-	r.Get("/gps/{port}/position", h.GetGPSPosition)
+	r.Get("/gps/status", h.GetGPSStatus)
+	r.Get("/gps/position", h.GetGPSPosition)
 
 	// Cellular
 	r.Get("/cellular", h.GetCellularModems)
@@ -127,16 +127,16 @@ func (h *CommunicationHandler) GetGPSDevices(w http.ResponseWriter, r *http.Requ
 // @Tags Communication
 // @Accept json
 // @Produce json
-// @Param port path string true "GPS device port" example(ttyUSB0)
+// @Param port query string true "GPS device port" example("/dev/ttyUSB0")
 // @Success 200 {object} hal.GPSStatus
 // @Failure 400 {object} ErrorResponse "Port required"
 // @Failure 500 {object} ErrorResponse "Failed to get GPS status"
 // @Failure 503 {object} ErrorResponse "HAL unavailable"
 // @Security BearerAuth
-// @Router /communication/gps/{port}/status [get]
+// @Router /communication/gps/status [get]
 func (h *CommunicationHandler) GetGPSStatus(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
-	port := chi.URLParam(r, "port")
+	port := r.URL.Query().Get("port")
 
 	if port == "" {
 		writeError(w, http.StatusBadRequest, "GPS port is required")
@@ -163,17 +163,17 @@ func (h *CommunicationHandler) GetGPSStatus(w http.ResponseWriter, r *http.Reque
 // @Tags Communication
 // @Accept json
 // @Produce json
-// @Param port path string true "GPS device port" example(ttyUSB0)
+// @Param port query string true "GPS device port" example("/dev/ttyUSB0")
 // @Param timeout query int false "Timeout in seconds" default(10)
 // @Success 200 {object} hal.GPSPosition
 // @Failure 400 {object} ErrorResponse "Port required"
 // @Failure 500 {object} ErrorResponse "Failed to get GPS position"
 // @Failure 503 {object} ErrorResponse "HAL unavailable"
 // @Security BearerAuth
-// @Router /communication/gps/{port}/position [get]
+// @Router /communication/gps/position [get]
 func (h *CommunicationHandler) GetGPSPosition(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
-	port := chi.URLParam(r, "port")
+	port := r.URL.Query().Get("port")
 
 	if port == "" {
 		writeError(w, http.StatusBadRequest, "GPS port is required")
