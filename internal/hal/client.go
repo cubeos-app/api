@@ -3066,6 +3066,25 @@ func (c *Client) SetStaticIP(ctx context.Context, iface, ip, gateway string) err
 	return c.doPost(ctx, "/network/ip/static", req)
 }
 
+// WriteNetplan writes netplan YAML to the host and optionally reconfigures an interface.
+// @Summary Write netplan configuration
+// @Description Writes netplan YAML to host filesystem via HAL and applies it
+// @Tags network
+// @Param request body object true "Netplan write request"
+// @Success 200
+// @Failure 500 {string} string "netplan write failed"
+// @Router /network/netplan [post]
+func (c *Client) WriteNetplan(ctx context.Context, yaml string, reconfigureIface string) error {
+	req := struct {
+		YAML             string `json:"yaml"`
+		ReconfigureIface string `json:"reconfigure_iface,omitempty"`
+	}{
+		YAML:             yaml,
+		ReconfigureIface: reconfigureIface,
+	}
+	return c.doPost(ctx, "/network/netplan", req)
+}
+
 // TestMountConnection tests connectivity to a remote share
 func (c *Client) TestMountConnection(ctx context.Context, mountType, remotePath, username, password string) error {
 	req := map[string]string{
