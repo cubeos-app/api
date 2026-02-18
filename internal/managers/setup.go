@@ -380,8 +380,8 @@ func (m *SetupManager) ApplySetupConfig(cfg *models.SetupConfig) error {
 	if cfg.CountryCode != "" {
 		m.SaveConfig("country_code", cfg.CountryCode)
 	} else {
-		m.SaveConfig("country_code", "US")
-		cfg.CountryCode = "US"
+		m.SaveConfig("country_code", "NL")
+		cfg.CountryCode = "NL"
 	}
 	// Also persist to defaults.env so Docker containers and boot scripts can read it
 	defaultsPath := filepath.Join(m.configPath, "defaults.env")
@@ -545,7 +545,7 @@ func (m *SetupManager) configureWiFiAP(ssid, password string, channel int) error
 	// Get country code from config or default
 	countryCode := m.GetConfig("country_code")
 	if countryCode == "" {
-		countryCode = "US"
+		countryCode = "NL"
 	}
 
 	// Save config values
@@ -795,7 +795,7 @@ func (m *SetupManager) GenerateDefaultConfig() *models.SetupConfig {
 		WiFiSSID:          "CubeOS",
 		WiFiPassword:      "",
 		WiFiChannel:       6,
-		CountryCode:       "US",
+		CountryCode:       "NL",
 		Timezone:          "UTC",
 		Language:          "en",
 		Theme:             "dark",
