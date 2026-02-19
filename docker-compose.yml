@@ -1,36 +1,44 @@
+# =============================================================================
+# CubeOS API — Local Development Compose
+# =============================================================================
+# For development/testing only. Production uses Swarm stack via coreapps.
+#
+# Usage: docker compose up -d
+# =============================================================================
 services:
   cubeos-api:
     build:
       context: .
       dockerfile: Dockerfile
-    image: cubeos/api:latest
+    image: ghcr.io/cubeos-app/api:latest
     container_name: cubeos-api
     restart: unless-stopped
     user: root
     ports:
-      - "192.168.42.1:9009:9009"
+      - "${CUBEOS_API_BIND:-0.0.0.0}:6010:6010"
     environment:
-      - CUBEOS_API_PORT=9009
+      - CUBEOS_API_PORT=6010
       - CUBEOS_API_HOST=0.0.0.0
-      - CUBEOS_LOG_LEVEL=info
+      - CUBEOS_LOG_LEVEL=debug
       - CUBEOS_DATABASE_PATH=/data/cubeos.db
-      - CUBEOS_JWT_SECRET=${CUBEOS_JWT_SECRET:-}
+      - CUBEOS_JWT_SECRET=${CUBEOS_JWT_SECRET:-dev-secret-change-me}
       - CUBEOS_ADMIN_PASSWORD=${CUBEOS_ADMIN_PASSWORD:-cubeos}
       - CUBEOS_ACCESS_TOKEN_EXPIRY=15m
       - CUBEOS_REFRESH_TOKEN_EXPIRY=168h
-      - TZ=Europe/Amsterdam
+      - HAL_URL=http://cubeos-hal:6005
+      - TZ=${TZ:-UTC}
     volumes:
-      # Docker socket for container management
       - /var/run/docker.sock:/var/run/docker.sock:ro
-      # Persistent data (database)
-      - /cubeos/data:/data
+      - cubeos-data:/data
     healthcheck:
-      test: ["CMD", "wget", "-q", "--spider", "http://localhost:9009/health"]
+      test: ["CMD", "wget", "-q", "--spider", "http://localhost:6010/health"]
       interval: 30s
       timeout: 5s
       retries: 3
       start_period: 10s
     labels:
-      - "com.centurylinklabs.watchtower.enable=false"
       - "com.cubeos.service=api"
       - "com.cubeos.description=CubeOS Core API"
+
+volumes:
+  cubeos-data:

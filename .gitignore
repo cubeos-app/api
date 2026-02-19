@@ -16,3 +16,7 @@ build/
 *.db-shm
 *.db-wal
 cmd/cubeos-api/cubeos-api
+
+# Generated OpenAPI specs (canonical copies are in docs/ via swag init)
+openapi.yaml
+docs/api/
