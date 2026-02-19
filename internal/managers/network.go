@@ -784,6 +784,36 @@ func (m *NetworkManager) writeAndApplyNetplan(ctx context.Context, mode models.N
 		Msg("writeAndApplyNetplan: netplan written and applied")
 }
 
+// pollForIP polls a network interface for an IPv4 address using HAL.
+// B88: Replaces sleep-based DHCP verification with active polling.
+// Returns nil when an IP is acquired, or error on timeout/context cancellation.
+func (m *NetworkManager) pollForIP(ctx context.Context, iface string, timeout time.Duration) error {
+	deadline := time.Now().Add(timeout)
+	interval := 2 * time.Second
+	attempt := 0
+
+	for time.Now().Before(deadline) {
+		attempt++
+		info, err := m.hal.GetInterface(ctx, iface)
+		if err == nil && len(info.IPv4Addresses) > 0 {
+			log.Info().
+				Str("ip", info.IPv4Addresses[0]).
+				Str("iface", iface).
+				Int("attempts", attempt).
+				Msg("NetworkManager: IP acquired via netplan DHCP")
+			return nil
+		}
+
+		select {
+		case <-ctx.Done():
+			return ctx.Err()
+		case <-time.After(interval):
+		}
+	}
+
+	return fmt.Errorf("timeout waiting for IP on %s after %s (%d attempts)", iface, timeout, attempt)
+}
+
 // setOfflineMode configures offline (AP only) mode
 func (m *NetworkManager) setOfflineMode(ctx context.Context) error {
 	// Disable NAT - ignore errors (might already be disabled)
@@ -814,6 +844,8 @@ func (m *NetworkManager) setOfflineMode(ctx context.Context) error {
 }
 
 // setOnlineETHMode configures online via Ethernet mode
+// setOnlineETHMode configures online via Ethernet mode
+// B88: DHCP path uses netplan write+apply+poll instead of HAL RequestDHCP
 func (m *NetworkManager) setOnlineETHMode(ctx context.Context, staticIP models.StaticIPConfig) error {
 	// Check if ethernet is up
 	iface, err := m.hal.GetInterface(ctx, m.wanInterface)
@@ -835,18 +867,19 @@ func (m *NetworkManager) setOnlineETHMode(ctx context.Context, staticIP models.S
 		}
 		time.Sleep(2 * time.Second)
 	} else if len(iface.IPv4Addresses) == 0 {
-		log.Info().Str("iface", m.wanInterface).Msg("NetworkManager: no IP on ethernet, requesting DHCP")
-		if err := m.hal.RequestDHCP(ctx, m.wanInterface); err != nil {
-			return fmt.Errorf("failed to obtain DHCP lease on %s: %w", m.wanInterface, err)
+		// B88: Write netplan with dhcp4:true → netplan apply → networkd handles DHCP.
+		// This replaces the fragile hal.RequestDHCP()+sleep pattern.
+		log.Info().Str("iface", m.wanInterface).
+			Msg("NetworkManager: writing DHCP netplan for ethernet (B88)")
+		yaml := m.generateNetplanYAML(models.NetworkModeOnlineETH, "", "", staticIP)
+		if err := m.hal.WriteNetplan(ctx, yaml, m.wanInterface); err != nil {
+			return fmt.Errorf("failed to write/apply DHCP netplan on %s: %w", m.wanInterface, err)
 		}
-		time.Sleep(3 * time.Second)
 
-		// Verify we got an IP
-		iface, err = m.hal.GetInterface(ctx, m.wanInterface)
-		if err != nil || len(iface.IPv4Addresses) == 0 {
-			return fmt.Errorf("ethernet has no IP address after DHCP request — check cable and upstream router")
+		// Poll for IP acquisition (systemd-networkd handles DHCP natively)
+		if err := m.pollForIP(ctx, m.wanInterface, 30*time.Second); err != nil {
+			return fmt.Errorf("ethernet has no IP address after DHCP request — check cable and upstream router: %w", err)
 		}
-		log.Info().Str("ip", iface.IPv4Addresses[0]).Msg("NetworkManager: DHCP lease acquired on ethernet")
 	}
 
 	// Ensure AP is running (recover if switching from server mode)
@@ -871,13 +904,18 @@ func (m *NetworkManager) setOnlineETHMode(ctx context.Context, staticIP models.S
 	// T09: Configure Pi-hole DHCP (active, no-dhcp-interface=eth0)
 	m.configurePiholeDHCPForMode(ctx, models.NetworkModeOnlineETH)
 
-	// T10: Write netplan for reboot persistence
+	// Write netplan for reboot persistence.
+	// DHCP path already wrote+applied netplan above, but we call this unconditionally
+	// to handle the static IP path (which uses runtime SetStaticIP and needs persistence).
+	// For the DHCP path this is a no-op write (same YAML).
 	m.writeAndApplyNetplan(ctx, models.NetworkModeOnlineETH, "", "", "", staticIP)
 
 	return nil
 }
 
 // setOnlineWiFiMode configures online via WiFi client mode
+// setOnlineWiFiMode configures online via WiFi client mode
+// B88: DHCP path uses netplan write+apply+poll instead of HAL RequestDHCP
 func (m *NetworkManager) setOnlineWiFiMode(ctx context.Context, ssid, password string, staticIP models.StaticIPConfig) error {
 	// Dynamically detect WiFi client interface (USB dongle with wlx* prefix)
 	// Falls back to configured m.wifiClientInterface (default: wlan1)
@@ -918,12 +956,21 @@ func (m *NetworkManager) setOnlineWiFiMode(ctx context.Context, ssid, password s
 		}
 		time.Sleep(2 * time.Second)
 	} else {
-		// Request DHCP lease on the WiFi interface to get an IP address
-		if err := m.hal.RequestDHCP(ctx, iface); err != nil {
-			log.Warn().Err(err).Str("iface", iface).Msg("NetworkManager: DHCP on WiFi failed, may not have internet")
+		// B88: Write netplan with dhcp4:true for WiFi client → networkd handles DHCP.
+		// The netplan also includes access-points block with WiFi credentials.
+		log.Info().Str("iface", iface).Str("ssid", ssid).
+			Msg("NetworkManager: writing DHCP netplan for WiFi client (B88)")
+		yaml := m.generateNetplanYAML(models.NetworkModeOnlineWiFi, ssid, password, staticIP)
+		if err := m.hal.WriteNetplan(ctx, yaml, iface); err != nil {
+			log.Warn().Err(err).Str("iface", iface).
+				Msg("NetworkManager: failed to write WiFi DHCP netplan, may not have internet")
+		} else {
+			// Poll for IP — WiFi DHCP can be slower, use 30s timeout
+			if err := m.pollForIP(ctx, iface, 30*time.Second); err != nil {
+				log.Warn().Err(err).Str("iface", iface).
+					Msg("NetworkManager: WiFi DHCP timeout, may not have internet")
+			}
 		}
-		// Allow DHCP response to settle
-		time.Sleep(2 * time.Second)
 	}
 
 	// Ensure AP is running
@@ -948,7 +995,9 @@ func (m *NetworkManager) setOnlineWiFiMode(ctx context.Context, ssid, password s
 	// T09: Configure Pi-hole DHCP (active, no-dhcp-interface=wlan1)
 	m.configurePiholeDHCPForMode(ctx, models.NetworkModeOnlineWiFi)
 
-	// T10: Write netplan for reboot persistence (includes wlan1 WiFi creds)
+	// T10: Write netplan for reboot persistence (includes wlan1 WiFi creds).
+	// For DHCP path, netplan was already written above — this is a no-op write.
+	// For static IP path, this provides persistence.
 	m.writeAndApplyNetplan(ctx, models.NetworkModeOnlineWiFi, ssid, password, iface, staticIP)
 
 	return nil
@@ -981,18 +1030,27 @@ func (m *NetworkManager) setServerETHMode(ctx context.Context, staticIP models.S
 			return fmt.Errorf("failed to set static IP: %w", err)
 		}
 	} else {
-		// Request DHCP
-		if err := m.hal.RequestDHCP(ctx, m.wanInterface); err != nil {
-			log.Warn().Err(err).Str("fallbackIP", m.fallbackIP).Str("fallbackGateway", m.fallbackGateway).Msg("NetworkManager: DHCP request failed, using fallback")
-			// Fall back to static IP with proper gateway
+		// B88: Use netplan write+apply+poll instead of HAL RequestDHCP
+		log.Info().Str("iface", m.wanInterface).
+			Msg("NetworkManager: writing DHCP netplan for server ethernet (B88)")
+		yaml := m.generateNetplanYAML(models.NetworkModeServerETH, "", "", staticIP)
+		if err := m.hal.WriteNetplan(ctx, yaml, m.wanInterface); err != nil {
+			log.Warn().Err(err).Str("fallbackIP", m.fallbackIP).
+				Msg("NetworkManager: netplan write failed, using fallback static IP")
+			if err := m.hal.SetStaticIP(ctx, m.wanInterface, m.fallbackIP, m.fallbackGateway); err != nil {
+				return fmt.Errorf("failed to set fallback IP: %w", err)
+			}
+		} else if err := m.pollForIP(ctx, m.wanInterface, 15*time.Second); err != nil {
+			log.Warn().Err(err).Str("fallbackIP", m.fallbackIP).Str("fallbackGateway", m.fallbackGateway).
+				Msg("NetworkManager: DHCP timeout, using fallback static IP")
 			if err := m.hal.SetStaticIP(ctx, m.wanInterface, m.fallbackIP, m.fallbackGateway); err != nil {
 				return fmt.Errorf("failed to set fallback IP: %w", err)
 			}
 		}
 	}
 
-	// Wait for network
-	time.Sleep(3 * time.Second)
+	// Wait for network to settle
+	time.Sleep(2 * time.Second)
 
 	m.currentMode = models.NetworkModeServerETH
 
@@ -1038,10 +1096,19 @@ func (m *NetworkManager) setServerWiFiMode(ctx context.Context, ssid, password s
 			log.Warn().Err(err).Msg("NetworkManager: static IP on wlan0 failed")
 		}
 	} else {
-		// Verify we got an IP via DHCP
-		iface, err := m.hal.GetInterface(ctx, m.apInterface)
-		if err != nil || len(iface.IPv4Addresses) == 0 {
-			log.Warn().Str("fallbackIP", m.fallbackIP).Str("fallbackGateway", m.fallbackGateway).Msg("NetworkManager: no IP assigned, using fallback")
+		// B88: Use netplan write+apply+poll instead of checking for existing IP only.
+		// The WiFi connect above may not have triggered DHCP via networkd yet.
+		log.Info().Str("iface", m.apInterface).Str("ssid", ssid).
+			Msg("NetworkManager: writing DHCP netplan for server WiFi (B88)")
+		yaml := m.generateNetplanYAML(models.NetworkModeServerWiFi, ssid, password, staticIP)
+		if err := m.hal.WriteNetplan(ctx, yaml, m.apInterface); err != nil {
+			log.Warn().Err(err).Msg("NetworkManager: server WiFi netplan write failed")
+		}
+
+		// Poll for IP — fall back to static if DHCP fails
+		if err := m.pollForIP(ctx, m.apInterface, 15*time.Second); err != nil {
+			log.Warn().Str("fallbackIP", m.fallbackIP).Str("fallbackGateway", m.fallbackGateway).
+				Msg("NetworkManager: no IP assigned, using fallback")
 			if err := m.hal.SetStaticIP(ctx, m.apInterface, m.fallbackIP, m.fallbackGateway); err != nil {
 				return fmt.Errorf("failed to set fallback IP: %w", err)
 			}

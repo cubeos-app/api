@@ -3,6 +3,7 @@ package handlers
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"log"
 	"net/http"
@@ -32,10 +33,20 @@ func NewHardwareHandler(halClient *hal.Client, setupMgr *managers.SetupManager) 
 
 // isHALUnsupported checks if a HAL error indicates the hardware feature
 // is not supported/available, as opposed to a real service error.
+// B83: Uses errors.As for type-safe HALError status code extraction.
 func isHALUnsupported(err error) bool {
 	if err == nil {
 		return false
 	}
+
+	// B83: Check typed HALError status code first
+	var halErr *hal.HALError
+	if errors.As(err, &halErr) {
+		return halErr.StatusCode == http.StatusNotImplemented ||
+			halErr.StatusCode == http.StatusNotFound
+	}
+
+	// Fallback: string matching for non-HAL errors (e.g., connection refused)
 	msg := strings.ToLower(err.Error())
 	return strings.Contains(msg, "not supported") ||
 		strings.Contains(msg, "not available") ||
@@ -43,14 +54,25 @@ func isHALUnsupported(err error) bool {
 		strings.Contains(msg, "no rtc") ||
 		strings.Contains(msg, "no watchdog") ||
 		strings.Contains(msg, "not found") ||
-		strings.Contains(msg, "not detected") ||
-		strings.Contains(msg, "status 501") ||
-		strings.Contains(msg, "status 404")
+		strings.Contains(msg, "not detected")
 }
 
-// writeHALError writes the appropriate HTTP status for a HAL error:
-// 501 for unsupported hardware, 500 for genuine errors.
+// writeHALError writes the appropriate HTTP status for a HAL error.
+// B83: Forwards HAL's actual status code when available via HALError type.
+// Falls back to 501 for unsupported hardware, 500 for genuine errors.
 func writeHALError(w http.ResponseWriter, err error, feature string) {
+	// B83: Forward HAL's actual status code when available
+	var halErr *hal.HALError
+	if errors.As(err, &halErr) {
+		if halErr.StatusCode == http.StatusNotImplemented || halErr.StatusCode == http.StatusNotFound {
+			writeError(w, halErr.StatusCode, feature+" not available on this hardware")
+			return
+		}
+		writeError(w, halErr.StatusCode, "Failed to "+strings.ToLower(feature)+": "+halErr.Message)
+		return
+	}
+
+	// Fallback for non-HAL errors
 	if isHALUnsupported(err) {
 		writeError(w, http.StatusNotImplemented, feature+" not available on this hardware")
 		return
@@ -966,7 +988,7 @@ func (h *HardwareHandler) StartService(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if err := h.halClient.StartService(ctx, name); err != nil {
-		writeError(w, http.StatusInternalServerError, "Failed to start service: "+err.Error())
+		writeHALError(w, err, "Start service "+name)
 		return
 	}
 
@@ -1004,7 +1026,7 @@ func (h *HardwareHandler) StopService(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if err := h.halClient.StopService(ctx, name); err != nil {
-		writeError(w, http.StatusInternalServerError, "Failed to stop service: "+err.Error())
+		writeHALError(w, err, "Stop service "+name)
 		return
 	}
 
@@ -1042,7 +1064,7 @@ func (h *HardwareHandler) RestartService(w http.ResponseWriter, r *http.Request)
 	}
 
 	if err := h.halClient.RestartService(ctx, name); err != nil {
-		writeError(w, http.StatusInternalServerError, "Failed to restart service: "+err.Error())
+		writeHALError(w, err, "Restart service "+name)
 		return
 	}
 

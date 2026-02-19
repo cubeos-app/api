@@ -1142,6 +1142,23 @@ type ErrorResponse struct {
 	Code  int    `json:"code"`
 }
 
+// HALError is a typed error returned by the HAL client that preserves the
+// HTTP status code from the HAL service. This allows callers to distinguish
+// between different HAL error types (e.g., 501 Not Implemented for unsupported
+// hardware vs 500 for genuine errors) without string matching. (B83 fix)
+type HALError struct {
+	StatusCode int
+	Message    string
+}
+
+// Error implements the error interface.
+func (e *HALError) Error() string {
+	if e.Message != "" {
+		return fmt.Sprintf("HAL error (status %d): %s", e.StatusCode, e.Message)
+	}
+	return fmt.Sprintf("HAL error: status %d", e.StatusCode)
+}
+
 // =============================================================================
 // Helper Methods
 // =============================================================================
@@ -1181,10 +1198,10 @@ func (c *Client) doRequest(ctx context.Context, method, path string, body interf
 			Error string `json:"error"`
 		}
 		json.Unmarshal(respBody, &errResp)
-		if errResp.Error != "" {
-			return nil, fmt.Errorf("HAL error: %s", errResp.Error)
+		return nil, &HALError{
+			StatusCode: resp.StatusCode,
+			Message:    errResp.Error,
 		}
-		return nil, fmt.Errorf("HAL error: status %d", resp.StatusCode)
 	}
 
 	return respBody, nil
@@ -1256,10 +1273,10 @@ func (c *Client) doStreamRequest(ctx context.Context, path string) (*http.Respon
 			Error string `json:"error"`
 		}
 		json.Unmarshal(body, &errResp)
-		if errResp.Error != "" {
-			return nil, fmt.Errorf("HAL error: %s", errResp.Error)
+		return nil, &HALError{
+			StatusCode: resp.StatusCode,
+			Message:    errResp.Error,
 		}
-		return nil, fmt.Errorf("HAL error: status %d", resp.StatusCode)
 	}
 
 	return resp, nil
