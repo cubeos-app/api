@@ -538,6 +538,39 @@ var migrations = []Migration{
 			return nil
 		},
 	},
+
+	// Version 14: Add static IP columns to network_config (Network Modes Batch 3 — T11)
+	// Allows per-mode static IP override on the upstream interface instead of DHCP.
+	{
+		Version:     14,
+		Description: "Add static IP columns to network_config for upstream interface override",
+		Up: func(db *sql.DB) error {
+			columns := []struct {
+				name         string
+				definition   string
+				defaultValue string
+			}{
+				{"use_static_ip", "BOOLEAN", "FALSE"},
+				{"static_ip_address", "TEXT", "''"},
+				{"static_ip_netmask", "TEXT", "'255.255.255.0'"},
+				{"static_ip_gateway", "TEXT", "''"},
+				{"static_dns_primary", "TEXT", "''"},
+				{"static_dns_secondary", "TEXT", "''"},
+			}
+
+			for _, col := range columns {
+				query := fmt.Sprintf("ALTER TABLE network_config ADD COLUMN %s %s DEFAULT %s",
+					col.name, col.definition, col.defaultValue)
+				_, err := db.Exec(query)
+				if err != nil && !isDuplicateColumnError(err) {
+					return fmt.Errorf("failed to add network_config.%s: %w", col.name, err)
+				}
+			}
+
+			log.Info().Msg("Migration 14: Added static IP columns to network_config")
+			return nil
+		},
+	},
 }
 
 // isDuplicateColumnError checks if an error is a "duplicate column" error

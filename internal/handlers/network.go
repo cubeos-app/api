@@ -153,6 +153,14 @@ func (h *NetworkHandler) SetNetworkMode(w http.ResponseWriter, r *http.Request) 
 		Mode     string `json:"mode"`
 		SSID     string `json:"ssid,omitempty"`
 		Password string `json:"password,omitempty"`
+
+		// Static IP override (T13 — Network Modes Batch 3)
+		UseStaticIP        bool   `json:"use_static_ip,omitempty"`
+		StaticIP           string `json:"static_ip,omitempty"`
+		StaticNetmask      string `json:"static_netmask,omitempty"`
+		StaticGateway      string `json:"static_gateway,omitempty"`
+		StaticDNSPrimary   string `json:"static_dns_primary,omitempty"`
+		StaticDNSSecondary string `json:"static_dns_secondary,omitempty"`
 	}
 
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
@@ -183,6 +191,22 @@ func (h *NetworkHandler) SetNetworkMode(w http.ResponseWriter, r *http.Request) 
 		return
 	}
 
+	// Validate static IP fields if enabled
+	if req.UseStaticIP {
+		if req.StaticIP == "" {
+			writeError(w, http.StatusBadRequest, "static_ip is required when use_static_ip is true")
+			return
+		}
+		if req.StaticGateway == "" {
+			writeError(w, http.StatusBadRequest, "static_gateway is required when use_static_ip is true")
+			return
+		}
+		if req.Mode == "offline" {
+			writeError(w, http.StatusBadRequest, "Static IP is not applicable in offline mode (no upstream interface)")
+			return
+		}
+	}
+
 	var mode models.NetworkMode
 	switch req.Mode {
 	case "offline":
@@ -197,7 +221,21 @@ func (h *NetworkHandler) SetNetworkMode(w http.ResponseWriter, r *http.Request) 
 		mode = models.NetworkModeServerWiFi
 	}
 
-	if err := h.network.SetMode(ctx, mode, req.SSID, req.Password); err != nil {
+	// Build static IP config
+	netmask := req.StaticNetmask
+	if netmask == "" {
+		netmask = "255.255.255.0"
+	}
+	staticIP := models.StaticIPConfig{
+		UseStaticIP:        req.UseStaticIP,
+		StaticIPAddress:    req.StaticIP,
+		StaticIPNetmask:    netmask,
+		StaticIPGateway:    req.StaticGateway,
+		StaticDNSPrimary:   req.StaticDNSPrimary,
+		StaticDNSSecondary: req.StaticDNSSecondary,
+	}
+
+	if err := h.network.SetMode(ctx, mode, req.SSID, req.Password, staticIP); err != nil {
 		writeError(w, http.StatusInternalServerError, err.Error())
 		return
 	}

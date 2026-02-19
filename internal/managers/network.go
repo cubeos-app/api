@@ -179,25 +179,36 @@ func parseVPNMode(mode string) models.VPNMode {
 }
 
 // saveConfigToDB persists the network config to database (V2: extended)
-func (m *NetworkManager) saveConfigToDB(mode models.NetworkMode, vpnMode models.VPNMode, wifiSSID, wifiPassword string) {
+func (m *NetworkManager) saveConfigToDB(mode models.NetworkMode, vpnMode models.VPNMode, wifiSSID, wifiPassword string, staticIP models.StaticIPConfig) {
 	if m.db == nil {
 		return
 	}
 
 	_, err := m.db.Exec(`
-		INSERT INTO network_config (id, mode, vpn_mode, wifi_ssid, wifi_password, updated_at) 
-		VALUES (1, ?, ?, ?, ?, CURRENT_TIMESTAMP)
+		INSERT INTO network_config (id, mode, vpn_mode, wifi_ssid, wifi_password,
+			use_static_ip, static_ip_address, static_ip_netmask, static_ip_gateway,
+			static_dns_primary, static_dns_secondary, updated_at) 
+		VALUES (1, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)
 		ON CONFLICT(id) DO UPDATE SET 
 			mode = excluded.mode, 
 			vpn_mode = excluded.vpn_mode,
 			wifi_ssid = excluded.wifi_ssid, 
 			wifi_password = excluded.wifi_password,
+			use_static_ip = excluded.use_static_ip,
+			static_ip_address = excluded.static_ip_address,
+			static_ip_netmask = excluded.static_ip_netmask,
+			static_ip_gateway = excluded.static_ip_gateway,
+			static_dns_primary = excluded.static_dns_primary,
+			static_dns_secondary = excluded.static_dns_secondary,
 			updated_at = CURRENT_TIMESTAMP`,
-		string(mode), string(vpnMode), wifiSSID, wifiPassword)
+		string(mode), string(vpnMode), wifiSSID, wifiPassword,
+		staticIP.UseStaticIP, staticIP.StaticIPAddress, staticIP.StaticIPNetmask,
+		staticIP.StaticIPGateway, staticIP.StaticDNSPrimary, staticIP.StaticDNSSecondary)
 	if err != nil {
 		log.Error().Err(err).Msg("NetworkManager: failed to persist config to database")
 	} else {
-		log.Info().Str("mode", string(mode)).Str("vpn", string(vpnMode)).Msg("NetworkManager: persisted config to database")
+		log.Info().Str("mode", string(mode)).Str("vpn", string(vpnMode)).
+			Bool("static_ip", staticIP.UseStaticIP).Msg("NetworkManager: persisted config to database")
 	}
 }
 
@@ -397,26 +408,26 @@ func (m *NetworkManager) GetCurrentVPNMode() models.VPNMode {
 }
 
 // SetMode changes the network operating mode (V2: supports 5 modes)
-func (m *NetworkManager) SetMode(ctx context.Context, mode models.NetworkMode, wifiSSID, wifiPassword string) error {
+func (m *NetworkManager) SetMode(ctx context.Context, mode models.NetworkMode, wifiSSID, wifiPassword string, staticIP models.StaticIPConfig) error {
 	var err error
 
 	switch mode {
 	case models.NetworkModeOffline:
 		err = m.setOfflineMode(ctx)
 	case models.NetworkModeOnlineETH:
-		err = m.setOnlineETHMode(ctx)
+		err = m.setOnlineETHMode(ctx, staticIP)
 	case models.NetworkModeOnlineWiFi:
 		if wifiSSID == "" {
 			return fmt.Errorf("wifi SSID required for ONLINE_WIFI mode")
 		}
-		err = m.setOnlineWiFiMode(ctx, wifiSSID, wifiPassword)
+		err = m.setOnlineWiFiMode(ctx, wifiSSID, wifiPassword, staticIP)
 	case models.NetworkModeServerETH:
-		err = m.setServerETHMode(ctx)
+		err = m.setServerETHMode(ctx, staticIP)
 	case models.NetworkModeServerWiFi:
 		if wifiSSID == "" {
 			return fmt.Errorf("wifi SSID required for SERVER_WIFI mode")
 		}
-		err = m.setServerWiFiMode(ctx, wifiSSID, wifiPassword)
+		err = m.setServerWiFiMode(ctx, wifiSSID, wifiPassword, staticIP)
 	default:
 		return fmt.Errorf("unknown network mode: %s", mode)
 	}
@@ -431,8 +442,8 @@ func (m *NetworkManager) SetMode(ctx context.Context, mode models.NetworkMode, w
 		_ = m.SetVPNMode(ctx, models.VPNModeNone, nil)
 	}
 
-	// Persist to database
-	m.saveConfigToDB(mode, m.currentVPNMode, wifiSSID, wifiPassword)
+	// Persist to database (including static IP config)
+	m.saveConfigToDB(mode, m.currentVPNMode, wifiSSID, wifiPassword, staticIP)
 
 	return nil
 }
@@ -459,7 +470,7 @@ func (m *NetworkManager) SetVPNMode(ctx context.Context, mode models.VPNMode, co
 	}
 
 	m.currentVPNMode = mode
-	m.saveConfigToDB(m.currentMode, mode, "", "")
+	m.saveConfigToDB(m.currentMode, mode, "", "", models.StaticIPConfig{})
 	return nil
 }
 
@@ -514,7 +525,7 @@ func (m *NetworkManager) stopVPN(ctx context.Context) error {
 
 // generateNetplanYAML produces the netplan YAML for the given mode.
 // Must match write_netplan_for_mode() in cubeos-boot-lib.sh exactly.
-func (m *NetworkManager) generateNetplanYAML(mode models.NetworkMode, wifiSSID, wifiPassword string) string {
+func (m *NetworkManager) generateNetplanYAML(mode models.NetworkMode, wifiSSID, wifiPassword string, staticIP models.StaticIPConfig) string {
 	gatewayIP := m.cfg.GatewayIP
 	if gatewayIP == "" {
 		gatewayIP = "10.42.24.1"
@@ -541,6 +552,31 @@ network:
 `, gatewayIP, gatewayIP)
 
 	case models.NetworkModeOnlineETH:
+		if staticIP.IsConfigured() {
+			// Static IP on eth0 — user-defined upstream address
+			cidr := staticIP.NetmaskToCIDR()
+			dnsBlock := m.buildDNSBlock(staticIP, gatewayIP)
+			return fmt.Sprintf(`# CubeOS netplan — ONLINE_ETH mode (static IP)
+# Auto-generated by CubeOS API — do not edit manually.
+network:
+  version: 2
+  renderer: networkd
+  ethernets:
+    eth0:
+      addresses:
+        - %s/%d
+      routes:
+        - to: default
+          via: %s
+%s      optional: true
+    wlan0:
+      addresses:
+        - %s/24
+      link-local: []
+      optional: true
+`, staticIP.StaticIPAddress, cidr, staticIP.StaticIPGateway, dnsBlock, gatewayIP)
+		}
+		// DHCP on eth0 (default)
 		return fmt.Sprintf(`# CubeOS netplan — ONLINE_ETH mode
 # Auto-generated by CubeOS API — do not edit manually.
 network:
@@ -564,6 +600,35 @@ network:
 `, gatewayIP, gatewayIP)
 
 	case models.NetworkModeOnlineWiFi:
+		if staticIP.IsConfigured() {
+			// Static IP on wlan1 — user-defined upstream address
+			cidr := staticIP.NetmaskToCIDR()
+			dnsBlock := m.buildDNSBlock(staticIP, gatewayIP)
+			return fmt.Sprintf(`# CubeOS netplan — ONLINE_WIFI mode (static IP)
+# Auto-generated by CubeOS API — do not edit manually.
+network:
+  version: 2
+  renderer: networkd
+  ethernets: {}
+  wifis:
+    wlan0:
+      addresses:
+        - %s/24
+      link-local: []
+      optional: true
+    wlan1:
+      addresses:
+        - %s/%d
+      routes:
+        - to: default
+          via: %s
+%s      optional: true
+      access-points:
+        "%s":
+          password: "%s"
+`, gatewayIP, staticIP.StaticIPAddress, cidr, staticIP.StaticIPGateway, dnsBlock, wifiSSID, wifiPassword)
+		}
+		// DHCP on wlan1 (default)
 		return fmt.Sprintf(`# CubeOS netplan — ONLINE_WIFI mode
 # Auto-generated by CubeOS API — do not edit manually.
 network:
@@ -590,6 +655,24 @@ network:
 `, gatewayIP, gatewayIP, wifiSSID, wifiPassword)
 
 	case models.NetworkModeServerETH:
+		if staticIP.IsConfigured() {
+			cidr := staticIP.NetmaskToCIDR()
+			dnsBlock := m.buildDNSBlock(staticIP, "")
+			return fmt.Sprintf(`# CubeOS netplan — SERVER_ETH mode (static IP)
+# Auto-generated by CubeOS API — do not edit manually.
+network:
+  version: 2
+  renderer: networkd
+  ethernets:
+    eth0:
+      addresses:
+        - %s/%d
+      routes:
+        - to: default
+          via: %s
+%s      optional: true
+`, staticIP.StaticIPAddress, cidr, staticIP.StaticIPGateway, dnsBlock)
+		}
 		return `# CubeOS netplan — SERVER_ETH mode
 # Auto-generated by CubeOS API — do not edit manually.
 network:
@@ -603,6 +686,27 @@ network:
 `
 
 	case models.NetworkModeServerWiFi:
+		if staticIP.IsConfigured() {
+			cidr := staticIP.NetmaskToCIDR()
+			dnsBlock := m.buildDNSBlock(staticIP, "")
+			return fmt.Sprintf(`# CubeOS netplan — SERVER_WIFI mode (static IP)
+# Auto-generated by CubeOS API — do not edit manually.
+network:
+  version: 2
+  renderer: networkd
+  wifis:
+    wlan0:
+      addresses:
+        - %s/%d
+      routes:
+        - to: default
+          via: %s
+%s      optional: true
+      access-points:
+        "%s":
+          password: "%s"
+`, staticIP.StaticIPAddress, cidr, staticIP.StaticIPGateway, dnsBlock, wifiSSID, wifiPassword)
+		}
 		return fmt.Sprintf(`# CubeOS netplan — SERVER_WIFI mode
 # Auto-generated by CubeOS API — do not edit manually.
 network:
@@ -639,10 +743,36 @@ network:
 	}
 }
 
+// buildDNSBlock generates the nameservers: YAML block for static IP netplan templates.
+// If user provided DNS servers, those are used. Otherwise falls back to gatewayIP (Pi-hole)
+// for AP modes, or common public DNS for server modes.
+func (m *NetworkManager) buildDNSBlock(staticIP models.StaticIPConfig, gatewayIP string) string {
+	var servers []string
+	if staticIP.StaticDNSPrimary != "" {
+		servers = append(servers, staticIP.StaticDNSPrimary)
+	}
+	if staticIP.StaticDNSSecondary != "" {
+		servers = append(servers, staticIP.StaticDNSSecondary)
+	}
+	// Fallback: Pi-hole for AP modes, 1.1.1.1 for server modes
+	if len(servers) == 0 {
+		if gatewayIP != "" {
+			servers = []string{gatewayIP}
+		} else {
+			servers = []string{"1.1.1.1", "8.8.8.8"}
+		}
+	}
+	block := "      nameservers:\n        addresses:\n"
+	for _, s := range servers {
+		block += fmt.Sprintf("          - %s\n", s)
+	}
+	return block
+}
+
 // writeAndApplyNetplan writes netplan YAML via HAL and optionally reconfigures an interface.
 // This ensures reboot persistence — the next boot uses the correct netplan for the current mode.
-func (m *NetworkManager) writeAndApplyNetplan(ctx context.Context, mode models.NetworkMode, wifiSSID, wifiPassword, reconfigureIface string) {
-	yaml := m.generateNetplanYAML(mode, wifiSSID, wifiPassword)
+func (m *NetworkManager) writeAndApplyNetplan(ctx context.Context, mode models.NetworkMode, wifiSSID, wifiPassword, reconfigureIface string, staticIP models.StaticIPConfig) {
+	yaml := m.generateNetplanYAML(mode, wifiSSID, wifiPassword, staticIP)
 
 	if err := m.hal.WriteNetplan(ctx, yaml, reconfigureIface); err != nil {
 		log.Error().Err(err).Str("mode", string(mode)).
@@ -650,6 +780,7 @@ func (m *NetworkManager) writeAndApplyNetplan(ctx context.Context, mode models.N
 		return
 	}
 	log.Info().Str("mode", string(mode)).Str("reconfigure", reconfigureIface).
+		Bool("static_ip", staticIP.UseStaticIP).
 		Msg("writeAndApplyNetplan: netplan written and applied")
 }
 
@@ -677,13 +808,13 @@ func (m *NetworkManager) setOfflineMode(ctx context.Context) error {
 	m.configurePiholeDHCPForMode(ctx, models.NetworkModeOffline)
 
 	// T10: Write netplan for reboot persistence
-	m.writeAndApplyNetplan(ctx, models.NetworkModeOffline, "", "", "")
+	m.writeAndApplyNetplan(ctx, models.NetworkModeOffline, "", "", "", models.StaticIPConfig{})
 
 	return nil
 }
 
 // setOnlineETHMode configures online via Ethernet mode
-func (m *NetworkManager) setOnlineETHMode(ctx context.Context) error {
+func (m *NetworkManager) setOnlineETHMode(ctx context.Context, staticIP models.StaticIPConfig) error {
 	// Check if ethernet is up
 	iface, err := m.hal.GetInterface(ctx, m.wanInterface)
 	if err != nil {
@@ -695,15 +826,19 @@ func (m *NetworkManager) setOnlineETHMode(ctx context.Context) error {
 		}
 	}
 
-	// Request DHCP lease on eth0 — networkd may not have acquired one yet
-	// (cable plugged after boot, or networkd didn't react to carrier change).
-	// Without an IP on eth0, NAT masquerade has no source address to use.
-	if len(iface.IPv4Addresses) == 0 {
+	// Configure upstream IP: static or DHCP
+	if staticIP.IsConfigured() {
+		log.Info().Str("ip", staticIP.StaticIPAddress).Str("gw", staticIP.StaticIPGateway).
+			Msg("NetworkManager: setting static IP on ethernet")
+		if err := m.hal.SetStaticIP(ctx, m.wanInterface, staticIP.StaticIPAddress, staticIP.StaticIPGateway); err != nil {
+			return fmt.Errorf("failed to set static IP on %s: %w", m.wanInterface, err)
+		}
+		time.Sleep(2 * time.Second)
+	} else if len(iface.IPv4Addresses) == 0 {
 		log.Info().Str("iface", m.wanInterface).Msg("NetworkManager: no IP on ethernet, requesting DHCP")
 		if err := m.hal.RequestDHCP(ctx, m.wanInterface); err != nil {
 			return fmt.Errorf("failed to obtain DHCP lease on %s: %w", m.wanInterface, err)
 		}
-		// Wait for DHCP response to settle
 		time.Sleep(3 * time.Second)
 
 		// Verify we got an IP
@@ -737,13 +872,13 @@ func (m *NetworkManager) setOnlineETHMode(ctx context.Context) error {
 	m.configurePiholeDHCPForMode(ctx, models.NetworkModeOnlineETH)
 
 	// T10: Write netplan for reboot persistence
-	m.writeAndApplyNetplan(ctx, models.NetworkModeOnlineETH, "", "", "")
+	m.writeAndApplyNetplan(ctx, models.NetworkModeOnlineETH, "", "", "", staticIP)
 
 	return nil
 }
 
 // setOnlineWiFiMode configures online via WiFi client mode
-func (m *NetworkManager) setOnlineWiFiMode(ctx context.Context, ssid, password string) error {
+func (m *NetworkManager) setOnlineWiFiMode(ctx context.Context, ssid, password string, staticIP models.StaticIPConfig) error {
 	// Dynamically detect WiFi client interface (USB dongle with wlx* prefix)
 	// Falls back to configured m.wifiClientInterface (default: wlan1)
 	iface := m.wifiClientInterface
@@ -774,12 +909,22 @@ func (m *NetworkManager) setOnlineWiFiMode(ctx context.Context, ssid, password s
 	// Wait for WiFi association
 	time.Sleep(5 * time.Second)
 
-	// Request DHCP lease on the WiFi interface to get an IP address
-	if err := m.hal.RequestDHCP(ctx, iface); err != nil {
-		log.Warn().Err(err).Str("iface", iface).Msg("NetworkManager: DHCP on WiFi failed, may not have internet")
+	// Configure upstream IP: static or DHCP
+	if staticIP.IsConfigured() {
+		log.Info().Str("ip", staticIP.StaticIPAddress).Str("gw", staticIP.StaticIPGateway).
+			Msg("NetworkManager: setting static IP on WiFi client")
+		if err := m.hal.SetStaticIP(ctx, iface, staticIP.StaticIPAddress, staticIP.StaticIPGateway); err != nil {
+			log.Warn().Err(err).Str("iface", iface).Msg("NetworkManager: static IP on WiFi failed")
+		}
+		time.Sleep(2 * time.Second)
+	} else {
+		// Request DHCP lease on the WiFi interface to get an IP address
+		if err := m.hal.RequestDHCP(ctx, iface); err != nil {
+			log.Warn().Err(err).Str("iface", iface).Msg("NetworkManager: DHCP on WiFi failed, may not have internet")
+		}
+		// Allow DHCP response to settle
+		time.Sleep(2 * time.Second)
 	}
-	// Allow DHCP response to settle
-	time.Sleep(2 * time.Second)
 
 	// Ensure AP is running
 	if m.IsServerMode() {
@@ -804,14 +949,14 @@ func (m *NetworkManager) setOnlineWiFiMode(ctx context.Context, ssid, password s
 	m.configurePiholeDHCPForMode(ctx, models.NetworkModeOnlineWiFi)
 
 	// T10: Write netplan for reboot persistence (includes wlan1 WiFi creds)
-	m.writeAndApplyNetplan(ctx, models.NetworkModeOnlineWiFi, ssid, password, iface)
+	m.writeAndApplyNetplan(ctx, models.NetworkModeOnlineWiFi, ssid, password, iface, staticIP)
 
 	return nil
 }
 
 // setServerETHMode configures server mode via Ethernet (V2)
 // No AP, just connects to existing network
-func (m *NetworkManager) setServerETHMode(ctx context.Context) error {
+func (m *NetworkManager) setServerETHMode(ctx context.Context, staticIP models.StaticIPConfig) error {
 	log.Info().Msg("NetworkManager: switching to SERVER_ETH mode")
 
 	// Stop the access point
@@ -828,12 +973,21 @@ func (m *NetworkManager) setServerETHMode(ctx context.Context) error {
 		return fmt.Errorf("failed to bring up ethernet: %w", err)
 	}
 
-	// Request DHCP
-	if err := m.hal.RequestDHCP(ctx, m.wanInterface); err != nil {
-		log.Warn().Err(err).Str("fallbackIP", m.fallbackIP).Str("fallbackGateway", m.fallbackGateway).Msg("NetworkManager: DHCP request failed, using fallback")
-		// Fall back to static IP with proper gateway
-		if err := m.hal.SetStaticIP(ctx, m.wanInterface, m.fallbackIP, m.fallbackGateway); err != nil {
-			return fmt.Errorf("failed to set fallback IP: %w", err)
+	// Configure upstream IP: static, DHCP, or fallback
+	if staticIP.IsConfigured() {
+		log.Info().Str("ip", staticIP.StaticIPAddress).Str("gw", staticIP.StaticIPGateway).
+			Msg("NetworkManager: setting static IP on ethernet (server mode)")
+		if err := m.hal.SetStaticIP(ctx, m.wanInterface, staticIP.StaticIPAddress, staticIP.StaticIPGateway); err != nil {
+			return fmt.Errorf("failed to set static IP: %w", err)
+		}
+	} else {
+		// Request DHCP
+		if err := m.hal.RequestDHCP(ctx, m.wanInterface); err != nil {
+			log.Warn().Err(err).Str("fallbackIP", m.fallbackIP).Str("fallbackGateway", m.fallbackGateway).Msg("NetworkManager: DHCP request failed, using fallback")
+			// Fall back to static IP with proper gateway
+			if err := m.hal.SetStaticIP(ctx, m.wanInterface, m.fallbackIP, m.fallbackGateway); err != nil {
+				return fmt.Errorf("failed to set fallback IP: %w", err)
+			}
 		}
 	}
 
@@ -846,14 +1000,14 @@ func (m *NetworkManager) setServerETHMode(ctx context.Context) error {
 	m.configurePiholeDHCPForMode(ctx, models.NetworkModeServerETH)
 
 	// T10: Write netplan for reboot persistence
-	m.writeAndApplyNetplan(ctx, models.NetworkModeServerETH, "", "", m.wanInterface)
+	m.writeAndApplyNetplan(ctx, models.NetworkModeServerETH, "", "", m.wanInterface, staticIP)
 
 	return nil
 }
 
 // setServerWiFiMode configures server mode via WiFi (V2)
 // No AP, connects wlan0 to existing WiFi network
-func (m *NetworkManager) setServerWiFiMode(ctx context.Context, ssid, password string) error {
+func (m *NetworkManager) setServerWiFiMode(ctx context.Context, ssid, password string, staticIP models.StaticIPConfig) error {
 	log.Info().Str("ssid", ssid).Msg("NetworkManager: switching to SERVER_WIFI mode")
 
 	// Stop the access point (this frees wlan0 for client use)
@@ -876,12 +1030,21 @@ func (m *NetworkManager) setServerWiFiMode(ctx context.Context, ssid, password s
 	// Wait for connection
 	time.Sleep(5 * time.Second)
 
-	// Verify we got an IP
-	iface, err := m.hal.GetInterface(ctx, m.apInterface)
-	if err != nil || len(iface.IPv4Addresses) == 0 {
-		log.Warn().Str("fallbackIP", m.fallbackIP).Str("fallbackGateway", m.fallbackGateway).Msg("NetworkManager: no IP assigned, using fallback")
-		if err := m.hal.SetStaticIP(ctx, m.apInterface, m.fallbackIP, m.fallbackGateway); err != nil {
-			return fmt.Errorf("failed to set fallback IP: %w", err)
+	// Configure upstream IP: static or DHCP
+	if staticIP.IsConfigured() {
+		log.Info().Str("ip", staticIP.StaticIPAddress).Str("gw", staticIP.StaticIPGateway).
+			Msg("NetworkManager: setting static IP on wlan0 (server WiFi mode)")
+		if err := m.hal.SetStaticIP(ctx, m.apInterface, staticIP.StaticIPAddress, staticIP.StaticIPGateway); err != nil {
+			log.Warn().Err(err).Msg("NetworkManager: static IP on wlan0 failed")
+		}
+	} else {
+		// Verify we got an IP via DHCP
+		iface, err := m.hal.GetInterface(ctx, m.apInterface)
+		if err != nil || len(iface.IPv4Addresses) == 0 {
+			log.Warn().Str("fallbackIP", m.fallbackIP).Str("fallbackGateway", m.fallbackGateway).Msg("NetworkManager: no IP assigned, using fallback")
+			if err := m.hal.SetStaticIP(ctx, m.apInterface, m.fallbackIP, m.fallbackGateway); err != nil {
+				return fmt.Errorf("failed to set fallback IP: %w", err)
+			}
 		}
 	}
 
@@ -891,7 +1054,7 @@ func (m *NetworkManager) setServerWiFiMode(ctx context.Context, ssid, password s
 	m.configurePiholeDHCPForMode(ctx, models.NetworkModeServerWiFi)
 
 	// T10: Write netplan for reboot persistence (includes wlan0 WiFi creds)
-	m.writeAndApplyNetplan(ctx, models.NetworkModeServerWiFi, ssid, password, m.apInterface)
+	m.writeAndApplyNetplan(ctx, models.NetworkModeServerWiFi, ssid, password, m.apInterface, staticIP)
 
 	return nil
 }

@@ -9,7 +9,7 @@ import (
 )
 
 // CurrentSchemaVersion tracks the database schema version for migrations.
-const CurrentSchemaVersion = 13
+const CurrentSchemaVersion = 14
 
 // Schema defines the unified CubeOS database schema.
 // Design Principles:
@@ -207,6 +207,19 @@ CREATE TABLE IF NOT EXISTS network_config (
     
     -- UX state
     server_mode_warning_dismissed BOOLEAN DEFAULT FALSE,
+    
+    -- Static IP override for upstream interface (T11 — Network Modes Batch 3)
+    -- When use_static_ip = TRUE, the upstream interface uses static config instead of DHCP.
+    -- Which interface these apply to depends on the current mode:
+    --   ONLINE_ETH  → eth0,   ONLINE_WIFI  → wlan1,
+    --   SERVER_ETH  → eth0,   SERVER_WIFI  → wlan0,
+    --   OFFLINE     → N/A (no upstream)
+    use_static_ip       BOOLEAN DEFAULT FALSE,
+    static_ip_address   TEXT DEFAULT '',            -- e.g. '192.168.1.100'
+    static_ip_netmask   TEXT DEFAULT '255.255.255.0',
+    static_ip_gateway   TEXT DEFAULT '',            -- e.g. '192.168.1.1'
+    static_dns_primary  TEXT DEFAULT '',            -- e.g. '1.1.1.1'
+    static_dns_secondary TEXT DEFAULT '',           -- e.g. '8.8.8.8'
     
     updated_at      DATETIME DEFAULT CURRENT_TIMESTAMP
 );

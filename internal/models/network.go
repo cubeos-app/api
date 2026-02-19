@@ -171,6 +171,9 @@ type NetworkConfig struct {
 	// UX state
 	ServerModeWarningDismissed bool `db:"server_mode_warning_dismissed" json:"server_mode_warning_dismissed"`
 
+	// Static IP override (T11 — Network Modes Batch 3)
+	StaticIPConfig
+
 	UpdatedAt time.Time `db:"updated_at" json:"updated_at"`
 }
 
@@ -184,6 +187,51 @@ const (
 	DefaultAPChannel      = 7
 	DefaultFallbackIP     = "192.168.1.242"
 )
+
+// ============================================================================
+// STATIC IP CONFIGURATION (T11/T12 — Network Modes Batch 3)
+// ============================================================================
+
+// StaticIPConfig holds static IP override parameters for an upstream interface.
+// When UseStaticIP is true, the upstream interface (eth0, wlan1, or wlan0 depending
+// on mode) uses these values instead of DHCP.
+type StaticIPConfig struct {
+	UseStaticIP        bool   `json:"use_static_ip" db:"use_static_ip"`
+	StaticIPAddress    string `json:"static_ip,omitempty" db:"static_ip_address"`
+	StaticIPNetmask    string `json:"static_netmask,omitempty" db:"static_ip_netmask"`
+	StaticIPGateway    string `json:"static_gateway,omitempty" db:"static_ip_gateway"`
+	StaticDNSPrimary   string `json:"static_dns_primary,omitempty" db:"static_dns_primary"`
+	StaticDNSSecondary string `json:"static_dns_secondary,omitempty" db:"static_dns_secondary"`
+}
+
+// IsConfigured returns true if static IP has the minimum required fields
+func (s *StaticIPConfig) IsConfigured() bool {
+	return s.UseStaticIP && s.StaticIPAddress != "" && s.StaticIPGateway != ""
+}
+
+// NetmaskToCIDR converts a dotted-decimal netmask to CIDR prefix length
+func (s *StaticIPConfig) NetmaskToCIDR() int {
+	switch s.StaticIPNetmask {
+	case "255.255.255.0":
+		return 24
+	case "255.255.255.128":
+		return 25
+	case "255.255.254.0":
+		return 23
+	case "255.255.252.0":
+		return 22
+	case "255.255.248.0":
+		return 21
+	case "255.255.240.0":
+		return 20
+	case "255.255.0.0":
+		return 16
+	case "255.0.0.0":
+		return 8
+	default:
+		return 24 // safe default
+	}
+}
 
 // ============================================================================
 // NETWORK STATUS (Runtime state)
@@ -315,6 +363,30 @@ type SetNetworkModeRequest struct {
 	SSID               string      `json:"ssid,omitempty"`                // For wifi modes
 	Password           string      `json:"password,omitempty"`            // For wifi modes
 	AcknowledgeWarning bool        `json:"acknowledge_warning,omitempty"` // For server modes
+
+	// Static IP override (T12 — Network Modes Batch 3)
+	UseStaticIP        bool   `json:"use_static_ip,omitempty"`
+	StaticIP           string `json:"static_ip,omitempty"`
+	StaticNetmask      string `json:"static_netmask,omitempty"`
+	StaticGateway      string `json:"static_gateway,omitempty"`
+	StaticDNSPrimary   string `json:"static_dns_primary,omitempty"`
+	StaticDNSSecondary string `json:"static_dns_secondary,omitempty"`
+}
+
+// ToStaticIPConfig converts the request's static IP fields to a StaticIPConfig
+func (r *SetNetworkModeRequest) ToStaticIPConfig() StaticIPConfig {
+	netmask := r.StaticNetmask
+	if netmask == "" {
+		netmask = "255.255.255.0"
+	}
+	return StaticIPConfig{
+		UseStaticIP:        r.UseStaticIP,
+		StaticIPAddress:    r.StaticIP,
+		StaticIPNetmask:    netmask,
+		StaticIPGateway:    r.StaticGateway,
+		StaticDNSPrimary:   r.StaticDNSPrimary,
+		StaticDNSSecondary: r.StaticDNSSecondary,
+	}
 }
 
 // SetVPNModeRequest for changing VPN overlay
