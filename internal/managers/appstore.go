@@ -1216,7 +1216,11 @@ services:
 	if appFQDN != "" && appID > 0 {
 		fqdnSubdomain := strings.TrimSuffix(appFQDN, "."+m.baseDomain)
 		_, fqdnErr := m.db.db.Exec(`INSERT INTO fqdns (app_id, fqdn, subdomain, backend_port, npm_proxy_id)
-			VALUES (?, ?, ?, ?, ?) ON CONFLICT DO NOTHING`,
+			VALUES (?, ?, ?, ?, ?)
+			ON CONFLICT(fqdn) DO UPDATE SET
+				app_id = excluded.app_id,
+				backend_port = excluded.backend_port,
+				npm_proxy_id = excluded.npm_proxy_id`,
 			appID, appFQDN, fqdnSubdomain, allocatedPort, npmProxyID)
 		if fqdnErr != nil {
 			log.Error().Err(fqdnErr).Str("fqdn", appFQDN).Msg("failed to insert FQDN record for registry app")
