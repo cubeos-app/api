@@ -1122,13 +1122,10 @@ services:
 	subdomain := prettifySubdomain(appName, "registry")
 	appFQDN := fmt.Sprintf("%s.%s", subdomain, m.baseDomain)
 
-	// Check for FQDN collision
-	if m.pihole != nil {
-		if existing, _ := m.pihole.GetEntry(appFQDN); existing != nil {
-			log.Warn().Str("fqdn", appFQDN).Msg("FQDN collision, using full app name")
-			appFQDN = fmt.Sprintf("%s.%s", appName, m.baseDomain)
-		}
-	}
+	// For registry installs, if a DNS entry already exists for this FQDN
+	// (e.g. leftover from a previous deploy), just overwrite it.
+	// Unlike CasaOS installs where names might collide across stores,
+	// registry app names are user-chosen and intentional.
 
 	// Create NPM proxy host for FQDN access (non-fatal)
 	var npmProxyID int
@@ -1146,19 +1143,29 @@ services:
 		}
 	}
 
-	// Create Pi-hole DNS entry (non-fatal)
+	// Create/update Pi-hole DNS entry (non-fatal)
+	// Remove any stale entry first, then add fresh — handles leftover DNS from previous deploys
 	if m.pihole != nil {
+		m.pihole.RemoveEntry(appFQDN) // best-effort cleanup of stale entry
 		if err := m.pihole.AddEntry(appFQDN, m.gatewayIP); err != nil {
 			log.Warn().Err(err).Str("fqdn", appFQDN).Msg("failed to add DNS entry for registry app")
 		}
 	}
 
-	// Prettify title from image name
+	// Prettify title from image name: "kiwix-serve" → "Kiwix Serve"
 	title := appName
-	// Strip common registry prefixes for display
 	if parts := strings.Split(image, "/"); len(parts) > 1 {
 		title = parts[len(parts)-1]
 	}
+	title = strings.ReplaceAll(title, "-", " ")
+	title = strings.ReplaceAll(title, "_", " ")
+	words := strings.Fields(title)
+	for i, w := range words {
+		if len(w) > 0 {
+			words[i] = strings.ToUpper(w[:1]) + w[1:]
+		}
+	}
+	title = strings.Join(words, " ")
 
 	webUI := fmt.Sprintf("http://%s", appFQDN)
 
