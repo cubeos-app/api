@@ -2,7 +2,6 @@
 package handlers
 
 import (
-	"context"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -25,13 +24,14 @@ type RegistryHandler struct {
 	registryURL  string
 	registryPath string
 	httpClient   *http.Client
-	portManager  *managers.PortManager // B108: triple-source port allocation
+	portManager  *managers.PortManager     // B108: triple-source port allocation
+	appStoreMgr  *managers.AppStoreManager // B108b: full app pipeline for deploys
 }
 
 // NewRegistryHandler creates a new RegistryHandler instance.
 // For Swarm containers, use the gateway IP (not localhost:5000)
 // because containers in overlay network cannot reach localhost on the host.
-func NewRegistryHandler(registryURL, registryPath string, portMgr *managers.PortManager) *RegistryHandler {
+func NewRegistryHandler(registryURL, registryPath string, portMgr *managers.PortManager, appStoreMgr *managers.AppStoreManager) *RegistryHandler {
 	if registryURL == "" {
 		// Check env var first, then fall back to gateway IP (works from inside Swarm overlay)
 		registryURL = os.Getenv("REGISTRY_URL")
@@ -46,6 +46,7 @@ func NewRegistryHandler(registryURL, registryPath string, portMgr *managers.Port
 		registryURL:  registryURL,
 		registryPath: registryPath,
 		portManager:  portMgr,
+		appStoreMgr:  appStoreMgr,
 		httpClient: &http.Client{
 			Timeout: 10 * time.Second, // Reduced timeout for faster failure detection
 		},
@@ -617,13 +618,13 @@ type DeployImageRequest struct {
 
 // DeployImage godoc
 // @Summary Deploy a cached registry image
-// @Description Creates a Docker Swarm service from an image in the local registry. Generates a minimal docker-compose.yml, allocates a port, and deploys via docker stack deploy.
+// @Description Deploys an image from the local registry through the full app pipeline. Creates DB record, allocates port, sets up FQDN/DNS/NPM proxy, and deploys via Docker Swarm. The app appears in "My Apps" and can be managed/uninstalled normally.
 // @Tags Registry
 // @Accept json
 // @Produce json
 // @Security BearerAuth
 // @Param request body DeployImageRequest true "Image to deploy"
-// @Success 200 {object} map[string]interface{} "success, app_name, image, port, fqdn"
+// @Success 200 {object} map[string]interface{} "success, app_name, image, port, fqdn, web_ui"
 // @Failure 400 {object} ErrorResponse "Missing image or invalid app name"
 // @Failure 404 {object} ErrorResponse "Image not found in registry"
 // @Failure 500 {object} ErrorResponse "Failed to deploy"
@@ -678,132 +679,22 @@ func (h *RegistryHandler) DeployImage(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// B108: Use PortManager for triple-source port allocation (DB + Swarm + HAL)
-	// instead of scanning docker ps which misses Swarm ingress ports.
-	var port int
-	var portErr error
-	if h.portManager != nil {
-		port, portErr = h.portManager.AllocateUserPortWithContext(r.Context())
-	} else {
-		port, portErr = h.findAvailablePort(r.Context())
-	}
-	if portErr != nil {
-		registryWriteError(w, http.StatusInternalServerError, "Failed to allocate port: "+portErr.Error())
-		return
-	}
-
-	// Build local registry image reference
-	registryHost := strings.TrimPrefix(h.registryURL, "http://")
-	registryHost = strings.TrimPrefix(registryHost, "https://")
-	fullImage := fmt.Sprintf("%s/%s:%s", registryHost, req.Image, req.Tag)
-
-	// Generate docker-compose.yml
-	compose := fmt.Sprintf(`version: "3.8"
-services:
-  %s:
-    image: %s
-    ports:
-      - "%d:%d"
-    deploy:
-      replicas: 1
-      restart_policy:
-        condition: on-failure
-        delay: 5s
-        max_attempts: 3
-    volumes:
-      - data:/data
-volumes:
-  data:
-`, appName, fullImage, port, port)
-
-	// Create directories
-	appBase := filepath.Join("/cubeos/apps", appName)
-	appConfig := filepath.Join(appBase, "appconfig")
-	appData := filepath.Join(appBase, "appdata")
-	if err := os.MkdirAll(appConfig, 0755); err != nil {
-		registryWriteError(w, http.StatusInternalServerError, "Failed to create app directory: "+err.Error())
-		return
-	}
-	if err := os.MkdirAll(appData, 0777); err != nil {
-		registryWriteError(w, http.StatusInternalServerError, "Failed to create data directory: "+err.Error())
-		return
-	}
-
-	// Write compose file
-	composePath := filepath.Join(appConfig, "docker-compose.yml")
-	if err := os.WriteFile(composePath, []byte(compose), 0644); err != nil {
-		os.RemoveAll(appBase)
-		registryWriteError(w, http.StatusInternalServerError, "Failed to write compose file: "+err.Error())
-		return
-	}
-
-	// Deploy via docker stack deploy
-	ctx, cancel := context.WithTimeout(r.Context(), 2*time.Minute)
-	defer cancel()
-
-	cmd := exec.CommandContext(ctx, "docker", "stack", "deploy",
-		"-c", composePath,
-		"--resolve-image=never",
-		appName,
-	)
-	output, err := cmd.CombinedOutput()
+	// B108b: Delegate to AppStoreManager for the full install pipeline
+	// (DB record, port allocation, FQDN, DNS, NPM proxy, Swarm deploy)
+	installed, err := h.appStoreMgr.InstallFromRegistry(req.Image, req.Tag, appName)
 	if err != nil {
-		os.RemoveAll(appBase)
-		registryWriteError(w, http.StatusInternalServerError,
-			fmt.Sprintf("Stack deploy failed: %s", strings.TrimSpace(string(output))))
+		registryWriteError(w, http.StatusInternalServerError, err.Error())
 		return
 	}
-
-	fqdn := appName + ".cubeos.cube"
 
 	registryWriteJSON(w, http.StatusOK, map[string]interface{}{
-		"success":      true,
-		"app_name":     appName,
-		"image":        fullImage,
-		"port":         port,
-		"fqdn":         fqdn,
-		"compose_path": composePath,
-		"message":      fmt.Sprintf("Deployed %s on port %d", appName, port),
+		"success":  true,
+		"app_name": installed.Name,
+		"image":    req.Image + ":" + req.Tag,
+		"fqdn":     strings.TrimPrefix(installed.WebUI, "http://"),
+		"web_ui":   installed.WebUI,
+		"message":  fmt.Sprintf("Deployed %s — accessible at %s", installed.Name, installed.WebUI),
 	})
-}
-
-// findAvailablePort scans for the next available port in the 6100-6999 range
-// by checking existing Docker service port bindings.
-func (h *RegistryHandler) findAvailablePort(ctx context.Context) (int, error) {
-	// Get list of used ports from Docker
-	cmd := exec.CommandContext(ctx, "docker", "ps", "--format", "{{.Ports}}")
-	output, err := cmd.Output()
-	if err != nil {
-		// If docker ps fails, start from 6100
-		return 6100, nil
-	}
-
-	usedPorts := make(map[int]bool)
-	for _, line := range strings.Split(string(output), "\n") {
-		// Parse port mappings like "0.0.0.0:6100->8080/tcp"
-		for _, part := range strings.Split(line, ",") {
-			part = strings.TrimSpace(part)
-			if idx := strings.Index(part, "->"); idx > 0 {
-				hostPart := part[:idx]
-				if colonIdx := strings.LastIndex(hostPart, ":"); colonIdx >= 0 {
-					portStr := hostPart[colonIdx+1:]
-					var p int
-					if _, err := fmt.Sscanf(portStr, "%d", &p); err == nil {
-						usedPorts[p] = true
-					}
-				}
-			}
-		}
-	}
-
-	// Find first available port in 6100-6999
-	for port := 6100; port <= 6999; port++ {
-		if !usedPorts[port] {
-			return port, nil
-		}
-	}
-
-	return 0, fmt.Errorf("no available ports in range 6100-6999")
 }
 
 // Helper methods

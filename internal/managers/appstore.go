@@ -194,7 +194,7 @@ func (m *AppStoreManager) loadInstalledApps() {
 		COALESCE(webui_type, 'browser') as webui_type,
 		COALESCE(compose_path, '') as compose_file, COALESCE(data_path, '') as data_path,
 		created_at, updated_at
-		FROM apps WHERE source = 'casaos'`)
+		FROM apps WHERE source IN ('casaos', 'registry')`)
 	if err != nil {
 		return
 	}
@@ -1030,6 +1030,263 @@ func (m *AppStoreManager) InstallApp(req *models.AppInstallRequest) (*models.Ins
 	m.mu.Unlock()
 
 	return installed, nil
+}
+
+// InstallFromRegistry installs a registry image through the full app pipeline.
+// Creates DB record, allocates port, sets up FQDN/DNS/NPM proxy, and deploys
+// as a Swarm stack. This ensures registry-deployed apps have identical post-deploy
+// state to App Store installs (appear in My Apps, uninstallable, etc.).
+// B108b: replaces the shortcut deploy in registry handler.
+func (m *AppStoreManager) InstallFromRegistry(image, tag, appName string) (*models.InstalledApp, error) {
+	// Validate app name
+	if !ValidateAppName(appName) {
+		return nil, fmt.Errorf("invalid app name: %s (must be lowercase alphanumeric with hyphens)", appName)
+	}
+
+	// Check if already installed
+	if existing := m.GetInstalledApp(appName); existing != nil {
+		return nil, fmt.Errorf("app already installed: %s", appName)
+	}
+
+	// Create app directories
+	appBase := filepath.Join(m.appsPath, appName)
+	appConfig := filepath.Join(appBase, "appconfig")
+	appData := filepath.Join(appBase, "appdata")
+	os.MkdirAll(appConfig, 0755)
+	os.MkdirAll(appData, 0777)
+	os.Chmod(appData, 0777) // Explicit chmod to override umask
+
+	// Allocate port in the user app range (6100-6999) via triple-source validation
+	allocatedPort, err := m.ports.AllocateUserPort()
+	if err != nil {
+		os.RemoveAll(appBase)
+		return nil, fmt.Errorf("failed to allocate port: %w", err)
+	}
+
+	// Detect container port from image EXPOSE directives via registry manifest.
+	// Falls back to matching allocated port as both host and container port.
+	containerPort := allocatedPort
+	if detected := m.detectContainerPort(image, tag); detected > 0 {
+		containerPort = detected
+		log.Info().Str("image", image).Int("port", detected).Msg("detected container EXPOSE port from registry manifest")
+	}
+
+	// Build local registry image reference (localhost:5000/image:tag)
+	fullImage := fmt.Sprintf("localhost:5000/%s:%s", image, tag)
+
+	// Generate minimal docker-compose.yml for the registry image
+	compose := fmt.Sprintf(`version: "3.8"
+services:
+  %s:
+    image: %s
+    ports:
+      - target: %d
+        published: %d
+        mode: ingress
+    deploy:
+      replicas: 1
+      restart_policy:
+        condition: on-failure
+        delay: 5s
+        max_attempts: 3
+    volumes:
+      - %s:/data
+`, appName, fullImage, containerPort, allocatedPort, appData)
+
+	// Write compose file
+	composePath := filepath.Join(appConfig, "docker-compose.yml")
+	if err := os.WriteFile(composePath, []byte(compose), 0644); err != nil {
+		os.RemoveAll(appBase)
+		return nil, fmt.Errorf("failed to write compose file: %w", err)
+	}
+
+	// Pre-create bind mount directories (Swarm doesn't auto-create them)
+	preCreateBindMounts(compose)
+
+	// Deploy as Swarm stack
+	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Minute)
+	defer cancel()
+
+	deployCmd := exec.CommandContext(ctx, "docker", "stack", "deploy",
+		"-c", composePath,
+		"--resolve-image=never",
+		appName,
+	)
+	deployCmd.Dir = appConfig
+	if output, err := deployCmd.CombinedOutput(); err != nil {
+		os.RemoveAll(appBase)
+		return nil, fmt.Errorf("stack deploy failed: %s", string(output))
+	}
+
+	// Build FQDN using prettified subdomain
+	subdomain := prettifySubdomain(appName, "registry")
+	appFQDN := fmt.Sprintf("%s.%s", subdomain, m.baseDomain)
+
+	// Check for FQDN collision
+	if m.pihole != nil {
+		if existing, _ := m.pihole.GetEntry(appFQDN); existing != nil {
+			log.Warn().Str("fqdn", appFQDN).Msg("FQDN collision, using full app name")
+			appFQDN = fmt.Sprintf("%s.%s", appName, m.baseDomain)
+		}
+	}
+
+	// Create NPM proxy host for FQDN access (non-fatal)
+	var npmProxyID int
+	if m.npm != nil && m.npm.IsAuthenticated() {
+		host := &NPMProxyHostExtended{
+			DomainNames:   []string{appFQDN},
+			ForwardHost:   m.gatewayIP,
+			ForwardPort:   allocatedPort,
+			ForwardScheme: "http",
+		}
+		if created, err := m.npm.CreateProxyHost(host); err != nil {
+			log.Warn().Err(err).Str("fqdn", appFQDN).Msg("failed to create NPM proxy for registry app")
+		} else {
+			npmProxyID = created.ID
+		}
+	}
+
+	// Create Pi-hole DNS entry (non-fatal)
+	if m.pihole != nil {
+		if err := m.pihole.AddEntry(appFQDN, m.gatewayIP); err != nil {
+			log.Warn().Err(err).Str("fqdn", appFQDN).Msg("failed to add DNS entry for registry app")
+		}
+	}
+
+	// Prettify title from image name
+	title := appName
+	// Strip common registry prefixes for display
+	if parts := strings.Split(image, "/"); len(parts) > 1 {
+		title = parts[len(parts)-1]
+	}
+
+	webUI := fmt.Sprintf("http://%s", appFQDN)
+
+	// Create installed app record
+	installed := &models.InstalledApp{
+		ID:          appName,
+		Name:        appName,
+		Title:       title,
+		Description: fmt.Sprintf("Installed from local registry (%s:%s)", image, tag),
+		Category:    "utility",
+		Version:     tag,
+		Status:      "running",
+		WebUI:       webUI,
+		ComposeFile: composePath,
+		DataPath:    appData,
+		InstalledAt: time.Now(),
+		UpdatedAt:   time.Now(),
+	}
+
+	// Save to database (source='registry', deploy_mode='stack')
+	_, err = m.db.db.Exec(`INSERT INTO apps 
+		(name, display_name, description, type, category, source,
+		 store_id, store_app_id, compose_path, data_path,
+		 enabled, deploy_mode, icon_url, version, homepage,
+		 created_at, updated_at)
+		VALUES (?, ?, ?, 'user', ?, 'registry', '', '', ?, ?, TRUE, 'stack', '', ?, ?, ?, ?)`,
+		installed.Name, installed.Title, installed.Description,
+		installed.Category, installed.ComposeFile, installed.DataPath,
+		installed.Version, installed.WebUI,
+		installed.InstalledAt.Format(time.RFC3339), installed.UpdatedAt.Format(time.RFC3339))
+	if err != nil {
+		return nil, fmt.Errorf("failed to save app record: %w", err)
+	}
+
+	// Get the app_id for foreign key references
+	var appID int64
+	if err := m.db.db.QueryRow("SELECT id FROM apps WHERE name = ?", installed.Name).Scan(&appID); err != nil {
+		log.Error().Err(err).Str("app", installed.Name).Msg("failed to find app_id after insert")
+	} else {
+		// Record port allocation (ON DELETE CASCADE cleans up on uninstall)
+		if portErr := m.ports.AllocatePort(appID, allocatedPort, "tcp", "Web UI", true); portErr != nil {
+			log.Error().Err(portErr).Int("port", allocatedPort).Int64("app_id", appID).
+				Msg("failed to record port allocation for registry app")
+		}
+	}
+
+	// Store FQDN record (for DNS/NPM cleanup during uninstall)
+	if appFQDN != "" && appID > 0 {
+		fqdnSubdomain := strings.TrimSuffix(appFQDN, "."+m.baseDomain)
+		_, fqdnErr := m.db.db.Exec(`INSERT INTO fqdns (app_id, fqdn, subdomain, backend_port, npm_proxy_id)
+			VALUES (?, ?, ?, ?, ?) ON CONFLICT DO NOTHING`,
+			appID, appFQDN, fqdnSubdomain, allocatedPort, npmProxyID)
+		if fqdnErr != nil {
+			log.Error().Err(fqdnErr).Str("fqdn", appFQDN).Msg("failed to insert FQDN record for registry app")
+		}
+	}
+
+	// Update in-memory state
+	m.mu.Lock()
+	m.installed[installed.ID] = installed
+	m.mu.Unlock()
+
+	log.Info().Str("app", appName).Str("image", fullImage).Int("port", allocatedPort).
+		Str("fqdn", appFQDN).Msg("registry app installed via full pipeline")
+
+	return installed, nil
+}
+
+// detectContainerPort queries the local registry manifest for EXPOSE ports.
+// Returns the first exposed port, or 0 if detection fails.
+func (m *AppStoreManager) detectContainerPort(image, tag string) int {
+	// Fetch the image manifest to get the config digest
+	manifestURL := fmt.Sprintf("%s/v2/%s/manifests/%s", m.registryURL, image, tag)
+	req, err := http.NewRequest("GET", manifestURL, nil)
+	if err != nil {
+		return 0
+	}
+	req.Header.Set("Accept", "application/vnd.docker.distribution.manifest.v2+json")
+
+	resp, err := m.registryClient.Do(req)
+	if err != nil || resp.StatusCode != http.StatusOK {
+		return 0
+	}
+	defer resp.Body.Close()
+
+	var manifest struct {
+		Config struct {
+			Digest string `json:"digest"`
+		} `json:"config"`
+	}
+	if err := json.NewDecoder(resp.Body).Decode(&manifest); err != nil || manifest.Config.Digest == "" {
+		return 0
+	}
+
+	// Fetch the image config blob to find ExposedPorts
+	blobURL := fmt.Sprintf("%s/v2/%s/blobs/%s", m.registryURL, image, manifest.Config.Digest)
+	blobResp, err := m.registryClient.Get(blobURL)
+	if err != nil || blobResp.StatusCode != http.StatusOK {
+		return 0
+	}
+	defer blobResp.Body.Close()
+
+	var config struct {
+		Config struct {
+			ExposedPorts map[string]struct{} `json:"ExposedPorts"`
+		} `json:"config"`
+	}
+	if err := json.NewDecoder(blobResp.Body).Decode(&config); err != nil {
+		return 0
+	}
+
+	// Extract first port number from ExposedPorts (format: "8080/tcp" or "8080")
+	// Sort keys for deterministic selection
+	var portKeys []string
+	for k := range config.Config.ExposedPorts {
+		portKeys = append(portKeys, k)
+	}
+	sort.Strings(portKeys)
+
+	for _, portSpec := range portKeys {
+		portStr := strings.Split(portSpec, "/")[0]
+		var port int
+		if _, err := fmt.Sscanf(portStr, "%d", &port); err == nil && port > 0 {
+			return port
+		}
+	}
+
+	return 0
 }
 
 func (m *AppStoreManager) processManifest(manifest, appID, dataDir string, req *models.AppInstallRequest) string {
@@ -2338,8 +2595,8 @@ func (m *AppStoreManager) RemoveApp(appID string, deleteData bool) error {
 		}
 	}
 
-	// Remove from database (unified apps table)
-	m.db.db.Exec(`DELETE FROM apps WHERE name = ? AND source = 'casaos'`, appID)
+	// Remove from database (unified apps table — works for any source: casaos, registry, etc.)
+	m.db.db.Exec(`DELETE FROM apps WHERE name = ?`, appID)
 
 	// Update catalog
 	m.mu.Lock()
