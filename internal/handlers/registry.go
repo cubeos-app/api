@@ -2,6 +2,7 @@
 package handlers
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -62,6 +63,7 @@ func (h *RegistryHandler) Routes() chi.Router {
 	r.Delete("/images/{name}", h.DeleteImage)
 	r.Post("/cleanup", h.CleanupRegistry)
 	r.Get("/disk-usage", h.GetDiskUsage)
+	r.Post("/deploy", h.DeployImage)
 
 	return r
 }
@@ -601,6 +603,197 @@ func (h *RegistryHandler) GetDiskUsage(w http.ResponseWriter, r *http.Request) {
 	}
 
 	registryWriteJSON(w, http.StatusOK, result)
+}
+
+// DeployImageRequest is the request body for deploying a cached registry image.
+type DeployImageRequest struct {
+	Image   string `json:"image"`    // Image name in registry (e.g., "kiwix-serve")
+	Tag     string `json:"tag"`      // Image tag (default: "latest")
+	AppName string `json:"app_name"` // App/stack name (default: derived from image)
+}
+
+// DeployImage godoc
+// @Summary Deploy a cached registry image
+// @Description Creates a Docker Swarm service from an image in the local registry. Generates a minimal docker-compose.yml, allocates a port, and deploys via docker stack deploy.
+// @Tags Registry
+// @Accept json
+// @Produce json
+// @Security BearerAuth
+// @Param request body DeployImageRequest true "Image to deploy"
+// @Success 200 {object} map[string]interface{} "success, app_name, image, port, fqdn"
+// @Failure 400 {object} ErrorResponse "Missing image or invalid app name"
+// @Failure 404 {object} ErrorResponse "Image not found in registry"
+// @Failure 500 {object} ErrorResponse "Failed to deploy"
+// @Router /registry/deploy [post]
+func (h *RegistryHandler) DeployImage(w http.ResponseWriter, r *http.Request) {
+	var req DeployImageRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil || req.Image == "" {
+		registryWriteError(w, http.StatusBadRequest, "Image name is required")
+		return
+	}
+
+	if req.Tag == "" {
+		req.Tag = "latest"
+	}
+
+	// Derive app name from image if not provided
+	appName := req.AppName
+	if appName == "" {
+		// Take last path segment: "library/nginx" → "nginx"
+		parts := strings.Split(req.Image, "/")
+		appName = parts[len(parts)-1]
+	}
+	// Sanitize: lowercase, alphanumeric + hyphens only
+	appName = strings.ToLower(appName)
+	appName = strings.Map(func(r rune) rune {
+		if (r >= 'a' && r <= 'z') || (r >= '0' && r <= '9') || r == '-' {
+			return r
+		}
+		return '-'
+	}, appName)
+	appName = strings.Trim(appName, "-")
+	if appName == "" {
+		registryWriteError(w, http.StatusBadRequest, "Could not derive a valid app name from image")
+		return
+	}
+
+	// Verify image exists in registry
+	tags, err := h.getImageTags(req.Image)
+	if err != nil || len(tags) == 0 {
+		registryWriteError(w, http.StatusNotFound, fmt.Sprintf("Image %s not found in registry", req.Image))
+		return
+	}
+	tagFound := false
+	for _, t := range tags {
+		if t == req.Tag {
+			tagFound = true
+			break
+		}
+	}
+	if !tagFound {
+		registryWriteError(w, http.StatusNotFound, fmt.Sprintf("Tag %s not found for image %s (available: %s)", req.Tag, req.Image, strings.Join(tags, ", ")))
+		return
+	}
+
+	// Allocate port (scan 6100-6999 for an unused one)
+	port, err := h.findAvailablePort(r.Context())
+	if err != nil {
+		registryWriteError(w, http.StatusInternalServerError, "Failed to allocate port: "+err.Error())
+		return
+	}
+
+	// Build local registry image reference
+	registryHost := strings.TrimPrefix(h.registryURL, "http://")
+	registryHost = strings.TrimPrefix(registryHost, "https://")
+	fullImage := fmt.Sprintf("%s/%s:%s", registryHost, req.Image, req.Tag)
+
+	// Generate docker-compose.yml
+	compose := fmt.Sprintf(`version: "3.8"
+services:
+  %s:
+    image: %s
+    ports:
+      - "%d:%d"
+    deploy:
+      replicas: 1
+      restart_policy:
+        condition: on-failure
+        delay: 5s
+        max_attempts: 3
+    volumes:
+      - data:/data
+volumes:
+  data:
+`, appName, fullImage, port, port)
+
+	// Create directories
+	appBase := filepath.Join("/cubeos/apps", appName)
+	appConfig := filepath.Join(appBase, "appconfig")
+	appData := filepath.Join(appBase, "appdata")
+	if err := os.MkdirAll(appConfig, 0755); err != nil {
+		registryWriteError(w, http.StatusInternalServerError, "Failed to create app directory: "+err.Error())
+		return
+	}
+	if err := os.MkdirAll(appData, 0777); err != nil {
+		registryWriteError(w, http.StatusInternalServerError, "Failed to create data directory: "+err.Error())
+		return
+	}
+
+	// Write compose file
+	composePath := filepath.Join(appConfig, "docker-compose.yml")
+	if err := os.WriteFile(composePath, []byte(compose), 0644); err != nil {
+		os.RemoveAll(appBase)
+		registryWriteError(w, http.StatusInternalServerError, "Failed to write compose file: "+err.Error())
+		return
+	}
+
+	// Deploy via docker stack deploy
+	ctx, cancel := context.WithTimeout(r.Context(), 2*time.Minute)
+	defer cancel()
+
+	cmd := exec.CommandContext(ctx, "docker", "stack", "deploy",
+		"-c", composePath,
+		"--resolve-image=never",
+		appName,
+	)
+	output, err := cmd.CombinedOutput()
+	if err != nil {
+		os.RemoveAll(appBase)
+		registryWriteError(w, http.StatusInternalServerError,
+			fmt.Sprintf("Stack deploy failed: %s", strings.TrimSpace(string(output))))
+		return
+	}
+
+	fqdn := appName + ".cubeos.cube"
+
+	registryWriteJSON(w, http.StatusOK, map[string]interface{}{
+		"success":      true,
+		"app_name":     appName,
+		"image":        fullImage,
+		"port":         port,
+		"fqdn":         fqdn,
+		"compose_path": composePath,
+		"message":      fmt.Sprintf("Deployed %s on port %d", appName, port),
+	})
+}
+
+// findAvailablePort scans for the next available port in the 6100-6999 range
+// by checking existing Docker service port bindings.
+func (h *RegistryHandler) findAvailablePort(ctx context.Context) (int, error) {
+	// Get list of used ports from Docker
+	cmd := exec.CommandContext(ctx, "docker", "ps", "--format", "{{.Ports}}")
+	output, err := cmd.Output()
+	if err != nil {
+		// If docker ps fails, start from 6100
+		return 6100, nil
+	}
+
+	usedPorts := make(map[int]bool)
+	for _, line := range strings.Split(string(output), "\n") {
+		// Parse port mappings like "0.0.0.0:6100->8080/tcp"
+		for _, part := range strings.Split(line, ",") {
+			part = strings.TrimSpace(part)
+			if idx := strings.Index(part, "->"); idx > 0 {
+				hostPart := part[:idx]
+				if colonIdx := strings.LastIndex(hostPart, ":"); colonIdx >= 0 {
+					portStr := hostPart[colonIdx+1:]
+					var p int
+					if _, err := fmt.Sscanf(portStr, "%d", &p); err == nil {
+						usedPorts[p] = true
+					}
+				}
+			}
+		}
+	}
+
+	// Find first available port in 6100-6999
+	for port := 6100; port <= 6999; port++ {
+		if !usedPorts[port] {
+			return port, nil
+		}
+	}
+
+	return 0, fmt.Errorf("no available ports in range 6100-6999")
 }
 
 // Helper methods
