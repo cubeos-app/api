@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"regexp"
 	"strings"
 	"time"
 
@@ -17,6 +18,10 @@ import (
 	"cubeos-api/internal/config"
 	"cubeos-api/internal/models"
 )
+
+// swarmTaskSuffix matches Swarm task suffixes like ".1.ud4wufpgo8af3wxledehujf6i"
+// Format: .{slot_number}.{25-char alphanumeric hash}
+var swarmTaskSuffix = regexp.MustCompile(`\.\d+\.[a-z0-9]{25}$`)
 
 // DockerManager handles Docker container operations
 type DockerManager struct {
@@ -64,6 +69,8 @@ func (m *DockerManager) ListContainers(ctx context.Context) ([]models.ContainerI
 			continue
 		}
 		name := strings.TrimPrefix(c.Names[0], "/")
+		// B99: Strip Swarm task suffixes (".1.hash") for clean service names
+		name = cleanSwarmTaskName(name)
 
 		info := models.ContainerInfo{
 			ID:          c.ID[:12],
@@ -129,6 +136,8 @@ func (m *DockerManager) GetContainer(ctx context.Context, name string) (*models.
 	}
 
 	containerName := strings.TrimPrefix(inspect.Name, "/")
+	// B99: Strip Swarm task suffixes for consistent naming
+	containerName = cleanSwarmTaskName(containerName)
 
 	// Parse created time
 	createdTime, _ := time.Parse(time.RFC3339Nano, inspect.Created)
@@ -493,6 +502,8 @@ func (m *DockerManager) GetAllContainerStatus(ctx context.Context) (map[string]m
 			continue
 		}
 		name := strings.TrimPrefix(c.Names[0], "/")
+		// B99: Strip Swarm task suffixes for consistent naming
+		name = cleanSwarmTaskName(name)
 		result[name] = map[string]interface{}{
 			"status":  c.State,
 			"running": c.State == "running",
@@ -503,6 +514,14 @@ func (m *DockerManager) GetAllContainerStatus(ctx context.Context) (map[string]m
 }
 
 // formatDisplayName converts container name to display name
+// cleanSwarmTaskName strips Swarm task suffixes from container names.
+// B99: Docker Swarm names containers as "{stack}_{service}.{slot}.{hash}",
+// e.g. "kiwix_kiwix.1.ud4wufpgo8af3wxledehujf6i". We want just the
+// stack_service portion for display and config lookups.
+func cleanSwarmTaskName(name string) string {
+	return swarmTaskSuffix.ReplaceAllString(name, "")
+}
+
 func formatDisplayName(name string) string {
 	// Remove common prefixes
 	name = strings.TrimPrefix(name, "cubeos-")

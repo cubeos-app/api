@@ -6,6 +6,63 @@ import (
 )
 
 // =============================================================================
+// cleanSwarmTaskName Tests (B99)
+// =============================================================================
+
+func TestCleanSwarmTaskName(t *testing.T) {
+	tests := []struct {
+		name     string
+		input    string
+		expected string
+	}{
+		{
+			name:     "swarm task name with hash",
+			input:    "kiwix_kiwix.1.ud4wufpgo8af3wxledehujf6i",
+			expected: "kiwix_kiwix",
+		},
+		{
+			name:     "cubeos api swarm task",
+			input:    "cubeos-api_cubeos-api.1.abc123def456ghi789jkl01mn",
+			expected: "cubeos-api_cubeos-api",
+		},
+		{
+			name:     "plain container name unchanged",
+			input:    "pihole",
+			expected: "pihole",
+		},
+		{
+			name:     "compose container name unchanged",
+			input:    "npm-proxy",
+			expected: "npm-proxy",
+		},
+		{
+			name:     "task slot 2",
+			input:    "myapp_web.2.xyzxyzxyzxyzxyzxyzxyzxyzx",
+			expected: "myapp_web",
+		},
+		{
+			name:     "empty string",
+			input:    "",
+			expected: "",
+		},
+		{
+			name:     "short hash not stripped (safety)",
+			input:    "myapp.1.short",
+			expected: "myapp.1.short",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := cleanSwarmTaskName(tt.input)
+			if got != tt.expected {
+				t.Errorf("cleanSwarmTaskName(%q) = %q, want %q", tt.input, got, tt.expected)
+			}
+		})
+	}
+}
+
+// =============================================================================
 // formatDisplayName Tests
 // =============================================================================
 

@@ -96,6 +96,10 @@ func NewAppStoreManager(cfg *config.Config, db *DatabaseManager, dataPath string
 	m.loadInstalledApps()
 	m.loadCatalog()
 
+	// B100: Seed default CasaOS store if no stores exist.
+	// Without this, the Browse tab shows "No Apps Found" on first boot.
+	m.seedDefaultStore()
+
 	return m
 }
 
@@ -109,6 +113,41 @@ func (m *AppStoreManager) initDB() {
 	// Add data column to app_catalog for full JSON roundtrip (existing columns
 	// miss fields like tagline, tips, author, screenshots, etc.)
 	m.db.db.Exec(`ALTER TABLE app_catalog ADD COLUMN data TEXT DEFAULT '{}'`)
+}
+
+// seedDefaultStore registers the CasaOS official app store if no stores exist.
+// B100: Without a default store, the Browse tab shows empty on first boot.
+// After seeding, triggers a background sync if the device appears to be online.
+func (m *AppStoreManager) seedDefaultStore() {
+	m.mu.RLock()
+	storeCount := len(m.stores)
+	m.mu.RUnlock()
+
+	if storeCount > 0 {
+		return // Already have stores, nothing to seed
+	}
+
+	const defaultStoreURL = "https://github.com/IceWhaleTech/CasaOS-AppStore"
+	const defaultStoreName = "CasaOS Official"
+	const defaultStoreDesc = "Official CasaOS-compatible app store"
+
+	log.Info().Msg("AppStoreManager: no stores found, seeding default CasaOS store (B100)")
+
+	store, err := m.RegisterStore(defaultStoreURL, defaultStoreName, defaultStoreDesc)
+	if err != nil {
+		log.Error().Err(err).Msg("AppStoreManager: failed to seed default store")
+		return
+	}
+
+	// Trigger background sync — non-blocking, will populate the catalog if online.
+	// If offline, the user can manually sync later via the dashboard "Sync Stores" button.
+	go func() {
+		if err := m.SyncStore(store.ID); err != nil {
+			log.Warn().Err(err).Msg("AppStoreManager: background sync of default store failed (device may be offline)")
+		} else {
+			log.Info().Int("catalog_size", len(m.catalog)).Msg("AppStoreManager: default store synced successfully")
+		}
+	}()
 }
 
 // loadStores loads stores from database

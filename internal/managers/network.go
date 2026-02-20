@@ -876,11 +876,19 @@ func (m *NetworkManager) setOnlineETHMode(ctx context.Context, staticIP models.S
 			return fmt.Errorf("failed to write/apply DHCP netplan on %s: %w", m.wanInterface, err)
 		}
 
-		// Poll for IP acquisition (systemd-networkd handles DHCP natively)
+		// Poll for IP acquisition (systemd-networkd handles DHCP natively).
+		// B94: DHCP timeout is non-fatal — networkd continues retrying in the background.
+		// This matches ONLINE_WIFI behavior where DHCP failure is a warning, not an error.
 		if err := m.pollForIP(ctx, m.wanInterface, 30*time.Second); err != nil {
-			return fmt.Errorf("ethernet has no IP address after DHCP request — check cable and upstream router: %w", err)
+			log.Warn().Err(err).Str("iface", m.wanInterface).
+				Msg("NetworkManager: ethernet DHCP timeout — networkd will keep retrying in background")
 		}
 	}
+
+	// B94: Set mode optimistically BEFORE NAT/AP setup.
+	// Netplan is written, so the system is transitioning to ONLINE_ETH regardless
+	// of whether DHCP has resolved yet. This prevents state desync on timeout.
+	m.currentMode = models.NetworkModeOnlineETH
 
 	// Ensure AP is running (recover if switching from server mode)
 	if m.IsServerMode() {
@@ -898,8 +906,6 @@ func (m *NetworkManager) setOnlineETHMode(ctx context.Context, staticIP models.S
 	if err := m.hal.EnableNAT(ctx, m.apInterface, m.wanInterface); err != nil {
 		return fmt.Errorf("failed to enable NAT: %w", err)
 	}
-
-	m.currentMode = models.NetworkModeOnlineETH
 
 	// T09: Configure Pi-hole DHCP (active, no-dhcp-interface=eth0)
 	m.configurePiholeDHCPForMode(ctx, models.NetworkModeOnlineETH)

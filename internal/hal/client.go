@@ -574,14 +574,15 @@ type AndroidTetheringStatus struct {
 
 // MeshtasticDevice represents a Meshtastic LoRa device
 type MeshtasticDevice struct {
-	Port      string `json:"port"`
-	Name      string `json:"name"`
-	NodeID    string `json:"node_id,omitempty"`
-	LongName  string `json:"long_name,omitempty"`
-	ShortName string `json:"short_name,omitempty"`
-	HWModel   string `json:"hw_model,omitempty"`
-	Firmware  string `json:"firmware,omitempty"`
-	Connected bool   `json:"connected"`
+	Port        string `json:"port"`
+	Name        string `json:"name"`
+	NodeID      string `json:"node_id,omitempty"`
+	LongName    string `json:"long_name,omitempty"`
+	ShortName   string `json:"short_name,omitempty"`
+	HWModel     int    `json:"hw_model,omitempty"`
+	HWModelName string `json:"hw_model_name,omitempty"`
+	Firmware    string `json:"firmware,omitempty"`
+	Connected   bool   `json:"connected"`
 }
 
 // MeshtasticStatus represents Meshtastic network status
@@ -598,7 +599,8 @@ type MeshtasticNode struct {
 	NodeID       string  `json:"node_id"`
 	LongName     string  `json:"long_name"`
 	ShortName    string  `json:"short_name"`
-	HWModel      string  `json:"hw_model,omitempty"`
+	HWModel      int     `json:"hw_model,omitempty"`
+	HWModelName  string  `json:"hw_model_name,omitempty"`
 	SNR          float64 `json:"snr,omitempty"`
 	LastHeard    string  `json:"last_heard,omitempty"`
 	Hops         int     `json:"hops,omitempty"`
