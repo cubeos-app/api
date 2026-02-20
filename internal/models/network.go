@@ -27,6 +27,9 @@ const (
 	NetworkModeOnlineETH  NetworkMode = "online_eth"  // AP + NAT via eth0
 	NetworkModeOnlineWiFi NetworkMode = "online_wifi" // AP + NAT via USB dongle
 
+	// NEW: Android USB tethering mode
+	NetworkModeOnlineTether NetworkMode = "online_tether" // AP + NAT via Android USB tethering
+
 	// NEW: Server modes (no AP, direct network)
 	NetworkModeServerETH  NetworkMode = "server_eth"  // No AP, eth0 DHCP client
 	NetworkModeServerWiFi NetworkMode = "server_wifi" // No AP, wlan0 WiFi client
@@ -38,6 +41,7 @@ func AllNetworkModes() []NetworkMode {
 		NetworkModeOffline,
 		NetworkModeOnlineETH,
 		NetworkModeOnlineWiFi,
+		NetworkModeOnlineTether,
 		NetworkModeServerETH,
 		NetworkModeServerWiFi,
 	}
@@ -47,7 +51,7 @@ func AllNetworkModes() []NetworkMode {
 func (m NetworkMode) IsValid() bool {
 	switch m {
 	case NetworkModeOffline, NetworkModeOnlineETH, NetworkModeOnlineWiFi,
-		NetworkModeServerETH, NetworkModeServerWiFi:
+		NetworkModeOnlineTether, NetworkModeServerETH, NetworkModeServerWiFi:
 		return true
 	}
 	return false

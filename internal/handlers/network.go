@@ -174,15 +174,16 @@ func (h *NetworkHandler) SetNetworkMode(w http.ResponseWriter, r *http.Request) 
 	}
 
 	validModes := map[string]bool{
-		"offline":     true,
-		"online_eth":  true,
-		"online_wifi": true,
-		"server_eth":  true,
-		"server_wifi": true,
+		"offline":       true,
+		"online_eth":    true,
+		"online_wifi":   true,
+		"online_tether": true,
+		"server_eth":    true,
+		"server_wifi":   true,
 	}
 
 	if !validModes[req.Mode] {
-		writeError(w, http.StatusBadRequest, "Invalid network mode. Valid modes: offline, online_eth, online_wifi, server_eth, server_wifi")
+		writeError(w, http.StatusBadRequest, "Invalid network mode. Valid modes: offline, online_eth, online_wifi, online_tether, server_eth, server_wifi")
 		return
 	}
 
@@ -205,6 +206,10 @@ func (h *NetworkHandler) SetNetworkMode(w http.ResponseWriter, r *http.Request) 
 			writeError(w, http.StatusBadRequest, "Static IP is not applicable in offline mode (no upstream interface)")
 			return
 		}
+		if req.Mode == "online_tether" {
+			writeError(w, http.StatusBadRequest, "Static IP is not applicable in tethering mode (DHCP from phone)")
+			return
+		}
 	}
 
 	var mode models.NetworkMode
@@ -215,6 +220,8 @@ func (h *NetworkHandler) SetNetworkMode(w http.ResponseWriter, r *http.Request) 
 		mode = models.NetworkModeOnlineETH
 	case "online_wifi":
 		mode = models.NetworkModeOnlineWiFi
+	case "online_tether":
+		mode = models.NetworkModeOnlineTether
 	case "server_eth":
 		mode = models.NetworkModeServerETH
 	case "server_wifi":
@@ -261,6 +268,7 @@ func (h *NetworkHandler) GetAvailableModes(w http.ResponseWriter, r *http.Reques
 		{"id": "offline", "name": "Offline (AP Only)", "description": "Air-gapped access point mode"},
 		{"id": "online_eth", "name": "Online via Ethernet", "description": "AP + NAT via Ethernet uplink"},
 		{"id": "online_wifi", "name": "Online via WiFi", "description": "AP + NAT via USB WiFi dongle"},
+		{"id": "online_tether", "name": "Online via Tethering", "description": "AP + NAT via Android USB tethering"},
 		{"id": "server_eth", "name": "Server via Ethernet", "description": "No AP, direct Ethernet connection"},
 		{"id": "server_wifi", "name": "Server via WiFi", "description": "No AP, direct WiFi connection"},
 	}
