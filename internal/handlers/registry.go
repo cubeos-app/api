@@ -14,6 +14,7 @@ import (
 	"strings"
 	"time"
 
+	"cubeos-api/internal/managers"
 	"cubeos-api/internal/models"
 
 	"github.com/go-chi/chi/v5"
@@ -24,12 +25,13 @@ type RegistryHandler struct {
 	registryURL  string
 	registryPath string
 	httpClient   *http.Client
+	portManager  *managers.PortManager // B108: triple-source port allocation
 }
 
 // NewRegistryHandler creates a new RegistryHandler instance.
 // For Swarm containers, use the gateway IP (not localhost:5000)
 // because containers in overlay network cannot reach localhost on the host.
-func NewRegistryHandler(registryURL, registryPath string) *RegistryHandler {
+func NewRegistryHandler(registryURL, registryPath string, portMgr *managers.PortManager) *RegistryHandler {
 	if registryURL == "" {
 		// Check env var first, then fall back to gateway IP (works from inside Swarm overlay)
 		registryURL = os.Getenv("REGISTRY_URL")
@@ -43,6 +45,7 @@ func NewRegistryHandler(registryURL, registryPath string) *RegistryHandler {
 	return &RegistryHandler{
 		registryURL:  registryURL,
 		registryPath: registryPath,
+		portManager:  portMgr,
 		httpClient: &http.Client{
 			Timeout: 10 * time.Second, // Reduced timeout for faster failure detection
 		},
@@ -675,10 +678,17 @@ func (h *RegistryHandler) DeployImage(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Allocate port (scan 6100-6999 for an unused one)
-	port, err := h.findAvailablePort(r.Context())
-	if err != nil {
-		registryWriteError(w, http.StatusInternalServerError, "Failed to allocate port: "+err.Error())
+	// B108: Use PortManager for triple-source port allocation (DB + Swarm + HAL)
+	// instead of scanning docker ps which misses Swarm ingress ports.
+	var port int
+	var portErr error
+	if h.portManager != nil {
+		port, portErr = h.portManager.AllocateUserPortWithContext(r.Context())
+	} else {
+		port, portErr = h.findAvailablePort(r.Context())
+	}
+	if portErr != nil {
+		registryWriteError(w, http.StatusInternalServerError, "Failed to allocate port: "+portErr.Error())
 		return
 	}
 
