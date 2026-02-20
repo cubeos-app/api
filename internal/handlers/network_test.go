@@ -57,7 +57,7 @@ func TestSetNetworkModeValidation(t *testing.T) {
 			name:       "invalid mode",
 			body:       `{"mode": "turbo"}`,
 			wantStatus: http.StatusBadRequest,
-			wantError:  "Invalid network mode. Valid modes: offline, online_eth, online_wifi, server_eth, server_wifi",
+			wantError:  "Invalid network mode. Valid modes: offline, online_eth, online_wifi, online_tether, server_eth, server_wifi",
 		},
 		{
 			name:       "online_wifi without SSID",
@@ -129,22 +129,23 @@ func TestGetAvailableModes(t *testing.T) {
 		t.Fatal("response missing 'modes' array")
 	}
 
-	if len(modes) != 5 {
-		t.Errorf("expected 5 modes, got %d", len(modes))
+	if len(modes) != 6 {
+		t.Errorf("expected 6 modes, got %d", len(modes))
 	}
 
 	count, ok := result["count"].(float64)
-	if !ok || int(count) != 5 {
-		t.Errorf("count = %v, want 5", result["count"])
+	if !ok || int(count) != 6 {
+		t.Errorf("count = %v, want 6", result["count"])
 	}
 
 	// Verify all expected mode IDs are present
 	expectedIDs := map[string]bool{
-		"offline":     false,
-		"online_eth":  false,
-		"online_wifi": false,
-		"server_eth":  false,
-		"server_wifi": false,
+		"offline":       false,
+		"online_eth":    false,
+		"online_wifi":   false,
+		"online_tether": false,
+		"server_eth":    false,
+		"server_wifi":   false,
 	}
 
 	for _, m := range modes {
