@@ -232,9 +232,13 @@ func (o *Orchestrator) InstallApp(ctx context.Context, req models.InstallAppRequ
 		return nil, fmt.Errorf("failed to deploy app: %w", err)
 	}
 
-	// Register DNS entry with Pi-hole (non-fatal)
+	// Register DNS entry with Pi-hole (non-fatal) and reload (B116)
 	if err := o.pihole.AddEntry(fqdn, models.DefaultGatewayIP); err != nil {
 		log.Warn().Err(err).Str("fqdn", fqdn).Msg("Failed to add DNS entry")
+	} else {
+		if err := o.pihole.ReloadDNS(); err != nil {
+			log.Warn().Err(err).Msg("Failed to reload Pi-hole DNS after install")
+		}
 	}
 
 	// Create NPM proxy host (non-fatal)
@@ -292,10 +296,14 @@ func (o *Orchestrator) UninstallApp(ctx context.Context, name string, keepData b
 		}
 	}
 
-	// Remove DNS entry
+	// Remove DNS entry and reload Pi-hole so removal takes effect immediately (B116)
 	if fqdn := app.GetPrimaryFQDN(); fqdn != "" {
 		if err := o.pihole.RemoveEntry(fqdn); err != nil {
 			log.Warn().Err(err).Str("fqdn", fqdn).Msg("Failed to remove DNS entry during uninstall")
+		} else {
+			if err := o.pihole.ReloadDNS(); err != nil {
+				log.Warn().Err(err).Msg("Failed to reload Pi-hole DNS after uninstall")
+			}
 		}
 	}
 
@@ -449,7 +457,9 @@ func (o *Orchestrator) GetApp(ctx context.Context, name string) (*models.App, er
 	return &app, nil
 }
 
-// ListApps retrieves all apps with optional filtering
+// ListApps retrieves all apps with optional filtering.
+// FIX B115: Close rows before loading app relations to avoid SQLite connection
+// contention — same two-pass pattern as ListProfiles.
 func (o *Orchestrator) ListApps(ctx context.Context, filter *models.AppFilter) ([]*models.App, error) {
 	query := `
 		SELECT id, name, display_name, description, type, category, source, store_id,
@@ -477,8 +487,8 @@ func (o *Orchestrator) ListApps(ctx context.Context, filter *models.AppFilter) (
 	if err != nil {
 		return nil, err
 	}
-	defer rows.Close()
 
+	// First pass: scan all rows (keep rows open only for scanning)
 	var apps []*models.App
 	for rows.Next() {
 		var app models.App
@@ -491,21 +501,31 @@ func (o *Orchestrator) ListApps(ctx context.Context, filter *models.AppFilter) (
 			&app.CreatedAt, &app.UpdatedAt,
 		)
 		if err != nil {
+			rows.Close()
 			return nil, err
 		}
-
-		// Get runtime status
-		app.Status = o.getAppStatus(ctx, &app)
-
-		// Load related data (ports, FQDNs) so frontend can build URLs
-		if err := o.loadAppRelations(ctx, &app); err != nil {
-			log.Warn().Err(err).Str("app", app.Name).Msg("failed to load app relations")
-		}
-
 		apps = append(apps, &app)
 	}
 
-	return apps, rows.Err()
+	// Close rows BEFORE loading relations to free the SQLite connection
+	rows.Close()
+
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+
+	// Second pass: load relations and status (connection is now free)
+	for _, app := range apps {
+		// Get runtime status
+		app.Status = o.getAppStatus(ctx, app)
+
+		// Load related data (ports, FQDNs) so frontend can build URLs
+		if err := o.loadAppRelations(ctx, app); err != nil {
+			log.Warn().Err(err).Str("app", app.Name).Msg("failed to load app relations")
+		}
+	}
+
+	return apps, nil
 }
 
 // =============================================================================

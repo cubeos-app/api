@@ -571,6 +571,53 @@ var migrations = []Migration{
 			return nil
 		},
 	},
+
+	// Version 15: Add schema_migrations table for proper migration tracking (T1.5)
+	{
+		Version:     15,
+		Description: "Add schema_migrations table for migration audit trail",
+		Up: func(db *sql.DB) error {
+			_, err := db.Exec(`
+				CREATE TABLE IF NOT EXISTS schema_migrations (
+					version         INTEGER PRIMARY KEY,
+					description     TEXT NOT NULL DEFAULT '',
+					applied_at      DATETIME DEFAULT CURRENT_TIMESTAMP
+				)
+			`)
+			if err != nil {
+				return fmt.Errorf("failed to create schema_migrations table: %w", err)
+			}
+
+			// Backfill previously applied migrations (hardcoded to avoid
+			// referencing the migrations slice, which causes an init cycle)
+			backfill := []struct {
+				version int
+				desc    string
+			}{
+				{2, "Add Sprint 2 unified schema columns to apps table"},
+				{3, "Set deploy_mode=compose for pihole and npm (host network)"},
+				{4, "Rename api/dashboard to match Swarm stack names"},
+				{5, "Seed/update core system apps"},
+				{6, "Remove deprecated apps from database"},
+				{7, "Ensure default profiles exist"},
+				{8, "Add is_primary column to port_allocations table"},
+				{9, "Add missing network_config columns (VPN, DHCP, AP) and users columns (email, last_login)"},
+				{10, "Migrate installed_apps into unified apps table, add app_catalog"},
+				{11, "Add volume_mappings table for app volume management"},
+				{12, "Add webui_type column to apps table for UI click behavior"},
+				{13, "Add npm_proxy_id column to fqdns table"},
+				{14, "Add static IP columns to network_config for upstream interface override"},
+				{15, "Add schema_migrations table for migration audit trail"},
+			}
+			for _, b := range backfill {
+				db.Exec(`INSERT OR IGNORE INTO schema_migrations (version, description) VALUES (?, ?)`,
+					b.version, b.desc)
+			}
+
+			log.Info().Msg("Migration 15: Created schema_migrations table with backfill")
+			return nil
+		},
+	},
 }
 
 // isDuplicateColumnError checks if an error is a "duplicate column" error
@@ -619,6 +666,10 @@ func Migrate(db *sql.DB) error {
 			return fmt.Errorf("failed to update schema version after migration %d: %w", m.Version, err)
 		}
 
+		// Record migration in schema_migrations table (T1.5, best-effort)
+		db.Exec(`INSERT OR IGNORE INTO schema_migrations (version, description) VALUES (?, ?)`,
+			m.Version, m.Description)
+
 		log.Info().Int("version", m.Version).Msg("Migration completed")
 	}
 
@@ -666,6 +717,7 @@ func DropAllTables(db *sql.DB) error {
 		"app_catalog",
 		"setup_status",
 		"system_config",
+		"schema_migrations",
 	}
 
 	for _, table := range tables {

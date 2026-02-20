@@ -943,8 +943,8 @@ func (m *NetworkManager) setOnlineETHMode(ctx context.Context, staticIP models.S
 		return fmt.Errorf("failed to enable IP forwarding: %w", err)
 	}
 
-	// Enable NAT: AP interface -> WAN interface
-	if err := m.hal.EnableNAT(ctx, m.apInterface, m.wanInterface); err != nil {
+	// Enable NAT: AP subnet -> WAN interface (B118: pass subnet CIDR, not AP interface)
+	if err := m.hal.EnableNAT(ctx, m.cfg.Subnet, m.wanInterface); err != nil {
 		return fmt.Errorf("failed to enable NAT: %w", err)
 	}
 
@@ -1012,8 +1012,8 @@ func (m *NetworkManager) setOnlineTetherMode(ctx context.Context) error {
 		return fmt.Errorf("failed to enable IP forwarding: %w", err)
 	}
 
-	// Enable NAT: AP interface -> tethering interface
-	if err := m.hal.EnableNAT(ctx, m.apInterface, tetherIface); err != nil {
+	// Enable NAT: AP subnet -> tethering interface (B118: pass subnet CIDR)
+	if err := m.hal.EnableNAT(ctx, m.cfg.Subnet, tetherIface); err != nil {
 		return fmt.Errorf("failed to enable NAT on %s: %w", tetherIface, err)
 	}
 
@@ -1095,8 +1095,8 @@ func (m *NetworkManager) setOnlineWiFiMode(ctx context.Context, ssid, password s
 		return fmt.Errorf("failed to enable IP forwarding: %w", err)
 	}
 
-	// Enable NAT: AP interface -> WiFi client interface
-	if err := m.hal.EnableNAT(ctx, m.apInterface, iface); err != nil {
+	// Enable NAT: AP subnet -> WiFi client interface (B118: pass subnet CIDR)
+	if err := m.hal.EnableNAT(ctx, m.cfg.Subnet, iface); err != nil {
 		return fmt.Errorf("failed to enable NAT: %w", err)
 	}
 

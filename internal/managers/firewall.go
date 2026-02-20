@@ -133,8 +133,8 @@ func (m *FirewallManager) EnableNAT(ctx context.Context) *models.SuccessResponse
 		return &models.SuccessResponse{Status: "error", Message: fmt.Sprintf("Failed to enable IP forward: %v", err)}
 	}
 
-	// Enable NAT
-	if err := m.hal.EnableNAT(ctx, m.cfg.APInterface, m.cfg.WANInterface); err != nil {
+	// Enable NAT (B118: pass subnet CIDR, not AP interface name)
+	if err := m.hal.EnableNAT(ctx, m.cfg.Subnet, m.cfg.WANInterface); err != nil {
 		return &models.SuccessResponse{Status: "error", Message: fmt.Sprintf("Failed to enable NAT: %v", err)}
 	}
 

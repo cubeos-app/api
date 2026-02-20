@@ -1801,10 +1801,15 @@ func (c *Client) DeleteFirewallRule(ctx context.Context, table, chain string, ar
 }
 
 // EnableNAT enables NAT forwarding between interfaces
-func (c *Client) EnableNAT(ctx context.Context, sourceInterface, destInterface string) error {
+// EnableNAT enables NAT/masquerade via HAL.
+// sourceNet is the source CIDR (e.g. "10.42.24.0/24") — empty uses HAL default.
+// outInterface is the upstream interface (e.g. "eth0", "wlan1").
+// B118: Fixed field names — HAL expects "source" and "out_interface",
+// not "source_interface" and "dest_interface".
+func (c *Client) EnableNAT(ctx context.Context, sourceNet, outInterface string) error {
 	req := map[string]string{
-		"source_interface": sourceInterface,
-		"dest_interface":   destInterface,
+		"source":        sourceNet,
+		"out_interface": outInterface,
 	}
 	return c.doPost(ctx, "/firewall/nat/enable", req)
 }

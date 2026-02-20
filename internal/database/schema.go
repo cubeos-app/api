@@ -9,7 +9,7 @@ import (
 )
 
 // CurrentSchemaVersion tracks the database schema version for migrations.
-const CurrentSchemaVersion = 14
+const CurrentSchemaVersion = 15
 
 // Schema defines the unified CubeOS database schema.
 // Design Principles:
@@ -409,6 +409,15 @@ CREATE TABLE IF NOT EXISTS system_config (
     value           TEXT,
     updated_at      DATETIME DEFAULT CURRENT_TIMESTAMP
 );
+
+-- =============================================================================
+-- SCHEMA_MIGRATIONS: Track applied database migrations (T1.5)
+-- =============================================================================
+CREATE TABLE IF NOT EXISTS schema_migrations (
+    version         INTEGER PRIMARY KEY,
+    description     TEXT NOT NULL DEFAULT '',
+    applied_at      DATETIME DEFAULT CURRENT_TIMESTAMP
+);
 `
 
 // SeedData contains initial data for the database.
@@ -443,6 +452,12 @@ INSERT OR IGNORE INTO network_config (id, mode) VALUES (1, 'offline');
 -- SETUP STATUS
 -- =============================================================================
 INSERT OR IGNORE INTO setup_status (id, is_complete, current_step) VALUES (1, 0, 0);
+
+-- =============================================================================
+-- SCHEMA MIGRATIONS (T1.5)
+-- =============================================================================
+INSERT OR IGNORE INTO schema_migrations (version, description) VALUES
+    (15, 'Alpha.25 unified schema with migrations table');
 `
 
 // InitSchema initializes the database schema.
