@@ -595,19 +595,26 @@ type MeshtasticStatus struct {
 }
 
 // MeshtasticNode represents a node in the mesh
+// B104: Aligned with HAL MeshNode JSON output — last_heard is int64 (unix epoch),
+// user_id is the HAL field name (not node_id), added missing fields.
 type MeshtasticNode struct {
-	NodeID       string  `json:"node_id"`
-	LongName     string  `json:"long_name"`
-	ShortName    string  `json:"short_name"`
+	Num          uint32  `json:"num,omitempty"`
+	UserID       string  `json:"user_id,omitempty"`
+	NodeIDStr    string  `json:"node_id_str,omitempty"`
+	LongName     string  `json:"long_name,omitempty"`
+	ShortName    string  `json:"short_name,omitempty"`
 	HWModel      int     `json:"hw_model,omitempty"`
 	HWModelName  string  `json:"hw_model_name,omitempty"`
 	SNR          float64 `json:"snr,omitempty"`
-	LastHeard    string  `json:"last_heard,omitempty"`
+	LastHeard    int64   `json:"last_heard,omitempty"`
+	LastHeardStr string  `json:"last_heard_str,omitempty"`
 	Hops         int     `json:"hops,omitempty"`
 	BatteryLevel int     `json:"battery_level,omitempty"`
+	Voltage      float32 `json:"voltage,omitempty"`
 	Latitude     float64 `json:"latitude,omitempty"`
 	Longitude    float64 `json:"longitude,omitempty"`
 	Altitude     float64 `json:"altitude,omitempty"`
+	Sats         int     `json:"sats,omitempty"`
 }
 
 // MeshtasticNodesResponse represents mesh nodes list
