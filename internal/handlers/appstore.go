@@ -475,13 +475,18 @@ func (h *AppStoreHandler) InstallApp(w http.ResponseWriter, r *http.Request) {
 	go func() {
 		defer job.Close()
 
-		_, err := h.manager.InstallAppWithProgress(&req, job)
+		installed, err := h.manager.InstallAppWithProgress(&req, job)
 		if err != nil {
 			job.EmitError("error", job.GetProgress(), err.Error())
 			return
 		}
 
-		job.EmitDone("App installed successfully!")
+		// Pass the app's access URL so the frontend "Open App" button works
+		appURL := ""
+		if installed != nil && installed.WebUI != "" {
+			appURL = installed.WebUI
+		}
+		job.EmitDone("App installed successfully!", appURL)
 	}()
 
 	writeJSON(w, http.StatusAccepted, map[string]interface{}{

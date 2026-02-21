@@ -3,6 +3,7 @@ package managers
 import (
 	"context"
 	"fmt"
+	"io"
 	"net/http"
 	"os"
 	"os/exec"
@@ -255,7 +256,7 @@ func (m *AppStoreManager) InstallAppWithProgress(req *models.AppInstallRequest, 
 	if appFQDN != "" {
 		if err := m.healthCheckFQDN(appFQDN, 30*time.Second); err != nil {
 			log.Warn().Err(err).Str("fqdn", appFQDN).Msg("health check failed (non-fatal)")
-			// Non-fatal: app may take longer to start, polling will pick it up
+			job.Emit("health_check", 96, fmt.Sprintf("Warning: %s not yet reachable, may need a moment", appFQDN))
 		}
 	}
 
@@ -442,22 +443,83 @@ func (m *AppStoreManager) waitForSwarmServices(stackName string, job *Job) {
 	log.Warn().Str("stack", stackName).Msg("service readiness poll timed out (non-fatal)")
 }
 
-// healthCheckFQDN does an HTTP GET to the FQDN, retrying until success or timeout.
+// dashboardMarker is the HTML comment injected into the CubeOS dashboard's
+// index.html. If a health check response contains this marker, the request
+// landed on NPM's catch-all host (the dashboard) instead of the actual app.
+const dashboardMarker = "cubeos-dashboard-marker"
+
+// healthCheckFQDN verifies that an app is genuinely reachable at its FQDN.
+//
+// NPM's catch-all proxy host serves the CubeOS dashboard for ANY *.cubeos.cube
+// request that doesn't have its own proxy host yet, returning HTTP 200. A naive
+// status-code check therefore always passes. We detect this with two layers:
+//
+//  1. Redirect check: if NPM redirects to cubeos.cube, the proxy host isn't active.
+//  2. Body marker check: if the response body contains the dashboard HTML marker,
+//     the catch-all served the dashboard content instead of the actual app.
 func (m *AppStoreManager) healthCheckFQDN(fqdn string, timeout time.Duration) error {
-	client := &http.Client{Timeout: 5 * time.Second}
+	client := &http.Client{
+		Timeout: 5 * time.Second,
+		CheckRedirect: func(req *http.Request, via []*http.Request) error {
+			// If NPM redirects to the dashboard, stop following
+			if req.URL.Hostname() == "cubeos.cube" {
+				return http.ErrUseLastResponse
+			}
+			if len(via) >= 3 {
+				return fmt.Errorf("too many redirects")
+			}
+			return nil
+		},
+	}
+
 	deadline := time.Now().Add(timeout)
+	attempt := 0
 
 	for time.Now().Before(deadline) {
+		attempt++
+
 		resp, err := client.Get(fmt.Sprintf("http://%s", fqdn))
-		if err == nil {
-			resp.Body.Close()
-			if resp.StatusCode < 500 {
-				return nil // Any non-5xx is "up"
-			}
+		if err != nil {
+			log.Debug().Err(err).Str("fqdn", fqdn).Int("attempt", attempt).
+				Msg("health check: connection error, retrying")
+			time.Sleep(2 * time.Second)
+			continue
 		}
-		time.Sleep(2 * time.Second)
+
+		body, _ := io.ReadAll(io.LimitReader(resp.Body, 8192))
+		resp.Body.Close()
+
+		// Check for redirect to dashboard
+		if resp.Request != nil && resp.Request.URL.Hostname() == "cubeos.cube" {
+			log.Debug().Str("fqdn", fqdn).Int("attempt", attempt).
+				Msg("health check: redirected to cubeos.cube, proxy host not active yet")
+			time.Sleep(2 * time.Second)
+			continue
+		}
+
+		// 5xx means the app container is erroring out
+		if resp.StatusCode >= 500 {
+			log.Debug().Str("fqdn", fqdn).Int("status", resp.StatusCode).Int("attempt", attempt).
+				Msg("health check: server error, retrying")
+			time.Sleep(2 * time.Second)
+			continue
+		}
+
+		// Check if we landed on the dashboard catch-all
+		if strings.Contains(string(body), dashboardMarker) {
+			log.Debug().Str("fqdn", fqdn).Int("attempt", attempt).
+				Msg("health check: got dashboard catch-all, proxy host not active yet")
+			time.Sleep(2 * time.Second)
+			continue
+		}
+
+		// Non-dashboard, non-5xx response — the actual app is serving
+		log.Info().Str("fqdn", fqdn).Int("status", resp.StatusCode).Int("attempts", attempt).
+			Msg("health check: app is accessible")
+		return nil
 	}
-	return fmt.Errorf("health check timed out for %s", fqdn)
+
+	return fmt.Errorf("health check timed out for %s after %d attempts (still hitting dashboard catch-all)", fqdn, attempt)
 }
 
 // detectWebUIType does a HEAD request to the app's web UI URL and checks

@@ -312,6 +312,14 @@ func main() {
 		}
 		syncCancel()
 
+		// Seed system apps that aren't Swarm stacks (compose services: pihole, npm, hal)
+		// Also updates display names for apps already registered with raw names.
+		seedAppsCtx, seedAppsCancel := context.WithTimeout(context.Background(), 10*time.Second)
+		if err := orchestrator.SeedSystemApps(seedAppsCtx); err != nil {
+			log.Warn().Err(err).Msg("SeedSystemApps failed (non-fatal)")
+		}
+		seedAppsCancel()
+
 		// Seed port allocations and FQDNs for system services (B26, B28)
 		// Must run after SyncAppsFromSwarm so app records exist for foreign keys
 		seedCtx, seedCancel := context.WithTimeout(context.Background(), 10*time.Second)

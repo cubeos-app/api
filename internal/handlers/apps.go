@@ -159,12 +159,14 @@ func (h *AppsHandler) InstallApp(w http.ResponseWriter, r *http.Request) {
 				return
 			}
 
-			// Emit done with the app FQDN for the frontend
-			fqdn := ""
+			// Pass the app's access URL so the frontend "Open App" button works
+			appURL := ""
 			if app != nil {
-				fqdn = app.GetPrimaryFQDN()
+				if fqdn := app.GetPrimaryFQDN(); fqdn != "" {
+					appURL = fmt.Sprintf("http://%s", fqdn)
+				}
 			}
-			job.EmitDone(fmt.Sprintf("App installed successfully! Access at http://%s", fqdn))
+			job.EmitDone("App installed successfully!", appURL)
 		}()
 
 		writeJSON(w, http.StatusAccepted, map[string]interface{}{

@@ -26,6 +26,7 @@ type ProgressEvent struct {
 	Detail   string `json:"detail"`          // Human-readable message
 	Status   string `json:"status"`          // "running", "done", "error"
 	Error    string `json:"error,omitempty"` // Error message (only on failure)
+	URL      string `json:"url,omitempty"`   // App access URL (only on install completion)
 }
 
 // Job represents an async install/uninstall operation
@@ -100,8 +101,9 @@ func (j *Job) EmitError(step string, progress int, errMsg string) {
 	}
 }
 
-// EmitDone sends the final "complete" event and closes the channel
-func (j *Job) EmitDone(detail string) {
+// EmitDone sends the final "complete" event and closes the channel.
+// Optional appURL provides the app's access URL for the frontend "Open App" button.
+func (j *Job) EmitDone(detail string, appURL ...string) {
 	j.SetStatus(JobCompleted)
 
 	event := ProgressEvent{
@@ -109,6 +111,9 @@ func (j *Job) EmitDone(detail string) {
 		Progress: 100,
 		Detail:   detail,
 		Status:   "done",
+	}
+	if len(appURL) > 0 && appURL[0] != "" {
+		event.URL = appURL[0]
 	}
 
 	select {

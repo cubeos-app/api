@@ -903,8 +903,9 @@ var coreAppMeta = map[string]struct {
 	"cubeos-dashboard": {"CubeOS Dashboard", "Web management dashboard", models.AppTypePlatform, "platform", models.DeployModeStack},
 	"registry":         {"Docker Registry", "Local container image registry", models.AppTypeSystem, "infrastructure", models.DeployModeStack},
 	"dozzle":           {"Dozzle", "Real-time Docker log viewer", models.AppTypePlatform, "monitoring", models.DeployModeStack},
-	"ollama":           {"Ollama", "Local AI model inference server", models.AppTypeAI, "ai", models.DeployModeStack},
-	"chromadb":         {"ChromaDB", "AI vector database", models.AppTypeAI, "ai", models.DeployModeStack},
+	"cubeos-docsindex": {"CubeOS Docs", "Offline documentation server", models.AppTypePlatform, "platform", models.DeployModeStack},
+	"ollama":           {"Ollama", "Local LLM inference engine", models.AppTypeAI, "ai", models.DeployModeStack},
+	"chromadb":         {"ChromaDB", "Vector database for AI embeddings", models.AppTypeAI, "ai", models.DeployModeStack},
 	"pihole":           {"Pi-hole", "DNS sinkhole and DHCP server", models.AppTypeSystem, "infrastructure", models.DeployModeCompose},
 	"npm":              {"Nginx Proxy Manager", "Reverse proxy and SSL manager", models.AppTypeSystem, "infrastructure", models.DeployModeCompose},
 }
@@ -1017,10 +1018,23 @@ func (o *Orchestrator) SeedSystemApps(ctx context.Context) error {
 		{"cubeos-api", "CubeOS API", models.AppTypePlatform, 6010, models.DeployModeStack},
 		{"cubeos-dashboard", "CubeOS Dashboard", models.AppTypePlatform, 6011, models.DeployModeStack},
 		{"dozzle", "Dozzle", models.AppTypePlatform, 6012, models.DeployModeStack},
+		{"cubeos-docsindex", "CubeOS Docs", models.AppTypePlatform, 6050, models.DeployModeStack},
 		{"ollama", "Ollama", models.AppTypeAI, 6030, models.DeployModeStack},
 		{"chromadb", "ChromaDB", models.AppTypeAI, 6031, models.DeployModeStack},
 	}
 
+	// First pass: update display names for any already-registered apps that
+	// were synced by SyncAppsFromSwarm before coreAppMeta was complete.
+	for _, sa := range systemApps {
+		_, err := o.db.ExecContext(ctx, `
+			UPDATE apps SET display_name = ? WHERE name = ? AND display_name = ?
+		`, sa.displayName, sa.name, sa.name)
+		if err != nil {
+			log.Warn().Err(err).Str("app", sa.name).Msg("SeedSystemApps: failed to update display name")
+		}
+	}
+
+	// Second pass: insert any missing system apps
 	for _, sa := range systemApps {
 		// Check if already exists
 		var count int
@@ -1337,8 +1351,21 @@ func (o *Orchestrator) GetAppLogs(ctx context.Context, name string, lines int, s
 	}
 
 	if app.UsesSwarm() {
-		// Get logs from Swarm service
-		return o.swarm.GetServiceLogs(name+"_"+name, lines)
+		// Look up actual service names from the stack — the compose service
+		// name often differs from the stack/app name (e.g. CasaOS apps like
+		// "big-bear-it-tools" may have a compose service named "it-tools").
+		serviceName := ""
+		if o.swarm != nil {
+			services, err := o.swarm.GetStackServices(name)
+			if err == nil && len(services) > 0 {
+				serviceName = services[0].Name
+			}
+		}
+		if serviceName == "" {
+			// Fallback: assume stack_stack pattern (legacy behaviour)
+			serviceName = name + "_" + name
+		}
+		return o.swarm.GetServiceLogs(serviceName, lines)
 	}
 
 	// Get logs from docker container
