@@ -909,6 +909,9 @@ var coreAppMeta = map[string]struct {
 	"pihole":           {"Pi-hole", "DNS sinkhole and DHCP server", models.AppTypeSystem, "infrastructure", models.DeployModeCompose},
 	"npm":              {"Nginx Proxy Manager", "Reverse proxy and SSL manager", models.AppTypeSystem, "infrastructure", models.DeployModeCompose},
 	"cubeos-hal":       {"CubeOS HAL", "Hardware Abstraction Layer", models.AppTypeSystem, "infrastructure", models.DeployModeCompose},
+	"kiwix":            {"Kiwix Offline Library", "Offline encyclopedia and content library", models.AppTypePlatform, "library", models.DeployModeStack},
+	"filebrowser":      {"File Browser", "Web-based file manager", models.AppTypePlatform, "storage", models.DeployModeStack},
+	"cubeos-terminal":  {"Web Terminal", "Browser-based terminal access", models.AppTypePlatform, "system", models.DeployModeCompose},
 }
 
 // SyncAppsFromSwarm discovers running Swarm stacks and ensures matching
@@ -1020,9 +1023,12 @@ func (o *Orchestrator) SeedSystemApps(ctx context.Context) error {
 		{"cubeos-api", "CubeOS API", models.AppTypePlatform, 6010, models.DeployModeStack},
 		{"cubeos-dashboard", "CubeOS Dashboard", models.AppTypePlatform, 6011, models.DeployModeStack},
 		{"dozzle", "Dozzle", models.AppTypePlatform, 6012, models.DeployModeStack},
-		{"cubeos-docsindex", "CubeOS Docs", models.AppTypePlatform, 6050, models.DeployModeStack},
+		{"cubeos-docsindex", "CubeOS Docs", models.AppTypePlatform, 6032, models.DeployModeStack},
 		{"ollama", "Ollama", models.AppTypeAI, 6030, models.DeployModeStack},
 		{"chromadb", "ChromaDB", models.AppTypeAI, 6031, models.DeployModeStack},
+		{"kiwix", "Kiwix Offline Library", models.AppTypePlatform, 6043, models.DeployModeStack},
+		{"filebrowser", "File Browser", models.AppTypePlatform, 6013, models.DeployModeStack},
+		{"cubeos-terminal", "Web Terminal", models.AppTypePlatform, 6042, models.DeployModeCompose},
 	}
 
 	// First pass: update display names for any already-registered apps that
@@ -1106,6 +1112,9 @@ func (o *Orchestrator) SeedSystemPortsAndFQDNs(ctx context.Context) error {
 		{"ollama", 6030, "ollama", "AI Inference"},
 		{"chromadb", 6031, "chromadb", "Vector DB"},
 		{"cubeos-docsindex", 6032, "docs", "Documentation"},
+		{"kiwix", 6043, "kiwix", "Offline Library"},
+		{"filebrowser", 6013, "filebrowser", "File Manager"},
+		{"cubeos-terminal", 6042, "terminal", "Web Terminal"},
 	}
 
 	seededPorts := 0
@@ -1122,10 +1131,14 @@ func (o *Orchestrator) SeedSystemPortsAndFQDNs(ctx context.Context) error {
 			appType := models.AppTypeSystem
 			deployMode := models.DeployModeCompose
 			switch {
-			case e.appName == "cubeos-api" || e.appName == "cubeos-dashboard" || e.appName == "dozzle":
+			case e.appName == "cubeos-api" || e.appName == "cubeos-dashboard" || e.appName == "dozzle" ||
+				e.appName == "cubeos-docsindex" || e.appName == "kiwix" || e.appName == "filebrowser":
 				appType = models.AppTypePlatform
 				deployMode = models.DeployModeStack
-			case e.appName == "ollama" || e.appName == "chromadb" || e.appName == "cubeos-docsindex":
+			case e.appName == "cubeos-terminal":
+				appType = models.AppTypePlatform
+				deployMode = models.DeployModeCompose
+			case e.appName == "ollama" || e.appName == "chromadb":
 				appType = models.AppTypeAI
 				deployMode = models.DeployModeStack
 			case e.appName == "registry":
@@ -1183,6 +1196,124 @@ func (o *Orchestrator) SeedSystemPortsAndFQDNs(ctx context.Context) error {
 	if seededPorts > 0 || seededFQDNs > 0 {
 		log.Info().Int("ports", seededPorts).Int("fqdns", seededFQDNs).
 			Msg("SeedSystemPortsAndFQDNs: seeded system records")
+	}
+
+	return nil
+}
+
+// PruneOrphanApps removes database records for non-protected apps whose
+// underlying Docker service or container no longer exists. Called after
+// SyncAppsFromSwarm + SeedSystemApps to clean up ghost entries left behind
+// by failed installs or services removed outside the API.
+func (o *Orchestrator) PruneOrphanApps(ctx context.Context) error {
+	rows, err := o.db.QueryContext(ctx, `
+		SELECT id, name, deploy_mode, compose_path, type FROM apps
+	`)
+	if err != nil {
+		return fmt.Errorf("PruneOrphanApps: failed to query apps: %w", err)
+	}
+
+	type candidate struct {
+		id          int64
+		name        string
+		deployMode  models.DeployMode
+		composePath string
+		appType     models.AppType
+	}
+
+	var candidates []candidate
+	for rows.Next() {
+		var c candidate
+		if err := rows.Scan(&c.id, &c.name, &c.deployMode, &c.composePath, &c.appType); err != nil {
+			rows.Close()
+			return fmt.Errorf("PruneOrphanApps: failed to scan app: %w", err)
+		}
+		candidates = append(candidates, c)
+	}
+	rows.Close()
+
+	pruned := 0
+	for _, c := range candidates {
+		// Never prune protected apps (system + platform types)
+		if c.appType == models.AppTypeSystem || c.appType == models.AppTypePlatform {
+			continue
+		}
+
+		orphan := false
+
+		if c.deployMode == models.DeployModeStack {
+			// Check if Swarm stack still exists
+			if o.swarm != nil {
+				exists, err := o.swarm.StackExists(c.name)
+				if err != nil {
+					log.Warn().Err(err).Str("app", c.name).Msg("PruneOrphanApps: failed to check stack, skipping")
+					continue
+				}
+				if exists {
+					continue // Stack exists — not an orphan
+				}
+			} else {
+				continue // Can't verify without Swarm — don't prune
+			}
+
+			// Stack gone — also check if compose file exists on disk
+			if c.composePath != "" {
+				if _, err := os.Stat(c.composePath); err == nil {
+					continue // Compose file still on disk — could be redeployed
+				}
+			}
+			orphan = true
+
+		} else if c.deployMode == models.DeployModeCompose {
+			// Check if Docker container exists
+			if o.docker != nil {
+				containerName := c.name
+				if !strings.HasPrefix(containerName, "cubeos-") {
+					containerName = "cubeos-" + containerName
+				}
+				checkCtx, cancel := context.WithTimeout(ctx, 5*time.Second)
+				status, err := o.docker.GetContainerStatus(checkCtx, containerName)
+				cancel()
+				if err != nil {
+					log.Warn().Err(err).Str("app", c.name).Msg("PruneOrphanApps: failed to check container, skipping")
+					continue
+				}
+				if status != "not_found" {
+					continue // Container exists — not an orphan
+				}
+			} else {
+				continue // Can't verify without Docker — don't prune
+			}
+
+			// Container gone — also check compose file on disk
+			if c.composePath != "" {
+				if _, err := os.Stat(c.composePath); err == nil {
+					continue // Compose file still on disk — could be restarted
+				}
+			}
+			orphan = true
+		}
+
+		if !orphan {
+			continue
+		}
+
+		// Delete the orphan record (cascading deletes handle port_allocations + fqdns)
+		_, err := o.db.ExecContext(ctx, "DELETE FROM apps WHERE id = ?", c.id)
+		if err != nil {
+			log.Warn().Err(err).Str("app", c.name).Int64("id", c.id).Msg("PruneOrphanApps: failed to delete orphan")
+			continue
+		}
+
+		pruned++
+		log.Info().Str("app", c.name).Int64("id", c.id).Str("deploy_mode", string(c.deployMode)).
+			Msg("PruneOrphanApps: removed orphan app record")
+	}
+
+	if pruned > 0 {
+		log.Info().Int("count", pruned).Msg("PruneOrphanApps: cleanup complete")
+	} else {
+		log.Debug().Msg("PruneOrphanApps: no orphans found")
 	}
 
 	return nil

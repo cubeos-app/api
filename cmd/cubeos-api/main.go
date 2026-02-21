@@ -343,6 +343,13 @@ func main() {
 			log.Warn().Err(err).Msg("SeedSystemPortsAndFQDNs failed (non-fatal)")
 		}
 		seedCancel()
+
+		// Prune orphan app records (ghost entries with no matching Docker service)
+		pruneCtx, pruneCancel := context.WithTimeout(context.Background(), 30*time.Second)
+		if err := orchestrator.PruneOrphanApps(pruneCtx); err != nil {
+			log.Warn().Err(err).Msg("PruneOrphanApps failed (non-fatal)")
+		}
+		pruneCancel()
 	}
 
 	// Create VPN manager (Sprint 3 - with HAL client)
