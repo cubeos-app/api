@@ -235,24 +235,23 @@ func (o *Orchestrator) InstallApp(ctx context.Context, req models.InstallAppRequ
 	}
 
 	// Deploy the app (outside transaction — rollback DB on failure)
+	appDir := filepath.Join(basePath, name)
 	if err := o.deployApp(ctx, name, composePath, deployMode); err != nil {
-		// Best-effort rollback: remove the committed DB rows
-		if _, dbErr := o.db.ExecContext(ctx, "DELETE FROM apps WHERE id = ?", appID); dbErr != nil {
-			log.Error().Err(dbErr).Str("app", name).Msg("Failed to rollback app row after deploy failure")
-		}
+		o.rollbackInstall(ctx, name, appID, fqdn, appDir)
 		return nil, fmt.Errorf("failed to deploy app: %w", err)
 	}
 
-	// Register DNS entry with Pi-hole (non-fatal) and reload (B116)
+	// Register DNS entry with Pi-hole — FATAL: app is unreachable without DNS
 	if err := o.pihole.AddEntry(fqdn, models.DefaultGatewayIP); err != nil {
-		log.Warn().Err(err).Str("fqdn", fqdn).Msg("Failed to add DNS entry")
-	} else {
-		if err := o.pihole.ReloadDNS(); err != nil {
-			log.Warn().Err(err).Msg("Failed to reload Pi-hole DNS after install")
-		}
+		o.rollbackInstall(ctx, name, appID, fqdn, appDir)
+		return nil, fmt.Errorf("failed to add DNS entry for %s: %w", fqdn, err)
+	}
+	if err := o.pihole.ReloadDNS(); err != nil {
+		o.rollbackInstall(ctx, name, appID, fqdn, appDir)
+		return nil, fmt.Errorf("failed to reload DNS after adding %s: %w", fqdn, err)
 	}
 
-	// Create NPM proxy host (non-fatal)
+	// Create NPM proxy host — FATAL: app is unreachable without reverse proxy
 	proxyHost := &NPMProxyHostExtended{
 		DomainNames:           []string{fqdn},
 		ForwardScheme:         "http",
@@ -266,7 +265,8 @@ func (o *Orchestrator) InstallApp(ctx context.Context, req models.InstallAppRequ
 		Meta:                  NPMMeta{},
 	}
 	if _, err := o.npm.CreateProxyHost(proxyHost); err != nil {
-		log.Warn().Err(err).Str("fqdn", fqdn).Msg("Failed to create NPM proxy")
+		o.rollbackInstall(ctx, name, appID, fqdn, appDir)
+		return nil, fmt.Errorf("failed to create reverse proxy for %s: %w", fqdn, err)
 	}
 
 	// Return the created app
@@ -471,27 +471,24 @@ services:
 	)
 	deployCmd.Dir = appConfig
 	if output, deployErr := deployCmd.CombinedOutput(); deployErr != nil {
-		// Rollback DB on deploy failure
-		if _, dbErr := o.db.ExecContext(ctx, "DELETE FROM apps WHERE id = ?", appID); dbErr != nil {
-			log.Error().Err(dbErr).Str("app", name).Msg("Failed to rollback app row after deploy failure")
-		}
-		os.RemoveAll(appBase)
+		o.rollbackInstall(ctx, name, appID, fqdn, appBase)
 		return nil, fmt.Errorf("stack deploy failed: %s", string(output))
 	}
 
 	job.Emit("deploy", 70, "Stack deployed, configuring network")
 
-	// DNS entry (non-fatal)
+	// DNS entry — FATAL: app is unreachable without DNS
 	job.Emit("dns", 80, "Configuring Pi-hole DNS")
 	if err := o.pihole.AddEntry(fqdn, models.DefaultGatewayIP); err != nil {
-		log.Warn().Err(err).Str("fqdn", fqdn).Msg("Failed to add DNS entry")
-	} else {
-		if err := o.pihole.ReloadDNS(); err != nil {
-			log.Warn().Err(err).Msg("Failed to reload Pi-hole DNS after install")
-		}
+		o.rollbackInstall(ctx, name, appID, fqdn, appBase)
+		return nil, fmt.Errorf("failed to add DNS entry for %s: %w", fqdn, err)
+	}
+	if err := o.pihole.ReloadDNS(); err != nil {
+		o.rollbackInstall(ctx, name, appID, fqdn, appBase)
+		return nil, fmt.Errorf("failed to reload DNS after adding %s: %w", fqdn, err)
 	}
 
-	// NPM proxy host (non-fatal)
+	// NPM proxy host — FATAL: app is unreachable without reverse proxy
 	// Clean stale proxy for same FQDN before creating (handles orphans from manual cleanup)
 	job.Emit("proxy", 90, "Setting up reverse proxy")
 	if existingProxy, _ := o.npm.FindProxyHostByDomain(fqdn); existingProxy != nil {
@@ -512,7 +509,8 @@ services:
 		Meta:                  NPMMeta{},
 	}
 	if _, err := o.npm.CreateProxyHost(proxyHost); err != nil {
-		log.Warn().Err(err).Str("fqdn", fqdn).Msg("Failed to create NPM proxy")
+		o.rollbackInstall(ctx, name, appID, fqdn, appBase)
+		return nil, fmt.Errorf("failed to create reverse proxy for %s: %w", fqdn, err)
 	}
 
 	return o.GetApp(ctx, name)
@@ -650,6 +648,40 @@ func (o *Orchestrator) UninstallApp(ctx context.Context, name string, keepData b
 	}
 
 	return nil
+}
+
+// rollbackInstall performs best-effort cleanup when install fails after partial completion.
+// Removes Swarm stack, DNS entry, NPM proxy, DB row, and app directory.
+func (o *Orchestrator) rollbackInstall(ctx context.Context, name string, appID int64, fqdn, appDir string) {
+	log.Warn().Str("app", name).Msg("Rolling back failed install")
+
+	// Remove Swarm stack
+	if err := o.swarm.RemoveStack(name); err != nil {
+		log.Error().Err(err).Str("app", name).Msg("Rollback: failed to remove stack")
+	}
+
+	// Remove NPM proxy
+	if proxyHost, err := o.npm.FindProxyHostByDomain(fqdn); err == nil && proxyHost != nil {
+		if err := o.npm.DeleteProxyHost(proxyHost.ID); err != nil {
+			log.Error().Err(err).Str("fqdn", fqdn).Msg("Rollback: failed to delete NPM proxy")
+		}
+	}
+
+	// Remove DNS entry
+	if err := o.pihole.RemoveEntry(fqdn); err != nil {
+		log.Error().Err(err).Str("fqdn", fqdn).Msg("Rollback: failed to remove DNS entry")
+	}
+	_ = o.pihole.ReloadDNS()
+
+	// Remove DB row (cascades to ports + fqdns via foreign_keys=ON in DSN)
+	if _, err := o.db.ExecContext(ctx, "DELETE FROM apps WHERE id = ?", appID); err != nil {
+		log.Error().Err(err).Str("app", name).Msg("Rollback: failed to delete app row")
+	}
+
+	// Remove app directory
+	if appDir != "" {
+		os.RemoveAll(appDir)
+	}
 }
 
 // StartApp starts an application
