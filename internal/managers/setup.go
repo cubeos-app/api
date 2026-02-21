@@ -370,8 +370,9 @@ func (m *SetupManager) ApplySetupConfig(cfg *models.SetupConfig) error {
 		return fmt.Errorf("failed to create admin user: %w", err)
 	}
 	// Sync password to File Browser (non-fatal — File Browser default is admin/admin)
+	// Uses retry with backoff since FB may still be starting during first boot.
 	if m.filebrowser != nil {
-		go m.filebrowser.SyncAdminPassword("admin", cfg.AdminPassword)
+		go m.filebrowser.SyncAdminPasswordWithRetry("admin", cfg.AdminPassword)
 	}
 	m.updateStep(1)
 

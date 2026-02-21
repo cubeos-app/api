@@ -2,11 +2,14 @@ package managers
 
 import (
 	"bytes"
+	"database/sql"
 	"encoding/json"
 	"fmt"
 	"io"
 	"net/http"
 	"time"
+
+	"cubeos-api/internal/models"
 
 	"github.com/rs/zerolog/log"
 )
@@ -14,10 +17,18 @@ import (
 // FileBrowserClient manages credentials sync with the File Browser service.
 // File Browser uses a non-standard X-Auth header (not Authorization: Bearer)
 // and a unique envelope format for user updates.
+//
+// Password sync happens at three points:
+//   - First boot: setup.go calls SyncAdminPasswordWithRetry("admin", newPassword)
+//   - Password change: handlers.go calls SyncAdminPassword(oldPassword, newPassword)
+//   - API startup: main.go calls EnsurePasswordSynced(db) to catch missed first-boot syncs
 type FileBrowserClient struct {
 	baseURL    string
 	httpClient *http.Client
 }
+
+// FileBrowser minimum password length (enforced server-side by FB).
+const fbMinPasswordLength = 6
 
 // fbLoginRequest is the File Browser login payload.
 type fbLoginRequest struct {
@@ -166,6 +177,52 @@ func (c *FileBrowserClient) updatePassword(token string, user *fbUser, newPasswo
 	return nil
 }
 
+// doSync performs the actual login → fetch user → update password sequence.
+// Returns nil on success, error otherwise.
+func (c *FileBrowserClient) doSync(currentPassword, newPassword string) error {
+	l := log.With().Str("component", "filebrowser-sync").Logger()
+
+	if len(newPassword) < fbMinPasswordLength {
+		return fmt.Errorf("password too short for File Browser (need %d+ chars, got %d)",
+			fbMinPasswordLength, len(newPassword))
+	}
+
+	// Try authentication with multiple passwords (in order of likelihood)
+	passwords := []string{currentPassword, "admin", newPassword}
+	var token string
+	var loginErr error
+
+	for _, pw := range passwords {
+		token, loginErr = c.login("admin", pw)
+		if loginErr == nil {
+			if pw == newPassword {
+				// Already synced — password matches, nothing to do
+				l.Debug().Msg("File Browser password already matches CubeOS — no sync needed")
+				return nil
+			}
+			break
+		}
+	}
+
+	if loginErr != nil {
+		return fmt.Errorf("failed to authenticate with File Browser: %w", loginErr)
+	}
+
+	// Fetch current user to preserve existing fields (scope, permissions, etc.)
+	user, err := c.getUser(token, 1)
+	if err != nil {
+		return fmt.Errorf("failed to fetch admin user: %w", err)
+	}
+
+	// Update password
+	if err := c.updatePassword(token, user, newPassword); err != nil {
+		return fmt.Errorf("failed to update password: %w", err)
+	}
+
+	l.Info().Msg("File Browser admin password synced successfully")
+	return nil
+}
+
 // SyncAdminPassword updates the File Browser admin (user ID 1) password.
 // It authenticates with currentPassword, then updates to newPassword.
 // This is non-fatal — errors are logged but don't propagate to the caller.
@@ -179,37 +236,95 @@ func (c *FileBrowserClient) updatePassword(token string, user *fbUser, newPasswo
 func (c *FileBrowserClient) SyncAdminPassword(currentPassword, newPassword string) {
 	l := log.With().Str("component", "filebrowser-sync").Logger()
 
-	// Try authentication with multiple passwords (in order of likelihood)
-	passwords := []string{currentPassword, "admin", newPassword}
-	var token string
-	var loginErr error
+	if err := c.doSync(currentPassword, newPassword); err != nil {
+		l.Warn().Err(err).Msg("password sync skipped")
+	}
+}
 
-	for _, pw := range passwords {
-		token, loginErr = c.login("admin", pw)
-		if loginErr == nil {
-			break
+// SyncAdminPasswordWithRetry retries the password sync with backoff.
+// Used during first boot when FileBrowser may still be starting up.
+// Designed to run as a goroutine — non-blocking, non-fatal.
+//
+// Retry schedule: 5s, 10s, 15s, 20s, 25s, 30s (6 attempts over ~2 min).
+func (c *FileBrowserClient) SyncAdminPasswordWithRetry(currentPassword, newPassword string) {
+	l := log.With().Str("component", "filebrowser-sync").Logger()
+
+	const maxAttempts = 6
+	backoff := 5 * time.Second
+
+	for attempt := 1; attempt <= maxAttempts; attempt++ {
+		err := c.doSync(currentPassword, newPassword)
+		if err == nil {
+			return // Success
 		}
-	}
 
-	if loginErr != nil {
-		l.Warn().Err(loginErr).Msg("failed to authenticate with File Browser — password sync skipped")
+		if attempt == maxAttempts {
+			l.Warn().Err(err).
+				Int("attempts", maxAttempts).
+				Msg("File Browser password sync failed after all retries — user may need to log in with default password 'admin'")
+			return
+		}
+
+		l.Debug().Err(err).
+			Int("attempt", attempt).
+			Dur("next_retry", backoff).
+			Msg("File Browser not ready, will retry")
+
+		time.Sleep(backoff)
+		backoff += 5 * time.Second
+	}
+}
+
+// EnsurePasswordSynced reads the admin password from the setup config in the
+// database and syncs it to File Browser if needed. This catches the case where
+// first-boot sync failed (e.g. FileBrowser wasn't ready) and the API restarted.
+//
+// Called once during API startup as a background goroutine.
+// Non-fatal — logs warnings on failure but never blocks the API.
+func (c *FileBrowserClient) EnsurePasswordSynced(dbConn *sql.DB) {
+	l := log.With().Str("component", "filebrowser-sync").Logger()
+
+	// Only run if setup is complete (otherwise first-boot flow handles it)
+	var isComplete int
+	if err := dbConn.QueryRow(`SELECT is_complete FROM setup_status WHERE id = 1`).Scan(&isComplete); err != nil {
+		l.Debug().Err(err).Msg("cannot read setup_status — skipping startup sync")
+		return
+	}
+	if isComplete != 1 {
+		l.Debug().Msg("setup not complete — skipping startup FileBrowser sync")
 		return
 	}
 
-	// Fetch current user to preserve existing fields (scope, permissions, etc.)
-	user, err := c.getUser(token, 1)
-	if err != nil {
-		l.Warn().Err(err).Msg("failed to fetch File Browser admin user")
+	// Read the admin_password from setup config JSON
+	var configJSON sql.NullString
+	if err := dbConn.QueryRow(`SELECT config_json FROM setup_status WHERE id = 1`).Scan(&configJSON); err != nil || !configJSON.Valid || configJSON.String == "" {
+		l.Debug().Msg("no setup config_json found — skipping startup sync")
 		return
 	}
 
-	// Update password
-	if err := c.updatePassword(token, user, newPassword); err != nil {
-		l.Warn().Err(err).Msg("failed to update File Browser admin password")
+	var cfg models.SetupConfig
+	if err := json.Unmarshal([]byte(configJSON.String), &cfg); err != nil {
+		l.Warn().Err(err).Msg("failed to parse setup config_json")
 		return
 	}
 
-	l.Info().Msg("File Browser admin password synced successfully")
+	if cfg.AdminPassword == "" {
+		l.Debug().Msg("no admin_password in setup config — skipping startup sync")
+		return
+	}
+
+	// Wait a moment for FileBrowser to be ready (it starts with Swarm, may need time)
+	time.Sleep(5 * time.Second)
+
+	// Quick check: can we log in with the target password already? If yes, we're good.
+	if _, err := c.login("admin", cfg.AdminPassword); err == nil {
+		l.Debug().Msg("File Browser password already matches CubeOS — startup sync not needed")
+		return
+	}
+
+	// Try syncing — File Browser likely still has the default "admin" password
+	l.Info().Msg("File Browser password out of sync — attempting startup resync")
+	c.SyncAdminPasswordWithRetry("admin", cfg.AdminPassword)
 }
 
 // IsAvailable checks if the File Browser service is reachable.

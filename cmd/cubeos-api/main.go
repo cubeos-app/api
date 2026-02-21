@@ -365,6 +365,11 @@ func main() {
 	fbClient := managers.NewFileBrowserClient(fmt.Sprintf("http://%s:6013", cfg.GatewayIP))
 	log.Info().Str("url", fmt.Sprintf("http://%s:6013", cfg.GatewayIP)).Msg("FileBrowser client initialized")
 
+	// Startup sync: ensure File Browser password matches CubeOS admin password.
+	// Catches first-boot sync failures (e.g. FB wasn't ready when setup ran).
+	// Runs in background — non-blocking, non-fatal.
+	go fbClient.EnsurePasswordSynced(db.DB)
+
 	setupMgr := managers.NewSetupManager(cfg, db.DB, halClient, fbClient)
 
 	// Create handlers
