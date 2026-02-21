@@ -224,6 +224,11 @@ func (m *AppStoreManager) loadInstalledApps() {
 			continue
 		}
 
+		// Skip ghost records with empty name
+		if app.ID == "" || app.Name == "" {
+			orphans = append(orphans, app.ID)
+			continue
+		}
 		app.Status = "unknown" // Will be refreshed from Swarm at query time
 		m.installed[app.ID] = &app
 	}
@@ -1982,7 +1987,7 @@ func (m *AppStoreManager) GetInstalledApps() []*models.InstalledApp {
 	// Filter out apps that were auto-removed during reconciliation
 	live := make([]*models.InstalledApp, 0, len(apps))
 	for _, app := range apps {
-		if app.Status != "removed" {
+		if app.Status != "removed" && app.Name != "" {
 			live = append(live, app)
 		}
 	}
