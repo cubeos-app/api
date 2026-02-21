@@ -25,20 +25,22 @@ import (
 
 // SetupManager handles first boot setup operations
 type SetupManager struct {
-	cfg        *config.Config
-	db         *sql.DB
-	hal        *hal.Client
-	configPath string
-	setupDone  bool
+	cfg         *config.Config
+	db          *sql.DB
+	hal         *hal.Client
+	filebrowser *FileBrowserClient
+	configPath  string
+	setupDone   bool
 }
 
 // NewSetupManager creates a new setup manager
-func NewSetupManager(cfg *config.Config, db *sql.DB, halClient *hal.Client) *SetupManager {
+func NewSetupManager(cfg *config.Config, db *sql.DB, halClient *hal.Client, fbClient *FileBrowserClient) *SetupManager {
 	m := &SetupManager{
-		cfg:        cfg,
-		db:         db,
-		hal:        halClient,
-		configPath: "/cubeos/config",
+		cfg:         cfg,
+		db:          db,
+		hal:         halClient,
+		filebrowser: fbClient,
+		configPath:  "/cubeos/config",
 	}
 
 	os.MkdirAll(m.configPath, 0755)
@@ -366,6 +368,10 @@ func (m *SetupManager) ApplySetupConfig(cfg *models.SetupConfig) error {
 	// Step 1: Create admin user
 	if err := m.createAdminUser(cfg.AdminUsername, cfg.AdminPassword, cfg.AdminEmail); err != nil {
 		return fmt.Errorf("failed to create admin user: %w", err)
+	}
+	// Sync password to File Browser (non-fatal — File Browser default is admin/admin)
+	if m.filebrowser != nil {
+		go m.filebrowser.SyncAdminPassword("admin", cfg.AdminPassword)
 	}
 	m.updateStep(1)
 

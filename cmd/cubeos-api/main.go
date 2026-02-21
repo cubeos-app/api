@@ -362,10 +362,13 @@ func main() {
 	mountsMgr.SetDB(db.DB) // FIX: Wire database connection
 
 	// Create Setup manager (first boot wizard)
-	setupMgr := managers.NewSetupManager(cfg, db.DB, halClient)
+	fbClient := managers.NewFileBrowserClient(fmt.Sprintf("http://%s:6013", cfg.GatewayIP))
+	log.Info().Str("url", fmt.Sprintf("http://%s:6013", cfg.GatewayIP)).Msg("FileBrowser client initialized")
+
+	setupMgr := managers.NewSetupManager(cfg, db.DB, halClient, fbClient)
 
 	// Create handlers
-	h := handlers.NewHandlers(cfg, db, docker, halClient, systemMgr, networkMgr)
+	h := handlers.NewHandlers(cfg, db, docker, halClient, systemMgr, networkMgr, fbClient)
 	ext := handlers.NewExtendedHandlers(logMgr, firewallMgr, backupMgr, processMgr, wizardMgr, monitoringMgr, prefMgr, powerMgr, storageMgr, halClient)
 	appStoreHandler := handlers.NewAppStoreHandler(appStoreMgr, npmMgr)
 	setupHandler := handlers.NewSetupHandler(setupMgr)

@@ -21,27 +21,29 @@ import (
 
 // Handlers holds all handler dependencies
 type Handlers struct {
-	cfg       *config.Config
-	db        *sqlx.DB
-	system    *managers.SystemManager
-	network   *managers.NetworkManager
-	docker    *managers.DockerManager
-	hal       *hal.Client
-	startTime time.Time
+	cfg         *config.Config
+	db          *sqlx.DB
+	system      *managers.SystemManager
+	network     *managers.NetworkManager
+	docker      *managers.DockerManager
+	hal         *hal.Client
+	filebrowser *managers.FileBrowserClient
+	startTime   time.Time
 }
 
 // NewHandlers creates a new Handlers instance.
 // systemMgr and networkMgr are passed in to avoid creating duplicate instances
 // (they are shared with WSManager, MonitoringManager, etc.).
-func NewHandlers(cfg *config.Config, db *sqlx.DB, docker *managers.DockerManager, halClient *hal.Client, systemMgr *managers.SystemManager, networkMgr *managers.NetworkManager) *Handlers {
+func NewHandlers(cfg *config.Config, db *sqlx.DB, docker *managers.DockerManager, halClient *hal.Client, systemMgr *managers.SystemManager, networkMgr *managers.NetworkManager, fbClient *managers.FileBrowserClient) *Handlers {
 	return &Handlers{
-		cfg:       cfg,
-		db:        db,
-		system:    systemMgr,
-		network:   networkMgr,
-		docker:    docker,
-		hal:       halClient,
-		startTime: time.Now(),
+		cfg:         cfg,
+		db:          db,
+		system:      systemMgr,
+		network:     networkMgr,
+		docker:      docker,
+		hal:         halClient,
+		filebrowser: fbClient,
+		startTime:   time.Now(),
 	}
 }
 
@@ -261,6 +263,11 @@ func (h *Handlers) ChangePassword(w http.ResponseWriter, r *http.Request) {
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, "Failed to update password")
 		return
+	}
+
+	// Sync password to File Browser (non-fatal — best effort)
+	if h.filebrowser != nil {
+		go h.filebrowser.SyncAdminPassword(req.CurrentPassword, req.NewPassword)
 	}
 
 	writeJSON(w, http.StatusOK, models.SuccessResponse{
