@@ -441,6 +441,9 @@ services:
 		return nil, fmt.Errorf("failed to allocate port: %w", err)
 	}
 
+	// Clean any stale FQDN entry (e.g. from manual DB cleanup without CASCADE)
+	_, _ = tx.ExecContext(ctx, `DELETE FROM fqdns WHERE fqdn = ?`, fqdn)
+
 	_, err = tx.ExecContext(ctx, `
 		INSERT INTO fqdns (app_id, fqdn, subdomain, backend_port)
 		VALUES (?, ?, ?, ?)
@@ -489,7 +492,13 @@ services:
 	}
 
 	// NPM proxy host (non-fatal)
+	// Clean stale proxy for same FQDN before creating (handles orphans from manual cleanup)
 	job.Emit("proxy", 90, "Setting up reverse proxy")
+	if existingProxy, _ := o.npm.FindProxyHostByDomain(fqdn); existingProxy != nil {
+		if delErr := o.npm.DeleteProxyHost(existingProxy.ID); delErr != nil {
+			log.Warn().Err(delErr).Str("fqdn", fqdn).Int("proxyID", existingProxy.ID).Msg("Failed to clean stale NPM proxy")
+		}
+	}
 	proxyHost := &NPMProxyHostExtended{
 		DomainNames:           []string{fqdn},
 		ForwardScheme:         "http",
