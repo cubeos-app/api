@@ -313,11 +313,28 @@ func (o *Orchestrator) InstallFromRegistryWithProgress(ctx context.Context, req 
 
 	job.Emit("port", 20, "Allocating port")
 
-	// Allocate port
-	allocatedPort, err := o.ports.AllocateUserPort()
-	if err != nil {
-		os.RemoveAll(appBase)
-		return nil, fmt.Errorf("failed to allocate port: %w", err)
+	// Allocate port: use requested port if provided and available, otherwise auto-allocate
+	var allocatedPort int
+	if req.Port > 0 {
+		allocated, _ := o.ports.IsPortAllocated(req.Port, "tcp")
+		if !allocated && !o.ports.IsPortReserved(req.Port) {
+			allocatedPort = req.Port
+		} else {
+			log.Warn().Int("port", req.Port).Msg("requested port unavailable, auto-allocating")
+			var err error
+			allocatedPort, err = o.ports.AllocateUserPort()
+			if err != nil {
+				os.RemoveAll(appBase)
+				return nil, fmt.Errorf("failed to allocate port: %w", err)
+			}
+		}
+	} else {
+		var err error
+		allocatedPort, err = o.ports.AllocateUserPort()
+		if err != nil {
+			os.RemoveAll(appBase)
+			return nil, fmt.Errorf("failed to allocate port: %w", err)
+		}
 	}
 
 	job.Emit("port", 25, fmt.Sprintf("Allocated port %d", allocatedPort))
@@ -331,6 +348,19 @@ func (o *Orchestrator) InstallFromRegistryWithProgress(ctx context.Context, req 
 	}
 
 	job.Emit("compose", 35, "Generating Docker config")
+
+	// Apply volume overrides: if user specified a custom path for /data, use it
+	dataMount := appData
+	if override, ok := req.VolumeOverrides["/data"]; ok && override != "" {
+		dataMount = override
+		// Ensure the custom path exists
+		if err := os.MkdirAll(dataMount, 0777); err != nil {
+			log.Warn().Err(err).Str("path", dataMount).Msg("failed to create custom volume path, falling back to default")
+			dataMount = appData
+		} else {
+			os.Chmod(dataMount, 0777)
+		}
+	}
 
 	// Build local registry image reference
 	fullImage := fmt.Sprintf("localhost:5000/%s:%s", req.Image, req.Tag)
@@ -352,7 +382,7 @@ services:
         max_attempts: 3
     volumes:
       - %s:/data
-`, name, fullImage, containerPort, allocatedPort, appData)
+`, name, fullImage, containerPort, allocatedPort, dataMount)
 
 	composePath := filepath.Join(appConfig, "docker-compose.yml")
 	if err := os.WriteFile(composePath, []byte(compose), 0644); err != nil {
@@ -370,7 +400,12 @@ services:
 	if displayName == "" {
 		displayName = toTitleCase(strings.ReplaceAll(name, "-", " "))
 	}
-	fqdn := fmt.Sprintf("%s.%s", name, o.cfg.Domain)
+	// Use custom subdomain if provided, otherwise derive from name
+	subdomain := name
+	if req.Subdomain != "" {
+		subdomain = strings.ToLower(strings.TrimSpace(req.Subdomain))
+	}
+	fqdn := fmt.Sprintf("%s.%s", subdomain, o.cfg.Domain)
 
 	// Database transaction: apps + port_allocations + fqdns
 	tx, err := o.db.BeginTx(ctx, nil)
@@ -385,7 +420,7 @@ services:
 			compose_path, data_path, enabled, deploy_mode)
 		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 	`, name, displayName, req.Description, models.AppTypeUser, "user", models.AppSourceRegistry,
-		composePath, appData, true, models.DeployModeStack)
+		composePath, dataMount, true, models.DeployModeStack)
 	if err != nil {
 		os.RemoveAll(appBase)
 		return nil, fmt.Errorf("failed to insert app: %w", err)
@@ -409,7 +444,7 @@ services:
 	_, err = tx.ExecContext(ctx, `
 		INSERT INTO fqdns (app_id, fqdn, subdomain, backend_port)
 		VALUES (?, ?, ?, ?)
-	`, appID, fqdn, name, allocatedPort)
+	`, appID, fqdn, subdomain, allocatedPort)
 	if err != nil {
 		os.RemoveAll(appBase)
 		return nil, fmt.Errorf("failed to register FQDN: %w", err)

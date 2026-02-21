@@ -131,8 +131,11 @@ type InstallAppRequest struct {
 	CasaOSJSON string `json:"casaos_json,omitempty"`
 
 	// For registry installs
-	Image string `json:"image,omitempty"` // Registry image name (e.g. "kiwix/kiwix-serve")
-	Tag   string `json:"tag,omitempty"`   // Image tag (e.g. "3.8.1")
+	Image           string            `json:"image,omitempty"`            // Registry image name (e.g. "kiwix/kiwix-serve")
+	Tag             string            `json:"tag,omitempty"`              // Image tag (e.g. "3.8.1")
+	Port            int               `json:"port,omitempty"`             // 0 = auto-allocate, >0 = use specific port
+	VolumeOverrides map[string]string `json:"volume_overrides,omitempty"` // containerPath → hostPath overrides
+	Subdomain       string            `json:"subdomain,omitempty"`        // Custom subdomain (default: derived from name)
 }
 
 // UpdateAppRequest is the request to update an app.
