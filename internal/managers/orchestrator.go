@@ -4,9 +4,13 @@ package managers
 import (
 	"context"
 	"database/sql"
+	"encoding/json"
 	"fmt"
+	"net/http"
 	"os"
+	"os/exec"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"time"
 
@@ -20,16 +24,18 @@ import (
 // Orchestrator coordinates all app operations through a unified interface.
 // It is the single point of control for app lifecycle management.
 type Orchestrator struct {
-	db     *sql.DB
-	cfg    *config.Config
-	swarm  *SwarmManager
-	docker *DockerManager
-	npm    *NPMManager
-	pihole *PiholeManager
-	ports  *PortManager
-	hal    *hal.Client
-	ctx    context.Context
-	cancel context.CancelFunc
+	db             *sql.DB
+	cfg            *config.Config
+	swarm          *SwarmManager
+	docker         *DockerManager
+	npm            *NPMManager
+	pihole         *PiholeManager
+	ports          *PortManager
+	hal            *hal.Client
+	registryURL    string
+	registryClient *http.Client
+	ctx            context.Context
+	cancel         context.CancelFunc
 }
 
 // OrchestratorConfig holds configuration for the Orchestrator
@@ -41,6 +47,7 @@ type OrchestratorConfig struct {
 	PiholePath   string
 	NPMConfigDir string
 	HALClient    *hal.Client
+	RegistryURL  string        // Local Docker registry URL (e.g. http://10.42.24.1:5000)
 	SwarmManager *SwarmManager // Optional: shared instance; if nil, one is created internally
 }
 
@@ -56,9 +63,13 @@ func NewOrchestrator(cfg OrchestratorConfig) (*Orchestrator, error) {
 	ctx, cancel := context.WithCancel(context.Background())
 
 	o := &Orchestrator{
-		db:     cfg.DB,
-		cfg:    cfg.Config,
-		hal:    cfg.HALClient,
+		db:          cfg.DB,
+		cfg:         cfg.Config,
+		hal:         cfg.HALClient,
+		registryURL: cfg.RegistryURL,
+		registryClient: &http.Client{
+			Timeout: 10 * time.Second,
+		},
 		ctx:    ctx,
 		cancel: cancel,
 	}
@@ -260,6 +271,264 @@ func (o *Orchestrator) InstallApp(ctx context.Context, req models.InstallAppRequ
 
 	// Return the created app
 	return o.GetApp(ctx, name)
+}
+
+// InstallFromRegistryWithProgress installs a registry image with SSE progress tracking.
+// This creates the compose file from the image/tag, allocates a port, sets up DNS/proxy,
+// and deploys as a Swarm stack — emitting progress events to the provided Job throughout.
+func (o *Orchestrator) InstallFromRegistryWithProgress(ctx context.Context, req models.InstallAppRequest, job *Job) (*models.App, error) {
+	name := strings.ToLower(strings.TrimSpace(req.Name))
+	if name == "" {
+		return nil, fmt.Errorf("app name is required")
+	}
+	if !isValidAppName(name) {
+		return nil, fmt.Errorf("invalid app name: must be lowercase alphanumeric with hyphens")
+	}
+	if req.Image == "" {
+		return nil, fmt.Errorf("image is required for registry install")
+	}
+	if req.Tag == "" {
+		req.Tag = "latest"
+	}
+
+	// Check if app already exists
+	existing, _ := o.GetApp(ctx, name)
+	if existing != nil {
+		return nil, fmt.Errorf("app %s already exists", name)
+	}
+
+	job.Emit("setup", 10, "Creating app directories")
+
+	// Create app directories
+	appBase := filepath.Join("/cubeos/apps", name)
+	appConfig := filepath.Join(appBase, "appconfig")
+	appData := filepath.Join(appBase, "appdata")
+	if err := os.MkdirAll(appConfig, 0755); err != nil {
+		return nil, fmt.Errorf("failed to create app directory: %w", err)
+	}
+	if err := os.MkdirAll(appData, 0777); err != nil {
+		return nil, fmt.Errorf("failed to create data directory: %w", err)
+	}
+	os.Chmod(appData, 0777) // Explicit chmod to override umask
+
+	job.Emit("port", 20, "Allocating port")
+
+	// Allocate port
+	allocatedPort, err := o.ports.AllocateUserPort()
+	if err != nil {
+		os.RemoveAll(appBase)
+		return nil, fmt.Errorf("failed to allocate port: %w", err)
+	}
+
+	job.Emit("port", 25, fmt.Sprintf("Allocated port %d", allocatedPort))
+
+	// Detect container port from image EXPOSE directives via registry manifest
+	containerPort := allocatedPort
+	job.Emit("manifest", 30, "Detecting container EXPOSE port")
+	if detected := o.detectContainerPort(req.Image, req.Tag); detected > 0 {
+		containerPort = detected
+		log.Info().Str("image", req.Image).Int("port", detected).Msg("detected container EXPOSE port from registry manifest")
+	}
+
+	job.Emit("compose", 35, "Generating Docker config")
+
+	// Build local registry image reference
+	fullImage := fmt.Sprintf("localhost:5000/%s:%s", req.Image, req.Tag)
+
+	// Generate docker-compose.yml
+	compose := fmt.Sprintf(`version: "3.8"
+services:
+  %s:
+    image: %s
+    ports:
+      - target: %d
+        published: %d
+        mode: ingress
+    deploy:
+      replicas: 1
+      restart_policy:
+        condition: on-failure
+        delay: 5s
+        max_attempts: 3
+    volumes:
+      - %s:/data
+`, name, fullImage, containerPort, allocatedPort, appData)
+
+	composePath := filepath.Join(appConfig, "docker-compose.yml")
+	if err := os.WriteFile(composePath, []byte(compose), 0644); err != nil {
+		os.RemoveAll(appBase)
+		return nil, fmt.Errorf("failed to write compose file: %w", err)
+	}
+
+	// Pre-create bind mount directories
+	preCreateBindMounts(compose)
+
+	job.Emit("database", 40, "Saving to database")
+
+	// Generate display name and FQDN
+	displayName := req.DisplayName
+	if displayName == "" {
+		displayName = toTitleCase(strings.ReplaceAll(name, "-", " "))
+	}
+	fqdn := fmt.Sprintf("%s.%s", name, o.cfg.Domain)
+
+	// Database transaction: apps + port_allocations + fqdns
+	tx, err := o.db.BeginTx(ctx, nil)
+	if err != nil {
+		os.RemoveAll(appBase)
+		return nil, fmt.Errorf("failed to begin transaction: %w", err)
+	}
+	defer tx.Rollback()
+
+	result, err := tx.ExecContext(ctx, `
+		INSERT INTO apps (name, display_name, description, type, category, source, 
+			compose_path, data_path, enabled, deploy_mode)
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+	`, name, displayName, req.Description, models.AppTypeUser, "user", models.AppSourceRegistry,
+		composePath, appData, true, models.DeployModeStack)
+	if err != nil {
+		os.RemoveAll(appBase)
+		return nil, fmt.Errorf("failed to insert app: %w", err)
+	}
+
+	appID, err := result.LastInsertId()
+	if err != nil {
+		os.RemoveAll(appBase)
+		return nil, fmt.Errorf("failed to get app ID: %w", err)
+	}
+
+	_, err = tx.ExecContext(ctx, `
+		INSERT INTO port_allocations (app_id, port, protocol, description, is_primary)
+		VALUES (?, ?, 'tcp', 'Web UI', TRUE)
+	`, appID, allocatedPort)
+	if err != nil {
+		os.RemoveAll(appBase)
+		return nil, fmt.Errorf("failed to allocate port: %w", err)
+	}
+
+	_, err = tx.ExecContext(ctx, `
+		INSERT INTO fqdns (app_id, fqdn, subdomain, backend_port)
+		VALUES (?, ?, ?, ?)
+	`, appID, fqdn, name, allocatedPort)
+	if err != nil {
+		os.RemoveAll(appBase)
+		return nil, fmt.Errorf("failed to register FQDN: %w", err)
+	}
+
+	if err := tx.Commit(); err != nil {
+		os.RemoveAll(appBase)
+		return nil, fmt.Errorf("failed to commit app install: %w", err)
+	}
+
+	job.Emit("deploy", 50, "Deploying Swarm stack")
+
+	// Deploy as Swarm stack
+	deployCtx, deployCancel := context.WithTimeout(ctx, 3*time.Minute)
+	defer deployCancel()
+
+	deployCmd := exec.CommandContext(deployCtx, "docker", "stack", "deploy",
+		"-c", composePath,
+		"--resolve-image=never",
+		name,
+	)
+	deployCmd.Dir = appConfig
+	if output, deployErr := deployCmd.CombinedOutput(); deployErr != nil {
+		// Rollback DB on deploy failure
+		if _, dbErr := o.db.ExecContext(ctx, "DELETE FROM apps WHERE id = ?", appID); dbErr != nil {
+			log.Error().Err(dbErr).Str("app", name).Msg("Failed to rollback app row after deploy failure")
+		}
+		os.RemoveAll(appBase)
+		return nil, fmt.Errorf("stack deploy failed: %s", string(output))
+	}
+
+	job.Emit("deploy", 70, "Stack deployed, configuring network")
+
+	// DNS entry (non-fatal)
+	job.Emit("dns", 80, "Configuring Pi-hole DNS")
+	if err := o.pihole.AddEntry(fqdn, models.DefaultGatewayIP); err != nil {
+		log.Warn().Err(err).Str("fqdn", fqdn).Msg("Failed to add DNS entry")
+	} else {
+		if err := o.pihole.ReloadDNS(); err != nil {
+			log.Warn().Err(err).Msg("Failed to reload Pi-hole DNS after install")
+		}
+	}
+
+	// NPM proxy host (non-fatal)
+	job.Emit("proxy", 90, "Setting up reverse proxy")
+	proxyHost := &NPMProxyHostExtended{
+		DomainNames:           []string{fqdn},
+		ForwardScheme:         "http",
+		ForwardHost:           models.DefaultGatewayIP,
+		ForwardPort:           allocatedPort,
+		BlockExploits:         true,
+		AllowWebsocketUpgrade: true,
+		AccessListID:          0,
+		CertificateID:         0,
+		AdvancedConfig:        "",
+		Meta:                  NPMMeta{},
+	}
+	if _, err := o.npm.CreateProxyHost(proxyHost); err != nil {
+		log.Warn().Err(err).Str("fqdn", fqdn).Msg("Failed to create NPM proxy")
+	}
+
+	return o.GetApp(ctx, name)
+}
+
+// detectContainerPort queries the local Docker registry to find the EXPOSE port
+// from an image's config. Returns 0 if detection fails (caller should use allocated port).
+func (o *Orchestrator) detectContainerPort(image, tag string) int {
+	if o.registryURL == "" || o.registryClient == nil {
+		return 0
+	}
+
+	// Fetch the image manifest to get the config digest
+	manifestURL := fmt.Sprintf("%s/v2/%s/manifests/%s", o.registryURL, image, tag)
+	req, err := http.NewRequest("GET", manifestURL, nil)
+	if err != nil {
+		return 0
+	}
+	req.Header.Set("Accept", "application/vnd.docker.distribution.manifest.v2+json")
+
+	resp, err := o.registryClient.Do(req)
+	if err != nil || resp.StatusCode != http.StatusOK {
+		return 0
+	}
+	defer resp.Body.Close()
+
+	var manifest struct {
+		Config struct {
+			Digest string `json:"digest"`
+		} `json:"config"`
+	}
+	if err := json.NewDecoder(resp.Body).Decode(&manifest); err != nil || manifest.Config.Digest == "" {
+		return 0
+	}
+
+	// Fetch the image config blob to find ExposedPorts
+	blobURL := fmt.Sprintf("%s/v2/%s/blobs/%s", o.registryURL, image, manifest.Config.Digest)
+	blobResp, err := o.registryClient.Get(blobURL)
+	if err != nil || blobResp.StatusCode != http.StatusOK {
+		return 0
+	}
+	defer blobResp.Body.Close()
+
+	var imgConfig struct {
+		Config struct {
+			ExposedPorts map[string]struct{} `json:"ExposedPorts"`
+		} `json:"config"`
+	}
+	if err := json.NewDecoder(blobResp.Body).Decode(&imgConfig); err != nil {
+		return 0
+	}
+
+	// Return first exposed port
+	for portSpec := range imgConfig.Config.ExposedPorts {
+		parts := strings.SplitN(portSpec, "/", 2)
+		if port, err := strconv.Atoi(parts[0]); err == nil && port > 0 {
+			return port
+		}
+	}
+	return 0
 }
 
 // UninstallApp removes an application

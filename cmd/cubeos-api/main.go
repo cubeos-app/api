@@ -280,6 +280,12 @@ func main() {
 
 	appStoreMgr := managers.NewAppStoreManager(cfg, dbMgr, cfg.DataDir, piholeMgr, npmMgr, portMgr)
 
+	// Resolve registry URL early (used by both Orchestrator and RegistryHandler)
+	registryURL := os.Getenv("REGISTRY_URL")
+	if registryURL == "" {
+		registryURL = "http://" + cfg.GatewayIP + ":5000"
+	}
+
 	// Create Orchestrator for unified app management (Sprint 3)
 	orchestrator, err := managers.NewOrchestrator(managers.OrchestratorConfig{
 		DB:           db.DB,
@@ -290,6 +296,7 @@ func main() {
 		NPMConfigDir: "/cubeos/coreapps/npm/appdata",
 		HALClient:    halClient,
 		SwarmManager: swarmMgr,
+		RegistryURL:  registryURL,
 	})
 	if err != nil {
 		log.Warn().Err(err).Msg("failed to create Orchestrator")
@@ -365,15 +372,11 @@ func main() {
 	// PiholeManager already created earlier (used by AppStoreManager)
 
 	fqdnsHandler := handlers.NewFQDNsHandler(db.DB, npmMgr, piholeMgr)
-	registryURL := os.Getenv("REGISTRY_URL")
-	if registryURL == "" {
-		registryURL = "http://" + cfg.GatewayIP + ":5000"
-	}
 	registryPath := os.Getenv("REGISTRY_PATH")
 	if registryPath == "" {
 		registryPath = "/cubeos/data/registry"
 	}
-	registryHandler := handlers.NewRegistryHandler(registryURL, registryPath, portMgr, appStoreMgr)
+	registryHandler := handlers.NewRegistryHandler(registryURL, registryPath, portMgr, appStoreMgr, orchestrator)
 	log.Info().Msg("PortsHandler, FQDNsHandler, and RegistryHandler initialized")
 
 	// Create CasaOS Import handler (Sprint 4D)

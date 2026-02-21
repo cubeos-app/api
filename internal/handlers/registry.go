@@ -25,13 +25,14 @@ type RegistryHandler struct {
 	registryPath string
 	httpClient   *http.Client
 	portManager  *managers.PortManager     // B108: triple-source port allocation
-	appStoreMgr  *managers.AppStoreManager // B108b: full app pipeline for deploys
+	appStoreMgr  *managers.AppStoreManager // B108b: legacy — kept for backward compat
+	orchestrator *managers.Orchestrator    // Unified install pipeline (Batch 1)
 }
 
 // NewRegistryHandler creates a new RegistryHandler instance.
 // For Swarm containers, use the gateway IP (not localhost:5000)
 // because containers in overlay network cannot reach localhost on the host.
-func NewRegistryHandler(registryURL, registryPath string, portMgr *managers.PortManager, appStoreMgr *managers.AppStoreManager) *RegistryHandler {
+func NewRegistryHandler(registryURL, registryPath string, portMgr *managers.PortManager, appStoreMgr *managers.AppStoreManager, orchestrator *managers.Orchestrator) *RegistryHandler {
 	if registryURL == "" {
 		// Check env var first, then fall back to gateway IP (works from inside Swarm overlay)
 		registryURL = os.Getenv("REGISTRY_URL")
@@ -47,6 +48,7 @@ func NewRegistryHandler(registryURL, registryPath string, portMgr *managers.Port
 		registryPath: registryPath,
 		portManager:  portMgr,
 		appStoreMgr:  appStoreMgr,
+		orchestrator: orchestrator,
 		httpClient: &http.Client{
 			Timeout: 10 * time.Second, // Reduced timeout for faster failure detection
 		},
@@ -618,7 +620,7 @@ type DeployImageRequest struct {
 
 // DeployImage godoc
 // @Summary Deploy a cached registry image
-// @Description Deploys an image from the local registry through the full app pipeline. Creates DB record, allocates port, sets up FQDN/DNS/NPM proxy, and deploys via Docker Swarm. The app appears in "My Apps" and can be managed/uninstalled normally.
+// @Description Deploys an image from the local registry through the unified Orchestrator pipeline. Creates DB record, allocates port, sets up FQDN/DNS/NPM proxy, and deploys via Docker Swarm. The app appears in "My Apps" and can be managed/uninstalled normally. Internally delegates to POST /api/v1/apps with source="registry".
 // @Tags Registry
 // @Accept json
 // @Produce json
@@ -679,8 +681,34 @@ func (h *RegistryHandler) DeployImage(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// B108b: Delegate to AppStoreManager for the full install pipeline
-	// (DB record, port allocation, FQDN, DNS, NPM proxy, Swarm deploy)
+	// Delegate to Orchestrator unified pipeline (Batch 1: ONE code path)
+	if h.orchestrator != nil {
+		app, err := h.orchestrator.InstallApp(r.Context(), models.InstallAppRequest{
+			Name:   appName,
+			Source: models.AppSourceRegistry,
+			Image:  req.Image,
+			Tag:    req.Tag,
+		})
+		if err != nil {
+			registryWriteError(w, http.StatusInternalServerError, err.Error())
+			return
+		}
+
+		fqdn := app.GetPrimaryFQDN()
+		webUI := fmt.Sprintf("http://%s", fqdn)
+
+		registryWriteJSON(w, http.StatusOK, map[string]interface{}{
+			"success":  true,
+			"app_name": app.Name,
+			"image":    req.Image + ":" + req.Tag,
+			"fqdn":     fqdn,
+			"web_ui":   webUI,
+			"message":  fmt.Sprintf("Deployed %s — accessible at %s", app.Name, webUI),
+		})
+		return
+	}
+
+	// Fallback: legacy AppStoreManager path (backward compat if Orchestrator unavailable)
 	installed, err := h.appStoreMgr.InstallFromRegistry(req.Image, req.Tag, appName)
 	if err != nil {
 		registryWriteError(w, http.StatusInternalServerError, err.Error())

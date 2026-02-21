@@ -3,6 +3,7 @@ package handlers
 
 import (
 	"encoding/json"
+	"fmt"
 	"net/http"
 	"strconv"
 	"strings"
@@ -17,12 +18,14 @@ import (
 // AppsHandler handles unified app management endpoints.
 type AppsHandler struct {
 	orchestrator *managers.Orchestrator
+	jobTracker   *managers.JobTracker
 }
 
 // NewAppsHandler creates a new AppsHandler instance.
 func NewAppsHandler(orchestrator *managers.Orchestrator) *AppsHandler {
 	return &AppsHandler{
 		orchestrator: orchestrator,
+		jobTracker:   managers.NewJobTracker(),
 	}
 }
 
@@ -50,6 +53,9 @@ func (h *AppsHandler) Routes() chi.Router {
 	// Routing (Tor/VPN)
 	r.Post("/{name}/tor", h.SetAppTor)
 	r.Post("/{name}/vpn", h.SetAppVPN)
+
+	// Job progress (SSE) — matches /appstore/jobs/{jobID} pattern
+	r.Get("/jobs/{jobID}", h.JobProgress)
 
 	return r
 }
@@ -116,13 +122,14 @@ func (h *AppsHandler) GetApp(w http.ResponseWriter, r *http.Request) {
 
 // InstallApp godoc
 // @Summary Install an app
-// @Description Installs a new app from the app store or custom source
+// @Description Installs a new app. For source="registry", returns job_id for async SSE progress tracking via GET /apps/jobs/{jobID}. For other sources, returns the installed app synchronously.
 // @Tags Apps
 // @Accept json
 // @Produce json
 // @Security BearerAuth
 // @Param request body models.InstallAppRequest true "App installation configuration"
-// @Success 201 {object} models.App "Installed app details"
+// @Success 201 {object} models.App "Installed app details (synchronous)"
+// @Success 202 {object} map[string]interface{} "Job started: job_id, status (async registry install)"
 // @Failure 400 {object} ErrorResponse "Invalid request or missing name"
 // @Failure 500 {object} ErrorResponse "Failed to install app"
 // @Router /apps [post]
@@ -138,6 +145,35 @@ func (h *AppsHandler) InstallApp(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// Registry installs: async with job tracker for SSE progress
+	if req.Source == models.AppSourceRegistry {
+		job := h.jobTracker.CreateJob("install", req.Name)
+
+		go func() {
+			defer job.Close()
+
+			app, err := h.orchestrator.InstallFromRegistryWithProgress(r.Context(), req, job)
+			if err != nil {
+				job.EmitError("error", job.GetProgress(), err.Error())
+				return
+			}
+
+			// Emit done with the app FQDN for the frontend
+			fqdn := ""
+			if app != nil {
+				fqdn = app.GetPrimaryFQDN()
+			}
+			job.EmitDone(fmt.Sprintf("App installed successfully! Access at http://%s", fqdn))
+		}()
+
+		writeJSON(w, http.StatusAccepted, map[string]interface{}{
+			"job_id": job.ID,
+			"status": "installing",
+		})
+		return
+	}
+
+	// All other sources: synchronous install
 	app, err := h.orchestrator.InstallApp(r.Context(), req)
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, err.Error())
@@ -409,4 +445,53 @@ func (h *AppsHandler) SetAppVPN(w http.ResponseWriter, r *http.Request) {
 		"success":     true,
 		"vpn_enabled": req.Enabled,
 	})
+}
+
+// JobProgress godoc
+// @Summary Stream job progress via SSE
+// @Description Opens a Server-Sent Events stream for a running install/uninstall job. Each event is a JSON ProgressEvent. The stream closes when the job completes or fails.
+// @Tags Apps
+// @Produce text/event-stream
+// @Security BearerAuth
+// @Param jobID path string true "Job ID returned from install"
+// @Success 200 {object} managers.ProgressEvent "SSE stream of progress events"
+// @Failure 404 {object} ErrorResponse "Job not found"
+// @Failure 500 {object} ErrorResponse "Streaming not supported"
+// @Router /apps/jobs/{jobID} [get]
+func (h *AppsHandler) JobProgress(w http.ResponseWriter, r *http.Request) {
+	jobID := chi.URLParam(r, "jobID")
+	job := h.jobTracker.GetJob(jobID)
+	if job == nil {
+		writeError(w, http.StatusNotFound, "job not found")
+		return
+	}
+
+	flusher, ok := w.(http.Flusher)
+	if !ok {
+		writeError(w, http.StatusInternalServerError, "streaming not supported")
+		return
+	}
+
+	w.Header().Set("Content-Type", "text/event-stream")
+	w.Header().Set("Cache-Control", "no-cache")
+	w.Header().Set("Connection", "keep-alive")
+	w.Header().Set("X-Accel-Buffering", "no") // Disable Nginx buffering (NPM reverse proxy)
+
+	// Stream events until channel closes or client disconnects
+	for {
+		select {
+		case event, ok := <-job.Events:
+			if !ok {
+				// Channel closed — job finished
+				return
+			}
+			data, _ := json.Marshal(event)
+			fmt.Fprintf(w, "data: %s\n\n", data)
+			flusher.Flush()
+
+		case <-r.Context().Done():
+			// Client disconnected
+			return
+		}
+	}
 }

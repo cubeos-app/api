@@ -20,9 +20,10 @@ const (
 type AppSource string
 
 const (
-	AppSourceCubeOS AppSource = "cubeos" // Built-in CubeOS apps
-	AppSourceCasaOS AppSource = "casaos" // Installed from CasaOS store
-	AppSourceCustom AppSource = "custom" // Custom docker-compose
+	AppSourceCubeOS   AppSource = "cubeos"   // Built-in CubeOS apps
+	AppSourceCasaOS   AppSource = "casaos"   // Installed from CasaOS store
+	AppSourceCustom   AppSource = "custom"   // Custom docker-compose
+	AppSourceRegistry AppSource = "registry" // Installed from local Docker registry
 )
 
 // DeployMode represents how an app is deployed.
@@ -128,6 +129,10 @@ type InstallAppRequest struct {
 
 	// For CasaOS imports
 	CasaOSJSON string `json:"casaos_json,omitempty"`
+
+	// For registry installs
+	Image string `json:"image,omitempty"` // Registry image name (e.g. "kiwix/kiwix-serve")
+	Tag   string `json:"tag,omitempty"`   // Image tag (e.g. "3.8.1")
 }
 
 // UpdateAppRequest is the request to update an app.
