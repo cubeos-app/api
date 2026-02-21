@@ -2,6 +2,7 @@
 package handlers
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"net/http"
@@ -152,7 +153,7 @@ func (h *AppsHandler) InstallApp(w http.ResponseWriter, r *http.Request) {
 		go func() {
 			defer job.Close()
 
-			app, err := h.orchestrator.InstallFromRegistryWithProgress(r.Context(), req, job)
+			app, err := h.orchestrator.InstallFromRegistryWithProgress(context.Background(), req, job)
 			if err != nil {
 				job.EmitError("error", job.GetProgress(), err.Error())
 				return
