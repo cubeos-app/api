@@ -86,10 +86,17 @@ type NetworkManager struct {
 	wanInterface        string
 	wifiClientInterface string
 	apSSID              string
-	fallbackIP          string // V2
-	fallbackGateway     string // V2: Gateway for static fallback
-	piholeURL           string // Pi-hole API base URL (e.g. http://10.42.24.1:6001)
-	piholePassword      string // Pi-hole API password
+	fallbackIP          string                           // V2
+	fallbackGateway     string                           // V2: Gateway for static fallback
+	piholeURL           string                           // Pi-hole API base URL (e.g. http://10.42.24.1:6001)
+	piholePassword      string                           // Pi-hole API password
+	onModeChange        func(newMode models.NetworkMode) // B3: callback for mode change notifications
+}
+
+// SetOnModeChange registers a callback that fires after every successful mode change.
+// Used to trigger side effects like app store catalog sync when going online.
+func (m *NetworkManager) SetOnModeChange(fn func(models.NetworkMode)) {
+	m.onModeChange = fn
 }
 
 // NewNetworkManager creates a new network manager (V2: loads VPN mode too)
@@ -507,6 +514,11 @@ func (m *NetworkManager) SetMode(ctx context.Context, mode models.NetworkMode, w
 
 	// Persist to database (including static IP config)
 	m.saveConfigToDB(mode, m.currentVPNMode, wifiSSID, wifiPassword, staticIP)
+
+	// B3: Notify listeners of mode change (e.g., app store auto-sync)
+	if m.onModeChange != nil {
+		m.onModeChange(mode)
+	}
 
 	return nil
 }

@@ -908,6 +908,7 @@ var coreAppMeta = map[string]struct {
 	"chromadb":         {"ChromaDB", "Vector database for AI embeddings", models.AppTypeAI, "ai", models.DeployModeStack},
 	"pihole":           {"Pi-hole", "DNS sinkhole and DHCP server", models.AppTypeSystem, "infrastructure", models.DeployModeCompose},
 	"npm":              {"Nginx Proxy Manager", "Reverse proxy and SSL manager", models.AppTypeSystem, "infrastructure", models.DeployModeCompose},
+	"cubeos-hal":       {"CubeOS HAL", "Hardware Abstraction Layer", models.AppTypeSystem, "infrastructure", models.DeployModeCompose},
 }
 
 // SyncAppsFromSwarm discovers running Swarm stacks and ensures matching
@@ -1014,6 +1015,7 @@ func (o *Orchestrator) SeedSystemApps(ctx context.Context) error {
 	}{
 		{"pihole", "Pi-hole", models.AppTypeSystem, 6001, models.DeployModeCompose},
 		{"npm", "Nginx Proxy Manager", models.AppTypeSystem, 6000, models.DeployModeCompose},
+		{"cubeos-hal", "CubeOS HAL", models.AppTypeSystem, 6005, models.DeployModeCompose},
 		{"registry", "Docker Registry", models.AppTypeSystem, 5000, models.DeployModeStack},
 		{"cubeos-api", "CubeOS API", models.AppTypePlatform, 6010, models.DeployModeStack},
 		{"cubeos-dashboard", "CubeOS Dashboard", models.AppTypePlatform, 6011, models.DeployModeStack},
@@ -1229,7 +1231,13 @@ func (o *Orchestrator) getAppStatus(ctx context.Context, app *models.App) *model
 			return status
 		}
 		// Get status from Docker with timeout context
-		containerName := "cubeos-" + app.Name
+		// Container naming convention: compose files use "cubeos-{name}" as
+		// container_name. Apps whose name already starts with "cubeos-" (like
+		// cubeos-hal) use the name directly to avoid double-prefixing.
+		containerName := app.Name
+		if !strings.HasPrefix(containerName, "cubeos-") {
+			containerName = "cubeos-" + containerName
+		}
 		timeoutCtx, cancel := context.WithTimeout(ctx, 5*time.Second)
 		defer cancel()
 		containerStatus, err := o.docker.GetContainerStatus(timeoutCtx, containerName)

@@ -161,6 +161,7 @@ import (
 	"cubeos-api/internal/handlers"
 	"cubeos-api/internal/managers"
 	"cubeos-api/internal/middleware"
+	"cubeos-api/internal/models"
 
 	"cubeos-api/docs" // Import generated swagger docs (named for Host override)
 )
@@ -279,6 +280,21 @@ func main() {
 	log.Info().Msg("PortManager initialized with triple-source validation")
 
 	appStoreMgr := managers.NewAppStoreManager(cfg, dbMgr, cfg.DataDir, piholeMgr, npmMgr, portMgr)
+
+	// B3: Auto-sync app store catalog when switching to an online network mode.
+	// Runs in background goroutine so it doesn't block the mode switch response.
+	networkMgr.SetOnModeChange(func(mode models.NetworkMode) {
+		if mode != models.NetworkModeOffline {
+			go func() {
+				log.Info().Str("mode", string(mode)).Msg("Network mode changed to online — syncing app store catalog")
+				if err := appStoreMgr.SyncAllStores(); err != nil {
+					log.Warn().Err(err).Msg("Auto-sync app store catalog failed (may not have internet yet)")
+				} else {
+					log.Info().Msg("App store catalog auto-synced successfully")
+				}
+			}()
+		}
+	})
 
 	// Resolve registry URL early (used by both Orchestrator and RegistryHandler)
 	registryURL := os.Getenv("REGISTRY_URL")
