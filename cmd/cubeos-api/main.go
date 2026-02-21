@@ -585,6 +585,7 @@ func main() {
 			r.Route("/docker", func(r chi.Router) {
 				r.Post("/prune", h.DockerPrune)
 				r.Get("/disk-usage", h.DockerDiskUsage)
+				r.Get("/disk", h.DockerDiskUsage) // Alias for backward compat
 			})
 
 			// ===========================================================

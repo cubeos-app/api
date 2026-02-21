@@ -276,7 +276,8 @@ func (m *NetworkManager) GetStatus(ctx context.Context) (*NetworkStatus, error) 
 	// Get interface status from HAL
 	interfaces, err := m.hal.ListInterfaces(ctx)
 	if err != nil {
-		return status, nil
+		log.Warn().Err(err).Msg("GetStatus: ListInterfaces failed, will try individual lookups")
+		// Don't return early — continue with nil interfaces, fallback logic below will handle it
 	}
 
 	// Find AP interface (wlan0) - only for non-server modes
@@ -346,6 +347,48 @@ func (m *NetworkManager) GetStatus(ctx context.Context) (*NetworkStatus, error) 
 						Type:      "usb_tether",
 					}
 					break
+				}
+			}
+			// Fallback: tether interface known but not in list (HAL lag)
+			if status.Upstream == nil && tetherStatus.IPAddress != "" {
+				status.Upstream = &UpstreamStatus{
+					Interface: tetherStatus.Interface,
+					IP:        tetherStatus.IPAddress,
+					Gateway:   tetherStatus.Gateway,
+					Type:      "usb_tether",
+				}
+			}
+		}
+	}
+
+	// B8 fallback: if we're in an online mode and upstream is still nil,
+	// try GetInterface for the expected upstream interface directly
+	if status.Upstream == nil {
+		var expectedIface, ifaceType string
+		switch m.currentMode {
+		case models.NetworkModeOnlineETH, models.NetworkModeServerETH:
+			expectedIface = m.wanInterface
+			ifaceType = "ethernet"
+		case models.NetworkModeOnlineWiFi, models.NetworkModeServerWiFi:
+			expectedIface = m.resolveWiFiClientInterface(ctx)
+			ifaceType = "wifi"
+		}
+		if expectedIface != "" {
+			iface, getErr := m.hal.GetInterface(ctx, expectedIface)
+			if getErr == nil && iface != nil {
+				status.Upstream = &UpstreamStatus{
+					Interface: iface.Name,
+					Type:      ifaceType,
+				}
+				if len(iface.IPv4Addresses) > 0 {
+					status.Upstream.IP = iface.IPv4Addresses[0]
+				}
+			} else {
+				// Last resort: we know the expected interface, report it even without IP
+				log.Warn().Str("iface", expectedIface).Msg("GetStatus: upstream interface not reachable via HAL")
+				status.Upstream = &UpstreamStatus{
+					Interface: expectedIface,
+					Type:      ifaceType,
 				}
 			}
 		}

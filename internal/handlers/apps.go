@@ -132,6 +132,7 @@ func (h *AppsHandler) GetApp(w http.ResponseWriter, r *http.Request) {
 // @Success 201 {object} models.App "Installed app details (synchronous)"
 // @Success 202 {object} map[string]interface{} "Job started: job_id, status (async registry install)"
 // @Failure 400 {object} ErrorResponse "Invalid request or missing name"
+// @Failure 409 {object} ErrorResponse "App already exists"
 // @Failure 500 {object} ErrorResponse "Failed to install app"
 // @Router /apps [post]
 func (h *AppsHandler) InstallApp(w http.ResponseWriter, r *http.Request) {
@@ -179,6 +180,10 @@ func (h *AppsHandler) InstallApp(w http.ResponseWriter, r *http.Request) {
 	// All other sources: synchronous install
 	app, err := h.orchestrator.InstallApp(r.Context(), req)
 	if err != nil {
+		if strings.Contains(err.Error(), "already exists") || strings.Contains(err.Error(), "already installed") {
+			writeError(w, http.StatusConflict, err.Error())
+			return
+		}
 		writeError(w, http.StatusInternalServerError, err.Error())
 		return
 	}
