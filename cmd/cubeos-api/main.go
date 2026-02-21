@@ -376,7 +376,7 @@ func main() {
 	if registryPath == "" {
 		registryPath = "/cubeos/data/registry"
 	}
-	registryHandler := handlers.NewRegistryHandler(registryURL, registryPath, portMgr, appStoreMgr, orchestrator)
+	registryHandler := handlers.NewRegistryHandler(registryURL, registryPath, portMgr, orchestrator)
 	log.Info().Msg("PortsHandler, FQDNsHandler, and RegistryHandler initialized")
 
 	// Create CasaOS Import handler (Sprint 4D)
