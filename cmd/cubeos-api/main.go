@@ -288,15 +288,15 @@ func main() {
 
 	// Create Orchestrator for unified app management (Sprint 3)
 	orchestrator, err := managers.NewOrchestrator(managers.OrchestratorConfig{
-		DB:           db.DB,
-		Config:       cfg,
-		CoreappsPath: "/cubeos/coreapps",
-		AppsPath:     "/cubeos/apps",
-		PiholePath:   "/cubeos/coreapps/pihole/appdata",
-		NPMConfigDir: "/cubeos/coreapps/npm/appdata",
-		HALClient:    halClient,
-		SwarmManager: swarmMgr,
-		RegistryURL:  registryURL,
+		DB:            db.DB,
+		Config:        cfg,
+		CoreappsPath:  "/cubeos/coreapps",
+		AppsPath:      "/cubeos/apps",
+		HALClient:     halClient,
+		SwarmManager:  swarmMgr,
+		NPMManager:    npmMgr,
+		PiholeManager: piholeMgr,
+		RegistryURL:   registryURL,
 	})
 	if err != nil {
 		log.Warn().Err(err).Msg("failed to create Orchestrator")

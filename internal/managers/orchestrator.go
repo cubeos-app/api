@@ -40,15 +40,17 @@ type Orchestrator struct {
 
 // OrchestratorConfig holds configuration for the Orchestrator
 type OrchestratorConfig struct {
-	DB           *sql.DB
-	Config       *config.Config
-	CoreappsPath string
-	AppsPath     string
-	PiholePath   string
-	NPMConfigDir string
-	HALClient    *hal.Client
-	RegistryURL  string        // Local Docker registry URL (e.g. http://10.42.24.1:5000)
-	SwarmManager *SwarmManager // Optional: shared instance; if nil, one is created internally
+	DB            *sql.DB
+	Config        *config.Config
+	CoreappsPath  string
+	AppsPath      string
+	PiholePath    string
+	NPMConfigDir  string
+	HALClient     *hal.Client
+	RegistryURL   string         // Local Docker registry URL (e.g. http://10.42.24.1:5000)
+	SwarmManager  *SwarmManager  // Optional: shared instance; if nil, one is created internally
+	NPMManager    *NPMManager    // Optional: shared instance; if nil, one is created internally
+	PiholeManager *PiholeManager // Optional: shared instance; if nil, one is created internally
 }
 
 // NewOrchestrator creates a new Orchestrator instance
@@ -93,19 +95,30 @@ func NewOrchestrator(cfg OrchestratorConfig) (*Orchestrator, error) {
 		return nil, fmt.Errorf("failed to create docker manager: %w", err)
 	}
 
-	// Initialize NPMManager
-	npmConfigDir := cfg.NPMConfigDir
-	if npmConfigDir == "" {
-		npmConfigDir = "/cubeos/coreapps/npm/appdata"
+	// Initialize NPMManager (use shared instance if provided)
+	if cfg.NPMManager != nil {
+		o.npm = cfg.NPMManager
+	} else {
+		npmConfigDir := cfg.NPMConfigDir
+		if npmConfigDir == "" {
+			npmConfigDir = "/cubeos/coreapps/npm/appdata"
+		}
+		o.npm = NewNPMManager(cfg.Config, npmConfigDir)
+		if err := o.npm.Init(); err != nil {
+			log.Warn().Err(err).Msg("Orchestrator: NPM init failed, proxy operations will fail")
+		}
 	}
-	o.npm = NewNPMManager(cfg.Config, npmConfigDir)
 
-	// Initialize PiholeManager
-	piholePath := cfg.PiholePath
-	if piholePath == "" {
-		piholePath = "/cubeos/coreapps/pihole/appdata"
+	// Initialize PiholeManager (use shared instance if provided)
+	if cfg.PiholeManager != nil {
+		o.pihole = cfg.PiholeManager
+	} else {
+		piholePath := cfg.PiholePath
+		if piholePath == "" {
+			piholePath = "/cubeos/coreapps/pihole/appdata"
+		}
+		o.pihole = NewPiholeManager(cfg.Config, piholePath)
 	}
-	o.pihole = NewPiholeManager(cfg.Config, piholePath)
 
 	// Initialize PortManager with triple-source validation (DB + Swarm + HAL)
 	o.ports = NewPortManager(cfg.DB, o.swarm, cfg.HALClient)
