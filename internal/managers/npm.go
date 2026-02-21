@@ -584,30 +584,48 @@ func (m *NPMManager) verifyToken() bool {
 }
 
 // doRequest makes an authenticated request to NPM API
-// If token is invalid, attempts to re-authenticate
+// Retries on 401 (re-authenticates) and 500 (transient NPM errors) with backoff
 func (m *NPMManager) doRequest(method, endpoint string, body interface{}) (*http.Response, error) {
-	resp, err := m.doRequestOnce(method, endpoint, body)
-	if err != nil {
-		return nil, err
-	}
+	maxRetries := 3
 
-	// If unauthorized, try to re-authenticate
-	if resp.StatusCode == http.StatusUnauthorized {
-		resp.Body.Close()
-
-		// Try to re-authenticate
-		if password := m.loadServiceAccountPassword(); password != "" {
-			if err := m.authenticateServiceAccount(password); err == nil {
-				// Retry the request with new token
-				return m.doRequestOnce(method, endpoint, body)
-			}
+	for attempt := 0; attempt <= maxRetries; attempt++ {
+		resp, err := m.doRequestOnce(method, endpoint, body)
+		if err != nil {
+			return nil, err
 		}
 
-		// Re-authentication failed, return an error
-		return nil, fmt.Errorf("NPM authentication expired and re-authentication failed")
+		// If unauthorized, try to re-authenticate (once only)
+		if resp.StatusCode == http.StatusUnauthorized && attempt == 0 {
+			resp.Body.Close()
+
+			if password := m.loadServiceAccountPassword(); password != "" {
+				if err := m.authenticateServiceAccount(password); err == nil {
+					log.Info().Str("method", method).Str("endpoint", endpoint).Msg("NPM: re-authenticated after 401, retrying")
+					continue
+				}
+			}
+
+			return nil, fmt.Errorf("NPM authentication expired and re-authentication failed")
+		}
+
+		// Retry on 500 Internal Server Error (transient NPM auth/DB issues)
+		if resp.StatusCode == http.StatusInternalServerError && attempt < maxRetries {
+			resp.Body.Close()
+			delay := time.Duration(attempt+1) * time.Second
+			log.Warn().
+				Str("method", method).
+				Str("endpoint", endpoint).
+				Int("attempt", attempt+1).
+				Dur("backoff", delay).
+				Msg("NPM: got 500, retrying after backoff")
+			time.Sleep(delay)
+			continue
+		}
+
+		return resp, nil
 	}
 
-	return resp, nil
+	return nil, fmt.Errorf("NPM request failed after %d retries: %s %s", maxRetries, method, endpoint)
 }
 
 // doRequestOnce makes a single authenticated request
