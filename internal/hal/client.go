@@ -35,6 +35,8 @@ import (
 	"strconv"
 	"strings"
 	"time"
+
+	"cubeos-api/internal/circuitbreaker"
 )
 
 // =============================================================================
@@ -58,6 +60,7 @@ const (
 type Client struct {
 	baseURL    string
 	httpClient *http.Client
+	cb         *circuitbreaker.CircuitBreaker
 }
 
 // NewClient creates a new HAL client
@@ -73,7 +76,14 @@ func NewClient(baseURL string) *Client {
 		httpClient: &http.Client{
 			Timeout: DefaultTimeout,
 		},
+		cb: circuitbreaker.New("hal", circuitbreaker.DefaultConfig()),
 	}
+}
+
+// CircuitState returns the current circuit breaker state for the HAL client.
+// Used by health/metrics endpoints to report dependency status.
+func (c *Client) CircuitState() circuitbreaker.State {
+	return c.cb.State()
 }
 
 // =============================================================================
@@ -1191,15 +1201,40 @@ func (c *Client) doRequest(ctx context.Context, method, path string, body interf
 		req.Header.Set("Content-Type", "application/json")
 	}
 
-	resp, err := c.httpClient.Do(req)
-	if err != nil {
-		return nil, fmt.Errorf("request failed: %w", err)
-	}
-	defer resp.Body.Close()
+	var resp *http.Response
+	var respBody []byte
 
-	respBody, err := io.ReadAll(resp.Body)
-	if err != nil {
-		return nil, fmt.Errorf("failed to read response: %w", err)
+	cbErr := c.cb.Execute(func() error {
+		var httpErr error
+		resp, httpErr = c.httpClient.Do(req)
+		if httpErr != nil {
+			return httpErr // network error → breaker failure
+		}
+
+		var readErr error
+		respBody, readErr = io.ReadAll(resp.Body)
+		resp.Body.Close()
+		if readErr != nil {
+			return fmt.Errorf("failed to read response: %w", readErr)
+		}
+
+		// 5xx → breaker failure (but we keep respBody for error details)
+		if resp.StatusCode >= 500 {
+			return fmt.Errorf("server error: %d", resp.StatusCode)
+		}
+		// 4xx is a normal application response, not a breaker failure
+		return nil
+	})
+
+	if cbErr != nil {
+		if cbErr == circuitbreaker.ErrCircuitOpen {
+			return nil, cbErr
+		}
+		// Network error — no response available
+		if resp == nil {
+			return nil, fmt.Errorf("request failed: %w", cbErr)
+		}
+		// 5xx — fall through to HALError handling below (respBody is populated)
 	}
 
 	if resp.StatusCode >= 400 {

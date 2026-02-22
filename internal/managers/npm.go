@@ -14,6 +14,7 @@ import (
 	"sync"
 	"time"
 
+	"cubeos-api/internal/circuitbreaker"
 	"cubeos-api/internal/config"
 
 	"github.com/rs/zerolog/log"
@@ -30,6 +31,7 @@ type NPMManager struct {
 	secretsFile string
 	configDir   string
 	httpClient  *http.Client
+	cb          *circuitbreaker.CircuitBreaker
 	mu          sync.RWMutex
 	initialized bool
 }
@@ -149,6 +151,7 @@ func NewNPMManager(cfg *config.Config, configDir string) *NPMManager {
 		httpClient: &http.Client{
 			Timeout: 30 * time.Second,
 		},
+		cb: circuitbreaker.New("npm", circuitbreaker.DefaultConfig()),
 	}
 }
 
@@ -312,13 +315,31 @@ func (m *NPMManager) authenticate(email, password string) error {
 		return fmt.Errorf("failed to marshal token request: %w", err)
 	}
 
-	resp, err := m.httpClient.Post(
-		m.baseURL+"/api/tokens",
-		"application/json",
-		bytes.NewReader(body),
-	)
-	if err != nil {
-		return fmt.Errorf("failed to request token: %w", err)
+	var resp *http.Response
+	cbErr := m.cb.Execute(func() error {
+		var httpErr error
+		resp, httpErr = m.httpClient.Post(
+			m.baseURL+"/api/tokens",
+			"application/json",
+			bytes.NewReader(body),
+		)
+		if httpErr != nil {
+			return httpErr // network error → breaker failure
+		}
+		if resp.StatusCode >= 500 {
+			return fmt.Errorf("server error: %d", resp.StatusCode) // 5xx → breaker failure
+		}
+		// 4xx (including auth failures) are not breaker failures
+		return nil
+	})
+	if cbErr != nil {
+		if cbErr == circuitbreaker.ErrCircuitOpen {
+			return cbErr
+		}
+		if resp == nil {
+			return fmt.Errorf("failed to request token: %w", cbErr)
+		}
+		// 5xx — fall through to status check below
 	}
 	defer resp.Body.Close()
 
@@ -729,6 +750,11 @@ func (m *NPMManager) verifyToken() bool {
 // doRequest makes an authenticated request to NPM API
 // Retries on 401 (re-authenticates) and 500 (transient NPM errors) with backoff
 func (m *NPMManager) doRequest(method, endpoint string, body interface{}) (*http.Response, error) {
+	// Fast-fail if circuit is open — skip the entire retry loop
+	if m.cb.State() == circuitbreaker.StateOpen {
+		return nil, circuitbreaker.ErrCircuitOpen
+	}
+
 	maxRetries := 3
 
 	for attempt := 0; attempt <= maxRetries; attempt++ {
@@ -797,7 +823,31 @@ func (m *NPMManager) doRequestOnce(method, endpoint string, body interface{}) (*
 	req.Header.Set("Content-Type", "application/json")
 	req.Header.Set("Accept", "application/json")
 
-	return m.httpClient.Do(req)
+	var resp *http.Response
+	cbErr := m.cb.Execute(func() error {
+		var httpErr error
+		resp, httpErr = m.httpClient.Do(req)
+		if httpErr != nil {
+			return httpErr // network error → breaker failure
+		}
+		if resp.StatusCode >= 500 {
+			return fmt.Errorf("server error: %d", resp.StatusCode) // 5xx → breaker failure
+		}
+		// 4xx (including 401) is not a breaker failure
+		return nil
+	})
+	if cbErr != nil {
+		if cbErr == circuitbreaker.ErrCircuitOpen {
+			return nil, cbErr
+		}
+		// For network errors (resp is nil), return the error
+		if resp == nil {
+			return nil, cbErr
+		}
+		// For 5xx, resp exists — return it so caller can read status/body
+	}
+
+	return resp, nil
 }
 
 // ListProxyHosts returns all proxy hosts
@@ -932,6 +982,9 @@ func (m *NPMManager) FindProxyHostByDomain(domain string) (*NPMProxyHostExtended
 }
 
 // IsHealthy checks if NPM API is reachable
+// IsHealthy checks if NPM API is reachable.
+// Intentionally bypasses circuit breaker — this is a health probe used to
+// *check* if NPM is up, not a business request.
 func (m *NPMManager) IsHealthy() bool {
 	resp, err := m.httpClient.Get(m.baseURL + "/api/")
 	if err != nil {
@@ -940,6 +993,12 @@ func (m *NPMManager) IsHealthy() bool {
 	defer resp.Body.Close()
 	// NPM returns 401 if running but not authenticated - that's fine
 	return resp.StatusCode == http.StatusOK || resp.StatusCode == http.StatusUnauthorized
+}
+
+// CircuitState returns the current circuit breaker state for the NPM client.
+// Used by health/metrics endpoints to report dependency status.
+func (m *NPMManager) CircuitState() circuitbreaker.State {
+	return m.cb.State()
 }
 
 // IsAuthenticated checks if we have valid credentials
