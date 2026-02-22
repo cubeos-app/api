@@ -31,16 +31,20 @@ type ProxyManager interface {
 
 // AddDNSInput is the input for the infra.add_dns activity.
 type AddDNSInput struct {
-	Domain string `json:"domain"` // e.g. "nextcloud.cubeos.cube"
-	IP     string `json:"ip"`     // e.g. "10.42.24.1" (defaults to gateway IP)
+	Domain     string `json:"domain"`                // e.g. "nextcloud.cubeos.cube" (if empty, generated from AppName)
+	IP         string `json:"ip"`                    // e.g. "10.42.24.1" (defaults to gateway IP)
+	AppName    string `json:"app_name,omitempty"`    // used to generate prettified subdomain
+	StoreID    string `json:"store_id,omitempty"`    // store ID for prefix stripping
+	BaseDomain string `json:"base_domain,omitempty"` // e.g. "cubeos.cube" (defaults to "cubeos.cube")
 }
 
 // AddDNSOutput is the output of the infra.add_dns activity.
 type AddDNSOutput struct {
-	Domain  string `json:"domain"`
-	IP      string `json:"ip"`
-	Created bool   `json:"created"`
-	Skipped bool   `json:"skipped"` // true if entry already existed
+	Domain    string `json:"domain"`
+	Subdomain string `json:"subdomain"` // clean subdomain portion
+	IP        string `json:"ip"`
+	Created   bool   `json:"created"`
+	Skipped   bool   `json:"skipped"` // true if entry already existed
 }
 
 // RemoveDNSInput is the input for the infra.remove_dns activity.
@@ -93,17 +97,32 @@ func RegisterInfraActivities(registry *flowengine.ActivityRegistry, dnsMgr DNSMa
 
 // makeAddDNS creates the infra.add_dns activity.
 // Idempotent: if the DNS entry already exists with the same IP, returns skipped=true.
+// If Domain is empty but AppName is provided, generates from prettified subdomain.
 func makeAddDNS(dnsMgr DNSManager) flowengine.ActivityFunc {
 	return func(ctx context.Context, input json.RawMessage) (json.RawMessage, error) {
 		var in AddDNSInput
 		if err := json.Unmarshal(input, &in); err != nil {
 			return nil, flowengine.NewPermanentError(fmt.Errorf("invalid add_dns input: %w", err))
 		}
-		if in.Domain == "" {
-			return nil, flowengine.NewPermanentError(fmt.Errorf("domain is required"))
-		}
 		if in.IP == "" {
 			in.IP = "10.42.24.1" // default gateway IP
+		}
+
+		// Generate domain from app name if not explicitly provided
+		subdomain := ""
+		if in.Domain == "" {
+			if in.AppName == "" {
+				return nil, flowengine.NewPermanentError(fmt.Errorf("domain or app_name is required"))
+			}
+			baseDomain := in.BaseDomain
+			if baseDomain == "" {
+				baseDomain = "cubeos.cube"
+			}
+			subdomain = prettifySubdomain(in.AppName, in.StoreID)
+			in.Domain = subdomain + "." + baseDomain
+		} else {
+			// Extract subdomain from provided domain
+			subdomain = strings.Split(in.Domain, ".")[0]
 		}
 
 		// Idempotency check: does the entry already exist?
@@ -111,10 +130,11 @@ func makeAddDNS(dnsMgr DNSManager) flowengine.ActivityFunc {
 		if err == nil && existingIP != "" {
 			log.Info().Str("domain", in.Domain).Str("ip", existingIP).Msg("add_dns: entry already exists, skipping")
 			return marshalOutput(AddDNSOutput{
-				Domain:  in.Domain,
-				IP:      existingIP,
-				Created: true,
-				Skipped: true,
+				Domain:    in.Domain,
+				Subdomain: subdomain,
+				IP:        existingIP,
+				Created:   true,
+				Skipped:   true,
 			})
 		}
 
@@ -124,10 +144,11 @@ func makeAddDNS(dnsMgr DNSManager) flowengine.ActivityFunc {
 		}
 
 		return marshalOutput(AddDNSOutput{
-			Domain:  in.Domain,
-			IP:      in.IP,
-			Created: true,
-			Skipped: false,
+			Domain:    in.Domain,
+			Subdomain: subdomain,
+			IP:        in.IP,
+			Created:   true,
+			Skipped:   false,
 		})
 	}
 }
@@ -235,6 +256,41 @@ func makeRemoveProxy(proxyMgr ProxyManager) flowengine.ActivityFunc {
 
 		return marshalOutput(RemoveProxyOutput{Domain: in.Domain, Removed: true})
 	}
+}
+
+// prettifySubdomain strips common CasaOS store prefixes from app names to produce
+// clean subdomains. E.g. "big-bear-ghostfolio" → "ghostfolio", "linuxserver-nextcloud" → "nextcloud".
+func prettifySubdomain(appName, storeID string) string {
+	subdomain := appName
+
+	// Strip known store prefixes
+	prefixes := []string{
+		"big-bear-",
+		"linuxserver-",
+		"casaos-",
+	}
+	for _, prefix := range prefixes {
+		if strings.HasPrefix(subdomain, prefix) {
+			stripped := strings.TrimPrefix(subdomain, prefix)
+			if stripped != "" {
+				subdomain = stripped
+			}
+			break
+		}
+	}
+
+	// If storeID contains a slash (org/app format), try the app portion
+	if storeID != "" && strings.Contains(storeID, "/") {
+		parts := strings.SplitN(storeID, "/", 2)
+		if len(parts) == 2 && parts[1] != "" {
+			candidate := strings.ToLower(strings.ReplaceAll(parts[1], "_", "-"))
+			if len(candidate) > 0 && len(candidate) <= 63 {
+				subdomain = candidate
+			}
+		}
+	}
+
+	return subdomain
 }
 
 // isNotFoundError checks if an error indicates a resource was not found.

@@ -44,6 +44,10 @@ type EngineConfig struct {
 	WorkflowTimeout time.Duration
 }
 
+// CompletionHook is called when a workflow reaches a terminal state (completed/failed).
+// Fired asynchronously after the workflow finishes.
+type CompletionHook func(workflowType, externalID string, state WorkflowState)
+
 // WorkflowEngine is the main entry point for the FlowEngine subsystem.
 // It manages the lifecycle of workflows: submission, polling, execution,
 // recovery on startup, and lock reaping.
@@ -66,6 +70,10 @@ type WorkflowEngine struct {
 	definitions map[string]WorkflowDefinition
 	defMu       sync.RWMutex
 
+	// completionHooks maps workflow type strings to hooks fired on terminal state.
+	completionHooks map[string]CompletionHook
+	hookMu          sync.RWMutex
+
 	// running tracks whether the engine is started.
 	running atomic.Bool
 	cancel  context.CancelFunc
@@ -81,12 +89,13 @@ func NewWorkflowEngine(store *WorkflowStore, registry *ActivityRegistry, config 
 	saga := NewSagaOrchestrator(store, executor, registry, nodeID)
 
 	return &WorkflowEngine{
-		store:       store,
-		saga:        saga,
-		registry:    registry,
-		config:      config,
-		nodeID:      nodeID,
-		definitions: make(map[string]WorkflowDefinition),
+		store:           store,
+		saga:            saga,
+		registry:        registry,
+		config:          config,
+		nodeID:          nodeID,
+		definitions:     make(map[string]WorkflowDefinition),
+		completionHooks: make(map[string]CompletionHook),
 	}
 }
 
@@ -117,6 +126,41 @@ func (e *WorkflowEngine) getDefinition(wfType string) (WorkflowDefinition, bool)
 	defer e.defMu.RUnlock()
 	def, ok := e.definitions[wfType]
 	return def, ok
+}
+
+// OnCompletion registers a hook that fires when a workflow of the given type
+// reaches a terminal state (completed or failed). The hook runs in a separate
+// goroutine to avoid blocking the poll loop.
+// Use this for cache invalidation, catalog refresh, notification delivery, etc.
+func (e *WorkflowEngine) OnCompletion(workflowType string, hook CompletionHook) {
+	e.hookMu.Lock()
+	defer e.hookMu.Unlock()
+	e.completionHooks[workflowType] = hook
+	log.Info().Str("type", workflowType).Msg("Registered completion hook")
+}
+
+// fireCompletionHook fires the registered hook for a workflow type, if any.
+// Runs asynchronously. Panics in the hook are recovered and logged.
+func (e *WorkflowEngine) fireCompletionHook(workflowType, externalID string, state WorkflowState) {
+	e.hookMu.RLock()
+	hook, ok := e.completionHooks[workflowType]
+	e.hookMu.RUnlock()
+	if !ok {
+		return
+	}
+
+	go func() {
+		defer func() {
+			if r := recover(); r != nil {
+				log.Error().
+					Interface("panic", r).
+					Str("type", workflowType).
+					Str("external_id", externalID).
+					Msg("Completion hook panicked")
+			}
+		}()
+		hook(workflowType, externalID, state)
+	}()
 }
 
 // SubmitParams holds parameters for submitting a new workflow.
@@ -329,6 +373,12 @@ func (e *WorkflowEngine) processNextWorkflow(ctx context.Context, candidates []W
 
 		// Release lock
 		_ = e.store.UnlockWorkflow(wf.ID)
+
+		// Check if workflow reached terminal state and fire completion hook
+		updated, getErr := e.store.GetWorkflow(wf.ID)
+		if getErr == nil && updated != nil && updated.CurrentState.IsTerminal() {
+			e.fireCompletionHook(updated.WorkflowType, updated.ExternalID, updated.CurrentState)
+		}
 
 		// Process one at a time (single-threaded to avoid SQLite contention)
 		return

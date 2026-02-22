@@ -11,6 +11,7 @@ import (
 	"cubeos-api/internal/flowengine"
 
 	"github.com/rs/zerolog/log"
+	"gopkg.in/yaml.v3"
 )
 
 // --- Input/Output Schemas for App Install Activities ---
@@ -233,6 +234,9 @@ func makeWriteCompose() flowengine.ActivityFunc {
 			return nil, flowengine.NewPermanentError(fmt.Errorf("failed to write compose file: %w", err))
 		}
 
+		// Pre-create bind mount source directories (Swarm doesn't auto-create them)
+		preCreateBindMounts(in.Content)
+
 		log.Info().Str("app", in.AppName).Str("path", absPath).Msg("write_compose: compose file written")
 		return marshalOutput(WriteComposeOutput{AppName: in.AppName, ComposePath: absPath, Written: true})
 	}
@@ -262,5 +266,43 @@ func makeRemoveDirs() flowengine.ActivityFunc {
 
 		log.Info().Str("app", in.AppName).Str("path", absPath).Msg("remove_dirs: directory removed")
 		return marshalOutput(RemoveDirsOutput{AppName: in.AppName, Removed: true})
+	}
+}
+
+// preCreateBindMounts parses compose YAML and creates all bind mount source directories.
+// Docker Swarm (unlike docker-compose) does NOT auto-create bind mount host paths.
+// Without this, services fail to start with "invalid mount config" errors.
+func preCreateBindMounts(composeContent string) {
+	var compose struct {
+		Services map[string]struct {
+			Volumes []string `yaml:"volumes"`
+		} `yaml:"services"`
+	}
+	if err := yaml.Unmarshal([]byte(composeContent), &compose); err != nil {
+		log.Warn().Err(err).Msg("preCreateBindMounts: failed to parse compose YAML")
+		return
+	}
+
+	for svcName, svc := range compose.Services {
+		for _, v := range svc.Volumes {
+			parts := strings.SplitN(v, ":", 3)
+			if len(parts) < 2 {
+				continue
+			}
+			hostPath := parts[0]
+			// Skip named volumes (no slash prefix)
+			if !strings.HasPrefix(hostPath, "/") {
+				continue
+			}
+			if err := os.MkdirAll(hostPath, 0777); err != nil {
+				log.Warn().Err(err).Str("service", svcName).Str("path", hostPath).
+					Msg("preCreateBindMounts: failed to create directory")
+				continue
+			}
+			// Explicit chmod — MkdirAll may be affected by umask
+			if err := os.Chmod(hostPath, 0777); err != nil {
+				log.Warn().Err(err).Str("path", hostPath).Msg("preCreateBindMounts: failed to chmod")
+			}
+		}
 	}
 }

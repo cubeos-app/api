@@ -10,7 +10,7 @@ const (
 	// AppStoreInstallType is the workflow type for app store installation.
 	AppStoreInstallType = "appstore_install"
 	// AppStoreInstallVersion is the current version of the workflow definition.
-	AppStoreInstallVersion = 1
+	AppStoreInstallVersion = 2
 )
 
 // AppStoreInstallWorkflow defines the step sequence for installing an app from the CasaOS store.
@@ -144,7 +144,25 @@ func (w *AppStoreInstallWorkflow) Steps() []flowengine.StepDefinition {
 			Timeout:    10 * time.Second,
 		},
 		{
-			// Step 12: Health check (verify app is accessible)
+			// Step 12: Store volume mappings in database
+			// Parses compose YAML, records bind mounts for backup/migration
+			Name:       "store_volumes",
+			Action:     "db.store_volumes",
+			Compensate: "", // db.delete_app cascade handles cleanup
+			Retry:      &flowengine.RetryPolicy{MaxAttempts: 2, InitialInterval: 1 * time.Second},
+			Timeout:    10 * time.Second,
+		},
+		{
+			// Step 13: Detect WebUI type (browser vs API)
+			// Probes running app to determine Content-Type for dashboard display
+			Name:       "detect_webui",
+			Action:     "app.detect_webui",
+			Compensate: "", // observation-only
+			Retry:      &flowengine.RetryPolicy{MaxAttempts: 2, InitialInterval: 3 * time.Second},
+			Timeout:    15 * time.Second,
+		},
+		{
+			// Step 14: Health check (verify app is accessible)
 			// Uses HAL health check — optional, failure doesn't block completion
 			Name:       "health_check",
 			Action:     "hal.health_check",

@@ -5,6 +5,7 @@ import (
 	"database/sql"
 	"encoding/json"
 	"fmt"
+	"net/http"
 	"os"
 	"path/filepath"
 	"strings"
@@ -13,6 +14,7 @@ import (
 	"cubeos-api/internal/flowengine"
 
 	"github.com/rs/zerolog/log"
+	"gopkg.in/yaml.v3"
 )
 
 // AppDatabase defines the database operations needed by DB activities.
@@ -36,10 +38,13 @@ type InsertAppInput struct {
 	Name        string `json:"name"`
 	Port        int    `json:"port"`
 	FQDN        string `json:"fqdn"`
-	Source      string `json:"source"`       // "casaos", "registry", "custom"
-	Image       string `json:"image"`        // Docker image reference
-	ComposePath string `json:"compose_path"` // path to docker-compose.yml
-	DataPath    string `json:"data_path"`    // path to app data directory
+	Subdomain   string `json:"subdomain,omitempty"`    // clean subdomain (e.g. "nextcloud")
+	BackendPort int    `json:"backend_port,omitempty"` // port for proxy forwarding
+	NPMProxyID  int64  `json:"npm_proxy_id,omitempty"` // NPM proxy host ID
+	Source      string `json:"source"`                 // "casaos", "registry", "custom"
+	Image       string `json:"image"`                  // Docker image reference
+	ComposePath string `json:"compose_path"`           // path to docker-compose.yml
+	DataPath    string `json:"data_path"`              // path to app data directory
 	StoreID     string `json:"store_id,omitempty"`
 	Enabled     bool   `json:"enabled"`
 }
@@ -103,14 +108,43 @@ type CleanupFilesOutput struct {
 	KeepData bool   `json:"keep_data"`
 }
 
+// StoreVolumesInput is the input for the db.store_volumes activity.
+type StoreVolumesInput struct {
+	AppName     string `json:"app_name"`
+	ComposeYAML string `json:"compose_yaml"` // final compose to parse for volumes
+}
+
+// StoreVolumesOutput is the output of the db.store_volumes activity.
+type StoreVolumesOutput struct {
+	AppName string `json:"app_name"`
+	Count   int    `json:"count"` // number of volume mappings stored
+}
+
+// DetectWebUIInput is the input for the app.detect_webui activity.
+type DetectWebUIInput struct {
+	AppName   string `json:"app_name"`
+	Port      int    `json:"port"`
+	GatewayIP string `json:"gateway_ip,omitempty"` // defaults to "10.42.24.1"
+}
+
+// DetectWebUIOutput is the output of the app.detect_webui activity.
+type DetectWebUIOutput struct {
+	AppName   string `json:"app_name"`
+	WebUIType string `json:"webui_type"` // "browser" or "api"
+	Updated   bool   `json:"updated"`
+}
+
 // RegisterDatabaseActivities registers all database-related activities in the registry.
-// Activities: db.insert_app, db.delete_app, db.allocate_port, db.release_port, db.cleanup_files.
+// Activities: db.insert_app, db.delete_app, db.allocate_port, db.release_port,
+// db.cleanup_files, db.store_volumes, app.detect_webui.
 func RegisterDatabaseActivities(registry *flowengine.ActivityRegistry, db AppDatabase, portMgr PortAllocator) {
 	registry.MustRegister("db.insert_app", makeInsertApp(db))
 	registry.MustRegister("db.delete_app", makeDeleteApp(db))
 	registry.MustRegister("db.allocate_port", makeAllocatePort(db, portMgr))
 	registry.MustRegister("db.release_port", makeReleasePort(db, portMgr))
 	registry.MustRegister("db.cleanup_files", makeCleanupFiles())
+	registry.MustRegister("db.store_volumes", makeStoreVolumes(db))
+	registry.MustRegister("app.detect_webui", makeDetectWebUI(db))
 }
 
 // makeInsertApp creates the db.insert_app activity.
@@ -156,10 +190,20 @@ func makeInsertApp(db AppDatabase) flowengine.ActivityFunc {
 
 		// Also create the FQDN record if FQDN is set
 		if in.FQDN != "" {
+			subdomain := in.Subdomain
+			if subdomain == "" {
+				// Derive subdomain from FQDN by stripping the domain suffix
+				subdomain = strings.Split(in.FQDN, ".")[0]
+			}
+			backendPort := in.BackendPort
+			if backendPort == 0 {
+				backendPort = in.Port
+			}
+
 			_, err = db.ExecContext(ctx, `
-				INSERT OR IGNORE INTO fqdns (app_id, fqdn, created_at)
-				VALUES (?, ?, ?)
-			`, appID, in.FQDN, now)
+				INSERT OR IGNORE INTO fqdns (app_id, fqdn, subdomain, backend_port, npm_proxy_id, created_at)
+				VALUES (?, ?, ?, ?, ?, ?)
+			`, appID, in.FQDN, subdomain, backendPort, nullableInt64(in.NPMProxyID), now)
 			if err != nil {
 				log.Warn().Err(err).Str("fqdn", in.FQDN).Msg("insert_app: failed to create FQDN record (non-fatal)")
 			}
@@ -322,4 +366,189 @@ func makeCleanupFiles() flowengine.ActivityFunc {
 
 		return marshalOutput(CleanupFilesOutput{AppName: in.AppName, Cleaned: true})
 	}
+}
+
+// makeStoreVolumes creates the db.store_volumes activity.
+// Parses compose YAML, extracts bind mounts, stores in volume_mappings table.
+// Idempotent: uses ON CONFLICT DO UPDATE.
+func makeStoreVolumes(db AppDatabase) flowengine.ActivityFunc {
+	return func(ctx context.Context, input json.RawMessage) (json.RawMessage, error) {
+		var in StoreVolumesInput
+		if err := json.Unmarshal(input, &in); err != nil {
+			return nil, flowengine.NewPermanentError(fmt.Errorf("invalid store_volumes input: %w", err))
+		}
+		if in.AppName == "" || in.ComposeYAML == "" {
+			return nil, flowengine.NewPermanentError(fmt.Errorf("app_name and compose_yaml are required"))
+		}
+
+		// Look up app_id
+		var appID int64
+		err := db.QueryRowContext(ctx, "SELECT id FROM apps WHERE name = ?", in.AppName).Scan(&appID)
+		if err != nil {
+			return nil, flowengine.NewPermanentError(fmt.Errorf("app %s not found: %w", in.AppName, err))
+		}
+
+		mounts := extractBindMounts(in.ComposeYAML)
+		if len(mounts) == 0 {
+			log.Info().Str("app", in.AppName).Msg("store_volumes: no bind mounts found")
+			return marshalOutput(StoreVolumesOutput{AppName: in.AppName, Count: 0})
+		}
+
+		now := time.Now().UTC()
+		count := 0
+		for _, m := range mounts {
+			isConfig := 0
+			if isConfigPath(m.containerPath) {
+				isConfig = 1
+			}
+			readOnly := 0
+			if m.readOnly {
+				readOnly = 1
+			}
+
+			_, err := db.ExecContext(ctx, `
+				INSERT INTO volume_mappings (app_id, container_path, original_host_path, current_host_path, is_config, read_only, created_at)
+				VALUES (?, ?, ?, ?, ?, ?, ?)
+				ON CONFLICT(app_id, container_path) DO UPDATE SET
+					current_host_path = excluded.current_host_path,
+					is_config = excluded.is_config,
+					read_only = excluded.read_only
+			`, appID, m.containerPath, m.hostPath, m.hostPath, isConfig, readOnly, now)
+			if err != nil {
+				log.Warn().Err(err).Str("container_path", m.containerPath).Msg("store_volumes: failed to upsert volume mapping")
+				continue
+			}
+			count++
+		}
+
+		log.Info().Str("app", in.AppName).Int("count", count).Msg("store_volumes: volume mappings stored")
+		return marshalOutput(StoreVolumesOutput{AppName: in.AppName, Count: count})
+	}
+}
+
+// makeDetectWebUI creates the app.detect_webui activity.
+// Probes the running app to determine if it serves HTML (browser) or JSON (API).
+// Updates apps.webui_type in the database.
+func makeDetectWebUI(db AppDatabase) flowengine.ActivityFunc {
+	return func(ctx context.Context, input json.RawMessage) (json.RawMessage, error) {
+		var in DetectWebUIInput
+		if err := json.Unmarshal(input, &in); err != nil {
+			return nil, flowengine.NewPermanentError(fmt.Errorf("invalid detect_webui input: %w", err))
+		}
+		if in.AppName == "" || in.Port == 0 {
+			return nil, flowengine.NewPermanentError(fmt.Errorf("app_name and port are required"))
+		}
+
+		gateway := in.GatewayIP
+		if gateway == "" {
+			gateway = "10.42.24.1"
+		}
+
+		url := fmt.Sprintf("http://%s:%d/", gateway, in.Port)
+		webUIType := probeWebUIType(url)
+
+		_, err := db.ExecContext(ctx,
+			"UPDATE apps SET webui_type = ?, updated_at = ? WHERE name = ?",
+			webUIType, time.Now().UTC(), in.AppName,
+		)
+		if err != nil {
+			log.Warn().Err(err).Str("app", in.AppName).Msg("detect_webui: failed to update webui_type (non-fatal)")
+			return marshalOutput(DetectWebUIOutput{AppName: in.AppName, WebUIType: webUIType, Updated: false})
+		}
+
+		log.Info().Str("app", in.AppName).Str("type", webUIType).Msg("detect_webui: webui type detected")
+		return marshalOutput(DetectWebUIOutput{AppName: in.AppName, WebUIType: webUIType, Updated: true})
+	}
+}
+
+// --- Helper types and functions ---
+
+// bindMount represents a parsed bind mount from a compose file.
+type bindMount struct {
+	hostPath      string
+	containerPath string
+	readOnly      bool
+}
+
+// extractBindMounts parses a docker-compose YAML and returns all bind mount definitions.
+func extractBindMounts(composeYAML string) []bindMount {
+	var compose struct {
+		Services map[string]struct {
+			Volumes []string `yaml:"volumes"`
+		} `yaml:"services"`
+	}
+	if err := yaml.Unmarshal([]byte(composeYAML), &compose); err != nil {
+		log.Warn().Err(err).Msg("extractBindMounts: failed to parse compose YAML")
+		return nil
+	}
+
+	var mounts []bindMount
+	for _, svc := range compose.Services {
+		for _, v := range svc.Volumes {
+			parts := strings.SplitN(v, ":", 3)
+			if len(parts) < 2 {
+				continue
+			}
+			hostPath := parts[0]
+			containerPath := parts[1]
+			// Skip named volumes (no slash prefix)
+			if !strings.HasPrefix(hostPath, "/") {
+				continue
+			}
+			ro := false
+			if len(parts) == 3 && strings.Contains(parts[2], "ro") {
+				ro = true
+			}
+			mounts = append(mounts, bindMount{
+				hostPath:      hostPath,
+				containerPath: containerPath,
+				readOnly:      ro,
+			})
+		}
+	}
+	return mounts
+}
+
+// isConfigPath returns true if the container path looks like a config location.
+func isConfigPath(containerPath string) bool {
+	configIndicators := []string{"/config", "/etc/", "/.conf", "/settings"}
+	lower := strings.ToLower(containerPath)
+	for _, ind := range configIndicators {
+		if strings.Contains(lower, ind) {
+			return true
+		}
+	}
+	return false
+}
+
+// probeWebUIType probes a URL and returns "browser" or "api" based on Content-Type.
+func probeWebUIType(url string) string {
+	client := &http.Client{Timeout: 5 * time.Second}
+
+	// Try HEAD first
+	resp, err := client.Head(url)
+	if err != nil {
+		// If HEAD fails, try GET
+		resp, err = client.Get(url)
+		if err != nil {
+			return "browser" // default to browser on failure
+		}
+	}
+	defer resp.Body.Close()
+
+	ct := resp.Header.Get("Content-Type")
+	ct = strings.ToLower(ct)
+
+	if strings.Contains(ct, "application/json") || strings.Contains(ct, "text/plain") {
+		return "api"
+	}
+	return "browser"
+}
+
+// nullableInt64 returns a sql.NullInt64 — valid only when val > 0.
+func nullableInt64(val int64) sql.NullInt64 {
+	if val > 0 {
+		return sql.NullInt64{Int64: val, Valid: true}
+	}
+	return sql.NullInt64{Valid: false}
 }
