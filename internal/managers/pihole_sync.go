@@ -20,8 +20,12 @@ import (
 )
 
 // PiholePasswordClient manages password sync with the Pi-hole v6 web UI.
-// Uses Docker exec to run `pihole setpassword` which produces the correct
-// Balloon-SHA256 hash that Pi-hole v6 expects (NOT double-SHA256).
+//
+// Pi-hole v6 uses FTLCONF_webserver_api_password env var to set the password.
+// When this env var is set, `pihole setpassword` is BLOCKED (exit code 5).
+// Therefore we sync by updating PIHOLE_PASSWORD in the .env file and
+// restarting the container — Pi-hole generates the correct Balloon-SHA256
+// hash from the env var on startup.
 //
 // Password sync happens at three points:
 //   - First boot: setup.go calls SyncAdminPasswordWithRetry("cubeos", newPassword)
@@ -79,78 +83,53 @@ func (c *PiholePasswordClient) checkPassword(password string) bool {
 	return resp.StatusCode == http.StatusOK
 }
 
-// setPasswordViaExec runs `pihole setpassword <password>` inside the Pi-hole
-// container via Docker exec. This produces the correct Balloon-SHA256 hash
-// and FTL auto-reloads the config — no container restart needed.
-func (c *PiholePasswordClient) setPasswordViaExec(ctx context.Context, newPassword string) error {
+// restartContainer restarts the cubeos-pihole container via Docker API.
+// Pi-hole re-reads FTLCONF_webserver_api_password on startup, generating
+// the correct Balloon-SHA256 hash from the env var value.
+func (c *PiholePasswordClient) restartContainer(ctx context.Context) error {
 	cli, err := client.NewClientWithOpts(client.FromEnv, client.WithAPIVersionNegotiation())
 	if err != nil {
 		return fmt.Errorf("docker client: %w", err)
 	}
 	defer cli.Close()
 
-	// Create exec instance
-	execCreate, err := cli.ContainerExecCreate(ctx, c.containerName, container.ExecOptions{
-		Cmd:          []string{"pihole", "setpassword", newPassword},
-		AttachStdout: true,
-		AttachStderr: true,
-	})
-	if err != nil {
-		return fmt.Errorf("exec create failed (is cubeos-pihole running?): %w", err)
+	timeout := 10
+	if err := cli.ContainerRestart(ctx, c.containerName, container.StopOptions{Timeout: &timeout}); err != nil {
+		return fmt.Errorf("container restart failed: %w", err)
 	}
 
-	// Start exec and wait for completion
-	if err := cli.ContainerExecStart(ctx, execCreate.ID, container.ExecStartOptions{}); err != nil {
-		return fmt.Errorf("exec start failed: %w", err)
-	}
-
-	// Wait for the command to finish (pihole setpassword is fast)
-	deadline := time.Now().Add(10 * time.Second)
-	for time.Now().Before(deadline) {
-		inspect, err := cli.ContainerExecInspect(ctx, execCreate.ID)
-		if err != nil {
-			return fmt.Errorf("exec inspect failed: %w", err)
-		}
-		if !inspect.Running {
-			if inspect.ExitCode != 0 {
-				return fmt.Errorf("pihole setpassword exited with code %d", inspect.ExitCode)
-			}
-			return nil // Success
-		}
-		time.Sleep(500 * time.Millisecond)
-	}
-
-	return fmt.Errorf("pihole setpassword timed out after 10s")
+	return nil
 }
 
-// doSync changes the Pi-hole web UI password using Docker exec.
-// Also persists the password to .env and secrets.env for compose recreation.
+// doSync changes the Pi-hole web UI password by updating the .env file
+// (which feeds FTLCONF_webserver_api_password via docker-compose) and
+// restarting the container so Pi-hole regenerates the Balloon-SHA256 hash.
 func (c *PiholePasswordClient) doSync(newPassword string) error {
 	l := log.With().Str("component", "pihole-sync").Logger()
 
-	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
-	defer cancel()
-
-	// Set password via Docker exec (correct Balloon-SHA256 hashing)
-	if err := c.setPasswordViaExec(ctx, newPassword); err != nil {
-		return fmt.Errorf("setpassword exec: %w", err)
-	}
-
-	l.Debug().Msg("Pi-hole password set via docker exec")
-
-	// Persist to .env file — docker-compose auto-reads .env in the compose
-	// directory, so PIHOLE_PASSWORD survives container recreation via
-	// FTLCONF_webserver_api_password=${PIHOLE_PASSWORD:-cubeos} in compose.
+	// Step 1: Update PIHOLE_PASSWORD in the pihole .env file.
+	// The docker-compose maps this to FTLCONF_webserver_api_password.
 	if err := updateEnvFileEntry(c.envFilePath, "PIHOLE_PASSWORD", newPassword); err != nil {
-		l.Warn().Err(err).Msg("failed to update pihole .env file")
+		return fmt.Errorf("failed to update pihole .env: %w", err)
 	}
+	l.Debug().Msg("updated PIHOLE_PASSWORD in .env")
 
-	// Persist to secrets.env (CubeOS reads this for startup sync)
+	// Step 2: Persist to secrets.env (CubeOS reads this for startup sync)
 	if err := updateEnvFileEntry(c.secretsPath, "CUBEOS_PIHOLE_PASSWORD", newPassword); err != nil {
 		l.Warn().Err(err).Msg("failed to update secrets.env")
 	}
 
-	l.Info().Msg("Pi-hole web password synced successfully")
+	// Step 3: Restart Pi-hole container to pick up the new env var.
+	// Pi-hole v6 reads FTLCONF_webserver_api_password on startup and
+	// generates the correct Balloon-SHA256 hash internally.
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
+
+	if err := c.restartContainer(ctx); err != nil {
+		return fmt.Errorf("restart: %w", err)
+	}
+
+	l.Info().Msg("Pi-hole web password synced successfully (env var + restart)")
 	return nil
 }
 
@@ -235,7 +214,7 @@ func (c *PiholePasswordClient) EnsurePasswordSynced(dbConn *sql.DB) {
 		return
 	}
 
-	// Wait for Pi-hole container to be ready
+	// Wait for Pi-hole container to be ready before checking password
 	time.Sleep(10 * time.Second)
 
 	// Check if Pi-hole already accepts the correct password via REST API
@@ -247,10 +226,6 @@ func (c *PiholePasswordClient) EnsurePasswordSynced(dbConn *sql.DB) {
 	l.Info().Msg("Pi-hole password out of sync — attempting startup resync")
 	c.SyncAdminPasswordWithRetry("cubeos", cfg.AdminPassword)
 }
-
-// Keep updateEnvFileEntry in npm_sync.go (shared utility).
-// It's defined there since npm_sync.go was the original location.
-// Both pihole_sync.go and filebrowser.go reference it.
 
 // isContainerRunning checks if a Docker container exists and is running.
 func isContainerRunning(containerName string) bool {

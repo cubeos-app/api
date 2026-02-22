@@ -486,7 +486,7 @@ func (m *NPMManager) migrateDefaultAdmin(newPassword string) error {
 		"nickname":    "admin",
 		"email":       npmHumanAdminEmail, // admin@cubeos.cube
 		"roles":       defaultAdmin.Roles,
-		"is_disabled": false,
+		"is_disabled": 0,
 		"secret":      bootstrapPw,
 	}
 
@@ -600,7 +600,7 @@ func (m *NPMManager) resetServiceAccountPassword() error {
 		"nickname":    serviceUser.Nickname,
 		"email":       serviceUser.Email,
 		"roles":       serviceUser.Roles,
-		"is_disabled": false,
+		"is_disabled": 0,
 		"secret":      password,
 	}
 

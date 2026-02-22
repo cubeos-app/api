@@ -4,6 +4,7 @@ import (
 	"database/sql"
 	"encoding/json"
 	"fmt"
+	"io"
 	"os"
 	"strings"
 	"time"
@@ -49,13 +50,22 @@ func (m *NPMManager) doSyncAdminPassword(newPassword string) error {
 		return fmt.Errorf("NPM human admin %s not found", npmHumanAdminEmail)
 	}
 
-	// Update password via PUT /api/users/{id}
+	// NPM v2 PUT /api/users/{id} requires name, nickname, email, roles, is_disabled.
+	// Use the exact values from the current user to avoid validation errors.
+	// Ensure roles defaults to ["admin"] if empty.
+	roles := adminUser.Roles
+	if len(roles) == 0 {
+		roles = []string{"admin"}
+	}
+
+	// NOTE: is_disabled must be sent as integer (0/1), not boolean.
+	// NPM v2 returns 400 when it receives a JSON boolean for this field.
 	update := map[string]interface{}{
 		"name":        adminUser.Name,
 		"nickname":    adminUser.Nickname,
 		"email":       adminUser.Email,
-		"roles":       adminUser.Roles,
-		"is_disabled": false,
+		"roles":       roles,
+		"is_disabled": 0,
 		"secret":      newPassword,
 	}
 
@@ -66,10 +76,15 @@ func (m *NPMManager) doSyncAdminPassword(newPassword string) error {
 	defer resp.Body.Close()
 
 	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
-		return fmt.Errorf("NPM returned %d for admin password update", resp.StatusCode)
+		body, _ := io.ReadAll(resp.Body)
+		return fmt.Errorf("NPM returned %d for admin password update: %s", resp.StatusCode, string(body))
 	}
 
-	// Persist to .env and secrets.env so the password survives restarts
+	// Persist to .env and secrets.env so the password survives restarts.
+	// CUBEOS_NPM_PASSWORD is the HUMAN admin password — used by
+	// bootstrapServiceAccount() to auth as admin, create service account.
+	// After sync, this MUST be the new CubeOS password so bootstrap can
+	// re-authenticate if the service account token expires.
 	npmEnvPath := "/cubeos/coreapps/npm/.env"
 	if err := updateEnvFileEntry(npmEnvPath, "NPM_ADMIN_PASSWORD", newPassword); err != nil {
 		l.Warn().Err(err).Msg("failed to update npm .env file")
