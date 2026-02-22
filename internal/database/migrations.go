@@ -618,6 +618,96 @@ var migrations = []Migration{
 			return nil
 		},
 	},
+
+	// Version 16: FlowEngine workflow tables
+	{
+		Version:     16,
+		Description: "Add FlowEngine workflow tables (workflow_runs, workflow_steps, workflow_events, job_queue)",
+		Up: func(db *sql.DB) error {
+			stmts := []string{
+				// workflow_runs — main workflow tracking table
+				`CREATE TABLE IF NOT EXISTS workflow_runs (
+					id              TEXT PRIMARY KEY,
+					workflow_type   TEXT NOT NULL,
+					version         INTEGER NOT NULL DEFAULT 1,
+					external_id     TEXT,
+					current_state   TEXT NOT NULL DEFAULT 'pending',
+					current_step    INTEGER NOT NULL DEFAULT 0,
+					input           TEXT,
+					output          TEXT,
+					error           TEXT,
+					metadata        TEXT NOT NULL DEFAULT '{}',
+					locked_by       TEXT,
+					locked_until    DATETIME,
+					max_retries     INTEGER NOT NULL DEFAULT 3,
+					retry_count     INTEGER NOT NULL DEFAULT 0,
+					created_at      DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+					updated_at      DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP
+				)`,
+
+				// Prevent duplicate active workflows for the same external_id
+				`CREATE UNIQUE INDEX IF NOT EXISTS idx_workflow_active_unique
+					ON workflow_runs (workflow_type, external_id)
+					WHERE current_state NOT IN ('completed', 'failed', 'compensated')`,
+
+				// Fast poll query for pending/running/compensating workflows
+				`CREATE INDEX IF NOT EXISTS idx_workflow_pending
+					ON workflow_runs (current_state, locked_until)
+					WHERE current_state IN ('pending', 'running', 'compensating')`,
+
+				// workflow_steps — individual steps within a workflow
+				`CREATE TABLE IF NOT EXISTS workflow_steps (
+					id              TEXT PRIMARY KEY,
+					workflow_id     TEXT NOT NULL REFERENCES workflow_runs(id) ON DELETE CASCADE,
+					step_index      INTEGER NOT NULL,
+					step_name       TEXT NOT NULL,
+					activity_name   TEXT NOT NULL,
+					compensate_name TEXT,
+					status          TEXT NOT NULL DEFAULT 'pending',
+					input           TEXT,
+					output          TEXT,
+					error           TEXT,
+					started_at      DATETIME,
+					completed_at    DATETIME,
+					UNIQUE(workflow_id, step_index)
+				)`,
+
+				// workflow_events — audit log for all workflow state changes
+				`CREATE TABLE IF NOT EXISTS workflow_events (
+					id              INTEGER PRIMARY KEY AUTOINCREMENT,
+					workflow_id     TEXT NOT NULL REFERENCES workflow_runs(id) ON DELETE CASCADE,
+					step_index      INTEGER,
+					event_type      TEXT NOT NULL,
+					old_state       TEXT,
+					new_state       TEXT,
+					detail          TEXT,
+					node_id         TEXT,
+					created_at      DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP
+				)`,
+
+				`CREATE INDEX IF NOT EXISTS idx_workflow_events_workflow
+					ON workflow_events (workflow_id, created_at)`,
+
+				// job_queue — for future async workflow submission
+				`CREATE TABLE IF NOT EXISTS job_queue (
+					id              TEXT PRIMARY KEY,
+					workflow_id     TEXT NOT NULL REFERENCES workflow_runs(id) ON DELETE CASCADE,
+					priority        INTEGER NOT NULL DEFAULT 0,
+					status          TEXT NOT NULL DEFAULT 'queued',
+					created_at      DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP
+				)`,
+			}
+
+			for _, stmt := range stmts {
+				if _, err := db.Exec(stmt); err != nil {
+					return fmt.Errorf("FlowEngine migration failed: %w\nStatement: %s", err, stmt)
+				}
+			}
+
+			log.Info().Msg("Migration 16: Created FlowEngine workflow tables")
+			return nil
+		},
+	},
 }
 
 // isDuplicateColumnError checks if an error is a "duplicate column" error
@@ -696,6 +786,10 @@ func MigrateAndSeed(db *sql.DB) error {
 // WARNING: This is destructive and should only be used for testing/reset.
 func DropAllTables(db *sql.DB) error {
 	tables := []string{
+		"job_queue",
+		"workflow_events",
+		"workflow_steps",
+		"workflow_runs",
 		"volume_mappings",
 		"profile_apps",
 		"port_allocations",
