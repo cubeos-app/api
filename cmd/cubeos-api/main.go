@@ -251,8 +251,8 @@ func main() {
 	dbMgr := managers.NewDatabaseManager(db.DB)
 
 	// Create PiholeManager early so it can be used by AppStoreManager
-	piholeMgr := managers.NewPiholeManager(cfg, "/cubeos")
-	log.Info().Msg("PiholeManager initialized")
+	piholeMgr := managers.NewPiholeManager(cfg)
+	log.Info().Msg("PiholeManager initialized (Pi-hole v6 REST API)")
 
 	// Create NPM manager for proxy host management (Sprint 4)
 	// Must be initialized before AppStoreManager which depends on it

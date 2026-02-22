@@ -42,6 +42,9 @@ type Config struct {
 	DnsmasqConf   string
 	DnsmasqLeases string
 
+	// Pi-hole
+	PiholePassword string // Admin password for Pi-hole v6 REST API
+
 	// Service Ports (from env)
 	DashboardPort int
 	NPMPort       int
@@ -204,6 +207,9 @@ func Load() *Config {
 		DashboardPort: mustGetEnvInt("DASHBOARD_PORT"),
 		NPMPort:       mustGetEnvInt("NPM_PORT"),
 		PiholePort:    mustGetEnvInt("PIHOLE_PORT"),
+
+		// Pi-hole v6 REST API password (loaded from secrets.env)
+		PiholePassword: getEnvOptional("CUBEOS_PIHOLE_PASSWORD", ""),
 		// B01: Ollama/ChromaDB are optional — API must not crash when AI stack is disabled
 		OllamaPort:   getEnvIntOptional("OLLAMA_PORT", 6030),
 		ChromaDBPort: getEnvIntOptional("CHROMADB_PORT", 6031),

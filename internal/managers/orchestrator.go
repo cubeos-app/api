@@ -45,7 +45,6 @@ type OrchestratorConfig struct {
 	Config        *config.Config
 	CoreappsPath  string
 	AppsPath      string
-	PiholePath    string
 	NPMConfigDir  string
 	HALClient     *hal.Client
 	RegistryURL   string                         // Local Docker registry URL (e.g. http://10.42.24.1:5000)
@@ -115,11 +114,7 @@ func NewOrchestrator(cfg OrchestratorConfig) (*Orchestrator, error) {
 	if cfg.PiholeManager != nil {
 		o.pihole = cfg.PiholeManager
 	} else {
-		piholePath := cfg.PiholePath
-		if piholePath == "" {
-			piholePath = "/cubeos/coreapps/pihole/appdata"
-		}
-		o.pihole = NewPiholeManager(cfg.Config, piholePath)
+		o.pihole = NewPiholeManager(cfg.Config)
 	}
 
 	// Initialize PortManager with triple-source validation (DB + Swarm + HAL)
@@ -261,10 +256,7 @@ func (o *Orchestrator) InstallApp(ctx context.Context, req models.InstallAppRequ
 		o.rollbackInstall(ctx, name, appID, fqdn, appDir)
 		return nil, fmt.Errorf("failed to add DNS entry for %s: %w", fqdn, err)
 	}
-	if err := o.pihole.ReloadDNS(); err != nil {
-		o.rollbackInstall(ctx, name, appID, fqdn, appDir)
-		return nil, fmt.Errorf("failed to reload DNS after adding %s: %w", fqdn, err)
-	}
+	// Pi-hole v6 auto-applies DNS changes — no reload needed
 
 	// Create NPM proxy host — FATAL: app is unreachable without reverse proxy
 	proxyHost := &NPMProxyHostExtended{
@@ -498,10 +490,6 @@ services:
 		o.rollbackInstall(ctx, name, appID, fqdn, appBase)
 		return nil, fmt.Errorf("failed to add DNS entry for %s: %w", fqdn, err)
 	}
-	if err := o.pihole.ReloadDNS(); err != nil {
-		o.rollbackInstall(ctx, name, appID, fqdn, appBase)
-		return nil, fmt.Errorf("failed to reload DNS after adding %s: %w", fqdn, err)
-	}
 
 	// NPM proxy host — FATAL: app is unreachable without reverse proxy
 	// Clean stale proxy for same FQDN before creating (handles orphans from manual cleanup)
@@ -626,10 +614,6 @@ func (o *Orchestrator) UninstallApp(ctx context.Context, name string, keepData b
 	if fqdn := app.GetPrimaryFQDN(); fqdn != "" {
 		if err := o.pihole.RemoveEntry(fqdn); err != nil {
 			log.Warn().Err(err).Str("fqdn", fqdn).Msg("Failed to remove DNS entry during uninstall")
-		} else {
-			if err := o.pihole.ReloadDNS(); err != nil {
-				log.Warn().Err(err).Msg("Failed to reload Pi-hole DNS after uninstall")
-			}
 		}
 	}
 
@@ -686,7 +670,6 @@ func (o *Orchestrator) rollbackInstall(ctx context.Context, name string, appID i
 	if err := o.pihole.RemoveEntry(fqdn); err != nil {
 		log.Error().Err(err).Str("fqdn", fqdn).Msg("Rollback: failed to remove DNS entry")
 	}
-	_ = o.pihole.ReloadDNS()
 
 	// Remove DB row (cascades to ports + fqdns via foreign_keys=ON in DSN)
 	if _, err := o.db.ExecContext(ctx, "DELETE FROM apps WHERE id = ?", appID); err != nil {

@@ -255,10 +255,6 @@ func (h *FQDNsHandler) CreateFQDN(w http.ResponseWriter, r *http.Request) {
 	if h.pihole != nil {
 		if err := h.pihole.AddEntry(fullFQDN, ""); err != nil {
 			log.Warn().Err(err).Str("fqdn", fullFQDN).Msg("failed to add Pi-hole DNS record")
-		} else {
-			if err := h.pihole.ReloadDNS(); err != nil {
-				log.Warn().Err(err).Str("fqdn", fullFQDN).Msg("failed to reload Pi-hole DNS after adding record")
-			}
 		}
 	}
 
@@ -440,10 +436,6 @@ func (h *FQDNsHandler) DeleteFQDN(w http.ResponseWriter, r *http.Request) {
 	if h.pihole != nil {
 		if err := h.pihole.RemoveEntry(fullFQDN); err != nil {
 			log.Warn().Err(err).Str("fqdn", fullFQDN).Msg("failed to delete Pi-hole DNS record")
-		} else {
-			if err := h.pihole.ReloadDNS(); err != nil {
-				log.Warn().Err(err).Str("fqdn", fullFQDN).Msg("failed to reload Pi-hole DNS after deleting record")
-			}
 		}
 	}
 
