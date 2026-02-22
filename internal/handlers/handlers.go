@@ -28,13 +28,15 @@ type Handlers struct {
 	docker      *managers.DockerManager
 	hal         *hal.Client
 	filebrowser *managers.FileBrowserClient
+	piholePw    *managers.PiholePasswordClient
+	npmMgr      *managers.NPMManager
 	startTime   time.Time
 }
 
 // NewHandlers creates a new Handlers instance.
 // systemMgr and networkMgr are passed in to avoid creating duplicate instances
 // (they are shared with WSManager, MonitoringManager, etc.).
-func NewHandlers(cfg *config.Config, db *sqlx.DB, docker *managers.DockerManager, halClient *hal.Client, systemMgr *managers.SystemManager, networkMgr *managers.NetworkManager, fbClient *managers.FileBrowserClient) *Handlers {
+func NewHandlers(cfg *config.Config, db *sqlx.DB, docker *managers.DockerManager, halClient *hal.Client, systemMgr *managers.SystemManager, networkMgr *managers.NetworkManager, fbClient *managers.FileBrowserClient, piholePwClient *managers.PiholePasswordClient, npmMgr *managers.NPMManager) *Handlers {
 	return &Handlers{
 		cfg:         cfg,
 		db:          db,
@@ -43,6 +45,8 @@ func NewHandlers(cfg *config.Config, db *sqlx.DB, docker *managers.DockerManager
 		docker:      docker,
 		hal:         halClient,
 		filebrowser: fbClient,
+		piholePw:    piholePwClient,
+		npmMgr:      npmMgr,
 		startTime:   time.Now(),
 	}
 }
@@ -268,6 +272,14 @@ func (h *Handlers) ChangePassword(w http.ResponseWriter, r *http.Request) {
 	// Sync password to File Browser (non-fatal — best effort)
 	if h.filebrowser != nil {
 		go h.filebrowser.SyncAdminPassword(req.CurrentPassword, req.NewPassword)
+	}
+	// Sync password to Pi-hole (non-fatal — best effort)
+	if h.piholePw != nil {
+		go h.piholePw.SyncAdminPassword(req.CurrentPassword, req.NewPassword)
+	}
+	// Sync password to NPM human admin (non-fatal — best effort)
+	if h.npmMgr != nil {
+		go h.npmMgr.SyncAdminPassword(req.CurrentPassword, req.NewPassword)
 	}
 
 	writeJSON(w, http.StatusOK, models.SuccessResponse{

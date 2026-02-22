@@ -365,15 +365,20 @@ func main() {
 	fbClient := managers.NewFileBrowserClient(fmt.Sprintf("http://%s:6013", cfg.GatewayIP))
 	log.Info().Str("url", fmt.Sprintf("http://%s:6013", cfg.GatewayIP)).Msg("FileBrowser client initialized")
 
-	// Startup sync: ensure File Browser password matches CubeOS admin password.
-	// Catches first-boot sync failures (e.g. FB wasn't ready when setup ran).
+	// Create Pi-hole password sync client
+	piholePwClient := managers.NewPiholePasswordClient()
+
+	// Startup sync: ensure service passwords match CubeOS admin password.
+	// Catches first-boot sync failures (e.g. service wasn't ready when setup ran).
 	// Runs in background — non-blocking, non-fatal.
 	go fbClient.EnsurePasswordSynced(db.DB)
+	go piholePwClient.EnsurePasswordSynced(db.DB)
+	go npmMgr.EnsureAdminPasswordSynced(db.DB)
 
-	setupMgr := managers.NewSetupManager(cfg, db.DB, halClient, fbClient)
+	setupMgr := managers.NewSetupManager(cfg, db.DB, halClient, fbClient, piholePwClient, npmMgr)
 
 	// Create handlers
-	h := handlers.NewHandlers(cfg, db, docker, halClient, systemMgr, networkMgr, fbClient)
+	h := handlers.NewHandlers(cfg, db, docker, halClient, systemMgr, networkMgr, fbClient, piholePwClient, npmMgr)
 	ext := handlers.NewExtendedHandlers(logMgr, firewallMgr, backupMgr, processMgr, wizardMgr, monitoringMgr, prefMgr, powerMgr, storageMgr, halClient)
 	appStoreHandler := handlers.NewAppStoreHandler(appStoreMgr, npmMgr)
 	setupHandler := handlers.NewSetupHandler(setupMgr)

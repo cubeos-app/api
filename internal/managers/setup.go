@@ -29,17 +29,21 @@ type SetupManager struct {
 	db          *sql.DB
 	hal         *hal.Client
 	filebrowser *FileBrowserClient
+	piholePw    *PiholePasswordClient
+	npmMgr      *NPMManager
 	configPath  string
 	setupDone   bool
 }
 
 // NewSetupManager creates a new setup manager
-func NewSetupManager(cfg *config.Config, db *sql.DB, halClient *hal.Client, fbClient *FileBrowserClient) *SetupManager {
+func NewSetupManager(cfg *config.Config, db *sql.DB, halClient *hal.Client, fbClient *FileBrowserClient, piholePwClient *PiholePasswordClient, npmMgr *NPMManager) *SetupManager {
 	m := &SetupManager{
 		cfg:         cfg,
 		db:          db,
 		hal:         halClient,
 		filebrowser: fbClient,
+		piholePw:    piholePwClient,
+		npmMgr:      npmMgr,
 		configPath:  "/cubeos/config",
 	}
 
@@ -373,6 +377,14 @@ func (m *SetupManager) ApplySetupConfig(cfg *models.SetupConfig) error {
 	// Uses retry with backoff since FB may still be starting during first boot.
 	if m.filebrowser != nil {
 		go m.filebrowser.SyncAdminPasswordWithRetry("admin", cfg.AdminPassword)
+	}
+	// Sync password to Pi-hole (non-fatal — default is "cubeos")
+	if m.piholePw != nil {
+		go m.piholePw.SyncAdminPasswordWithRetry("cubeos", cfg.AdminPassword)
+	}
+	// Sync password to NPM human admin (non-fatal — default is random from first-boot)
+	if m.npmMgr != nil {
+		go m.npmMgr.SyncAdminPasswordWithRetry("", cfg.AdminPassword)
 	}
 	m.updateStep(1)
 
