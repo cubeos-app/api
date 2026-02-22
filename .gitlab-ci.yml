@@ -171,3 +171,54 @@ deploy:
   rules:
     - if: $CI_COMMIT_BRANCH == "main"
       when: on_success
+
+# -----------------------------------------------------------------------------
+# INTEGRATION TEST - Run API integration tests against deployed Pi
+# -----------------------------------------------------------------------------
+# P1-18: Runs after deploy succeeds. Tests all API endpoints on the live Pi.
+# allow_failure: true — CI stays green while we stabilize the test suite.
+# The test script already exists at scripts/api-integration-tests.sh.
+# -----------------------------------------------------------------------------
+integration-test:
+  stage: deploy
+  tags: [multiarch]
+  image: alpine:latest
+  timeout: 5m
+  needs:
+    - deploy
+  before_script:
+    - apk add --no-cache openssh-client curl jq bash
+    - eval $(ssh-agent -s)
+    - echo "$CI_DEPLOY_SSH_KEY" | tr -d '\r' | ssh-add -
+    - mkdir -p ~/.ssh && chmod 700 ~/.ssh
+    - ssh-keyscan -H ${PI_DEPLOY_ADDR} >> ~/.ssh/known_hosts 2>/dev/null
+  script:
+    - |
+      echo "============================================================"
+      echo "  API Integration Tests — Post-Deploy"
+      echo "============================================================"
+
+      # Wait for API to settle after deploy
+      echo "Waiting 15s for API to stabilize..."
+      sleep 15
+
+      # Verify API is responding before running full suite
+      API_URL="http://${PI_DEPLOY_ADDR}:6010"
+      if ! curl -sf --max-time 10 "${API_URL}/health" > /dev/null 2>&1; then
+        echo "ERROR: API not responding at ${API_URL}/health"
+        echo "Skipping integration tests."
+        exit 1
+      fi
+      echo "API health: OK"
+
+      # Copy and run integration test script on Pi
+      scp scripts/api-integration-tests.sh ${PI_DEPLOY_HOST}:/tmp/api-integration-tests.sh
+      ssh -o ServerAliveInterval=15 ${PI_DEPLOY_HOST} \
+        "bash /tmp/api-integration-tests.sh http://127.0.0.1:6010 http://127.0.0.1:6005 admin admin"
+      ssh ${PI_DEPLOY_HOST} "rm -f /tmp/api-integration-tests.sh"
+  after_script:
+    - kill $SSH_AGENT_PID 2>/dev/null || true
+  allow_failure: true
+  rules:
+    - if: $CI_COMMIT_BRANCH == "main"
+      when: on_success
