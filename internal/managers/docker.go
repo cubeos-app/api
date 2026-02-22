@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"net/http"
 	"regexp"
 	"strings"
 	"time"
@@ -15,7 +16,9 @@ import (
 	"github.com/docker/docker/client"
 	"github.com/docker/docker/pkg/stdcopy"
 
+	"cubeos-api/internal/circuitbreaker"
 	"cubeos-api/internal/config"
+	dockerutil "cubeos-api/internal/docker"
 	"cubeos-api/internal/models"
 )
 
@@ -27,13 +30,38 @@ var swarmTaskSuffix = regexp.MustCompile(`\.\d+\.[a-z0-9]{25}$`)
 type DockerManager struct {
 	client *client.Client
 	cfg    *config.Config
+	cb     *circuitbreaker.CircuitBreaker
 }
 
-// NewDockerManager creates a new DockerManager
-func NewDockerManager(cfg *config.Config) (*DockerManager, error) {
-	cli, err := client.NewClientWithOpts(client.FromEnv, client.WithAPIVersionNegotiation())
+// NewDockerManager creates a new DockerManager with circuit breaker protection.
+// The circuit breaker wraps the Docker SDK's HTTP transport, so all SDK operations
+// (ContainerList, ContainerInspect, etc.) are automatically protected without
+// changing any call sites. The breaker should be shared with SwarmManager since
+// both talk to the same Docker daemon.
+func NewDockerManager(cfg *config.Config, cb *circuitbreaker.CircuitBreaker) (*DockerManager, error) {
+	// Step 1: Create a temporary client to discover the SDK-configured transport.
+	// FromEnv reads DOCKER_HOST and sets up the correct transport (Unix socket, TCP, etc.)
+	tmpCli, err := client.NewClientWithOpts(client.FromEnv)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create Docker client: %w", err)
+	}
+	innerTransport := tmpCli.HTTPClient().Transport
+	if innerTransport == nil {
+		innerTransport = http.DefaultTransport
+	}
+	tmpCli.Close()
+
+	// Step 2: Wrap the SDK transport with our circuit breaker funnelTransport
+	wrappedHTTPClient := dockerutil.NewDockerHTTPClient(innerTransport, cb)
+
+	// Step 3: Create the real client with our wrapped transport
+	cli, err := client.NewClientWithOpts(
+		client.FromEnv,
+		client.WithHTTPClient(wrappedHTTPClient),
+		client.WithAPIVersionNegotiation(),
+	)
+	if err != nil {
+		return nil, fmt.Errorf("failed to create Docker client with circuit breaker: %w", err)
 	}
 
 	// Verify connection
@@ -47,7 +75,16 @@ func NewDockerManager(cfg *config.Config) (*DockerManager, error) {
 	return &DockerManager{
 		client: cli,
 		cfg:    cfg,
+		cb:     cb,
 	}, nil
+}
+
+// CircuitState returns the current circuit breaker state for the Docker client.
+func (m *DockerManager) CircuitState() circuitbreaker.State {
+	if m.cb == nil {
+		return circuitbreaker.StateClosed
+	}
+	return m.cb.State()
 }
 
 // Close closes the Docker client

@@ -6,10 +6,13 @@ import (
 	"context"
 	"fmt"
 	"io"
+	"net/http"
 	"os/exec"
 	"strings"
 	"time"
 
+	"cubeos-api/internal/circuitbreaker"
+	dockerutil "cubeos-api/internal/docker"
 	"cubeos-api/internal/models"
 
 	"github.com/docker/docker/api/types"
@@ -29,6 +32,7 @@ import (
 type SwarmManager struct {
 	client *client.Client
 	ctx    context.Context
+	cb     *circuitbreaker.CircuitBreaker
 }
 
 // ServiceStatus represents the current state of a Swarm service.
@@ -75,23 +79,54 @@ func DefaultSwarmConfig() SwarmConfig {
 	}
 }
 
-// NewSwarmManager creates a new SwarmManager instance.
-// It connects to the Docker daemon using the default socket.
-func NewSwarmManager() (*SwarmManager, error) {
-	return NewSwarmManagerWithContext(context.Background())
+// NewSwarmManager creates a new SwarmManager instance with circuit breaker protection.
+// It connects to the Docker daemon using the default socket, with the circuit breaker
+// wrapping the HTTP transport for fast-fail when the daemon is unresponsive.
+// The breaker should be shared with DockerManager (same daemon).
+func NewSwarmManager(cb *circuitbreaker.CircuitBreaker) (*SwarmManager, error) {
+	return NewSwarmManagerWithContext(context.Background(), cb)
 }
 
-// NewSwarmManagerWithContext creates a SwarmManager with a custom context.
-func NewSwarmManagerWithContext(ctx context.Context) (*SwarmManager, error) {
-	cli, err := client.NewClientWithOpts(client.FromEnv, client.WithAPIVersionNegotiation())
+// NewSwarmManagerWithContext creates a SwarmManager with a custom context and
+// circuit breaker protection. The breaker wraps the SDK's HTTP transport layer.
+func NewSwarmManagerWithContext(ctx context.Context, cb *circuitbreaker.CircuitBreaker) (*SwarmManager, error) {
+	// Step 1: Create a temporary client to discover the SDK-configured transport
+	tmpCli, err := client.NewClientWithOpts(client.FromEnv)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create Docker client: %w", err)
+	}
+	innerTransport := tmpCli.HTTPClient().Transport
+	if innerTransport == nil {
+		innerTransport = http.DefaultTransport
+	}
+	tmpCli.Close()
+
+	// Step 2: Wrap the SDK transport with our circuit breaker funnelTransport
+	wrappedHTTPClient := dockerutil.NewDockerHTTPClient(innerTransport, cb)
+
+	// Step 3: Create the real client with our wrapped transport
+	cli, err := client.NewClientWithOpts(
+		client.FromEnv,
+		client.WithHTTPClient(wrappedHTTPClient),
+		client.WithAPIVersionNegotiation(),
+	)
+	if err != nil {
+		return nil, fmt.Errorf("failed to create Docker client with circuit breaker: %w", err)
 	}
 
 	return &SwarmManager{
 		client: cli,
 		ctx:    ctx,
+		cb:     cb,
 	}, nil
+}
+
+// CircuitState returns the current circuit breaker state for the Swarm client.
+func (s *SwarmManager) CircuitState() circuitbreaker.State {
+	if s.cb == nil {
+		return circuitbreaker.StateClosed
+	}
+	return s.cb.State()
 }
 
 // Close releases the Docker client resources.

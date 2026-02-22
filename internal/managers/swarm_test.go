@@ -6,13 +6,20 @@ import (
 	"testing"
 	"time"
 
+	"cubeos-api/internal/circuitbreaker"
+
 	"github.com/docker/docker/api/types/swarm"
 )
+
+// testDockerCB creates a circuit breaker for use in tests.
+func testDockerCB() *circuitbreaker.CircuitBreaker {
+	return circuitbreaker.New("docker-test", circuitbreaker.DefaultConfig())
+}
 
 // skipIfNoDocker skips the test if Docker is not available
 func skipIfNoDocker(t *testing.T) *SwarmManager {
 	t.Helper()
-	sm, err := NewSwarmManager()
+	sm, err := NewSwarmManager(testDockerCB())
 	if err != nil {
 		t.Skipf("Docker not available: %v", err)
 	}
@@ -146,7 +153,7 @@ func TestNewSwarmManagerWithContext(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
 
-	sm, err := NewSwarmManagerWithContext(ctx)
+	sm, err := NewSwarmManagerWithContext(ctx, testDockerCB())
 	if err != nil {
 		t.Skipf("Docker not available: %v", err)
 	}

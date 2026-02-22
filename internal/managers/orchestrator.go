@@ -16,6 +16,7 @@ import (
 
 	"github.com/rs/zerolog/log"
 
+	"cubeos-api/internal/circuitbreaker"
 	"cubeos-api/internal/config"
 	"cubeos-api/internal/hal"
 	"cubeos-api/internal/models"
@@ -47,10 +48,11 @@ type OrchestratorConfig struct {
 	PiholePath    string
 	NPMConfigDir  string
 	HALClient     *hal.Client
-	RegistryURL   string         // Local Docker registry URL (e.g. http://10.42.24.1:5000)
-	SwarmManager  *SwarmManager  // Optional: shared instance; if nil, one is created internally
-	NPMManager    *NPMManager    // Optional: shared instance; if nil, one is created internally
-	PiholeManager *PiholeManager // Optional: shared instance; if nil, one is created internally
+	RegistryURL   string                         // Local Docker registry URL (e.g. http://10.42.24.1:5000)
+	DockerCB      *circuitbreaker.CircuitBreaker // Shared Docker circuit breaker (used by internal DockerManager + fallback SwarmManager)
+	SwarmManager  *SwarmManager                  // Optional: shared instance; if nil, one is created internally
+	NPMManager    *NPMManager                    // Optional: shared instance; if nil, one is created internally
+	PiholeManager *PiholeManager                 // Optional: shared instance; if nil, one is created internally
 }
 
 // NewOrchestrator creates a new Orchestrator instance
@@ -81,7 +83,7 @@ func NewOrchestrator(cfg OrchestratorConfig) (*Orchestrator, error) {
 	if cfg.SwarmManager != nil {
 		o.swarm = cfg.SwarmManager
 	} else {
-		o.swarm, err = NewSwarmManager()
+		o.swarm, err = NewSwarmManager(cfg.DockerCB)
 		if err != nil {
 			cancel()
 			return nil, fmt.Errorf("failed to create swarm manager: %w", err)
@@ -89,7 +91,7 @@ func NewOrchestrator(cfg OrchestratorConfig) (*Orchestrator, error) {
 	}
 
 	// Initialize DockerManager
-	o.docker, err = NewDockerManager(cfg.Config)
+	o.docker, err = NewDockerManager(cfg.Config, cfg.DockerCB)
 	if err != nil {
 		cancel()
 		return nil, fmt.Errorf("failed to create docker manager: %w", err)

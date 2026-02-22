@@ -155,6 +155,7 @@ import (
 	httpSwagger "github.com/swaggo/http-swagger"
 	"golang.org/x/crypto/bcrypt"
 
+	"cubeos-api/internal/circuitbreaker"
 	"cubeos-api/internal/config"
 	"cubeos-api/internal/database"
 	"cubeos-api/internal/hal"
@@ -209,8 +210,11 @@ func main() {
 		log.Warn().Err(err).Msg("failed to seed admin user")
 	}
 
+	// Create shared Docker circuit breaker (DockerManager + SwarmManager hit the same daemon)
+	dockerCB := circuitbreaker.New("docker", circuitbreaker.DefaultConfig())
+
 	// Create Docker manager
-	docker, err := managers.NewDockerManager(cfg)
+	docker, err := managers.NewDockerManager(cfg, dockerCB)
 	if err != nil {
 		log.Warn().Err(err).Msg("failed to connect to Docker")
 		docker = nil
@@ -267,7 +271,8 @@ func main() {
 
 	// Create shared SwarmManager (used by Orchestrator and PortManager)
 	// Single Docker client instance shared across components.
-	swarmMgr, err := managers.NewSwarmManager()
+	// Uses the same circuit breaker as DockerManager — same daemon.
+	swarmMgr, err := managers.NewSwarmManager(dockerCB)
 	if err != nil {
 		log.Warn().Err(err).Msg("failed to create SwarmManager (port validation will use DB-only mode)")
 		// swarmMgr is nil — PortManager and Orchestrator degrade gracefully
@@ -309,6 +314,7 @@ func main() {
 		CoreappsPath:  "/cubeos/coreapps",
 		AppsPath:      "/cubeos/apps",
 		HALClient:     halClient,
+		DockerCB:      dockerCB,
 		SwarmManager:  swarmMgr,
 		NPMManager:    npmMgr,
 		PiholeManager: piholeMgr,
