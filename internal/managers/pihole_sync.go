@@ -9,13 +9,12 @@ import (
 	"io"
 	"net/http"
 	"os"
+	"os/exec"
 	"strings"
 	"time"
 
 	"cubeos-api/internal/models"
 
-	"github.com/docker/docker/api/types/container"
-	"github.com/docker/docker/client"
 	"github.com/rs/zerolog/log"
 )
 
@@ -24,8 +23,9 @@ import (
 // Pi-hole v6 uses FTLCONF_webserver_api_password env var to set the password.
 // When this env var is set, `pihole setpassword` is BLOCKED (exit code 5).
 // Therefore we sync by updating PIHOLE_PASSWORD in the .env file and
-// restarting the container — Pi-hole generates the correct Balloon-SHA256
-// hash from the env var on startup.
+// recreating the container via `docker compose up -d` — this forces
+// docker-compose to re-interpolate the env var. A plain `docker restart`
+// does NOT re-read .env files.
 //
 // Password sync happens at three points:
 //   - First boot: setup.go calls SyncAdminPasswordWithRetry("cubeos", newPassword)
@@ -35,6 +35,7 @@ type PiholePasswordClient struct {
 	containerName string
 	apiURL        string // http://10.42.24.1:6001
 	envFilePath   string // /cubeos/coreapps/pihole/appconfig/.env (docker-compose .env)
+	composeDir    string // /cubeos/coreapps/pihole/appconfig (for docker compose up -d)
 	secretsPath   string // /cubeos/config/secrets.env
 	httpClient    *http.Client
 }
@@ -55,6 +56,7 @@ func NewPiholePasswordClient() *PiholePasswordClient {
 		containerName: "cubeos-pihole",
 		apiURL:        fmt.Sprintf("http://%s:%s", gatewayIP, piholePort),
 		envFilePath:   "/cubeos/coreapps/pihole/appconfig/.env",
+		composeDir:    "/cubeos/coreapps/pihole/appconfig",
 		secretsPath:   "/cubeos/config/secrets.env",
 		httpClient: &http.Client{
 			Timeout: 10 * time.Second,
@@ -83,19 +85,19 @@ func (c *PiholePasswordClient) checkPassword(password string) bool {
 	return resp.StatusCode == http.StatusOK
 }
 
-// restartContainer restarts the cubeos-pihole container via Docker API.
-// Pi-hole re-reads FTLCONF_webserver_api_password on startup, generating
-// the correct Balloon-SHA256 hash from the env var value.
-func (c *PiholePasswordClient) restartContainer(ctx context.Context) error {
-	cli, err := client.NewClientWithOpts(client.FromEnv, client.WithAPIVersionNegotiation())
-	if err != nil {
-		return fmt.Errorf("docker client: %w", err)
-	}
-	defer cli.Close()
+// recreateContainer runs `docker compose up -d` in the Pi-hole appconfig
+// directory. This forces docker-compose to re-read the .env file and
+// recreate the container with the updated FTLCONF_webserver_api_password.
+//
+// A plain `docker restart` does NOT re-read .env files — the container
+// keeps the old environment from when it was first created.
+func (c *PiholePasswordClient) recreateContainer(ctx context.Context) error {
+	cmd := exec.CommandContext(ctx, "docker", "compose", "up", "-d")
+	cmd.Dir = c.composeDir
 
-	timeout := 10
-	if err := cli.ContainerRestart(ctx, c.containerName, container.StopOptions{Timeout: &timeout}); err != nil {
-		return fmt.Errorf("container restart failed: %w", err)
+	output, err := cmd.CombinedOutput()
+	if err != nil {
+		return fmt.Errorf("docker compose up -d failed: %w (output: %s)", err, string(output))
 	}
 
 	return nil
@@ -103,7 +105,7 @@ func (c *PiholePasswordClient) restartContainer(ctx context.Context) error {
 
 // doSync changes the Pi-hole web UI password by updating the .env file
 // (which feeds FTLCONF_webserver_api_password via docker-compose) and
-// restarting the container so Pi-hole regenerates the Balloon-SHA256 hash.
+// recreating the container so Pi-hole regenerates the Balloon-SHA256 hash.
 func (c *PiholePasswordClient) doSync(newPassword string) error {
 	l := log.With().Str("component", "pihole-sync").Logger()
 
@@ -119,17 +121,18 @@ func (c *PiholePasswordClient) doSync(newPassword string) error {
 		l.Warn().Err(err).Msg("failed to update secrets.env")
 	}
 
-	// Step 3: Restart Pi-hole container to pick up the new env var.
-	// Pi-hole v6 reads FTLCONF_webserver_api_password on startup and
-	// generates the correct Balloon-SHA256 hash internally.
-	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	// Step 3: Recreate Pi-hole container via docker compose up -d.
+	// This forces docker-compose to re-interpolate the .env file,
+	// passing the new PIHOLE_PASSWORD as FTLCONF_webserver_api_password.
+	// Pi-hole v6 generates the Balloon-SHA256 hash from this env var on startup.
+	ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
 	defer cancel()
 
-	if err := c.restartContainer(ctx); err != nil {
-		return fmt.Errorf("restart: %w", err)
+	if err := c.recreateContainer(ctx); err != nil {
+		return fmt.Errorf("recreate: %w", err)
 	}
 
-	l.Info().Msg("Pi-hole web password synced successfully (env var + restart)")
+	l.Info().Msg("Pi-hole web password synced successfully (env var + compose recreate)")
 	return nil
 }
 
@@ -232,23 +235,10 @@ func isContainerRunning(containerName string) bool {
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
 
-	cli, err := client.NewClientWithOpts(client.FromEnv, client.WithAPIVersionNegotiation())
+	cmd := exec.CommandContext(ctx, "docker", "inspect", "-f", "{{.State.Running}}", containerName)
+	output, err := cmd.Output()
 	if err != nil {
 		return false
 	}
-	defer cli.Close()
-
-	containers, err := cli.ContainerList(ctx, container.ListOptions{})
-	if err != nil {
-		return false
-	}
-
-	for _, c := range containers {
-		for _, name := range c.Names {
-			if strings.TrimPrefix(name, "/") == containerName {
-				return true
-			}
-		}
-	}
-	return false
+	return strings.TrimSpace(string(output)) == "true"
 }

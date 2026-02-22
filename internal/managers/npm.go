@@ -480,25 +480,43 @@ func (m *NPMManager) migrateDefaultAdmin(newPassword string) error {
 		bootstrapPw = pw
 	}
 
-	// Update the default admin: change email to admin@cubeos.cube and set password
+	// Update the default admin: change email and profile (no secret — that's a separate endpoint)
 	update := map[string]interface{}{
 		"name":        "Administrator",
 		"nickname":    "admin",
 		"email":       npmHumanAdminEmail, // admin@cubeos.cube
 		"roles":       defaultAdmin.Roles,
 		"is_disabled": 0,
-		"secret":      bootstrapPw,
 	}
 
 	resp, err := m.doRequest("PUT", fmt.Sprintf("/api/users/%d", defaultAdmin.ID), update)
 	if err != nil {
-		return fmt.Errorf("failed to update default admin: %w", err)
+		return fmt.Errorf("failed to update default admin profile: %w", err)
 	}
 	defer resp.Body.Close()
 
 	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
 		body, _ := io.ReadAll(resp.Body)
-		return fmt.Errorf("admin migration failed (HTTP %d): %s", resp.StatusCode, string(body))
+		return fmt.Errorf("admin profile migration failed (HTTP %d): %s", resp.StatusCode, string(body))
+	}
+
+	// Change password via the dedicated /auth endpoint.
+	// Current password is NPM default "changeme".
+	authUpdate := map[string]string{
+		"type":    "password",
+		"current": npmDefaultPassword,
+		"secret":  bootstrapPw,
+	}
+
+	authResp, err := m.doRequest("PUT", fmt.Sprintf("/api/users/%d/auth", defaultAdmin.ID), authUpdate)
+	if err != nil {
+		return fmt.Errorf("failed to change default admin password: %w", err)
+	}
+	defer authResp.Body.Close()
+
+	if authResp.StatusCode < 200 || authResp.StatusCode >= 300 {
+		body, _ := io.ReadAll(authResp.Body)
+		return fmt.Errorf("admin password change failed (HTTP %d): %s", authResp.StatusCode, string(body))
 	}
 
 	log.Info().
@@ -594,25 +612,41 @@ func (m *NPMManager) resetServiceAccountPassword() error {
 		return err
 	}
 
-	// Update password via API
-	update := map[string]interface{}{
-		"name":        serviceUser.Name,
-		"nickname":    serviceUser.Nickname,
-		"email":       serviceUser.Email,
-		"roles":       serviceUser.Roles,
-		"is_disabled": 0,
-		"secret":      password,
-	}
+	// Read current service account password from secrets.env
+	currentPassword := m.loadServiceAccountPassword()
+	if currentPassword == "" {
+		// No saved password — can't change via /auth endpoint.
+		// Delete and recreate the service account instead.
+		log.Warn().Msg("NPM: no saved service account password, recreating account")
+		// Delete old account
+		delResp, err := m.doRequest("DELETE", fmt.Sprintf("/api/users/%d", serviceUser.ID), nil)
+		if err != nil {
+			return fmt.Errorf("failed to delete old service account: %w", err)
+		}
+		delResp.Body.Close()
 
-	resp, err := m.doRequest("PUT", fmt.Sprintf("/api/users/%d", serviceUser.ID), update)
-	if err != nil {
-		return err
-	}
-	defer resp.Body.Close()
+		// Create fresh account
+		if err := m.createServiceAccount(password); err != nil {
+			return fmt.Errorf("failed to recreate service account: %w", err)
+		}
+	} else {
+		// Change password via the dedicated /auth endpoint
+		authUpdate := map[string]string{
+			"type":    "password",
+			"current": currentPassword,
+			"secret":  password,
+		}
 
-	if resp.StatusCode != http.StatusOK {
-		body, _ := io.ReadAll(resp.Body)
-		return fmt.Errorf("failed to update password: %s - %s", resp.Status, string(body))
+		resp, err := m.doRequest("PUT", fmt.Sprintf("/api/users/%d/auth", serviceUser.ID), authUpdate)
+		if err != nil {
+			return err
+		}
+		defer resp.Body.Close()
+
+		if resp.StatusCode < 200 || resp.StatusCode >= 300 {
+			body, _ := io.ReadAll(resp.Body)
+			return fmt.Errorf("failed to update service account password: %s - %s", resp.Status, string(body))
+		}
 	}
 
 	// Save new password

@@ -19,6 +19,7 @@ const npmHumanAdminEmail = "admin@cubeos.cube"
 
 // doSyncAdminPassword authenticates via service account and updates
 // the human admin user's password to newPassword.
+// Uses PUT /api/users/{id}/auth which is NPM's dedicated password change endpoint.
 // Also persists the new password to .env and secrets.env files.
 func (m *NPMManager) doSyncAdminPassword(newPassword string) error {
 	l := log.With().Str("component", "npm-sync").Logger()
@@ -50,26 +51,30 @@ func (m *NPMManager) doSyncAdminPassword(newPassword string) error {
 		return fmt.Errorf("NPM human admin %s not found", npmHumanAdminEmail)
 	}
 
-	// NPM v2 PUT /api/users/{id} requires name, nickname, email, roles, is_disabled.
-	// Use the exact values from the current user to avoid validation errors.
-	// Ensure roles defaults to ["admin"] if empty.
-	roles := adminUser.Roles
-	if len(roles) == 0 {
-		roles = []string{"admin"}
+	// Read current admin password from secrets.env to pass as "current"
+	// in the auth change request. The admin's password is whatever
+	// CUBEOS_NPM_PASSWORD is set to (either the bootstrap hex or a
+	// previously synced CubeOS password).
+	currentPw := m.readCurrentAdminPassword()
+	if currentPw == "" {
+		return fmt.Errorf("cannot read current admin password from secrets.env")
 	}
 
-	// NOTE: is_disabled must be sent as integer (0/1), not boolean.
-	// NPM v2 returns 400 when it receives a JSON boolean for this field.
-	update := map[string]interface{}{
-		"name":        adminUser.Name,
-		"nickname":    adminUser.Nickname,
-		"email":       adminUser.Email,
-		"roles":       roles,
-		"is_disabled": 0,
-		"secret":      newPassword,
+	// If password already matches, skip
+	if currentPw == newPassword {
+		l.Debug().Msg("NPM admin password already matches — skipping sync")
+		return nil
 	}
 
-	resp, err := m.doRequest("PUT", fmt.Sprintf("/api/users/%d", adminUser.ID), update)
+	// Use PUT /api/users/{id}/auth — the dedicated password change endpoint.
+	// PUT /api/users/{id} does NOT accept "secret" (returns 400: additional properties).
+	authUpdate := map[string]string{
+		"type":    "password",
+		"current": currentPw,
+		"secret":  newPassword,
+	}
+
+	resp, err := m.doRequest("PUT", fmt.Sprintf("/api/users/%d/auth", adminUser.ID), authUpdate)
 	if err != nil {
 		return fmt.Errorf("failed to update admin password: %w", err)
 	}
@@ -97,6 +102,22 @@ func (m *NPMManager) doSyncAdminPassword(newPassword string) error {
 
 	l.Info().Msg("NPM admin password synced successfully")
 	return nil
+}
+
+// readCurrentAdminPassword reads the current NPM admin password from secrets.env.
+func (m *NPMManager) readCurrentAdminPassword() string {
+	data, err := os.ReadFile(m.secretsFile)
+	if err != nil {
+		return ""
+	}
+
+	for _, line := range strings.Split(string(data), "\n") {
+		trimmed := strings.TrimSpace(line)
+		if strings.HasPrefix(trimmed, "CUBEOS_NPM_PASSWORD=") {
+			return strings.TrimPrefix(trimmed, "CUBEOS_NPM_PASSWORD=")
+		}
+	}
+	return ""
 }
 
 // SyncAdminPassword changes the human admin password in NPM. Non-fatal wrapper.
@@ -179,17 +200,11 @@ func (m *NPMManager) EnsureAdminPasswordSynced(dbConn *sql.DB) {
 		return
 	}
 
-	// Check if NPM admin password already matches by reading secrets.env
-	if data, err := os.ReadFile(m.secretsFile); err == nil {
-		for _, line := range strings.Split(string(data), "\n") {
-			if strings.HasPrefix(strings.TrimSpace(line), "CUBEOS_NPM_PASSWORD=") {
-				currentPw := strings.TrimPrefix(strings.TrimSpace(line), "CUBEOS_NPM_PASSWORD=")
-				if currentPw == cfg.AdminPassword {
-					l.Debug().Msg("NPM password in secrets.env already matches CubeOS — startup sync not needed")
-					return
-				}
-			}
-		}
+	// Quick check: if secrets.env already has the correct password, skip
+	currentPw := m.readCurrentAdminPassword()
+	if currentPw == cfg.AdminPassword {
+		l.Debug().Msg("NPM password in secrets.env already matches CubeOS — startup sync not needed")
+		return
 	}
 
 	// Wait for NPM to be ready (background init may still be running)
