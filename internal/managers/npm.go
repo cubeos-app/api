@@ -53,6 +53,12 @@ const (
 	// Legacy env var names (wizard / backward compat)
 	npmBootstrapEmailKeyLegacy    = "NPM_ADMIN_EMAIL"
 	npmBootstrapPasswordKeyLegacy = "NPM_ADMIN_PASSWORD"
+
+	// NPM ships with these default credentials on first start.
+	// Bootstrap tries these as fallback when env credentials don't work
+	// (i.e. NPM hasn't been configured yet).
+	npmDefaultEmail    = "admin@example.com"
+	npmDefaultPassword = "changeme"
 )
 
 // FlexBool handles NPM API returning enabled as bool or int
@@ -346,11 +352,15 @@ func (m *NPMManager) saveToken(token string) error {
 	return os.WriteFile(m.tokenFile, []byte(token), 0600)
 }
 
-// bootstrapServiceAccount creates the API service account using admin credentials
-// This is called on first boot or when service account doesn't exist
+// bootstrapServiceAccount creates the API service account using admin credentials.
+//
+// On a fresh NPM install, the only user is admin@example.com / changeme.
+// This method:
+//  1. Authenticates as admin (tries env credentials, then NPM defaults)
+//  2. If NPM defaults worked, migrates the admin user to admin@cubeos.cube
+//  3. Creates the api@cubeos.cube service account for ongoing API operations
 func (m *NPMManager) bootstrapServiceAccount() error {
-	// Get bootstrap (admin) credentials from environment
-	// Try CUBEOS_NPM_* first (set by first-boot.sh), then NPM_ADMIN_* (set by wizard)
+	// Get desired admin credentials from environment
 	adminEmail := os.Getenv(npmBootstrapEmailKey)
 	if adminEmail == "" {
 		adminEmail = os.Getenv(npmBootstrapEmailKeyLegacy)
@@ -360,20 +370,33 @@ func (m *NPMManager) bootstrapServiceAccount() error {
 		adminPassword = os.Getenv(npmBootstrapPasswordKeyLegacy)
 	}
 
-	if adminEmail == "" || adminPassword == "" {
-		return fmt.Errorf("bootstrap credentials not configured (set %s/%s or %s/%s)",
-			npmBootstrapEmailKey, npmBootstrapPasswordKey,
-			npmBootstrapEmailKeyLegacy, npmBootstrapPasswordKeyLegacy)
-	}
-
 	log.Info().Msg("NPM: bootstrapping service account")
 
-	// Step 1: Authenticate as admin
-	if err := m.authenticate(adminEmail, adminPassword); err != nil {
-		return fmt.Errorf("admin authentication failed: %w", err)
+	// Step 1: Authenticate as admin — try configured credentials first
+	authenticated := false
+	if adminEmail != "" && adminPassword != "" {
+		if err := m.authenticate(adminEmail, adminPassword); err == nil {
+			log.Info().Str("email", adminEmail).Msg("NPM: authenticated with configured credentials")
+			authenticated = true
+		} else {
+			log.Debug().Err(err).Msg("NPM: configured credentials failed, trying NPM defaults")
+		}
 	}
 
-	// Step 2: Check if service account already exists
+	// Step 2: Fall back to NPM default credentials (fresh install)
+	if !authenticated {
+		if err := m.authenticate(npmDefaultEmail, npmDefaultPassword); err != nil {
+			return fmt.Errorf("admin authentication failed (tried configured + defaults): %w", err)
+		}
+		log.Info().Msg("NPM: authenticated with NPM defaults — will migrate admin user")
+
+		// Migrate the default admin user to admin@cubeos.cube
+		if err := m.migrateDefaultAdmin(adminPassword); err != nil {
+			return fmt.Errorf("failed to migrate default admin: %w", err)
+		}
+	}
+
+	// Step 3: Check if service account already exists
 	users, err := m.listUsers()
 	if err != nil {
 		return fmt.Errorf("failed to list users: %w", err)
@@ -382,34 +405,120 @@ func (m *NPMManager) bootstrapServiceAccount() error {
 	for _, user := range users {
 		if user.Email == npmServiceEmail {
 			log.Info().Msg("NPM: service account already exists")
-			// Service account exists but we don't have the password
-			// Generate new password and update it
 			return m.resetServiceAccountPassword()
 		}
 	}
 
-	// Step 3: Generate random password for service account
+	// Step 4: Generate random password for service account
 	password, err := generateSecurePassword(32)
 	if err != nil {
 		return fmt.Errorf("failed to generate password: %w", err)
 	}
 
-	// Step 4: Create service account
+	// Step 5: Create service account
 	if err := m.createServiceAccount(password); err != nil {
 		return fmt.Errorf("failed to create service account: %w", err)
 	}
 
-	// Step 5: Save password to secrets.env
+	// Step 6: Save password to secrets.env
 	if err := m.saveServiceAccountPassword(password); err != nil {
 		return fmt.Errorf("failed to save service account password: %w", err)
 	}
 
-	// Step 6: Authenticate with service account
+	// Step 7: Authenticate with service account
 	if err := m.authenticateServiceAccount(password); err != nil {
 		return fmt.Errorf("failed to authenticate service account: %w", err)
 	}
 
 	log.Info().Msg("NPM: service account bootstrap complete")
+	return nil
+}
+
+// migrateDefaultAdmin changes the NPM default admin (admin@example.com)
+// to admin@cubeos.cube with the configured password.
+// Must be called while authenticated as the default admin.
+func (m *NPMManager) migrateDefaultAdmin(newPassword string) error {
+	// Find the default admin user
+	users, err := m.listUsers()
+	if err != nil {
+		return fmt.Errorf("failed to list users: %w", err)
+	}
+
+	var defaultAdmin *NPMUser
+	for _, u := range users {
+		if u.Email == npmDefaultEmail {
+			defaultAdmin = &u
+			break
+		}
+	}
+
+	if defaultAdmin == nil {
+		// No default admin found — maybe already migrated in a previous partial run.
+		// Try to re-authenticate with the configured credentials.
+		log.Warn().Msg("NPM: default admin@example.com not found, attempting configured credentials")
+		adminEmail := os.Getenv(npmBootstrapEmailKey)
+		if adminEmail == "" {
+			adminEmail = os.Getenv(npmBootstrapEmailKeyLegacy)
+		}
+		adminPassword := os.Getenv(npmBootstrapPasswordKey)
+		if adminPassword == "" {
+			adminPassword = os.Getenv(npmBootstrapPasswordKeyLegacy)
+		}
+		if adminEmail != "" && adminPassword != "" {
+			return m.authenticate(adminEmail, adminPassword)
+		}
+		return fmt.Errorf("default admin not found and no configured credentials to fall back to")
+	}
+
+	// Use a temporary bootstrap password if none configured
+	bootstrapPw := newPassword
+	if bootstrapPw == "" {
+		pw, err := generateSecurePassword(32)
+		if err != nil {
+			return fmt.Errorf("failed to generate bootstrap password: %w", err)
+		}
+		bootstrapPw = pw
+	}
+
+	// Update the default admin: change email to admin@cubeos.cube and set password
+	update := map[string]interface{}{
+		"name":        "Administrator",
+		"nickname":    "admin",
+		"email":       npmHumanAdminEmail, // admin@cubeos.cube
+		"roles":       defaultAdmin.Roles,
+		"is_disabled": false,
+		"secret":      bootstrapPw,
+	}
+
+	resp, err := m.doRequest("PUT", fmt.Sprintf("/api/users/%d", defaultAdmin.ID), update)
+	if err != nil {
+		return fmt.Errorf("failed to update default admin: %w", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
+		body, _ := io.ReadAll(resp.Body)
+		return fmt.Errorf("admin migration failed (HTTP %d): %s", resp.StatusCode, string(body))
+	}
+
+	log.Info().
+		Str("old_email", npmDefaultEmail).
+		Str("new_email", npmHumanAdminEmail).
+		Msg("NPM: migrated default admin user")
+
+	// Persist the bootstrap password to secrets.env so we can re-auth on restart
+	if err := updateEnvFileEntry(m.secretsFile, "CUBEOS_NPM_PASSWORD", bootstrapPw); err != nil {
+		log.Warn().Err(err).Msg("NPM: failed to persist bootstrap password")
+	}
+	if err := updateEnvFileEntry(m.secretsFile, "CUBEOS_NPM_EMAIL", npmHumanAdminEmail); err != nil {
+		log.Warn().Err(err).Msg("NPM: failed to persist bootstrap email")
+	}
+
+	// Re-authenticate with new credentials
+	if err := m.authenticate(npmHumanAdminEmail, bootstrapPw); err != nil {
+		return fmt.Errorf("re-auth after migration failed: %w", err)
+	}
+
 	return nil
 }
 
