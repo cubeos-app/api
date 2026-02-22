@@ -214,7 +214,7 @@ integration-test:
       # Copy and run integration test script on Pi
       scp scripts/api-integration-tests.sh ${PI_DEPLOY_HOST}:/tmp/api-integration-tests.sh
       ssh -o ServerAliveInterval=15 ${PI_DEPLOY_HOST} \
-        "bash /tmp/api-integration-tests.sh http://127.0.0.1:6010 http://127.0.0.1:6005 admin admin"
+        "bash /tmp/api-integration-tests.sh http://127.0.0.1:6010 http://127.0.0.1:6005 admin ${CUBEOS_API_PASSWORD:-admin}"
       ssh ${PI_DEPLOY_HOST} "rm -f /tmp/api-integration-tests.sh"
   after_script:
     - kill $SSH_AGENT_PID 2>/dev/null || true
