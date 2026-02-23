@@ -28,6 +28,8 @@ type AppStoreManifestReader interface {
 type ProcessedManifest struct {
 	ComposeYAML   string `json:"compose_yaml"`
 	Image         string `json:"image"`
+	SourceImage   string `json:"source_image"`   // alias of Image for registry.retag_image
+	ManifestRaw   string `json:"manifest_raw"`   // raw manifest YAML for offline caching
 	ContainerPort int    `json:"container_port"` // detected EXPOSE port
 	WebUIType     string `json:"webui_type"`     // "http", "https", "none"
 	Title         string `json:"title"`
@@ -71,14 +73,18 @@ type ProcessManifestInput struct {
 }
 
 // ProcessManifestOutput is the output of the appstore.process_manifest activity.
+// Fields use omitempty so empty values don't overwrite existing envelope values
+// (e.g. title/icon from workflow input used by auto-cache steps).
 type ProcessManifestOutput struct {
 	AppName       string `json:"app_name"`
 	ComposeYAML   string `json:"compose_yaml"`
-	Image         string `json:"image"`
-	ContainerPort int    `json:"container_port"`
-	WebUIType     string `json:"webui_type"`
-	Title         string `json:"title"`
-	Description   string `json:"description"`
+	Image         string `json:"image,omitempty"`
+	SourceImage   string `json:"source_image,omitempty"` // alias of Image for registry.retag_image
+	ManifestRaw   string `json:"manifest_raw,omitempty"` // raw manifest YAML for offline caching
+	ContainerPort int    `json:"container_port,omitempty"`
+	WebUIType     string `json:"webui_type,omitempty"`
+	Title         string `json:"title,omitempty"`
+	Description   string `json:"description,omitempty"`
 }
 
 // RemapVolumesInput is the input for the appstore.remap_volumes activity.
@@ -178,6 +184,8 @@ func makeProcessManifest(storeMgr AppStoreManifestReader) flowengine.ActivityFun
 			AppName:       in.AppName,
 			ComposeYAML:   processed.ComposeYAML,
 			Image:         processed.Image,
+			SourceImage:   processed.SourceImage,
+			ManifestRaw:   processed.ManifestRaw,
 			ContainerPort: processed.ContainerPort,
 			WebUIType:     processed.WebUIType,
 			Title:         processed.Title,

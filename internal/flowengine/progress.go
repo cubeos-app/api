@@ -16,7 +16,7 @@ type ProgressEmitter interface {
 }
 
 // stepProgress maps workflow step names to SSE progress percentages.
-// Mirrors the 10-step SSE flow from InstallAppWithProgress().
+// Mirrors the SSE progress flow for appstore_install and related workflows.
 var stepProgress = map[string]int{
 	"validate":         10,
 	"read_manifest":    15,
@@ -28,10 +28,13 @@ var stepProgress = map[string]int{
 	"deploy_stack":     50,
 	"wait_convergence": 70,
 	"add_dns":          80,
-	"create_proxy":     90,
-	"insert_db":        95,
-	"store_volumes":    97,
-	"detect_webui":     98,
+	"create_proxy":     85,
+	"insert_db":        90,
+	"cache_retag":      91,
+	"cache_push":       92,
+	"cache_manifest":   93,
+	"store_volumes":    95,
+	"detect_webui":     97,
 	"health_check":     99,
 }
 

@@ -15,6 +15,8 @@ import (
 
 	"cubeos-api/internal/flowengine/activities"
 	"cubeos-api/internal/managers"
+
+	"gopkg.in/yaml.v3"
 )
 
 // --- dnsAdapter: activities.DNSManager via *managers.PiholeManager ---
@@ -162,9 +164,33 @@ func (a *appStoreManifestAdapter) ProcessManifest(ctx context.Context, manifest 
 		// non-fatal: if remapping fails the original is used
 	}
 
+	// Extract primary image from the compose YAML for auto-cache steps.
+	image := extractImageFromCompose(processed)
+
 	return &activities.ProcessedManifest{
 		ComposeYAML: processed,
+		Image:       image,
+		SourceImage: image,
+		ManifestRaw: payload.ManifestYAML,
 	}, nil
+}
+
+// extractImageFromCompose parses a docker-compose YAML and returns the first service's image reference.
+func extractImageFromCompose(composeYAML string) string {
+	var compose struct {
+		Services map[string]struct {
+			Image string `yaml:"image"`
+		} `yaml:"services"`
+	}
+	if err := yaml.Unmarshal([]byte(composeYAML), &compose); err != nil {
+		return ""
+	}
+	for _, svc := range compose.Services {
+		if svc.Image != "" {
+			return svc.Image
+		}
+	}
+	return ""
 }
 
 func (a *appStoreManifestAdapter) RemapVolumes(ctx context.Context, compose string, appName string) (string, error) {

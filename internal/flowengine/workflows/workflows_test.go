@@ -63,13 +63,13 @@ func TestAppStoreInstallWorkflowSteps(t *testing.T) {
 	if w.Type() != "appstore_install" {
 		t.Errorf("expected type 'appstore_install', got %q", w.Type())
 	}
-	if w.Version() != 2 {
-		t.Errorf("expected version 2, got %d", w.Version())
+	if w.Version() != 3 {
+		t.Errorf("expected version 3, got %d", w.Version())
 	}
 
 	steps := w.Steps()
-	if len(steps) != 15 {
-		t.Fatalf("expected 15 steps, got %d", len(steps))
+	if len(steps) != 18 {
+		t.Fatalf("expected 18 steps, got %d", len(steps))
 	}
 
 	// Verify step order
@@ -77,6 +77,7 @@ func TestAppStoreInstallWorkflowSteps(t *testing.T) {
 		"validate", "read_manifest", "allocate_port", "process_manifest",
 		"create_dirs", "remap_volumes", "write_compose", "deploy_stack",
 		"wait_convergence", "add_dns", "create_proxy", "insert_db",
+		"cache_retag", "cache_push", "cache_manifest",
 		"store_volumes", "detect_webui", "health_check",
 	}
 	for i, name := range expectedNames {
@@ -184,7 +185,7 @@ func TestAllWorkflowsHaveNonEmptyActions(t *testing.T) {
 		steps int
 	}{
 		{"app_install", 9},
-		{"appstore_install", 15},
+		{"appstore_install", 18},
 		{"appstore_remove", 6},
 	} {
 		var stepCount int

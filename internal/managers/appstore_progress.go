@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"os"
 	"path/filepath"
 
 	"cubeos-api/internal/flowengine"
@@ -29,17 +30,39 @@ func (m *AppStoreManager) InstallAppWithProgress(req *models.AppInstallRequest, 
 	composePath := filepath.Join(basePath, "appconfig", "docker-compose.yml")
 	dataPath := filepath.Join(basePath, "appdata")
 
+	// Look up catalog entry for cache metadata (icon, category, tagline).
+	// These flow through the fat envelope to the auto-cache steps.
+	title := req.AppName
+	icon := ""
+	category := ""
+	tagline := ""
+	if storeApp := m.GetApp(req.StoreID, req.AppName); storeApp != nil {
+		if t, ok := storeApp.Title["en_us"]; ok && t != "" {
+			title = t
+		}
+		icon = storeApp.Icon
+		category = storeApp.Category
+		if t, ok := storeApp.Tagline["en_us"]; ok {
+			tagline = t
+		}
+	}
+
 	input, err := json.Marshal(map[string]interface{}{
-		"store_id":     req.StoreID,
-		"app_name":     req.AppName,
-		"name":         req.AppName,
-		"stack_name":   req.AppName,
-		"base_path":    basePath,
-		"compose_path": composePath,
-		"data_path":    dataPath,
-		"source":       "casaos",
-		"enabled":      true,
-		"base_domain":  m.baseDomain,
+		"store_id":      req.StoreID,
+		"app_name":      req.AppName,
+		"name":          req.AppName,
+		"stack_name":    req.AppName,
+		"base_path":     basePath,
+		"compose_path":  composePath,
+		"data_path":     dataPath,
+		"source":        "casaos",
+		"enabled":       true,
+		"base_domain":   m.baseDomain,
+		"title":         title,
+		"icon":          icon,
+		"category":      category,
+		"tagline":       tagline,
+		"registry_host": os.Getenv("REGISTRY_HOST"),
 	})
 	if err != nil {
 		return nil, fmt.Errorf("failed to build workflow input: %w", err)

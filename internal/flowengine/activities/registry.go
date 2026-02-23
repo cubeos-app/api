@@ -24,10 +24,11 @@ type RetagImageInput struct {
 
 // RetagImageOutput is the output of the registry.retag_image activity.
 type RetagImageOutput struct {
-	SourceImage string `json:"source_image"`
-	LocalImage  string `json:"local_image"` // e.g. "10.42.24.1:5000/linuxserver/prowlarr:latest"
-	Tagged      bool   `json:"tagged"`
-	Skipped     bool   `json:"skipped"` // true if local image already existed
+	SourceImage   string `json:"source_image"`
+	LocalImage    string `json:"local_image"`    // e.g. "10.42.24.1:5000/linuxserver/prowlarr:latest"
+	RegistryImage string `json:"registry_image"` // alias of LocalImage for store_cached_manifest
+	Tagged        bool   `json:"tagged"`
+	Skipped       bool   `json:"skipped"` // true if local image already existed or tagging failed (non-fatal)
 }
 
 // PushToRegistryInput is the input for the registry.push_to_registry activity.
@@ -39,6 +40,7 @@ type PushToRegistryInput struct {
 type PushToRegistryOutput struct {
 	LocalImage string `json:"local_image"`
 	Pushed     bool   `json:"pushed"`
+	Skipped    bool   `json:"skipped"` // true if push failed (non-fatal in auto-cache context)
 }
 
 // StoreCachedManifestInput is the input for the registry.store_cached_manifest activity.
@@ -48,6 +50,7 @@ type StoreCachedManifestInput struct {
 	Image         string `json:"image"`
 	RegistryImage string `json:"registry_image"`
 	Manifest      string `json:"manifest"`
+	ManifestRaw   string `json:"manifest_raw"` // fallback for manifest (from process_manifest in auto-cache)
 	Title         string `json:"title"`
 	Icon          string `json:"icon"`
 	Category      string `json:"category"`
@@ -58,6 +61,7 @@ type StoreCachedManifestInput struct {
 type StoreCachedManifestOutput struct {
 	AppName string `json:"app_name"`
 	Stored  bool   `json:"stored"`
+	Skipped bool   `json:"skipped"` // true if store failed (non-fatal in auto-cache context)
 }
 
 // DeleteCachedManifestInput is the input for the registry.delete_cached_manifest activity.
@@ -115,25 +119,35 @@ func makeRetagImage() flowengine.ActivityFunc {
 		if err := checkCmd.Run(); err == nil {
 			log.Info().Str("local_image", localImage).Msg("retag_image: local image already exists, skipping")
 			return marshalOutput(RetagImageOutput{
-				SourceImage: in.SourceImage,
-				LocalImage:  localImage,
-				Tagged:      true,
-				Skipped:     true,
+				SourceImage:   in.SourceImage,
+				LocalImage:    localImage,
+				RegistryImage: localImage,
+				Tagged:        true,
+				Skipped:       true,
 			})
 		}
 
-		// Tag the image
+		// Tag the image. Non-fatal: if tagging fails (e.g. source image not yet pulled),
+		// return success with skipped=true so the saga doesn't compensate.
 		log.Info().Str("source", in.SourceImage).Str("target", localImage).Msg("retag_image: tagging image")
 		tagCmd := exec.CommandContext(ctx, "docker", "tag", in.SourceImage, localImage)
 		if output, err := tagCmd.CombinedOutput(); err != nil {
-			return nil, flowengine.ClassifyError(fmt.Errorf("docker tag failed: %s: %w", strings.TrimSpace(string(output)), err))
+			log.Warn().Str("image", in.SourceImage).Str("error", strings.TrimSpace(string(output))).Msg("retag_image: failed, skipping (non-fatal)")
+			return marshalOutput(RetagImageOutput{
+				SourceImage:   in.SourceImage,
+				LocalImage:    localImage,
+				RegistryImage: localImage,
+				Tagged:        false,
+				Skipped:       true,
+			})
 		}
 
 		return marshalOutput(RetagImageOutput{
-			SourceImage: in.SourceImage,
-			LocalImage:  localImage,
-			Tagged:      true,
-			Skipped:     false,
+			SourceImage:   in.SourceImage,
+			LocalImage:    localImage,
+			RegistryImage: localImage,
+			Tagged:        true,
+			Skipped:       false,
 		})
 	}
 }
@@ -151,20 +165,24 @@ func makePushToRegistry() flowengine.ActivityFunc {
 			return nil, flowengine.NewPermanentError(fmt.Errorf("local_image is required"))
 		}
 
+		// Non-fatal: if push fails (e.g. registry down), return success with skipped=true
+		// so the saga doesn't compensate. The install succeeds without caching.
 		log.Info().Str("image", in.LocalImage).Msg("push_to_registry: pushing image")
 		pushCmd := exec.CommandContext(ctx, "docker", "push", in.LocalImage)
 		if output, err := pushCmd.CombinedOutput(); err != nil {
 			errStr := strings.TrimSpace(string(output))
-			// Connection refused / registry down → transient
-			if strings.Contains(errStr, "connection refused") || strings.Contains(errStr, "no such host") {
-				return nil, flowengine.NewTransientError(fmt.Errorf("docker push failed (registry unreachable): %s: %w", errStr, err))
-			}
-			return nil, flowengine.ClassifyError(fmt.Errorf("docker push failed: %s: %w", errStr, err))
+			log.Warn().Str("image", in.LocalImage).Str("error", errStr).Msg("push_to_registry: failed, skipping (non-fatal)")
+			return marshalOutput(PushToRegistryOutput{
+				LocalImage: in.LocalImage,
+				Pushed:     false,
+				Skipped:    true,
+			})
 		}
 
 		return marshalOutput(PushToRegistryOutput{
 			LocalImage: in.LocalImage,
 			Pushed:     true,
+			Skipped:    false,
 		})
 	}
 }
@@ -182,6 +200,15 @@ func makeStoreCachedManifest(db *sql.DB) flowengine.ActivityFunc {
 			return nil, flowengine.NewPermanentError(fmt.Errorf("store_id and app_name are required"))
 		}
 
+		// Use manifest_raw as fallback when manifest is empty (auto-cache context:
+		// manifest in the fat envelope is a JSON object, not a string).
+		manifest := in.Manifest
+		if manifest == "" {
+			manifest = in.ManifestRaw
+		}
+
+		// Non-fatal: if the DB write fails, return success with skipped=true
+		// so the saga doesn't compensate. The install succeeds without caching.
 		log.Info().Str("store", in.StoreID).Str("app", in.AppName).Msg("store_cached_manifest: storing manifest")
 		_, err := db.ExecContext(ctx, `
 			INSERT INTO cached_manifests (store_id, app_name, image, registry_image, manifest, title, icon, category, tagline)
@@ -195,9 +222,14 @@ func makeStoreCachedManifest(db *sql.DB) flowengine.ActivityFunc {
 				category = excluded.category,
 				tagline = excluded.tagline,
 				cached_at = CURRENT_TIMESTAMP
-		`, in.StoreID, in.AppName, in.Image, in.RegistryImage, in.Manifest, in.Title, in.Icon, in.Category, in.Tagline)
+		`, in.StoreID, in.AppName, in.Image, in.RegistryImage, manifest, in.Title, in.Icon, in.Category, in.Tagline)
 		if err != nil {
-			return nil, flowengine.ClassifyError(fmt.Errorf("failed to store cached manifest: %w", err))
+			log.Warn().Str("app", in.AppName).Err(err).Msg("store_cached_manifest: failed, skipping (non-fatal)")
+			return marshalOutput(StoreCachedManifestOutput{
+				AppName: in.AppName,
+				Stored:  false,
+				Skipped: true,
+			})
 		}
 
 		return marshalOutput(StoreCachedManifestOutput{

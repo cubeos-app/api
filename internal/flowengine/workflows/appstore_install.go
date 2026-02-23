@@ -10,13 +10,13 @@ const (
 	// AppStoreInstallType is the workflow type for app store installation.
 	AppStoreInstallType = "appstore_install"
 	// AppStoreInstallVersion is the current version of the workflow definition.
-	AppStoreInstallVersion = 2
+	AppStoreInstallVersion = 3
 )
 
 // AppStoreInstallWorkflow defines the step sequence for installing an app from the CasaOS store.
 // Replaces AppStoreManager.InstallAppWithProgress() with tracked, compensating steps.
 //
-// Step order maps 1:1 to the current 10-step SSE progress flow:
+// Step order maps 1:1 to the current SSE progress flow:
 //
 //	Current SSE step     → FlowEngine step
 //	setup (10%)          → validate, read_manifest
@@ -25,9 +25,12 @@ const (
 //	compose (35%)        → create_dirs, remap_volumes, write_compose
 //	deploy (50-70%)      → deploy_stack, wait_convergence
 //	dns (80%)            → add_dns
-//	proxy (90%)          → create_proxy
-//	database (95%)       → insert_db
-//	complete (100%)      → (workflow completion)
+//	proxy (85%)          → create_proxy
+//	database (90%)       → insert_db
+//	cache (92%)          → cache_retag, cache_push, cache_manifest
+//	volumes (95%)        → store_volumes
+//	detect (97%)         → detect_webui
+//	complete (100%)      → health_check
 //
 // The SSE bridge in Batch 2.5 translates step status changes back to ProgressEvent
 // format, preserving the dashboard's SSE contract with zero frontend changes.
@@ -145,7 +148,34 @@ func (w *AppStoreInstallWorkflow) Steps() []flowengine.StepDefinition {
 			Timeout:    10 * time.Second,
 		},
 		{
-			// Step 12: Store volume mappings in database
+			// Step 12: Tag image for local registry (auto-cache for offline use)
+			// Non-fatal: activities return success on error so install continues
+			Name:       "cache_retag",
+			Action:     "registry.retag_image",
+			Compensate: "", // no compensation — keeping tagged image is fine
+			Retry:      &flowengine.RetryPolicy{MaxAttempts: 2, InitialInterval: 1 * time.Second},
+			Timeout:    30 * time.Second,
+		},
+		{
+			// Step 13: Push image to local registry
+			// Non-fatal: activities return success on error so install continues
+			Name:       "cache_push",
+			Action:     "registry.push_to_registry",
+			Compensate: "", // no compensation — image in registry is harmless
+			Retry:      &flowengine.RetryPolicy{MaxAttempts: 2, InitialInterval: 1 * time.Second},
+			Timeout:    120 * time.Second,
+		},
+		{
+			// Step 14: Store manifest in cached_manifests for offline app store
+			// Non-fatal: activities return success on error so install continues
+			Name:       "cache_manifest",
+			Action:     "registry.store_cached_manifest",
+			Compensate: "", // no compensation — cached manifest is harmless
+			Retry:      &flowengine.RetryPolicy{MaxAttempts: 2, InitialInterval: 1 * time.Second},
+			Timeout:    10 * time.Second,
+		},
+		{
+			// Step 15: Store volume mappings in database
 			// Parses compose YAML, records bind mounts for backup/migration
 			Name:       "store_volumes",
 			Action:     "db.store_volumes",
@@ -154,7 +184,7 @@ func (w *AppStoreInstallWorkflow) Steps() []flowengine.StepDefinition {
 			Timeout:    10 * time.Second,
 		},
 		{
-			// Step 13: Detect WebUI type (browser vs API)
+			// Step 16: Detect WebUI type (browser vs API)
 			// Probes running app to determine Content-Type for dashboard display
 			Name:       "detect_webui",
 			Action:     "app.detect_webui",
@@ -163,7 +193,7 @@ func (w *AppStoreInstallWorkflow) Steps() []flowengine.StepDefinition {
 			Timeout:    15 * time.Second,
 		},
 		{
-			// Step 14: Health check (verify app is accessible)
+			// Step 17: Health check (verify app is accessible)
 			// Uses HAL health check — optional, failure doesn't block completion
 			Name:       "health_check",
 			Action:     "hal.health_check",
