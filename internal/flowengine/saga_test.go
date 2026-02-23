@@ -846,3 +846,148 @@ func TestSagaFatEnvelopeRecovery(t *testing.T) {
 		t.Errorf("write_compose missing step 0 cached output after recovery; got: %s", string(step1Input))
 	}
 }
+
+// TestSagaCompensationReceivesForwardOutput verifies that compensation activities
+// receive the forward step's output directly (not wrapped in original_input/original_output).
+// This is critical: db.release_port needs {"port":6100}, not {"original_output":{"port":6100}}.
+func TestSagaCompensationReceivesForwardOutput(t *testing.T) {
+	db := testDB(t)
+	store := NewWorkflowStore(db)
+	reg := NewActivityRegistry()
+
+	// Step 0: allocate_port → outputs {"port":6100,"app_name":"testapp"}
+	reg.MustRegister("allocate_port", func(ctx context.Context, input json.RawMessage) (json.RawMessage, error) {
+		return json.RawMessage(`{"port":6100,"app_name":"testapp"}`), nil
+	})
+
+	// Step 1: fails permanently → triggers compensation
+	reg.MustRegister("deploy_stack", func(ctx context.Context, input json.RawMessage) (json.RawMessage, error) {
+		return nil, NewPermanentError(fmt.Errorf("forced deploy failure"))
+	})
+
+	// Compensation for step 0: verify it receives the port directly
+	var compensationInput json.RawMessage
+	reg.MustRegister("release_port", func(ctx context.Context, input json.RawMessage) (json.RawMessage, error) {
+		compensationInput = input
+		// Parse like the real activity does
+		var in struct {
+			Port    int    `json:"port"`
+			AppName string `json:"app_name"`
+		}
+		if err := json.Unmarshal(input, &in); err != nil {
+			return nil, NewPermanentError(fmt.Errorf("invalid input: %w", err))
+		}
+		if in.Port == 0 {
+			return nil, NewPermanentError(fmt.Errorf("port is required"))
+		}
+		return json.RawMessage(fmt.Sprintf(`{"port":%d,"released":true}`, in.Port)), nil
+	})
+
+	executor := NewStepExecutor(store, reg)
+	saga := NewSagaOrchestrator(store, executor, reg, "test-node")
+
+	steps := []StepDefinition{
+		{
+			Name:       "allocate_port",
+			Action:     "allocate_port",
+			Compensate: "release_port",
+			Retry:      &RetryPolicy{MaxAttempts: 1},
+		},
+		{
+			Name:   "deploy_stack",
+			Action: "deploy_stack",
+			Retry:  &RetryPolicy{MaxAttempts: 1},
+		},
+	}
+	wf, err := store.CreateWorkflow(CreateWorkflowParams{
+		WorkflowType: "comp_input_test",
+		Version:      1,
+		ExternalID:   "comp-input-1",
+		Input:        json.RawMessage(`{"app_name":"testapp"}`),
+		Steps:        steps,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	err = saga.Execute(context.Background(), wf)
+	if err != nil {
+		t.Fatalf("Expected nil (compensation should succeed), got: %v", err)
+	}
+
+	// Verify compensation received the forward step output directly
+	if compensationInput == nil {
+		t.Fatal("Compensation activity was not called")
+	}
+
+	var parsed map[string]interface{}
+	if err := json.Unmarshal(compensationInput, &parsed); err != nil {
+		t.Fatalf("Compensation input is not valid JSON: %v", err)
+	}
+
+	// Must have "port" at top level (not nested under "original_output")
+	if _, ok := parsed["port"]; !ok {
+		t.Errorf("Compensation input missing 'port' at top level; got: %s", string(compensationInput))
+	}
+	if _, ok := parsed["original_output"]; ok {
+		t.Error("Compensation input should NOT have 'original_output' wrapper")
+	}
+
+	// Verify step 0 ended in compensated state (not stuck in compensating)
+	result, _ := store.GetWorkflow(wf.ID)
+	if result.CurrentState != StateCompensated {
+		t.Errorf("Expected workflow state=compensated, got %s", result.CurrentState)
+	}
+
+	allSteps, _ := store.GetWorkflowSteps(wf.ID)
+	if allSteps[0].Status != StepCompensated {
+		t.Errorf("Step 0: expected compensated, got %s", allSteps[0].Status)
+	}
+}
+
+// TestSagaCompensationFailureTerminalState verifies that when compensation fails,
+// the step transitions from "compensating" to "failed" (not stuck in "compensating").
+func TestSagaCompensationFailureTerminalState(t *testing.T) {
+	db := testDB(t)
+	store := NewWorkflowStore(db)
+	reg := NewActivityRegistry()
+
+	reg.MustRegister("ok_step", func(ctx context.Context, input json.RawMessage) (json.RawMessage, error) {
+		return json.RawMessage(`{"done":true}`), nil
+	})
+	reg.MustRegister("fail_step", func(ctx context.Context, input json.RawMessage) (json.RawMessage, error) {
+		return nil, NewPermanentError(fmt.Errorf("forced failure"))
+	})
+	reg.MustRegister("fail_compensate", func(ctx context.Context, input json.RawMessage) (json.RawMessage, error) {
+		return nil, NewPermanentError(fmt.Errorf("compensation also fails"))
+	})
+
+	executor := NewStepExecutor(store, reg)
+	saga := NewSagaOrchestrator(store, executor, reg, "test-node")
+
+	steps := []StepDefinition{
+		{Name: "step_0", Action: "ok_step", Compensate: "fail_compensate", Retry: &RetryPolicy{MaxAttempts: 1}},
+		{Name: "step_1", Action: "fail_step", Retry: &RetryPolicy{MaxAttempts: 1}},
+	}
+	wf, _ := store.CreateWorkflow(CreateWorkflowParams{
+		WorkflowType: "comp_fail_terminal",
+		Version:      1,
+		ExternalID:   "comp-fail-term",
+		Input:        json.RawMessage(`{}`),
+		Steps:        steps,
+	})
+
+	err := saga.Execute(context.Background(), wf)
+	if err == nil {
+		t.Fatal("Expected error from failed compensation")
+	}
+
+	// The step whose compensation failed must be in "failed" state, NOT "compensating"
+	allSteps, _ := store.GetWorkflowSteps(wf.ID)
+	if allSteps[0].Status == StepCompensating {
+		t.Errorf("Step 0 stuck in 'compensating' — should transition to 'failed' on compensation failure")
+	}
+	if allSteps[0].Status != StepFailed {
+		t.Errorf("Step 0: expected failed, got %s", allSteps[0].Status)
+	}
+}

@@ -79,8 +79,9 @@ func (w *AppInstallWorkflow) Steps() []flowengine.StepDefinition {
 			Name:       "wait_convergence",
 			Action:     "docker.wait_convergence",
 			Compensate: "", // observation-only, no compensation
-			Retry:      &flowengine.RetryPolicy{MaxAttempts: 2, InitialInterval: 5 * time.Second},
-			Timeout:    120 * time.Second,
+			// 300s for heavy images on Raspberry Pi (SD card write + container init)
+			Retry:   &flowengine.RetryPolicy{MaxAttempts: 2, InitialInterval: 5 * time.Second},
+			Timeout: 300 * time.Second,
 		},
 		{
 			Name:       "insert_db",

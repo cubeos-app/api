@@ -112,11 +112,12 @@ func (w *AppStoreInstallWorkflow) Steps() []flowengine.StepDefinition {
 		{
 			// Step 8: Wait for Swarm services to converge
 			// Linear 2s polling, not exponential backoff
+			// 300s for heavy images (e.g. Jellyfin ~500MB) on Raspberry Pi
 			Name:       "wait_convergence",
 			Action:     "docker.wait_convergence",
 			Compensate: "", // observation-only
 			Retry:      &flowengine.RetryPolicy{MaxAttempts: 2, InitialInterval: 5 * time.Second},
-			Timeout:    120 * time.Second,
+			Timeout:    300 * time.Second,
 		},
 		{
 			// Step 9: Add Pi-hole DNS entry (domain → gateway IP)

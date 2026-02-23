@@ -86,7 +86,8 @@ var (
 	}
 
 	// DefaultStepTimeout is the per-attempt timeout when none is specified.
-	DefaultStepTimeout = 90 * time.Second
+	// 300s accommodates heavy images (e.g. Jellyfin ~500MB) on Raspberry Pi.
+	DefaultStepTimeout = 300 * time.Second
 )
 
 // EffectiveRetry returns the retry policy for this step, falling back to DefaultRetryPolicy.

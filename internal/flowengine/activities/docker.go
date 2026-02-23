@@ -241,7 +241,7 @@ func makeWaitConvergence(dockerMgr DockerContainerManager) flowengine.ActivityFu
 
 		timeout := in.Timeout
 		if timeout == 0 {
-			timeout = 90 * time.Second
+			timeout = 300 * time.Second
 		}
 
 		log.Info().Str("stack", in.StackName).Dur("timeout", timeout).Msg("wait_convergence: waiting for services")

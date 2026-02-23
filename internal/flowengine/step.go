@@ -161,6 +161,7 @@ func (e *StepExecutor) ExecuteCompensation(ctx context.Context, workflow *Workfl
 	if execErr != nil {
 		logger.Error().Err(execErr).Msg("Compensation failed")
 		_ = e.store.UpdateStepError(step.ID, execErr.Error())
+		_ = e.store.UpdateStepStatus(step.ID, StepCompensating, StepFailed)
 		e.recordStepEvent(workflow.ID, step.StepIndex, EventError, string(StepCompensating), string(StepFailed), execErr.Error())
 		return execErr
 	}
@@ -284,19 +285,12 @@ func effectiveCompensateRetryFromStep(step *WorkflowStep) RetryPolicy {
 }
 
 // buildCompensationInput builds the input for a compensation activity.
-// It combines the step's original input and output into a single JSON object,
-// giving the compensation all the context it needs to reverse the action.
+// It returns the forward step's output directly, so compensation activities
+// receive the same flat JSON keys they need (e.g. "port", "stack_name").
+// Falls back to the step's input (fat envelope) if no output was cached.
 func buildCompensationInput(step *WorkflowStep) json.RawMessage {
-	type compInput struct {
-		OriginalInput  json.RawMessage `json:"original_input,omitempty"`
-		OriginalOutput json.RawMessage `json:"original_output,omitempty"`
+	if len(step.Output) > 0 {
+		return step.Output
 	}
-	data, err := json.Marshal(compInput{
-		OriginalInput:  step.Input,
-		OriginalOutput: step.Output,
-	})
-	if err != nil {
-		return nil
-	}
-	return data
+	return step.Input
 }
