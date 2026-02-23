@@ -45,16 +45,16 @@ type PushToRegistryOutput struct {
 
 // StoreCachedManifestInput is the input for the registry.store_cached_manifest activity.
 type StoreCachedManifestInput struct {
-	StoreID       string `json:"store_id"`
-	AppName       string `json:"app_name"`
-	Image         string `json:"image"`
-	RegistryImage string `json:"registry_image"`
-	Manifest      string `json:"manifest"`
-	ManifestRaw   string `json:"manifest_raw"` // fallback for manifest (from process_manifest in auto-cache)
-	Title         string `json:"title"`
-	Icon          string `json:"icon"`
-	Category      string `json:"category"`
-	Tagline       string `json:"tagline"`
+	StoreID       string          `json:"store_id"`
+	AppName       string          `json:"app_name"`
+	Image         string          `json:"image"`
+	RegistryImage string          `json:"registry_image"`
+	Manifest      json.RawMessage `json:"manifest"`     // fat envelope passes JSON object from read_manifest
+	ManifestRaw   string          `json:"manifest_raw"` // fallback for manifest (from process_manifest in auto-cache)
+	Title         string          `json:"title"`
+	Icon          string          `json:"icon"`
+	Category      string          `json:"category"`
+	Tagline       string          `json:"tagline"`
 }
 
 // StoreCachedManifestOutput is the output of the registry.store_cached_manifest activity.
@@ -194,16 +194,27 @@ func makeStoreCachedManifest(db *sql.DB) flowengine.ActivityFunc {
 	return func(ctx context.Context, input json.RawMessage) (json.RawMessage, error) {
 		var in StoreCachedManifestInput
 		if err := json.Unmarshal(input, &in); err != nil {
-			return nil, flowengine.NewPermanentError(fmt.Errorf("invalid store_cached_manifest input: %w", err))
+			// Non-fatal: log and return skipped so the saga doesn't compensate
+			log.Warn().Err(err).Msg("store_cached_manifest: invalid input, skipping (non-fatal)")
+			return marshalOutput(StoreCachedManifestOutput{
+				AppName: "unknown",
+				Stored:  false,
+				Skipped: true,
+			})
 		}
 		if in.StoreID == "" || in.AppName == "" {
-			return nil, flowengine.NewPermanentError(fmt.Errorf("store_id and app_name are required"))
+			log.Warn().Msg("store_cached_manifest: missing store_id or app_name, skipping (non-fatal)")
+			return marshalOutput(StoreCachedManifestOutput{
+				AppName: in.AppName,
+				Stored:  false,
+				Skipped: true,
+			})
 		}
 
-		// Use manifest_raw as fallback when manifest is empty (auto-cache context:
-		// manifest in the fat envelope is a JSON object, not a string).
-		manifest := in.Manifest
-		if manifest == "" {
+		// Use manifest from fat envelope (JSON object from read_manifest output).
+		// Convert json.RawMessage to string; fall back to ManifestRaw if empty/null.
+		manifest := string(in.Manifest)
+		if manifest == "" || manifest == "null" {
 			manifest = in.ManifestRaw
 		}
 
