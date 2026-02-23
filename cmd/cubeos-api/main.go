@@ -158,6 +158,9 @@ import (
 	"cubeos-api/internal/circuitbreaker"
 	"cubeos-api/internal/config"
 	"cubeos-api/internal/database"
+	"cubeos-api/internal/flowengine"
+	feactivities "cubeos-api/internal/flowengine/activities"
+	feworkflows "cubeos-api/internal/flowengine/workflows"
 	"cubeos-api/internal/hal"
 	"cubeos-api/internal/handlers"
 	"cubeos-api/internal/managers"
@@ -357,6 +360,52 @@ func main() {
 		}
 		pruneCancel()
 	}
+
+	// ==========================================================================
+	// FlowEngine (Batch 2.5b): mandatory engine — log.Fatal if it fails to start
+	// ==========================================================================
+	engineCtx, engineCancel := context.WithCancel(context.Background())
+
+	feStore := flowengine.NewWorkflowStore(db.DB)
+	feRegistry := flowengine.NewActivityRegistry()
+
+	// Register all activity groups
+	feactivities.RegisterDockerActivities(feRegistry, swarmMgr, swarmMgr)
+	feactivities.RegisterInfraActivities(feRegistry, &dnsAdapter{piholeMgr}, &proxyAdapter{npmMgr})
+	feactivities.RegisterDatabaseActivities(feRegistry, db.DB, portMgr)
+	feactivities.RegisterHALActivities(feRegistry, halClient)
+	if orchestrator != nil {
+		feactivities.RegisterAppInstallActivities(feRegistry, &appConflictAdapter{orchestrator})
+		feactivities.RegisterAppStoreActivities(feRegistry, &appStoreManifestAdapter{appStoreMgr}, &appConflictAdapter{orchestrator})
+	} else {
+		log.Fatal().Msg("FlowEngine: Orchestrator is required for app activities")
+	}
+	feactivities.RegisterAppRemoveActivities(feRegistry, db.DB)
+
+	flowEngine := flowengine.NewWorkflowEngine(feStore, feRegistry, flowengine.DefaultEngineConfig())
+
+	// Register workflow definitions
+	if err := flowEngine.RegisterWorkflow(feworkflows.NewAppStoreInstallWorkflow()); err != nil {
+		log.Fatal().Err(err).Msg("FlowEngine: failed to register appstore_install workflow")
+	}
+	if err := flowEngine.RegisterWorkflow(&feworkflows.AppRemoveWorkflow{}); err != nil {
+		log.Fatal().Err(err).Msg("FlowEngine: failed to register app_remove workflow")
+	}
+	if err := flowEngine.RegisterWorkflow(feworkflows.NewAppInstallWorkflow()); err != nil {
+		log.Fatal().Err(err).Msg("FlowEngine: failed to register app_install workflow")
+	}
+	if err := flowEngine.RegisterWorkflow(feworkflows.NewAppStoreRemoveWorkflow()); err != nil {
+		log.Fatal().Err(err).Msg("FlowEngine: failed to register appstore_remove workflow")
+	}
+
+	if err := flowEngine.Start(engineCtx); err != nil {
+		log.Fatal().Err(err).Msg("FlowEngine: failed to start — cannot continue")
+	}
+	log.Info().Msg("FlowEngine started")
+
+	// Wire engine into managers
+	orchestrator.SetFlowEngine(flowEngine)
+	appStoreMgr.SetFlowEngine(flowEngine, feStore)
 
 	// Create VPN manager (Sprint 3 - with HAL client)
 	vpnMgr := managers.NewVPNManager(cfg, halClient)
@@ -815,6 +864,11 @@ func main() {
 	// Block until signal received
 	sig := <-quit
 	log.Info().Str("signal", sig.String()).Msg("received signal, shutting down gracefully")
+
+	// Stop FlowEngine before closing HTTP connections
+	engineCancel()
+	flowEngine.Stop()
+	log.Info().Msg("FlowEngine stopped")
 
 	// Give active connections 15 seconds to finish
 	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)

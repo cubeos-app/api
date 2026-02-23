@@ -74,17 +74,19 @@ func (s *SagaOrchestrator) Execute(ctx context.Context, workflow *WorkflowRun) e
 		return s.completeWorkflow(logger, workflow, nil)
 	}
 
-	// Forward execution: run steps from current position
-	var lastOutput json.RawMessage = workflow.Input
+	// Forward execution: run steps from current position.
+	// Fat envelope: envelope accumulates workflow.Input merged with all prior step outputs,
+	// so every step can access data produced by any earlier step.
+	envelope := workflow.Input
 	startStep := 0
 
-	// Find the first incomplete step (skip already-completed steps from crash recovery)
+	// Find the first incomplete step (skip already-completed steps from crash recovery).
+	// Accumulate cached outputs into the envelope so recovered steps carry all prior data.
 	for i, step := range steps {
 		if step.Status == StepCompleted {
-			// Retrieve cached output for pipeline
 			cached, cacheErr := s.store.GetStepOutput(workflow.ID, step.StepIndex)
 			if cacheErr == nil && cached != nil {
-				lastOutput = cached
+				envelope = mergeJSON(envelope, cached)
 			}
 			startStep = i + 1
 			continue
@@ -101,19 +103,13 @@ func (s *SagaOrchestrator) Execute(ctx context.Context, workflow *WorkflowRun) e
 			logger.Error().Err(err).Int("step", i).Msg("Failed to update current step")
 		}
 
-		// Build step input: workflow input for first step, previous output for subsequent
-		stepInput := lastOutput
-		if i == 0 {
-			stepInput = workflow.Input
-		}
-
 		logger.Info().
 			Int("step_index", i).
 			Str("step_name", step.StepName).
 			Str("activity", step.ActivityName).
 			Msg("Executing step")
 
-		result := s.executor.ExecuteStep(ctx, workflow, &step, stepInput)
+		result := s.executor.ExecuteStep(ctx, workflow, &step, envelope)
 
 		if result.Err != nil {
 			logger.Error().Err(result.Err).
@@ -130,14 +126,14 @@ func (s *SagaOrchestrator) Execute(ctx context.Context, workflow *WorkflowRun) e
 			return s.compensate(ctx, logger, workflow, i)
 		}
 
-		// Pipeline: pass output to next step
+		// Merge step output into envelope so subsequent steps see all accumulated data
 		if result.Output != nil {
-			lastOutput = result.Output
+			envelope = mergeJSON(envelope, result.Output)
 		}
 	}
 
 	// All steps completed successfully
-	return s.completeWorkflow(logger, workflow, lastOutput)
+	return s.completeWorkflow(logger, workflow, envelope)
 }
 
 // compensate runs compensation for completed steps in reverse order, starting
@@ -239,4 +235,34 @@ func (s *SagaOrchestrator) ExecuteWithTimeout(ctx context.Context, workflow *Wor
 	ctx, cancel := context.WithTimeout(ctx, timeout)
 	defer cancel()
 	return s.Execute(ctx, workflow)
+}
+
+// mergeJSON merges src into dst at the top JSON object level.
+// Keys in src override keys in dst. Returns dst if either value is not a JSON object.
+// Used to build the "fat envelope" passed as input to each workflow step.
+func mergeJSON(dst, src json.RawMessage) json.RawMessage {
+	if len(src) == 0 {
+		return dst
+	}
+	if len(dst) == 0 {
+		return src
+	}
+	var dstMap, srcMap map[string]json.RawMessage
+	if err := json.Unmarshal(dst, &dstMap); err != nil {
+		return dst
+	}
+	if err := json.Unmarshal(src, &srcMap); err != nil {
+		return dst
+	}
+	if dstMap == nil {
+		dstMap = make(map[string]json.RawMessage)
+	}
+	for k, v := range srcMap {
+		dstMap[k] = v
+	}
+	merged, err := json.Marshal(dstMap)
+	if err != nil {
+		return dst
+	}
+	return merged
 }

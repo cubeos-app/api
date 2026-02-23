@@ -39,19 +39,8 @@ func (m *mockSwarmManager) RemoveStack(name string) error {
 	return nil
 }
 
-func (m *mockSwarmManager) GetStackServices(name string) ([]interface{}, error) {
-	if m.stacks[name] {
-		return []interface{}{"svc1"}, nil
-	}
-	return nil, nil
-}
-
-func (m *mockSwarmManager) ListStacks() ([]interface{}, error) {
-	var result []interface{}
-	for name := range m.stacks {
-		result = append(result, name)
-	}
-	return result, nil
+func (m *mockSwarmManager) StackExists(name string) (bool, error) {
+	return m.stacks[name], nil
 }
 
 type mockDockerManager struct {

@@ -20,6 +20,7 @@ import (
 	"time"
 
 	"cubeos-api/internal/config"
+	"cubeos-api/internal/flowengine"
 	"cubeos-api/internal/models"
 
 	"github.com/rs/zerolog/log"
@@ -50,6 +51,10 @@ type AppStoreManager struct {
 	onlineMu       sync.Mutex   // Protects online cache
 	onlineCached   bool         // Cached online status
 	onlineCacheAt  time.Time    // When online status was last checked
+
+	// FlowEngine (Batch 2.5b): wired after construction via SetFlowEngine
+	engine  *flowengine.WorkflowEngine
+	feStore *flowengine.WorkflowStore
 }
 
 // NewAppStoreManager creates a new app store manager with centralized config
@@ -101,6 +106,13 @@ func NewAppStoreManager(cfg *config.Config, db *DatabaseManager, dataPath string
 	m.seedDefaultStore()
 
 	return m
+}
+
+// SetFlowEngine wires the WorkflowEngine and WorkflowStore into the AppStoreManager.
+// Call this after engine.Start() so the engine is ready before app installs are submitted.
+func (m *AppStoreManager) SetFlowEngine(e *flowengine.WorkflowEngine, s *flowengine.WorkflowStore) {
+	m.engine = e
+	m.feStore = s
 }
 
 // initDB ensures app store tables exist.

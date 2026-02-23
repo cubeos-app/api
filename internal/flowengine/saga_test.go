@@ -628,3 +628,221 @@ func TestSagaExecuteWithTimeout(t *testing.T) {
 		t.Errorf("Expected completed, got %s", result.CurrentState)
 	}
 }
+
+// --- Fat Envelope (mergeJSON) Tests ---
+
+func TestMergeJSONBasic(t *testing.T) {
+	dst := json.RawMessage(`{"a":1}`)
+	src := json.RawMessage(`{"b":2}`)
+	result := mergeJSON(dst, src)
+
+	var m map[string]json.RawMessage
+	if err := json.Unmarshal(result, &m); err != nil {
+		t.Fatalf("mergeJSON result is not valid JSON: %v", err)
+	}
+	if _, ok := m["a"]; !ok {
+		t.Error("expected key 'a' in merged result")
+	}
+	if _, ok := m["b"]; !ok {
+		t.Error("expected key 'b' in merged result")
+	}
+}
+
+func TestMergeJSONSrcOverridesDst(t *testing.T) {
+	dst := json.RawMessage(`{"key":"original","other":"kept"}`)
+	src := json.RawMessage(`{"key":"override"}`)
+	result := mergeJSON(dst, src)
+
+	var m map[string]interface{}
+	json.Unmarshal(result, &m)
+	if m["key"] != "override" {
+		t.Errorf("expected src key to override dst, got: %v", m["key"])
+	}
+	if m["other"] != "kept" {
+		t.Errorf("expected non-overridden key to be kept, got: %v", m["other"])
+	}
+}
+
+func TestMergeJSONEmptySrc(t *testing.T) {
+	dst := json.RawMessage(`{"a":1}`)
+	result := mergeJSON(dst, nil)
+	if string(result) != string(dst) {
+		t.Errorf("expected dst unchanged when src is nil, got: %s", result)
+	}
+}
+
+func TestMergeJSONEmptyDst(t *testing.T) {
+	src := json.RawMessage(`{"b":2}`)
+	result := mergeJSON(nil, src)
+	if string(result) != string(src) {
+		t.Errorf("expected src returned when dst is nil, got: %s", result)
+	}
+}
+
+func TestMergeJSONNonObjectSrc(t *testing.T) {
+	// Non-object src should return dst unchanged
+	dst := json.RawMessage(`{"a":1}`)
+	src := json.RawMessage(`"not an object"`)
+	result := mergeJSON(dst, src)
+	if string(result) != string(dst) {
+		t.Errorf("expected dst unchanged for non-object src, got: %s", result)
+	}
+}
+
+// TestSagaFatEnvelopeWorkflowInput verifies that step 1 receives workflow.Input merged
+// with step 0's output (not just step 0's output alone).
+func TestSagaFatEnvelopeWorkflowInput(t *testing.T) {
+	db := testDB(t)
+	store := NewWorkflowStore(db)
+	reg := NewActivityRegistry()
+
+	var step1Input json.RawMessage
+	reg.MustRegister("step_a", func(ctx context.Context, input json.RawMessage) (json.RawMessage, error) {
+		return json.RawMessage(`{"from_step_a":"yes"}`), nil
+	})
+	reg.MustRegister("step_b", func(ctx context.Context, input json.RawMessage) (json.RawMessage, error) {
+		step1Input = input
+		return json.RawMessage(`{"done":true}`), nil
+	})
+
+	executor := NewStepExecutor(store, reg)
+	saga := NewSagaOrchestrator(store, executor, reg, "test-node")
+
+	steps := []StepDefinition{
+		{Name: "a", Action: "step_a"},
+		{Name: "b", Action: "step_b"},
+	}
+	wf, _ := store.CreateWorkflow(CreateWorkflowParams{
+		WorkflowType: "envelope_wf",
+		Version:      1,
+		ExternalID:   "env-1",
+		Input:        json.RawMessage(`{"workflow_param":"initial"}`),
+		Steps:        steps,
+	})
+
+	err := saga.Execute(context.Background(), wf)
+	if err != nil {
+		t.Fatalf("Expected success, got: %v", err)
+	}
+
+	// step_b should see BOTH workflow.Input AND step_a's output
+	if step1Input == nil {
+		t.Fatal("Step b did not receive input")
+	}
+	if !strings.Contains(string(step1Input), "workflow_param") {
+		t.Errorf("Step b missing workflow.Input data; got: %s", string(step1Input))
+	}
+	if !strings.Contains(string(step1Input), "from_step_a") {
+		t.Errorf("Step b missing step_a output data; got: %s", string(step1Input))
+	}
+}
+
+// TestSagaFatEnvelopeStepSeesPriorSteps verifies that step 2 sees data from both
+// step 0 and step 1 (not just the immediately preceding step).
+func TestSagaFatEnvelopeStepSeesPriorSteps(t *testing.T) {
+	db := testDB(t)
+	store := NewWorkflowStore(db)
+	reg := NewActivityRegistry()
+
+	var step2Input json.RawMessage
+	reg.MustRegister("step_0", func(ctx context.Context, input json.RawMessage) (json.RawMessage, error) {
+		return json.RawMessage(`{"port":6100}`), nil
+	})
+	reg.MustRegister("step_1", func(ctx context.Context, input json.RawMessage) (json.RawMessage, error) {
+		return json.RawMessage(`{"domain":"app.cubeos.cube"}`), nil
+	})
+	reg.MustRegister("step_2", func(ctx context.Context, input json.RawMessage) (json.RawMessage, error) {
+		step2Input = input
+		return json.RawMessage(`{"done":true}`), nil
+	})
+
+	executor := NewStepExecutor(store, reg)
+	saga := NewSagaOrchestrator(store, executor, reg, "test-node")
+
+	steps := []StepDefinition{
+		{Name: "alloc_port", Action: "step_0"},
+		{Name: "add_dns", Action: "step_1"},
+		{Name: "create_proxy", Action: "step_2"},
+	}
+	wf, _ := store.CreateWorkflow(CreateWorkflowParams{
+		WorkflowType: "multi_step_envelope",
+		Version:      1,
+		ExternalID:   "env-2",
+		Input:        json.RawMessage(`{"app_name":"myapp"}`),
+		Steps:        steps,
+	})
+
+	err := saga.Execute(context.Background(), wf)
+	if err != nil {
+		t.Fatalf("Expected success, got: %v", err)
+	}
+
+	// step_2 should see app_name (workflow input), port (step 0), and domain (step 1)
+	if step2Input == nil {
+		t.Fatal("step_2 did not receive input")
+	}
+	if !strings.Contains(string(step2Input), "app_name") {
+		t.Errorf("step_2 missing workflow input field; got: %s", string(step2Input))
+	}
+	if !strings.Contains(string(step2Input), "port") {
+		t.Errorf("step_2 missing step_0 output; got: %s", string(step2Input))
+	}
+	if !strings.Contains(string(step2Input), "domain") {
+		t.Errorf("step_2 missing step_1 output; got: %s", string(step2Input))
+	}
+}
+
+// TestSagaFatEnvelopeRecovery verifies that after crash recovery, the re-executed
+// step still sees all prior step data in the envelope.
+func TestSagaFatEnvelopeRecovery(t *testing.T) {
+	db := testDB(t)
+	store := NewWorkflowStore(db)
+	reg := NewActivityRegistry()
+
+	var step1Input json.RawMessage
+	reg.MustRegister("alloc_port", func(ctx context.Context, input json.RawMessage) (json.RawMessage, error) {
+		return json.RawMessage(`{"port":6200}`), nil
+	})
+	reg.MustRegister("write_compose", func(ctx context.Context, input json.RawMessage) (json.RawMessage, error) {
+		step1Input = input
+		return json.RawMessage(`{"written":true}`), nil
+	})
+
+	executor := NewStepExecutor(store, reg)
+	saga := NewSagaOrchestrator(store, executor, reg, "test-node")
+
+	steps := []StepDefinition{
+		{Name: "alloc_port", Action: "alloc_port"},
+		{Name: "write_compose", Action: "write_compose"},
+	}
+	wf, _ := store.CreateWorkflow(CreateWorkflowParams{
+		WorkflowType: "recovery_envelope",
+		Version:      1,
+		ExternalID:   "env-3",
+		Input:        json.RawMessage(`{"stack_name":"myapp"}`),
+		Steps:        steps,
+	})
+
+	// Simulate crash: pre-complete step 0 with cached output
+	allSteps, _ := store.GetWorkflowSteps(wf.ID)
+	_ = store.UpdateStepStatus(allSteps[0].ID, StepPending, StepRunning)
+	_ = store.UpdateStepStatus(allSteps[0].ID, StepRunning, StepCompleted)
+	_ = store.UpdateStepOutput(allSteps[0].ID, json.RawMessage(`{"port":6200}`))
+
+	// Resume execution (step 0 already completed)
+	err := saga.Execute(context.Background(), wf)
+	if err != nil {
+		t.Fatalf("Expected success on resume, got: %v", err)
+	}
+
+	// step 1 must have received both workflow.Input AND step 0's cached output
+	if step1Input == nil {
+		t.Fatal("write_compose did not receive input")
+	}
+	if !strings.Contains(string(step1Input), "stack_name") {
+		t.Errorf("write_compose missing workflow input after recovery; got: %s", string(step1Input))
+	}
+	if !strings.Contains(string(step1Input), "port") {
+		t.Errorf("write_compose missing step 0 cached output after recovery; got: %s", string(step1Input))
+	}
+}

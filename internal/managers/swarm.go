@@ -793,3 +793,45 @@ func intPtr(i int) *int64 {
 	v := int64(i)
 	return &v
 }
+
+// ImageExists checks whether a Docker image is present in the local daemon cache.
+// Uses `docker image inspect` — exit 0 = present, non-zero = absent.
+func (s *SwarmManager) ImageExists(ctx context.Context, imageRef string) (bool, error) {
+	cmd := exec.CommandContext(ctx, "docker", "image", "inspect", "--format", "{{.Id}}", imageRef)
+	err := cmd.Run()
+	if err != nil {
+		return false, nil // not present — not an error
+	}
+	return true, nil
+}
+
+// PullImage pulls a Docker image from the registry into the local daemon.
+// Uses `docker pull` so it respects credential helpers and registry auth.
+func (s *SwarmManager) PullImage(ctx context.Context, imageRef string) error {
+	cmd := exec.CommandContext(ctx, "docker", "pull", imageRef)
+	output, err := cmd.CombinedOutput()
+	if err != nil {
+		return fmt.Errorf("docker pull %s: %w\nOutput: %s", imageRef, err, string(output))
+	}
+	return nil
+}
+
+// WaitForServiceConvergence waits for all services in a stack to reach the desired
+// replica count. Polls every 2 seconds up to the given timeout.
+// Satisfies activities.DockerContainerManager.
+func (s *SwarmManager) WaitForServiceConvergence(ctx context.Context, stackName string, timeout time.Duration) error {
+	services, err := s.GetStackServices(stackName)
+	if err != nil {
+		return fmt.Errorf("list services for stack %s: %w", stackName, err)
+	}
+	if len(services) == 0 {
+		return fmt.Errorf("no services found for stack %s", stackName)
+	}
+
+	for _, svc := range services {
+		if err := s.WaitForServiceWithContext(ctx, svc.Name, timeout); err != nil {
+			return err
+		}
+	}
+	return nil
+}

@@ -19,8 +19,7 @@ import (
 type DockerSwarmManager interface {
 	DeployStack(name, composePath string) error
 	RemoveStack(name string) error
-	GetStackServices(name string) ([]interface{}, error)
-	ListStacks() ([]interface{}, error)
+	StackExists(name string) (bool, error)
 }
 
 // DockerContainerManager defines the Docker operations needed by Docker activities.
@@ -116,8 +115,8 @@ func makeDeployStack(swarmMgr DockerSwarmManager) flowengine.ActivityFunc {
 		}
 
 		// Idempotency check: does the stack already exist?
-		services, err := swarmMgr.GetStackServices(in.StackName)
-		if err == nil && len(services) > 0 {
+		exists, err := swarmMgr.StackExists(in.StackName)
+		if err == nil && exists {
 			log.Info().Str("stack", in.StackName).Msg("deploy_stack: stack already exists, skipping deploy")
 			return marshalOutput(DeployStackOutput{
 				StackName: in.StackName,
@@ -153,8 +152,8 @@ func makeRemoveStack(swarmMgr DockerSwarmManager) flowengine.ActivityFunc {
 		}
 
 		// Idempotency check: does the stack exist?
-		services, err := swarmMgr.GetStackServices(in.StackName)
-		if err != nil || len(services) == 0 {
+		exists, err := swarmMgr.StackExists(in.StackName)
+		if err != nil || !exists {
 			log.Info().Str("stack", in.StackName).Msg("remove_stack: stack not found, nothing to remove")
 			return marshalOutput(RemoveStackOutput{StackName: in.StackName, Removed: false})
 		}
@@ -180,8 +179,8 @@ func makeStopStack(swarmMgr DockerSwarmManager) flowengine.ActivityFunc {
 			return nil, flowengine.NewPermanentError(fmt.Errorf("stack_name is required"))
 		}
 
-		services, err := swarmMgr.GetStackServices(in.StackName)
-		if err != nil || len(services) == 0 {
+		exists, err := swarmMgr.StackExists(in.StackName)
+		if err != nil || !exists {
 			log.Info().Str("stack", in.StackName).Msg("stop_stack: stack not found, nothing to stop")
 			return marshalOutput(StopStackOutput{StackName: in.StackName, Stopped: true})
 		}

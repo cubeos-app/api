@@ -311,6 +311,12 @@ func (p *PortManager) DeallocatePort(port int, protocol string) error {
 	return err
 }
 
+// ReleasePort removes a TCP port allocation. Satisfies activities.PortAllocator.
+// Use DeallocatePort when the protocol needs to be specified explicitly.
+func (p *PortManager) ReleasePort(port int) error {
+	return p.DeallocatePort(port, "tcp")
+}
+
 // DeallocateAppPorts removes all port allocations for an app.
 func (p *PortManager) DeallocateAppPorts(appID int64) error {
 	p.mu.Lock()

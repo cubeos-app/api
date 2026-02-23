@@ -18,6 +18,7 @@ import (
 
 	"cubeos-api/internal/circuitbreaker"
 	"cubeos-api/internal/config"
+	"cubeos-api/internal/flowengine"
 	"cubeos-api/internal/hal"
 	"cubeos-api/internal/models"
 )
@@ -37,6 +38,7 @@ type Orchestrator struct {
 	registryClient *http.Client
 	ctx            context.Context
 	cancel         context.CancelFunc
+	engine         *flowengine.WorkflowEngine
 }
 
 // OrchestratorConfig holds configuration for the Orchestrator
@@ -130,6 +132,23 @@ func (o *Orchestrator) Close() error {
 		o.docker.Close()
 	}
 	return nil
+}
+
+// SetFlowEngine wires the WorkflowEngine into the Orchestrator.
+// Call this after engine.Start() so the engine is ready before workflows are submitted.
+func (o *Orchestrator) SetFlowEngine(e *flowengine.WorkflowEngine) {
+	o.engine = e
+}
+
+// AppExists reports whether an app with the given name already exists in the database.
+// Implements activities.AppConflictChecker via adapters in main.
+func (o *Orchestrator) AppExists(ctx context.Context, name string) (bool, error) {
+	var count int
+	err := o.db.QueryRowContext(ctx, "SELECT COUNT(*) FROM apps WHERE name = ?", name).Scan(&count)
+	if err != nil {
+		return false, err
+	}
+	return count > 0, nil
 }
 
 // =============================================================================
