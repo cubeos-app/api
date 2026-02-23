@@ -275,51 +275,18 @@ func (h *SetupHandler) ResetSetup(w http.ResponseWriter, r *http.Request) {
 
 // SkipSetup godoc
 // @Summary Skip setup wizard
-// @Description Skips the setup wizard by submitting the first_boot_setup workflow with default configuration values
+// @Description Skips the setup wizard by marking it complete with default configuration. Does NOT run the workflow — accepts current system state as-is.
 // @Tags Setup
 // @Produce json
 // @Success 200 {object} map[string]interface{} "success: true, message, skipped: true"
 // @Failure 500 {object} ErrorResponse "Failed to skip setup"
 // @Router /setup/skip [post]
 func (h *SetupHandler) SkipSetup(w http.ResponseWriter, r *http.Request) {
-	// Generate default config and submit as workflow
 	defaults := h.manager.GenerateDefaultConfig()
-	// Default config needs a password for validation — use "cubeos" (the seeded default)
-	if defaults.AdminPassword == "" {
-		defaults.AdminPassword = "cubeos00"
-	}
-	if defaults.AdminUsername == "" {
-		defaults.AdminUsername = "admin"
-	}
-
-	input, err := json.Marshal(defaults)
-	if err != nil {
-		w.Header().Set("Content-Type", "application/json")
-		w.WriteHeader(http.StatusInternalServerError)
-		json.NewEncoder(w).Encode(map[string]string{"error": "failed to marshal default config"})
-		return
-	}
-
-	wf, err := h.engine.Submit(r.Context(), flowengine.SubmitParams{
-		WorkflowType: feworkflows.FirstBootSetupType,
-		ExternalID:   "first-boot-skip",
-		Input:        input,
-	})
-	if err != nil {
+	if err := h.manager.MarkSetupComplete(defaults); err != nil {
 		w.Header().Set("Content-Type", "application/json")
 		w.WriteHeader(http.StatusInternalServerError)
 		json.NewEncoder(w).Encode(map[string]string{"error": err.Error()})
-		return
-	}
-
-	// Wait for completion (skip should be fast — mostly DB writes)
-	waitCtx, cancel := context.WithTimeout(r.Context(), 60*time.Second)
-	defer cancel()
-
-	if err := flowengine.WaitForCompletion(waitCtx, h.store, wf.ID); err != nil {
-		w.Header().Set("Content-Type", "application/json")
-		w.WriteHeader(http.StatusInternalServerError)
-		json.NewEncoder(w).Encode(map[string]string{"error": "skip setup failed: " + err.Error()})
 		return
 	}
 
