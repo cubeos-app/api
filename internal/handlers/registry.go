@@ -27,7 +27,7 @@ type RegistryHandler struct {
 	httpClient   *http.Client
 	portManager  *managers.PortManager  // B108: triple-source port allocation
 	orchestrator *managers.Orchestrator // Unified install pipeline (Batch 1)
-	db           *sql.DB               // Settings persistence
+	db           *sql.DB                // Settings persistence
 }
 
 // NewRegistryHandler creates a new RegistryHandler instance.
