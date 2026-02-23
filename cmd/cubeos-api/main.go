@@ -505,6 +505,12 @@ func main() {
 	syncMgr.Start()
 	defer syncMgr.Stop()
 
+	// Create UpdateManager for background system update checks (Batch 4.1)
+	updateMgr := managers.NewUpdateManager(db.DB)
+	updateMgr.Start(context.Background())
+	defer updateMgr.Stop()
+	_ = updateMgr // handlers wired in Batch 4.1B
+
 	registryHandler := handlers.NewRegistryHandler(registryURL, registryPath, portMgr, orchestrator, db.DB, syncMgr, appStoreMgr, networkMgr, flowEngine, feStore)
 	log.Info().Msg("PortsHandler, FQDNsHandler, and RegistryHandler initialized")
 
