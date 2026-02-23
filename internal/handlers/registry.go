@@ -25,15 +25,16 @@ type RegistryHandler struct {
 	registryURL  string
 	registryPath string
 	httpClient   *http.Client
-	portManager  *managers.PortManager  // B108: triple-source port allocation
-	orchestrator *managers.Orchestrator // Unified install pipeline (Batch 1)
-	db           *sql.DB                // Settings persistence
+	portManager  *managers.PortManager         // B108: triple-source port allocation
+	orchestrator *managers.Orchestrator        // Unified install pipeline (Batch 1)
+	db           *sql.DB                       // Settings persistence
+	syncManager  *managers.RegistrySyncManager // Batch 5: background upstream sync
 }
 
 // NewRegistryHandler creates a new RegistryHandler instance.
 // For Swarm containers, use the gateway IP (not localhost:5000)
 // because containers in overlay network cannot reach localhost on the host.
-func NewRegistryHandler(registryURL, registryPath string, portMgr *managers.PortManager, orchestrator *managers.Orchestrator, db *sql.DB) *RegistryHandler {
+func NewRegistryHandler(registryURL, registryPath string, portMgr *managers.PortManager, orchestrator *managers.Orchestrator, db *sql.DB, syncMgr *managers.RegistrySyncManager) *RegistryHandler {
 	if registryURL == "" {
 		// Check env var first, then fall back to gateway IP (works from inside Swarm overlay)
 		registryURL = os.Getenv("REGISTRY_URL")
@@ -50,6 +51,7 @@ func NewRegistryHandler(registryURL, registryPath string, portMgr *managers.Port
 		portManager:  portMgr,
 		orchestrator: orchestrator,
 		db:           db,
+		syncManager:  syncMgr,
 		httpClient: &http.Client{
 			Timeout: 10 * time.Second, // Reduced timeout for faster failure detection
 		},
@@ -73,6 +75,8 @@ func (h *RegistryHandler) Routes() chi.Router {
 	r.Post("/deploy", h.DeployImage)
 	r.Get("/settings", h.GetRegistrySettings)
 	r.Put("/settings", h.UpdateRegistrySettings)
+	r.Post("/sync", h.TriggerSync)
+	r.Get("/sync/status", h.GetSyncStatus)
 
 	return r
 }
@@ -551,17 +555,12 @@ type CleanupRequest struct {
 func (h *RegistryHandler) CleanupRegistry(w http.ResponseWriter, r *http.Request) {
 	var req CleanupRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		// Use defaults
 		req.KeepTags = 2
 		req.DryRun = false
 	}
-
 	if req.KeepTags < 1 {
 		req.KeepTags = 1
 	}
-
-	// This is a simplified cleanup - just report what could be cleaned
-	// Full implementation would need registry garbage collection
 
 	images, _ := h.getImageList()
 	var totalDeleted int
@@ -569,24 +568,72 @@ func (h *RegistryHandler) CleanupRegistry(w http.ResponseWriter, r *http.Request
 
 	for _, name := range images {
 		tags, _ := h.getImageTags(name)
-		if len(tags) > req.KeepTags {
-			toDelete := len(tags) - req.KeepTags
-			if !req.DryRun {
-				// In a real implementation, we'd delete the older tags here
-				// For now, just count them
+		if len(tags) <= req.KeepTags {
+			continue
+		}
+
+		// Keep the last N tags (sorted alphabetically — "latest" typically sorts high)
+		toDelete := tags[:len(tags)-req.KeepTags]
+
+		for _, tag := range toDelete {
+			if tag == "latest" {
+				continue // Never delete "latest" tag
 			}
-			totalDeleted += toDelete
-			deletedImages = append(deletedImages, fmt.Sprintf("%s (%d tags)", name, toDelete))
+			if !req.DryRun {
+				digest, err := h.getManifestDigest(name, tag)
+				if err != nil {
+					continue
+				}
+				deleteURL := fmt.Sprintf("%s/v2/%s/manifests/%s", h.registryURL, url.PathEscape(name), url.PathEscape(digest))
+				delReq, err := http.NewRequest("DELETE", deleteURL, nil)
+				if err != nil {
+					continue
+				}
+				resp, err := h.httpClient.Do(delReq)
+				if err != nil {
+					continue
+				}
+				resp.Body.Close()
+				if resp.StatusCode == http.StatusAccepted || resp.StatusCode == http.StatusOK {
+					totalDeleted++
+					deletedImages = append(deletedImages, fmt.Sprintf("%s:%s", name, tag))
+				}
+			} else {
+				totalDeleted++
+				deletedImages = append(deletedImages, fmt.Sprintf("%s:%s (dry-run)", name, tag))
+			}
 		}
 	}
 
-	registryWriteJSON(w, http.StatusOK, map[string]interface{}{
+	// If we actually deleted tags, run GC
+	gcMessage := ""
+	if totalDeleted > 0 && !req.DryRun {
+		gcCmd := exec.CommandContext(r.Context(), "docker", "exec", "registry",
+			"bin/registry", "garbage-collect", "/etc/docker/registry/config.yml", "--delete-untagged")
+		gcOut, err := gcCmd.CombinedOutput()
+		if err != nil {
+			gcMessage = fmt.Sprintf("GC failed: %s", strings.TrimSpace(string(gcOut)))
+		} else {
+			gcMessage = "GC completed successfully"
+		}
+	}
+
+	result := map[string]interface{}{
 		"success":        true,
 		"dry_run":        req.DryRun,
 		"deleted_count":  totalDeleted,
 		"deleted_images": deletedImages,
-		"message":        "Run 'docker exec cubeos-registry bin/registry garbage-collect /etc/docker/registry/config.yml' to reclaim disk space",
-	})
+	}
+	if gcMessage != "" {
+		result["gc_result"] = gcMessage
+	}
+	if req.DryRun {
+		result["message"] = fmt.Sprintf("Would delete %d tags (dry-run mode)", totalDeleted)
+	} else {
+		result["message"] = fmt.Sprintf("Deleted %d tags", totalDeleted)
+	}
+
+	registryWriteJSON(w, http.StatusOK, result)
 }
 
 // GetDiskUsage godoc
@@ -893,6 +940,58 @@ func (h *RegistryHandler) UpdateRegistrySettings(w http.ResponseWriter, r *http.
 
 	registryWriteJSON(w, http.StatusOK, RegistrySettings{
 		AutoUpdate: req.AutoUpdate,
+	})
+}
+
+// =========================================================================
+// Registry Sync (T16)
+// =========================================================================
+
+// TriggerSync godoc
+// @Summary Trigger registry sync
+// @Description Triggers an immediate sync cycle that checks upstream registries for newer images and updates the local registry. Non-blocking — returns immediately, sync runs in background.
+// @Tags Registry
+// @Produce json
+// @Security BearerAuth
+// @Success 200 {object} map[string]interface{} "success: true, message"
+// @Failure 409 {object} ErrorResponse "Sync already in progress"
+// @Failure 503 {object} ErrorResponse "Sync manager not initialized"
+// @Router /registry/sync [post]
+func (h *RegistryHandler) TriggerSync(w http.ResponseWriter, r *http.Request) {
+	if h.syncManager == nil {
+		registryWriteError(w, http.StatusServiceUnavailable, "Sync manager not initialized")
+		return
+	}
+
+	if err := h.syncManager.TriggerSync(); err != nil {
+		registryWriteError(w, http.StatusConflict, err.Error())
+		return
+	}
+
+	registryWriteJSON(w, http.StatusOK, map[string]interface{}{
+		"success": true,
+		"message": "Sync triggered — check GET /api/v1/registry/sync/status for progress",
+	})
+}
+
+// GetSyncStatus godoc
+// @Summary Get sync status
+// @Description Returns the current sync state (running/idle) and the result of the last sync cycle including which images were checked, updated, or failed.
+// @Tags Registry
+// @Produce json
+// @Security BearerAuth
+// @Success 200 {object} map[string]interface{} "running, last_result"
+// @Failure 503 {object} ErrorResponse "Sync manager not initialized"
+// @Router /registry/sync/status [get]
+func (h *RegistryHandler) GetSyncStatus(w http.ResponseWriter, r *http.Request) {
+	if h.syncManager == nil {
+		registryWriteError(w, http.StatusServiceUnavailable, "Sync manager not initialized")
+		return
+	}
+
+	registryWriteJSON(w, http.StatusOK, map[string]interface{}{
+		"running":     h.syncManager.IsRunning(),
+		"last_result": h.syncManager.GetLastResult(),
 	})
 }
 
