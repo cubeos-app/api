@@ -342,13 +342,14 @@ func (h *RegistryHandler) CheckImage(w http.ResponseWriter, r *http.Request) {
 
 // DeleteImageTag godoc
 // @Summary Delete a specific image tag
-// @Description Deletes a specific tag of an image from the local registry. Requires garbage collection to reclaim disk space.
+// @Description Deletes a specific tag of an image from the local registry. Requires garbage collection to reclaim disk space. System image tags cannot be deleted.
 // @Tags Registry
 // @Produce json
 // @Security BearerAuth
 // @Param name path string true "Image name (e.g., nginx or library/nginx)"
 // @Param tag path string true "Tag to delete (e.g., latest, v1.0)"
 // @Success 200 {object} map[string]interface{} "success: true, message"
+// @Failure 403 {object} ErrorResponse "Cannot delete system image tag"
 // @Failure 404 {object} ErrorResponse "Image or tag not found"
 // @Failure 500 {object} ErrorResponse "Failed to delete tag"
 // @Router /registry/images/{name}/tags/{tag} [delete]
@@ -358,6 +359,12 @@ func (h *RegistryHandler) DeleteImageTag(w http.ResponseWriter, r *http.Request)
 
 	if name == "" || tag == "" {
 		registryWriteError(w, http.StatusBadRequest, "Image name and tag are required")
+		return
+	}
+
+	// Block deletion of system-managed image tags
+	if isSystemImage(name) {
+		registryWriteError(w, http.StatusForbidden, fmt.Sprintf("Cannot delete system image tag %s:%s — it is required by CubeOS", name, tag))
 		return
 	}
 
@@ -400,6 +407,25 @@ type RegistryImage struct {
 	Tags     []string `json:"tags,omitempty"`
 	TagCount int      `json:"tag_count"`
 	FullName string   `json:"full_name,omitempty"`
+	System   bool     `json:"system"`
+}
+
+// isSystemImage returns true for images that are part of the CubeOS platform
+// and should not be user-installed or deleted from the registry.
+func isSystemImage(name string) bool {
+	systemImages := map[string]bool{
+		"cubeos-app/api":              true,
+		"cubeos-app/hal":              true,
+		"cubeos-app/dashboard":        true,
+		"cubeos-app/cubeos-docsindex": true,
+		"pihole/pihole":               true,
+		"jc21/nginx-proxy-manager":    true,
+		"amir20/dozzle":               true,
+		"sigoden/dufs":                true,
+		"kiwix/kiwix-serve":           true,
+		"tsl0922/ttyd":                true,
+	}
+	return systemImages[name]
 }
 
 // ListImages godoc
@@ -427,6 +453,7 @@ func (h *RegistryHandler) ListImages(w http.ResponseWriter, r *http.Request) {
 		img := RegistryImage{
 			Name:     name,
 			FullName: fmt.Sprintf("%s/%s", strings.TrimPrefix(h.registryURL, "http://"), name),
+			System:   isSystemImage(name),
 		}
 
 		if includeTags {
@@ -485,13 +512,14 @@ func (h *RegistryHandler) GetImageTags(w http.ResponseWriter, r *http.Request) {
 
 // DeleteImage godoc
 // @Summary Delete an image tag
-// @Description Deletes a specific tag of an image from the local registry. Requires garbage collection to reclaim disk space.
+// @Description Deletes a specific tag of an image from the local registry. Requires garbage collection to reclaim disk space. System images cannot be deleted.
 // @Tags Registry
 // @Produce json
 // @Security BearerAuth
 // @Param name path string true "Image name"
 // @Param tag query string false "Tag to delete (defaults to 'latest')"
 // @Success 200 {object} map[string]interface{} "success: true, message: deletion confirmation"
+// @Failure 403 {object} ErrorResponse "Cannot delete system image"
 // @Failure 404 {object} ErrorResponse "Image or tag not found"
 // @Failure 500 {object} ErrorResponse "Failed to delete image"
 // @Router /registry/images/{name} [delete]
@@ -500,6 +528,12 @@ func (h *RegistryHandler) DeleteImage(w http.ResponseWriter, r *http.Request) {
 	tag := r.URL.Query().Get("tag")
 	if tag == "" {
 		tag = "latest"
+	}
+
+	// Block deletion of system-managed images
+	if isSystemImage(name) {
+		registryWriteError(w, http.StatusForbidden, fmt.Sprintf("Cannot delete system image %s — it is required by CubeOS", name))
+		return
 	}
 
 	// Get manifest digest
@@ -567,6 +601,10 @@ func (h *RegistryHandler) CleanupRegistry(w http.ResponseWriter, r *http.Request
 	var deletedImages []string
 
 	for _, name := range images {
+		// Never clean up system images
+		if isSystemImage(name) {
+			continue
+		}
 		tags, _ := h.getImageTags(name)
 		if len(tags) <= req.KeepTags {
 			continue
@@ -1094,6 +1132,7 @@ func classifyImage(repo string) string {
 		"cubeos-app/dashboard":        true,
 		"cubeos-app/cubeos-docsindex": true,
 		"amir20/dozzle":               true,
+		"sigoden/dufs":                true,
 	}
 	curatedImages := map[string]bool{
 		"kiwix/kiwix-serve": true,
