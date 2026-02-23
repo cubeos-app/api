@@ -46,12 +46,11 @@ fi
 docker pull ${GHCR_IMAGE}:${CI_COMMIT_SHORT_SHA}
 docker tag ${GHCR_IMAGE}:${CI_COMMIT_SHORT_SHA} ${GHCR_IMAGE}:latest
 
-# --- Push to local registry (keeps registry in sync) ---
+# --- Push to local registry (registry-first: services always run from localhost:5000) ---
 LOCAL_REG_IMAGE="localhost:5000/cubeos-app/api:latest"
-docker tag "${GHCR_IMAGE}:${CI_COMMIT_SHORT_SHA}" "${LOCAL_REG_IMAGE}" 2>/dev/null && \
-  docker push "${LOCAL_REG_IMAGE}" 2>/dev/null && \
-  echo "  Pushed to local registry: ${LOCAL_REG_IMAGE}" || \
-  echo "  WARN: Local registry push failed (non-fatal)"
+docker tag "${GHCR_IMAGE}:${CI_COMMIT_SHORT_SHA}" "${LOCAL_REG_IMAGE}"
+docker push "${LOCAL_REG_IMAGE}"
+echo "  Pushed to local registry: ${LOCAL_REG_IMAGE}"
 
 # =========================================================================
 # Pre-flight: kill zombie containers holding the port
@@ -67,7 +66,7 @@ if [ -n "${PORT_PID}" ]; then
     echo "  ${ZOMBIE}"
     # Check if the running container is already on the target image
     RUNNING_IMAGE=$(docker ps --filter "name=cubeos-api" --format '{{.Image}}' | head -1 || true)
-    if [ "${RUNNING_IMAGE}" = "${GHCR_IMAGE}:${CI_COMMIT_SHORT_SHA}" ]; then
+    if [ "${RUNNING_IMAGE}" = "${LOCAL_REG_IMAGE}" ]; then
       echo "  Already running target image — skipping update"
       SKIP_UPDATE=true
     fi
@@ -89,7 +88,7 @@ elif docker service inspect ${SERVICE_NAME} > /dev/null 2>&1; then
   echo "Service exists — updating image (detached)..."
 
   docker service update \
-    --image ${GHCR_IMAGE}:${CI_COMMIT_SHORT_SHA} \
+    --image ${LOCAL_REG_IMAGE} \
     --update-order stop-first \
     --force \
     --detach \
@@ -138,16 +137,9 @@ if [ "${SKIP_UPDATE}" != "true" ] && ! docker service inspect ${SERVICE_NAME} > 
   echo "  Stack deployed — waiting for service registration..."
   sleep 8
 
-  # Pin to exact commit image (detached)
-  if docker service inspect ${SERVICE_NAME} > /dev/null 2>&1; then
-    echo "  Pinning to commit image..."
-    docker service update \
-      --image ${GHCR_IMAGE}:${CI_COMMIT_SHORT_SHA} \
-      --update-order stop-first \
-      --detach \
-      ${SERVICE_NAME}
-    sleep 5
-  fi
+  # Service deployed from compose which already uses localhost:5000/cubeos-app/api
+  # No need to pin — compose image reference is correct
+  sleep 5
 fi
 
 # =========================================================================
@@ -166,7 +158,7 @@ while [ ${SECONDS_WAITED} -lt ${HEALTH_TIMEOUT} ]; do
     echo "   Response: ${RESPONSE}"
     echo ""
     echo "=== Deployment Summary ==="
-    echo "Image:   ${GHCR_IMAGE}:${CI_COMMIT_SHORT_SHA}"
+    echo "Image:   ${LOCAL_REG_IMAGE} (from ${GHCR_IMAGE}:${CI_COMMIT_SHORT_SHA})"
     echo "Service: ${SERVICE_NAME}"
     echo ""
     docker service ls | grep ${STACK_NAME}
