@@ -21,6 +21,7 @@ import (
 
 	"cubeos-api/internal/config"
 	"cubeos-api/internal/flowengine"
+	feworkflows "cubeos-api/internal/flowengine/workflows"
 	"cubeos-api/internal/models"
 
 	"github.com/rs/zerolog/log"
@@ -789,265 +790,9 @@ func (m *AppStoreManager) GetScreenshotPath(storeID, appName string, index int) 
 	return filepath.Join(appsDir, appName, fmt.Sprintf("screenshot-%d.png", index))
 }
 
-// InstallApp installs an app from the store using Docker Swarm stack deploy.
-// It also creates an NPM proxy host and Pi-hole DNS entry for FQDN access.
-func (m *AppStoreManager) InstallApp(req *models.AppInstallRequest) (*models.InstalledApp, error) {
-	storeApp := m.GetApp(req.StoreID, req.AppName)
-	if storeApp == nil {
-		return nil, fmt.Errorf("app not found: %s/%s", req.StoreID, req.AppName)
-	}
-
-	// Check if already installed
-	for _, inst := range m.installed {
-		if inst.Name == req.AppName {
-			return nil, fmt.Errorf("app already installed: %s", req.AppName)
-		}
-	}
-
-	// Read manifest
-	manifestData, err := os.ReadFile(storeApp.ManifestPath)
-	if err != nil {
-		return nil, fmt.Errorf("failed to read manifest: %w", err)
-	}
-
-	// Create app directories: /cubeos/apps/{app}/appconfig and /cubeos/apps/{app}/appdata
-	appBase := filepath.Join(m.appsPath, req.AppName)
-	appConfig := filepath.Join(appBase, "appconfig")
-	appData := filepath.Join(appBase, "appdata")
-	os.MkdirAll(appConfig, 0755)
-	os.MkdirAll(appData, 0777) // 0777: containers may run as non-root users
-	os.Chmod(appData, 0777)    // Explicit chmod to override umask
-
-	// Allocate a port in the user app range (6100-6999) via triple-source validation
-	allocatedPort, err := m.ports.AllocateUserPort()
-	if err != nil {
-		os.RemoveAll(appBase)
-		return nil, fmt.Errorf("failed to allocate port: %w", err)
-	}
-
-	// Process manifest with variable substitution
-	processedManifest := m.processManifest(string(manifestData), req.AppName, appData, req)
-
-	// Remap the main published port to our allocated CubeOS port (6100-6999)
-	// This prevents CasaOS manifests from colliding with infrastructure ports
-	processedManifest, err = remapPorts(processedManifest, allocatedPort, storeApp.PortMap)
-	if err != nil {
-		log.Warn().Err(err).Str("app", req.AppName).Msg("port remapping failed, using original ports")
-	}
-
-	// Remap external bind mounts to safe defaults under /cubeos/apps/{app}/appdata/
-	overrides := req.VolumeOverrides
-	if overrides == nil {
-		overrides = make(map[string]string)
-	}
-	var remapResults []RemapResult
-	processedManifest, remapResults, err = RemapExternalVolumes(processedManifest, req.AppName, appData, overrides)
-	if err != nil {
-		log.Warn().Err(err).Str("app", req.AppName).Msg("volume remapping failed, using original paths")
-	}
-
-	// Write docker-compose.yml to appconfig
-	composePath := filepath.Join(appConfig, "docker-compose.yml")
-	if err := os.WriteFile(composePath, []byte(processedManifest), 0644); err != nil {
-		return nil, fmt.Errorf("failed to write compose file: %w", err)
-	}
-
-	// Pre-create bind mount source directories.
-	// Docker Swarm (unlike docker compose) does NOT auto-create host paths for bind mounts.
-	// Parse the written compose and mkdir -p every host path under /cubeos/apps/.
-	preCreateBindMounts(processedManifest)
-
-	// T16: Offline awareness — verify images are available before deploying.
-	// After rewriteImagesToLocalRegistry (T15), images in the local registry
-	// already have localhost:5000/ prefix. Non-local images need upstream pull.
-	// If we're offline and an image isn't available locally, fail early.
-	imageRefs := extractImageRefs(processedManifest)
-	for _, ref := range imageRefs {
-		// Images from local registry are always available
-		if strings.HasPrefix(ref, "localhost:5000/") {
-			continue
-		}
-		// Check if the image is already in Docker's local store
-		inspectCmd := exec.Command("docker", "image", "inspect", ref)
-		if inspectCmd.Run() == nil {
-			continue // Image available locally
-		}
-		// Image not local — check if we can pull it
-		if !m.isOnline() {
-			os.RemoveAll(appBase)
-			return nil, fmt.Errorf("OFFLINE_IMAGE_UNAVAILABLE: image %s is not cached locally and device is offline", ref)
-		}
-		log.Info().Str("image", ref).Msg("image not cached, will pull from upstream")
-	}
-
-	// Deploy as Swarm stack instead of docker compose
-	// --resolve-image=never is critical for ARM64 compatibility
-	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Minute)
-	defer cancel()
-
-	deployCmd := exec.CommandContext(ctx, "docker", "stack", "deploy",
-		"-c", composePath,
-		"--resolve-image=never",
-		req.AppName,
-	)
-	deployCmd.Dir = appConfig
-	if output, err := deployCmd.CombinedOutput(); err != nil {
-		// Cleanup on failure
-		os.RemoveAll(appBase)
-		return nil, fmt.Errorf("stack deploy failed: %s", string(output))
-	}
-
-	// Build WebUI URL using configured gateway IP and the ALLOCATED port (not original)
-	webUI := ""
-	appPort := allocatedPort
-	if storeApp.PortMap != "" {
-		scheme := storeApp.Scheme
-		if scheme == "" {
-			scheme = "http"
-		}
-		index := storeApp.Index
-		if index == "" {
-			index = "/"
-		}
-		webUI = fmt.Sprintf("%s://%s:%d%s", scheme, m.gatewayIP, allocatedPort, index)
-	}
-	if appPort == 0 {
-		appPort = allocatedPort
-	}
-
-	// Build FQDN for this app using a clean subdomain
-	subdomain := prettifySubdomain(req.AppName, req.StoreID)
-	log.Info().Str("app", req.AppName).Str("store", req.StoreID).Str("subdomain", subdomain).Msg("prettified subdomain for FQDN")
-
-	// Check for FQDN collision with existing DNS entries
-	appFQDN := fmt.Sprintf("%s.%s", subdomain, m.baseDomain)
-	if m.pihole != nil {
-		if existing, _ := m.pihole.GetEntry(appFQDN); existing != nil {
-			// Collision — fall back to full app name
-			log.Warn().Str("fqdn", appFQDN).Msg("FQDN collision, using full app name")
-			appFQDN = fmt.Sprintf("%s.%s", req.AppName, m.baseDomain)
-		}
-	}
-
-	// Create NPM proxy host for FQDN access (non-fatal)
-	var npmProxyID int
-	if m.npm != nil && m.npm.IsAuthenticated() {
-		host := &NPMProxyHostExtended{
-			DomainNames:   []string{appFQDN},
-			ForwardHost:   m.gatewayIP,
-			ForwardPort:   appPort,
-			ForwardScheme: "http",
-		}
-		if created, err := m.npm.CreateProxyHost(host); err != nil {
-			log.Warn().Err(err).Str("fqdn", appFQDN).Msg("failed to create NPM proxy")
-		} else {
-			npmProxyID = created.ID
-		}
-	} else {
-		log.Warn().Str("fqdn", appFQDN).Msg("NPM not available, skipping proxy creation")
-	}
-
-	// Create Pi-hole DNS entry for FQDN (non-fatal)
-	if m.pihole != nil {
-		if err := m.pihole.AddEntry(appFQDN, m.gatewayIP); err != nil {
-			log.Warn().Err(err).Str("fqdn", appFQDN).Msg("failed to add DNS entry")
-		}
-	}
-
-	// Get title
-	title := req.Title
-	if title == "" {
-		title = storeApp.Title["en_us"]
-		if title == "" {
-			title = storeApp.Name
-		}
-	}
-
-	// If we have a FQDN, prefer it as the WebUI URL
-	if appFQDN != "" && webUI != "" {
-		webUI = fmt.Sprintf("http://%s", appFQDN)
-	}
-
-	// Create installed app record
-	installed := &models.InstalledApp{
-		ID:          req.AppName,
-		StoreID:     req.StoreID,
-		StoreAppID:  storeApp.ID,
-		Name:        req.AppName,
-		Title:       title,
-		Description: storeApp.Description["en_us"],
-		Icon:        storeApp.Icon,
-		Category:    storeApp.Category,
-		Version:     storeApp.Version,
-		Status:      "running",
-		WebUI:       webUI,
-		ComposeFile: composePath,
-		DataPath:    appData,
-		InstalledAt: time.Now(),
-		UpdatedAt:   time.Now(),
-	}
-
-	// Save to database (unified apps table, source='casaos', deploy_mode='stack' for new Swarm installs)
-	_, err = m.db.db.Exec(`INSERT INTO apps 
-		(name, display_name, description, type, category, source,
-		 store_id, store_app_id, compose_path, data_path,
-		 enabled, deploy_mode, icon_url, version, homepage,
-		 created_at, updated_at)
-		VALUES (?, ?, ?, 'user', ?, 'casaos', ?, ?, ?, ?, TRUE, 'stack', ?, ?, ?, ?, ?)`,
-		installed.Name, installed.Title, installed.Description,
-		installed.Category, installed.StoreID, installed.StoreAppID,
-		installed.ComposeFile, installed.DataPath,
-		installed.Icon, installed.Version, installed.WebUI,
-		installed.InstalledAt.Format(time.RFC3339), installed.UpdatedAt.Format(time.RFC3339))
-	if err != nil {
-		return nil, fmt.Errorf("failed to save app record: %w", err)
-	}
-
-	// Get the app_id for foreign key references (port_allocations, fqdns)
-	var appID int64
-	if err := m.db.db.QueryRow("SELECT id FROM apps WHERE name = ?", installed.Name).Scan(&appID); err != nil {
-		log.Error().Err(err).Str("app", installed.Name).Msg("failed to find app_id after insert")
-	} else {
-		// Record port allocation (ON DELETE CASCADE will clean up on uninstall)
-		if portErr := m.ports.AllocatePort(appID, allocatedPort, "tcp", "Web UI", true); portErr != nil {
-			log.Error().Err(portErr).Int("port", allocatedPort).Int64("app_id", appID).
-				Msg("failed to record port allocation (port is still in use)")
-		} else {
-			log.Info().Int("port", allocatedPort).Int64("app_id", appID).Str("app", installed.Name).
-				Msg("recorded port allocation")
-		}
-	}
-
-	// Store FQDN in the fqdns table (for DNS cleanup during uninstall)
-	if appFQDN != "" && appID > 0 {
-		// Extract subdomain from the (possibly prettified) FQDN
-		fqdnSubdomain := strings.TrimSuffix(appFQDN, "."+m.baseDomain)
-		_, fqdnErr := m.db.db.Exec(`INSERT INTO fqdns (app_id, fqdn, subdomain, backend_port, npm_proxy_id)
-			VALUES (?, ?, ?, ?, ?) ON CONFLICT DO NOTHING`,
-			appID, appFQDN, fqdnSubdomain, appPort, npmProxyID)
-		if fqdnErr != nil {
-			log.Error().Err(fqdnErr).Str("fqdn", appFQDN).Int64("app_id", appID).Int("port", appPort).
-				Msg("failed to insert FQDN record")
-		} else {
-			log.Info().Str("fqdn", appFQDN).Int64("app_id", appID).Int("port", appPort).
-				Msg("stored FQDN record")
-		}
-	}
-
-	// Store volume mappings
-	if len(remapResults) > 0 {
-		m.StoreVolumeMappings(req.AppName, remapResults)
-	}
-
-	m.mu.Lock()
-	m.installed[installed.ID] = installed
-	if app, ok := m.catalog[storeApp.ID]; ok {
-		app.Installed = true
-	}
-	m.mu.Unlock()
-
-	return installed, nil
-}
+// InstallApp is handled by the FlowEngine appstore_install workflow.
+// The handler calls InstallAppWithProgress (in appstore_progress.go) which
+// submits the workflow and polls for completion via SSE.
 
 func (m *AppStoreManager) processManifest(manifest, appID, dataDir string, req *models.AppInstallRequest) string {
 	// Get system values
@@ -1270,30 +1015,6 @@ func (m *AppStoreManager) isOnline() bool {
 	return m.onlineCached
 }
 
-// extractImageRefs extracts all image references from a compose manifest YAML.
-func extractImageRefs(manifest string) []string {
-	var compose map[string]interface{}
-	if err := yaml.Unmarshal([]byte(manifest), &compose); err != nil {
-		return nil
-	}
-	services, ok := compose["services"].(map[string]interface{})
-	if !ok {
-		return nil
-	}
-
-	var refs []string
-	for _, svcDef := range services {
-		svc, ok := svcDef.(map[string]interface{})
-		if !ok {
-			continue
-		}
-		if image, ok := svc["image"].(string); ok && image != "" {
-			refs = append(refs, image)
-		}
-	}
-	return refs
-}
-
 // RemapPorts rewrites the host-published port in a compose manifest so that the
 // app's main web UI port uses the CubeOS-allocated port (6100-6999 range) instead
 // of whatever the CasaOS manifest originally declared.
@@ -1473,111 +1194,6 @@ func toInt(v interface{}) int {
 func fileExists(path string) bool {
 	_, err := os.Stat(path)
 	return err == nil
-}
-
-// prettifySubdomain strips common CasaOS store prefixes from app names
-// to produce clean, user-friendly FQDNs.
-//
-// Examples:
-//
-//	"big-bear-libretranslate", "big-bear"     → "libretranslate"
-//	"big-bear-ghostfolio", "big-bear"         → "ghostfolio"
-//	"linuxserver-plex", "linuxserver"         → "plex"
-//	"nextcloud", "casaos-official"            → "nextcloud"
-//	"big-bear-npm", "big-bear"               → "npm"
-func prettifySubdomain(appName, storeID string) string {
-	// Known store prefixes to strip (order: longest first)
-	knownPrefixes := []string{
-		"big-bear-",
-		"linuxserver-",
-	}
-
-	// Also try the store ID as a prefix (handles future stores dynamically)
-	if storeID != "" && !strings.Contains(storeID, "official") {
-		storePrefix := storeID + "-"
-		// Add to front so it's tried first
-		knownPrefixes = append([]string{storePrefix}, knownPrefixes...)
-	}
-
-	// Deduplicate (store ID might match a known prefix)
-	seen := make(map[string]bool)
-	var prefixes []string
-	for _, p := range knownPrefixes {
-		if !seen[p] {
-			seen[p] = true
-			prefixes = append(prefixes, p)
-		}
-	}
-
-	result := appName
-	for _, prefix := range prefixes {
-		if strings.HasPrefix(appName, prefix) {
-			stripped := strings.TrimPrefix(appName, prefix)
-			// Don't strip if it leaves an empty string or a single character
-			if len(stripped) > 1 {
-				result = stripped
-				break
-			}
-		}
-	}
-
-	return result
-}
-
-// preCreateBindMounts parses a compose YAML and creates all bind mount host
-// directories. Docker Swarm does NOT auto-create bind mount source paths
-// (unlike docker compose), so containers get "bind source path does not exist"
-// rejections without this step.
-func preCreateBindMounts(manifest string) {
-	var compose map[string]interface{}
-	if err := yaml.Unmarshal([]byte(manifest), &compose); err != nil {
-		return
-	}
-	services, ok := compose["services"].(map[string]interface{})
-	if !ok {
-		return
-	}
-
-	for _, svcDef := range services {
-		svc, ok := svcDef.(map[string]interface{})
-		if !ok {
-			continue
-		}
-		volumes, ok := svc["volumes"].([]interface{})
-		if !ok {
-			continue
-		}
-		for _, v := range volumes {
-			var hostPath string
-			switch vol := v.(type) {
-			case string:
-				// Short form: "/host/path:/container/path" or "/host/path:/container/path:ro"
-				parts := strings.SplitN(vol, ":", 3)
-				if len(parts) >= 2 && strings.HasPrefix(parts[0], "/") {
-					hostPath = parts[0]
-				}
-			case map[string]interface{}:
-				// Long form: {type: bind, source: /host/path, target: /container/path}
-				if t, _ := vol["type"].(string); t == "bind" || t == "" {
-					if src, ok := vol["source"].(string); ok && strings.HasPrefix(src, "/") {
-						hostPath = src
-					}
-				}
-			}
-			if hostPath != "" {
-				// Use 0777 because containers may run as non-root users
-				// (e.g. libretranslate runs as uid 1032). The container's
-				// entrypoint can tighten permissions as needed.
-				// Note: os.MkdirAll respects umask, so we must chmod explicitly.
-				if err := os.MkdirAll(hostPath, 0777); err != nil {
-					log.Warn().Err(err).Str("path", hostPath).Msg("failed to pre-create bind mount directory")
-				} else {
-					os.Chmod(hostPath, 0777)
-					log.Debug().Str("path", hostPath).Msg("pre-created bind mount directory for Swarm")
-				}
-			}
-		}
-	}
 }
 
 // swarmStackExists returns true if a Docker Swarm stack with the given name
@@ -2289,95 +1905,66 @@ func (m *AppStoreManager) RestartApp(appID string) error {
 	return nil
 }
 
-// RemoveApp removes an installed app
+// RemoveApp removes an installed app via the FlowEngine appstore_remove workflow.
+// Blocks until the workflow completes (synchronous callers like AppAction expect this).
 func (m *AppStoreManager) RemoveApp(appID string, deleteData bool) error {
+	if m.engine == nil || m.feStore == nil {
+		return fmt.Errorf("workflow engine not available")
+	}
+
 	app := m.GetInstalledApp(appID)
 	if app == nil {
 		return fmt.Errorf("app not found: %s", appID)
 	}
 
-	// Remove NPM proxy host (npm_proxy_id now tracked in fqdns table)
-	var npmProxyID int
-	m.db.db.QueryRow(`SELECT COALESCE(f.npm_proxy_id, 0) FROM fqdns f
-		JOIN apps a ON a.id = f.app_id WHERE a.name = ? AND f.npm_proxy_id > 0 LIMIT 1`,
-		appID).Scan(&npmProxyID)
-	if npmProxyID > 0 {
-		if m.npm != nil && m.npm.IsAuthenticated() {
-			if err := m.npm.DeleteProxyHost(npmProxyID); err != nil {
-				log.Warn().Err(err).Int("proxyID", npmProxyID).Msg("failed to remove NPM proxy")
-			}
-		}
+	// Fetch DB id and primary FQDN from the unified apps table.
+	var dbAppID int64
+	m.db.db.QueryRow("SELECT id FROM apps WHERE name = ?", appID).Scan(&dbAppID) //nolint:errcheck
+
+	var fqdn string
+	m.db.db.QueryRow( //nolint:errcheck
+		`SELECT f.fqdn FROM fqdns f JOIN apps a ON a.id = f.app_id WHERE a.name = ? LIMIT 1`,
+		appID,
+	).Scan(&fqdn)
+
+	input, err := json.Marshal(feworkflows.AppRemoveInput{
+		AppID:       dbAppID,
+		AppName:     appID,
+		FQDN:        fqdn,
+		ComposePath: app.ComposeFile,
+		DataPath:    app.DataPath,
+		KeepData:    !deleteData,
+		UsesSwarm:   true, // store apps are always deployed as Swarm stacks
+	})
+	if err != nil {
+		return fmt.Errorf("failed to build workflow input: %w", err)
 	}
 
-	// Remove DNS entry via PiholeManager — use FQDN from database (may be prettified)
-	var storedFQDN string
-	var storeID string
-	m.db.db.QueryRow(`SELECT f.fqdn FROM fqdns f
-		JOIN apps a ON a.id = f.app_id WHERE a.name = ? LIMIT 1`, appID).Scan(&storedFQDN)
-	if storedFQDN == "" {
-		// Fallback: try prettified subdomain first (matches install behavior), then raw appID
-		m.db.db.QueryRow(`SELECT store_id FROM apps WHERE name = ?`, appID).Scan(&storeID)
-		prettified := prettifySubdomain(appID, storeID)
-		fqdnsToTry := []string{
-			fmt.Sprintf("%s.%s", prettified, m.baseDomain),
-		}
-		if prettified != appID {
-			fqdnsToTry = append(fqdnsToTry, fmt.Sprintf("%s.%s", appID, m.baseDomain))
-		}
-		for _, fqdn := range fqdnsToTry {
-			if err := m.removePiholeDNS(fqdn); err == nil {
-				log.Info().Str("fqdn", fqdn).Msg("removed DNS entry via fallback")
-			}
-		}
-	} else {
-		if err := m.removePiholeDNS(storedFQDN); err != nil {
-			log.Warn().Err(err).Str("fqdn", storedFQDN).Msg("failed to remove DNS entry")
-		}
+	wf, err := m.engine.Submit(context.Background(), flowengine.SubmitParams{
+		WorkflowType: feworkflows.AppStoreRemoveType,
+		ExternalID:   appID,
+		Input:        json.RawMessage(input),
+	})
+	if err != nil {
+		return fmt.Errorf("failed to submit remove workflow: %w", err)
 	}
 
-	ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
-	defer cancel()
-
-	// Stop and remove containers
-	if m.getDeployMode(appID) == "stack" {
-		// Swarm stack: remove the stack
-		cmd := exec.CommandContext(ctx, "docker", "stack", "rm", appID)
-		cmd.CombinedOutput() // Best-effort
-	} else {
-		// Legacy compose mode
-		cmd := exec.CommandContext(ctx, "docker", "compose", "-f", app.ComposeFile, "down", "--rmi", "all", "-v")
-		cmd.CombinedOutput() // Best-effort
+	if err := flowengine.WaitForCompletion(context.Background(), m.feStore, wf.ID); err != nil {
+		return err
 	}
 
-	// Get base app directory (parent of appconfig)
-	appConfigDir := filepath.Dir(app.ComposeFile)
-	appBaseDir := filepath.Dir(appConfigDir)
-
-	if deleteData {
-		// Remove entire app directory including data
-		os.RemoveAll(appBaseDir)
-	} else {
-		// Remove only appconfig, keep appdata
-		os.RemoveAll(appConfigDir)
-		// Clean up parent directory if empty (no appdata existed)
-		if entries, err := os.ReadDir(appBaseDir); err == nil && len(entries) == 0 {
-			os.Remove(appBaseDir)
-		}
-	}
-
-	// Remove from database (unified apps table — works for any source: casaos, registry, etc.)
-	m.db.db.Exec(`DELETE FROM apps WHERE name = ?`, appID)
-
-	// Update catalog
+	// Update in-memory state: remove from installed map and mark catalog entry as uninstalled.
+	storeAppID := app.StoreAppID
 	m.mu.Lock()
 	delete(m.installed, appID)
-	if app.StoreAppID != "" {
-		if storeApp, ok := m.catalog[app.StoreAppID]; ok {
+	if storeAppID != "" {
+		if storeApp, ok := m.catalog[storeAppID]; ok {
 			storeApp.Installed = false
 		}
 	}
 	m.mu.Unlock()
 
+	log.Info().Str("app", appID).Msg("app removed via FlowEngine workflow")
 	return nil
 }
 
@@ -2666,12 +2253,4 @@ func (m *AppStoreManager) RestoreConfigBackup(appID string, isCoreApp bool, back
 	}
 
 	return nil
-}
-
-// removePiholeDNS removes DNS entry from Pi-hole via PiholeManager
-func (m *AppStoreManager) removePiholeDNS(fqdn string) error {
-	if m.pihole == nil {
-		return fmt.Errorf("PiholeManager not configured")
-	}
-	return m.pihole.RemoveEntry(fqdn)
 }
