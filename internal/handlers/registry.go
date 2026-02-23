@@ -14,10 +14,13 @@ import (
 	"strings"
 	"time"
 
+	"cubeos-api/internal/flowengine"
+	"cubeos-api/internal/flowengine/workflows"
 	"cubeos-api/internal/managers"
 	"cubeos-api/internal/models"
 
 	"github.com/go-chi/chi/v5"
+	"gopkg.in/yaml.v3"
 )
 
 // RegistryHandler handles local Docker registry endpoints.
@@ -29,12 +32,16 @@ type RegistryHandler struct {
 	orchestrator *managers.Orchestrator        // Unified install pipeline (Batch 1)
 	db           *sql.DB                       // Settings persistence
 	syncManager  *managers.RegistrySyncManager // Batch 5: background upstream sync
+	appStoreMgr  *managers.AppStoreManager     // App store catalog access (offline registry)
+	networkMgr   *managers.NetworkManager      // Network mode check (offline detection)
+	flowEngine   *flowengine.WorkflowEngine    // FlowEngine for workflow submission
+	feStore      *flowengine.WorkflowStore     // FlowEngine store for progress tracking
 }
 
 // NewRegistryHandler creates a new RegistryHandler instance.
 // For Swarm containers, use the gateway IP (not localhost:5000)
 // because containers in overlay network cannot reach localhost on the host.
-func NewRegistryHandler(registryURL, registryPath string, portMgr *managers.PortManager, orchestrator *managers.Orchestrator, db *sql.DB, syncMgr *managers.RegistrySyncManager) *RegistryHandler {
+func NewRegistryHandler(registryURL, registryPath string, portMgr *managers.PortManager, orchestrator *managers.Orchestrator, db *sql.DB, syncMgr *managers.RegistrySyncManager, appStoreMgr *managers.AppStoreManager, networkMgr *managers.NetworkManager, engine *flowengine.WorkflowEngine, store *flowengine.WorkflowStore) *RegistryHandler {
 	if registryURL == "" {
 		// Check env var first, then fall back to gateway IP (works from inside Swarm overlay)
 		registryURL = os.Getenv("REGISTRY_URL")
@@ -52,6 +59,10 @@ func NewRegistryHandler(registryURL, registryPath string, portMgr *managers.Port
 		orchestrator: orchestrator,
 		db:           db,
 		syncManager:  syncMgr,
+		appStoreMgr:  appStoreMgr,
+		networkMgr:   networkMgr,
+		flowEngine:   engine,
+		feStore:      store,
 		httpClient: &http.Client{
 			Timeout: 10 * time.Second, // Reduced timeout for faster failure detection
 		},
@@ -77,6 +88,8 @@ func (h *RegistryHandler) Routes() chi.Router {
 	r.Put("/settings", h.UpdateRegistrySettings)
 	r.Post("/sync", h.TriggerSync)
 	r.Get("/sync/status", h.GetSyncStatus)
+	r.Get("/cached-apps", h.ListCachedApps)
+	r.Post("/cache-app", h.CacheApp)
 
 	return r
 }
@@ -395,6 +408,12 @@ func (h *RegistryHandler) DeleteImageTag(w http.ResponseWriter, r *http.Request)
 		return
 	}
 
+	// Clean up cached manifest if this image was cached for offline use
+	if h.db != nil {
+		h.db.Exec("DELETE FROM cached_manifests WHERE image LIKE ? OR registry_image LIKE ?",
+			"%"+name+":%", "%"+name+":%")
+	}
+
 	registryWriteJSON(w, http.StatusOK, map[string]interface{}{
 		"success": true,
 		"message": fmt.Sprintf("Deleted %s:%s", name, tag),
@@ -412,7 +431,9 @@ type RegistryImage struct {
 }
 
 // isProtectedRegistryImage returns true for ALL system images that cannot
-// be deleted from the local registry (Tier 1 — all 10 coreapp images).
+// be deleted from the local registry (9 coreapp images).
+// NOTE: kiwix removed — it's a user app, not a system service.
+// NOTE: registry image itself isn't stored IN the registry.
 func isProtectedRegistryImage(name string) bool {
 	protected := map[string]bool{
 		"cubeos-app/api":              true,
@@ -423,24 +444,18 @@ func isProtectedRegistryImage(name string) bool {
 		"jc21/nginx-proxy-manager":    true,
 		"amir20/dozzle":               true,
 		"sigoden/dufs":                true,
-		"kiwix/kiwix-serve":           true,
 		"tsl0922/ttyd":                true,
 	}
 	return protected[name]
 }
 
 // isCriticalSystemImage returns true for images that must NEVER appear as
-// installable apps (Tier 2 — 6 critical platform images).
+// installable apps in the App Store. All protected images are also critical
+// (hidden from App Store). The previous Tier 2/Tier 3 distinction was removed
+// because coreapps deployed via compose/swarm don't appear in the installed
+// apps DB, so the "Installed" badge never shows.
 func isCriticalSystemImage(name string) bool {
-	critical := map[string]bool{
-		"cubeos-app/api":              true,
-		"cubeos-app/hal":              true,
-		"cubeos-app/dashboard":        true,
-		"cubeos-app/cubeos-docsindex": true,
-		"pihole/pihole":               true,
-		"jc21/nginx-proxy-manager":    true,
-	}
-	return critical[name]
+	return isProtectedRegistryImage(name)
 }
 
 // ListImages godoc
@@ -1067,6 +1082,215 @@ func (h *RegistryHandler) setSetting(key, value string) {
 	}
 	_, _ = h.db.Exec(`INSERT INTO settings (key, value, updated_at) VALUES (?, ?, CURRENT_TIMESTAMP)
 		ON CONFLICT(key) DO UPDATE SET value = excluded.value, updated_at = CURRENT_TIMESTAMP`, key, value)
+}
+
+// =========================================================================
+// Offline Registry — Cached Apps (Batch 1)
+// =========================================================================
+
+// CachedApp represents an app cached in the registry for offline use.
+type CachedApp struct {
+	StoreID       string `json:"store_id"`
+	AppName       string `json:"app_name"`
+	Image         string `json:"image"`
+	RegistryImage string `json:"registry_image"`
+	Title         string `json:"title"`
+	Icon          string `json:"icon"`
+	Category      string `json:"category"`
+	Tagline       string `json:"tagline"`
+	CachedAt      string `json:"cached_at"`
+	Installed     bool   `json:"installed"`
+}
+
+// ListCachedApps godoc
+// @Summary List apps cached for offline use
+// @Description Returns all apps that have been cached in the local registry with their full manifests, enabling offline install. Cross-references the apps table to set the installed flag.
+// @Tags Registry
+// @Produce json
+// @Security BearerAuth
+// @Success 200 {object} map[string]interface{} "cached_apps: []CachedApp, count: int"
+// @Failure 500 {object} ErrorResponse "Database query failed"
+// @Router /registry/cached-apps [get]
+func (h *RegistryHandler) ListCachedApps(w http.ResponseWriter, r *http.Request) {
+	rows, err := h.db.QueryContext(r.Context(), `
+		SELECT cm.store_id, cm.app_name, cm.image, cm.registry_image,
+		       cm.title, cm.icon, cm.category, cm.tagline, cm.cached_at,
+		       CASE WHEN a.id IS NOT NULL THEN 1 ELSE 0 END AS installed
+		FROM cached_manifests cm
+		LEFT JOIN apps a ON a.name = cm.app_name
+		ORDER BY cm.cached_at DESC
+	`)
+	if err != nil {
+		registryWriteError(w, http.StatusInternalServerError, "Failed to query cached apps: "+err.Error())
+		return
+	}
+	defer rows.Close()
+
+	apps := make([]CachedApp, 0)
+	for rows.Next() {
+		var app CachedApp
+		var installed int
+		if err := rows.Scan(&app.StoreID, &app.AppName, &app.Image, &app.RegistryImage,
+			&app.Title, &app.Icon, &app.Category, &app.Tagline, &app.CachedAt, &installed); err != nil {
+			continue
+		}
+		app.Installed = installed == 1
+		apps = append(apps, app)
+	}
+
+	registryWriteJSON(w, http.StatusOK, map[string]interface{}{
+		"cached_apps": apps,
+		"count":       len(apps),
+	})
+}
+
+// CacheAppRequest is the request body for caching a store app.
+type CacheAppRequest struct {
+	StoreID string `json:"store_id"`
+	AppName string `json:"app_name"`
+}
+
+// CacheApp godoc
+// @Summary Cache a store app for offline use
+// @Description Caches a CasaOS app store app into the local Docker registry, storing the full manifest alongside the image. This enables offline installation with proper metadata. Returns a workflow ID for SSE progress tracking. Requires internet connectivity to pull images from upstream.
+// @Tags Registry
+// @Accept json
+// @Produce json
+// @Security BearerAuth
+// @Param request body CacheAppRequest true "App to cache (store_id + app_name)"
+// @Success 202 {object} map[string]interface{} "workflow_id: string, message: string"
+// @Failure 400 {object} ErrorResponse "Missing store_id or app_name"
+// @Failure 404 {object} ErrorResponse "App not found in store catalog"
+// @Failure 503 {object} ErrorResponse "Cannot cache while offline or FlowEngine unavailable"
+// @Router /registry/cache-app [post]
+func (h *RegistryHandler) CacheApp(w http.ResponseWriter, r *http.Request) {
+	// Check FlowEngine is available
+	if h.flowEngine == nil {
+		registryWriteError(w, http.StatusServiceUnavailable, "FlowEngine not available")
+		return
+	}
+
+	// Check device is online (images must be pulled from upstream)
+	if h.networkMgr != nil && h.networkMgr.GetCurrentMode().IsOffline() {
+		registryWriteError(w, http.StatusServiceUnavailable,
+			"Cannot cache apps while offline — images must be pulled from upstream")
+		return
+	}
+
+	var req CacheAppRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		registryWriteError(w, http.StatusBadRequest, "Invalid request body")
+		return
+	}
+	if req.StoreID == "" || req.AppName == "" {
+		registryWriteError(w, http.StatusBadRequest, "store_id and app_name are required")
+		return
+	}
+
+	// Check app store manager is available
+	if h.appStoreMgr == nil {
+		registryWriteError(w, http.StatusServiceUnavailable, "App store manager not available")
+		return
+	}
+
+	// Fetch app from store catalog
+	storeApp := h.appStoreMgr.GetApp(req.StoreID, req.AppName)
+	if storeApp == nil {
+		registryWriteError(w, http.StatusNotFound,
+			fmt.Sprintf("App %s not found in store %s", req.AppName, req.StoreID))
+		return
+	}
+
+	// Extract image reference from manifest YAML
+	imageRef, err := h.extractImageFromManifest(storeApp.ManifestPath)
+	if err != nil {
+		registryWriteError(w, http.StatusInternalServerError,
+			fmt.Sprintf("Failed to extract image from manifest: %v", err))
+		return
+	}
+
+	// Resolve title and tagline from localized maps
+	title := storeApp.Name
+	if t, ok := storeApp.Title["en_us"]; ok && t != "" {
+		title = t
+	}
+	tagline := ""
+	if t, ok := storeApp.Tagline["en_us"]; ok {
+		tagline = t
+	}
+
+	// Build workflow input
+	inputData, err := json.Marshal(map[string]interface{}{
+		"store_id":      req.StoreID,
+		"app_name":      req.AppName,
+		"image":         imageRef,
+		"source_image":  imageRef,
+		"title":         title,
+		"icon":          storeApp.Icon,
+		"category":      storeApp.Category,
+		"tagline":       tagline,
+		"registry_host": strings.TrimPrefix(strings.TrimPrefix(h.registryURL, "http://"), "https://"),
+	})
+	if err != nil {
+		registryWriteError(w, http.StatusInternalServerError, "Failed to marshal workflow input")
+		return
+	}
+
+	// Submit workflow
+	run, err := h.flowEngine.Submit(r.Context(), flowengine.SubmitParams{
+		WorkflowType: workflows.RegistryCacheType,
+		ExternalID:   req.AppName,
+		Input:        json.RawMessage(inputData),
+	})
+	if err != nil {
+		if strings.Contains(err.Error(), "duplicate") || strings.Contains(err.Error(), "active workflow") {
+			registryWriteError(w, http.StatusConflict,
+				fmt.Sprintf("A cache workflow for %s is already in progress", req.AppName))
+			return
+		}
+		registryWriteError(w, http.StatusInternalServerError,
+			fmt.Sprintf("Failed to submit cache workflow: %v", err))
+		return
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(http.StatusAccepted)
+	json.NewEncoder(w).Encode(map[string]interface{}{
+		"workflow_id": run.ID,
+		"message":     fmt.Sprintf("Caching %s — workflow %s submitted", req.AppName, run.ID),
+	})
+}
+
+// extractImageFromManifest parses a CasaOS docker-compose manifest YAML
+// and returns the image reference of the first (or main) service.
+func (h *RegistryHandler) extractImageFromManifest(manifestPath string) (string, error) {
+	if manifestPath == "" {
+		return "", fmt.Errorf("manifest path is empty")
+	}
+
+	data, err := os.ReadFile(manifestPath)
+	if err != nil {
+		return "", fmt.Errorf("failed to read manifest: %w", err)
+	}
+
+	// Parse as a docker-compose file to extract the image
+	var compose struct {
+		Services map[string]struct {
+			Image string `yaml:"image"`
+		} `yaml:"services"`
+	}
+	if err := yaml.Unmarshal(data, &compose); err != nil {
+		return "", fmt.Errorf("failed to parse manifest YAML: %w", err)
+	}
+
+	// Return the first service's image
+	for _, svc := range compose.Services {
+		if svc.Image != "" {
+			return svc.Image, nil
+		}
+	}
+
+	return "", fmt.Errorf("no image found in manifest")
 }
 
 // =========================================================================

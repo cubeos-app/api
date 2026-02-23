@@ -708,6 +708,40 @@ var migrations = []Migration{
 			return nil
 		},
 	},
+
+	// Version 17: Cached manifests for offline-first registry
+	{
+		Version:     17,
+		Description: "Add cached_manifests table for offline app registry",
+		Up: func(db *sql.DB) error {
+			stmts := []string{
+				`CREATE TABLE IF NOT EXISTS cached_manifests (
+					id              INTEGER PRIMARY KEY AUTOINCREMENT,
+					store_id        TEXT NOT NULL,
+					app_name        TEXT NOT NULL,
+					image           TEXT NOT NULL,
+					registry_image  TEXT NOT NULL,
+					manifest        TEXT NOT NULL,
+					title           TEXT NOT NULL DEFAULT '',
+					icon            TEXT NOT NULL DEFAULT '',
+					category        TEXT NOT NULL DEFAULT '',
+					tagline         TEXT NOT NULL DEFAULT '',
+					cached_at       DATETIME DEFAULT CURRENT_TIMESTAMP,
+					UNIQUE(store_id, app_name)
+				)`,
+				`CREATE INDEX IF NOT EXISTS idx_cached_manifests_app ON cached_manifests(app_name)`,
+			}
+
+			for _, stmt := range stmts {
+				if _, err := db.Exec(stmt); err != nil {
+					return fmt.Errorf("cached_manifests migration failed: %w\nStatement: %s", err, stmt)
+				}
+			}
+
+			log.Info().Msg("Migration 17: Created cached_manifests table for offline app registry")
+			return nil
+		},
+	},
 }
 
 // isDuplicateColumnError checks if an error is a "duplicate column" error
@@ -786,6 +820,7 @@ func MigrateAndSeed(db *sql.DB) error {
 // WARNING: This is destructive and should only be used for testing/reset.
 func DropAllTables(db *sql.DB) error {
 	tables := []string{
+		"cached_manifests",
 		"job_queue",
 		"workflow_events",
 		"workflow_steps",

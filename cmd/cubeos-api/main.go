@@ -406,6 +406,7 @@ func main() {
 	feactivities.RegisterAppRemoveActivities(feRegistry, db.DB)
 	feactivities.RegisterNetworkActivities(feRegistry, networkMgr, halClient)
 	feactivities.RegisterSetupActivities(feRegistry, setupMgr)
+	feactivities.RegisterRegistryActivities(feRegistry, db.DB)
 
 	flowEngine := flowengine.NewWorkflowEngine(feStore, feRegistry, flowengine.DefaultEngineConfig())
 
@@ -427,6 +428,9 @@ func main() {
 	}
 	if err := flowEngine.RegisterWorkflow(feworkflows.NewFirstBootSetupWorkflow()); err != nil {
 		log.Fatal().Err(err).Msg("FlowEngine: failed to register first_boot_setup workflow")
+	}
+	if err := flowEngine.RegisterWorkflow(feworkflows.NewRegistryCacheWorkflow()); err != nil {
+		log.Fatal().Err(err).Msg("FlowEngine: failed to register registry_cache workflow")
 	}
 
 	if err := flowEngine.Start(engineCtx); err != nil {
@@ -501,7 +505,7 @@ func main() {
 	syncMgr.Start()
 	defer syncMgr.Stop()
 
-	registryHandler := handlers.NewRegistryHandler(registryURL, registryPath, portMgr, orchestrator, db.DB, syncMgr)
+	registryHandler := handlers.NewRegistryHandler(registryURL, registryPath, portMgr, orchestrator, db.DB, syncMgr, appStoreMgr, networkMgr, flowEngine, feStore)
 	log.Info().Msg("PortsHandler, FQDNsHandler, and RegistryHandler initialized")
 
 	// Create CasaOS Import handler (Sprint 4D)
