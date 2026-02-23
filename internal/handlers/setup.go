@@ -1,10 +1,14 @@
 package handlers
 
 import (
+	"context"
 	"encoding/json"
 	"net/http"
 	"strings"
+	"time"
 
+	"cubeos-api/internal/flowengine"
+	feworkflows "cubeos-api/internal/flowengine/workflows"
 	"cubeos-api/internal/managers"
 	"cubeos-api/internal/models"
 
@@ -14,11 +18,17 @@ import (
 // SetupHandler handles setup wizard endpoints
 type SetupHandler struct {
 	manager *managers.SetupManager
+	engine  *flowengine.WorkflowEngine
+	store   *flowengine.WorkflowStore
 }
 
 // NewSetupHandler creates a new setup handler
-func NewSetupHandler(manager *managers.SetupManager) *SetupHandler {
-	return &SetupHandler{manager: manager}
+func NewSetupHandler(manager *managers.SetupManager, engine *flowengine.WorkflowEngine, store *flowengine.WorkflowStore) *SetupHandler {
+	return &SetupHandler{
+		manager: manager,
+		engine:  engine,
+		store:   store,
+	}
 }
 
 // Routes returns the router for setup endpoints
@@ -181,7 +191,7 @@ func (h *SetupHandler) ValidateConfig(w http.ResponseWriter, r *http.Request) {
 
 // ApplyConfig godoc
 // @Summary Apply setup configuration
-// @Description Applies the complete setup configuration, configuring all system components. This is the main setup completion endpoint.
+// @Description Applies the complete setup configuration via FlowEngine workflow, configuring all system components with saga rollback protection. This is the main setup completion endpoint.
 // @Tags Setup
 // @Accept json
 // @Produce json
@@ -199,13 +209,39 @@ func (h *SetupHandler) ApplyConfig(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if err := h.manager.ApplySetupConfig(&cfg); err != nil {
+	// Submit to FlowEngine
+	input, err := json.Marshal(cfg)
+	if err != nil {
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusInternalServerError)
+		json.NewEncoder(w).Encode(map[string]string{"error": "failed to marshal config"})
+		return
+	}
+
+	wf, err := h.engine.Submit(r.Context(), flowengine.SubmitParams{
+		WorkflowType: feworkflows.FirstBootSetupType,
+		ExternalID:   "first-boot",
+		Input:        input,
+	})
+	if err != nil {
 		w.Header().Set("Content-Type", "application/json")
 		w.WriteHeader(http.StatusInternalServerError)
 		json.NewEncoder(w).Encode(map[string]string{"error": err.Error()})
 		return
 	}
 
+	// Synchronous wait (120s — SSL cert gen + hostapd restart on Pi)
+	waitCtx, cancel := context.WithTimeout(r.Context(), 120*time.Second)
+	defer cancel()
+
+	if err := flowengine.WaitForCompletion(waitCtx, h.store, wf.ID); err != nil {
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusInternalServerError)
+		json.NewEncoder(w).Encode(map[string]string{"error": "setup failed: " + err.Error()})
+		return
+	}
+
+	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(map[string]interface{}{
 		"success": true,
 		"message": "Setup completed successfully",
@@ -239,22 +275,55 @@ func (h *SetupHandler) ResetSetup(w http.ResponseWriter, r *http.Request) {
 
 // SkipSetup godoc
 // @Summary Skip setup wizard
-// @Description Skips the setup wizard and marks setup as complete using default configuration values
+// @Description Skips the setup wizard by submitting the first_boot_setup workflow with default configuration values
 // @Tags Setup
 // @Produce json
 // @Success 200 {object} map[string]interface{} "success: true, message, skipped: true"
 // @Failure 500 {object} ErrorResponse "Failed to skip setup"
 // @Router /setup/skip [post]
 func (h *SetupHandler) SkipSetup(w http.ResponseWriter, r *http.Request) {
-	// Apply default config to mark setup complete
+	// Generate default config and submit as workflow
 	defaults := h.manager.GenerateDefaultConfig()
-	if err := h.manager.MarkSetupComplete(defaults); err != nil {
+	// Default config needs a password for validation — use "cubeos" (the seeded default)
+	if defaults.AdminPassword == "" {
+		defaults.AdminPassword = "cubeos00"
+	}
+	if defaults.AdminUsername == "" {
+		defaults.AdminUsername = "admin"
+	}
+
+	input, err := json.Marshal(defaults)
+	if err != nil {
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusInternalServerError)
+		json.NewEncoder(w).Encode(map[string]string{"error": "failed to marshal default config"})
+		return
+	}
+
+	wf, err := h.engine.Submit(r.Context(), flowengine.SubmitParams{
+		WorkflowType: feworkflows.FirstBootSetupType,
+		ExternalID:   "first-boot-skip",
+		Input:        input,
+	})
+	if err != nil {
 		w.Header().Set("Content-Type", "application/json")
 		w.WriteHeader(http.StatusInternalServerError)
 		json.NewEncoder(w).Encode(map[string]string{"error": err.Error()})
 		return
 	}
 
+	// Wait for completion (skip should be fast — mostly DB writes)
+	waitCtx, cancel := context.WithTimeout(r.Context(), 60*time.Second)
+	defer cancel()
+
+	if err := flowengine.WaitForCompletion(waitCtx, h.store, wf.ID); err != nil {
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusInternalServerError)
+		json.NewEncoder(w).Encode(map[string]string{"error": "skip setup failed: " + err.Error()})
+		return
+	}
+
+	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(map[string]interface{}{
 		"success": true,
 		"message": "Setup skipped, using default configuration",

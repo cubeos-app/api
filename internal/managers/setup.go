@@ -16,6 +16,7 @@ import (
 	"time"
 
 	"cubeos-api/internal/config"
+	"cubeos-api/internal/flowengine"
 	"cubeos-api/internal/hal"
 	"cubeos-api/internal/models"
 
@@ -33,6 +34,15 @@ type SetupManager struct {
 	npmMgr      *NPMManager
 	configPath  string
 	setupDone   bool
+	engine      *flowengine.WorkflowEngine
+	feStore     *flowengine.WorkflowStore
+}
+
+// SetFlowEngine wires the FlowEngine into the SetupManager so ApplyConfig
+// can submit workflows instead of running inline.
+func (m *SetupManager) SetFlowEngine(e *flowengine.WorkflowEngine, s *flowengine.WorkflowStore) {
+	m.engine = e
+	m.feStore = s
 }
 
 // NewSetupManager creates a new setup manager
@@ -354,7 +364,8 @@ func (m *SetupManager) ValidateSetupConfig(cfg *models.SetupConfig) *models.Setu
 	return result
 }
 
-// ApplySetupConfig applies the complete setup configuration
+// ApplySetupConfig applies the complete setup configuration.
+// DEPRECATED: replaced by first_boot_setup workflow. Kept as fallback reference.
 func (m *SetupManager) ApplySetupConfig(cfg *models.SetupConfig) error {
 	// Validate first
 	validation := m.ValidateSetupConfig(cfg)
@@ -370,70 +381,46 @@ func (m *SetupManager) ApplySetupConfig(cfg *models.SetupConfig) error {
 	m.db.Exec(`UPDATE setup_status SET started_at = ? WHERE id = 1`, time.Now().Format(time.RFC3339))
 
 	// Step 1: Create admin user
-	if err := m.createAdminUser(cfg.AdminUsername, cfg.AdminPassword, cfg.AdminEmail); err != nil {
+	if err := m.CreateAdminUser(cfg.AdminUsername, cfg.AdminPassword, cfg.AdminEmail); err != nil {
 		return fmt.Errorf("failed to create admin user: %w", err)
 	}
-	// Sync password to File Browser (non-fatal — File Browser default is admin/admin)
-	// Uses retry with backoff since FB may still be starting during first boot.
-	if m.filebrowser != nil {
-		go m.filebrowser.SyncAdminPasswordWithRetry("admin", cfg.AdminPassword)
-	}
-	// Sync password to Pi-hole (non-fatal — default is "cubeos")
-	if m.piholePw != nil {
-		go m.piholePw.SyncAdminPasswordWithRetry("cubeos", cfg.AdminPassword)
-	}
-	// Sync password to NPM human admin (non-fatal — default is random from first-boot)
-	if m.npmMgr != nil {
-		go m.npmMgr.SyncAdminPasswordWithRetry("", cfg.AdminPassword)
-	}
+	m.SyncPasswordsAsync(cfg.AdminUsername, cfg.AdminPassword)
 	m.updateStep(1)
 
 	// Step 2: Set hostname
-	if err := m.setHostname(cfg.Hostname); err != nil {
+	if err := m.SetHostname(cfg.Hostname); err != nil {
 		return fmt.Errorf("failed to set hostname: %w", err)
 	}
 	m.updateStep(2)
 
 	// Step 3: Configure WiFi AP
-	// Save country code BEFORE configureWiFiAP — that function reads it from config
-	if cfg.CountryCode != "" {
-		m.SaveConfig("country_code", cfg.CountryCode)
-	} else {
-		m.SaveConfig("country_code", "NL")
-		cfg.CountryCode = "NL"
-	}
-	// Also persist to defaults.env so Docker containers and boot scripts can read it
-	defaultsPath := filepath.Join(m.configPath, "defaults.env")
-	appendOrUpdateEnvFile(defaultsPath, map[string]string{
-		"CUBEOS_COUNTRY_CODE": cfg.CountryCode,
-	})
-
-	if err := m.configureWiFiAP(cfg.WiFiSSID, cfg.WiFiPassword, cfg.WiFiChannel); err != nil {
+	m.SaveCountryCode(cfg.CountryCode)
+	if err := m.ConfigureWiFiAP(cfg.WiFiSSID, cfg.WiFiPassword, cfg.WiFiChannel); err != nil {
 		return fmt.Errorf("failed to configure WiFi: %w", err)
 	}
 	m.updateStep(3)
 
 	// Step 4: Set timezone
-	if err := m.setTimezone(cfg.Timezone); err != nil {
+	if err := m.SetTimezone(cfg.Timezone); err != nil {
 		return fmt.Errorf("failed to set timezone: %w", err)
 	}
 	m.updateStep(4)
 
 	// Step 5: Save theme preferences
-	if err := m.saveThemePreferences(cfg.Theme, cfg.AccentColor); err != nil {
+	if err := m.SaveThemePreferences(cfg.Theme, cfg.AccentColor); err != nil {
 		return fmt.Errorf("failed to save theme: %w", err)
 	}
 	m.updateStep(5)
 
 	// Step 6: Set deployment purpose
-	if err := m.setDeploymentPurpose(cfg.DeploymentPurpose, cfg.BrandingMode); err != nil {
+	if err := m.SetDeploymentPurpose(cfg.DeploymentPurpose, cfg.BrandingMode); err != nil {
 		return fmt.Errorf("failed to set deployment purpose: %w", err)
 	}
 	m.updateStep(6)
 
 	// Step 7-8: Configure SSL
 	if cfg.SSLMode != "" && cfg.SSLMode != "none" {
-		if err := m.configureSSL(cfg.SSLMode, cfg.BaseDomain, cfg.DNSProvider, cfg.DNSAPIToken, cfg.DNSAPISecret); err != nil {
+		if err := m.ConfigureSSL(cfg.SSLMode, cfg.BaseDomain, cfg.DNSProvider, cfg.DNSAPIToken, cfg.DNSAPISecret); err != nil {
 			return fmt.Errorf("failed to configure SSL: %w", err)
 		}
 	}
@@ -441,7 +428,7 @@ func (m *SetupManager) ApplySetupConfig(cfg *models.SetupConfig) error {
 
 	// Step 9: Configure NPM
 	if cfg.NPMAdminEmail != "" && cfg.NPMAdminPassword != "" {
-		if err := m.configureNPM(cfg.NPMAdminEmail, cfg.NPMAdminPassword); err != nil {
+		if err := m.ConfigureNPM(cfg.NPMAdminEmail, cfg.NPMAdminPassword); err != nil {
 			// Log but don't fail - NPM might not be running yet
 			log.Warn().Err(err).Msg("failed to configure NPM")
 		}
@@ -483,8 +470,8 @@ func (m *SetupManager) GetConfig(key string) string {
 	return value
 }
 
-// createAdminUser creates the admin user account
-func (m *SetupManager) createAdminUser(username, password, email string) error {
+// CreateAdminUser creates the admin user account
+func (m *SetupManager) CreateAdminUser(username, password, email string) error {
 	// Hash password
 	hash, err := bcrypt.GenerateFromPassword([]byte(password), config.BcryptCost)
 	if err != nil {
@@ -510,9 +497,9 @@ func (m *SetupManager) createAdminUser(username, password, email string) error {
 	return nil
 }
 
-// setHostname sets the system hostname on the HOST filesystem.
+// SetHostname sets the system hostname on the HOST filesystem.
 // The API container has / mounted at /host-root, so we write there.
-func (m *SetupManager) setHostname(hostname string) error {
+func (m *SetupManager) SetHostname(hostname string) error {
 	hostRoot := os.Getenv("CUBEOS_HOST_ROOT")
 	if hostRoot == "" {
 		hostRoot = "/host-root"
@@ -554,9 +541,9 @@ func (m *SetupManager) setHostname(hostname string) error {
 	return nil
 }
 
-// configureWiFiAP configures the WiFi access point.
+// ConfigureWiFiAP configures the WiFi access point.
 // Writes hostapd.conf and restarts hostapd via HAL.
-func (m *SetupManager) configureWiFiAP(ssid, password string, channel int) error {
+func (m *SetupManager) ConfigureWiFiAP(ssid, password string, channel int) error {
 	if channel == 0 {
 		channel = 6
 	}
@@ -608,8 +595,8 @@ rsn_pairwise=CCMP
 	return nil
 }
 
-// setTimezone sets the system timezone
-func (m *SetupManager) setTimezone(timezone string) error {
+// SetTimezone sets the system timezone
+func (m *SetupManager) SetTimezone(timezone string) error {
 	if timezone == "" {
 		timezone = "UTC"
 	}
@@ -661,8 +648,8 @@ func (m *SetupManager) setTimezone(timezone string) error {
 	return nil
 }
 
-// saveThemePreferences saves UI theme preferences
-func (m *SetupManager) saveThemePreferences(theme, accentColor string) error {
+// SaveThemePreferences saves UI theme preferences
+func (m *SetupManager) SaveThemePreferences(theme, accentColor string) error {
 	if theme == "" {
 		theme = "dark"
 	}
@@ -685,8 +672,8 @@ func (m *SetupManager) saveThemePreferences(theme, accentColor string) error {
 	return nil
 }
 
-// setDeploymentPurpose sets the deployment purpose and branding
-func (m *SetupManager) setDeploymentPurpose(purpose, branding string) error {
+// SetDeploymentPurpose sets the deployment purpose and branding
+func (m *SetupManager) SetDeploymentPurpose(purpose, branding string) error {
 	if purpose == "" {
 		purpose = "generic"
 	}
@@ -709,8 +696,8 @@ func (m *SetupManager) setDeploymentPurpose(purpose, branding string) error {
 	return nil
 }
 
-// configureSSL sets up SSL/TLS certificates
-func (m *SetupManager) configureSSL(mode, domain, dnsProvider, apiToken, apiSecret string) error {
+// ConfigureSSL sets up SSL/TLS certificates
+func (m *SetupManager) ConfigureSSL(mode, domain, dnsProvider, apiToken, apiSecret string) error {
 	m.SaveConfig("ssl_mode", mode)
 	m.SaveConfig("base_domain", domain)
 
@@ -766,8 +753,8 @@ func (m *SetupManager) configureSSL(mode, domain, dnsProvider, apiToken, apiSecr
 	return nil
 }
 
-// configureNPM configures Nginx Proxy Manager credentials
-func (m *SetupManager) configureNPM(email, password string) error {
+// ConfigureNPM configures Nginx Proxy Manager credentials
+func (m *SetupManager) ConfigureNPM(email, password string) error {
 	// Write NPM env file (for docker compose variable substitution)
 	npmEnvPath := "/cubeos/coreapps/npm/.env"
 	os.MkdirAll(filepath.Dir(npmEnvPath), 0755)
@@ -870,6 +857,68 @@ func (m *SetupManager) MarkSetupComplete(cfg *models.SetupConfig) error {
 
 	m.setupDone = true
 	return nil
+}
+
+// SaveCountryCode persists the country code to system_config and defaults.env.
+func (m *SetupManager) SaveCountryCode(code string) {
+	if code == "" {
+		code = "NL"
+	}
+	m.SaveConfig("country_code", code)
+
+	// Also persist to defaults.env so Docker containers and boot scripts can read it
+	defaultsPath := filepath.Join(m.configPath, "defaults.env")
+	appendOrUpdateEnvFile(defaultsPath, map[string]string{
+		"CUBEOS_COUNTRY_CODE": code,
+	})
+}
+
+// SyncPasswordsAsync fires background goroutines to sync the admin password
+// to FileBrowser, Pi-hole, and NPM. Non-fatal — always returns immediately.
+func (m *SetupManager) SyncPasswordsAsync(username, password string) {
+	if m.filebrowser != nil {
+		go m.filebrowser.SyncAdminPasswordWithRetry("admin", password)
+	}
+	if m.piholePw != nil {
+		go m.piholePw.SyncAdminPasswordWithRetry("cubeos", password)
+	}
+	if m.npmMgr != nil {
+		go m.npmMgr.SyncAdminPasswordWithRetry("", password)
+	}
+}
+
+// ReadHostapdConfig reads the current hostapd.conf for snapshot/restore.
+func (m *SetupManager) ReadHostapdConfig() (string, error) {
+	hostapdPath := "/etc/hostapd/hostapd.conf"
+	data, err := os.ReadFile(hostapdPath)
+	if err != nil {
+		// Try config dir fallback
+		fallback := filepath.Join(m.configPath, "hostapd.conf")
+		data, err = os.ReadFile(fallback)
+		if err != nil {
+			return "", fmt.Errorf("hostapd.conf not found at %s or %s: %w", hostapdPath, fallback, err)
+		}
+	}
+	return string(data), nil
+}
+
+// WriteHostapdConfig writes the given content to hostapd.conf (for compensation restore).
+func (m *SetupManager) WriteHostapdConfig(content string) error {
+	hostapdPath := "/etc/hostapd/hostapd.conf"
+	if err := os.WriteFile(hostapdPath, []byte(content), 0600); err != nil {
+		// Try config dir fallback
+		fallback := filepath.Join(m.configPath, "hostapd.conf")
+		return os.WriteFile(fallback, []byte(content), 0600)
+	}
+	return nil
+}
+
+// RestartHostapd restarts the hostapd service via HAL.
+func (m *SetupManager) RestartHostapd() error {
+	if m.hal == nil {
+		return fmt.Errorf("HAL client not available")
+	}
+	return m.hal.RestartService(context.Background(), "hostapd")
 }
 
 // appendOrUpdateEnvFile updates or appends key=value pairs in an env file.

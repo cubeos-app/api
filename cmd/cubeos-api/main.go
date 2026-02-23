@@ -367,6 +367,23 @@ func main() {
 		pruneCancel()
 	}
 
+	// Create Setup manager (first boot wizard) — must be created before FlowEngine
+	// so setup activities can be registered.
+	fbClient := managers.NewFileBrowserClient(fmt.Sprintf("http://%s:6013", cfg.GatewayIP))
+	log.Info().Str("url", fmt.Sprintf("http://%s:6013", cfg.GatewayIP)).Msg("FileBrowser client initialized")
+
+	// Create Pi-hole password sync client
+	piholePwClient := managers.NewPiholePasswordClient()
+
+	// Startup sync: ensure service passwords match CubeOS admin password.
+	// Catches first-boot sync failures (e.g. service wasn't ready when setup ran).
+	// Runs in background — non-blocking, non-fatal.
+	go fbClient.EnsurePasswordSynced(db.DB)
+	go piholePwClient.EnsurePasswordSynced(db.DB)
+	go npmMgr.EnsureAdminPasswordSynced(db.DB)
+
+	setupMgr := managers.NewSetupManager(cfg, db.DB, halClient, fbClient, piholePwClient, npmMgr)
+
 	// ==========================================================================
 	// FlowEngine (Batch 2.5b): mandatory engine — log.Fatal if it fails to start
 	// ==========================================================================
@@ -388,6 +405,7 @@ func main() {
 	}
 	feactivities.RegisterAppRemoveActivities(feRegistry, db.DB)
 	feactivities.RegisterNetworkActivities(feRegistry, networkMgr, halClient)
+	feactivities.RegisterSetupActivities(feRegistry, setupMgr)
 
 	flowEngine := flowengine.NewWorkflowEngine(feStore, feRegistry, flowengine.DefaultEngineConfig())
 
@@ -407,6 +425,9 @@ func main() {
 	if err := flowEngine.RegisterWorkflow(feworkflows.NewNetworkModeSwitchWorkflow()); err != nil {
 		log.Fatal().Err(err).Msg("FlowEngine: failed to register network_mode_switch workflow")
 	}
+	if err := flowEngine.RegisterWorkflow(feworkflows.NewFirstBootSetupWorkflow()); err != nil {
+		log.Fatal().Err(err).Msg("FlowEngine: failed to register first_boot_setup workflow")
+	}
 
 	if err := flowEngine.Start(engineCtx); err != nil {
 		log.Fatal().Err(err).Msg("FlowEngine: failed to start — cannot continue")
@@ -417,6 +438,7 @@ func main() {
 	orchestrator.SetFlowEngine(flowEngine, feStore)
 	appStoreMgr.SetFlowEngine(flowEngine, feStore)
 	networkMgr.SetFlowEngine(flowEngine, feStore)
+	setupMgr.SetFlowEngine(flowEngine, feStore)
 
 	// Create VPN manager (Sprint 3 - with HAL client)
 	vpnMgr := managers.NewVPNManager(cfg, halClient)
@@ -427,27 +449,11 @@ func main() {
 	log.Info().Msg("MountsManager initialized (HAL-enabled)")
 	mountsMgr.SetDB(db.DB) // FIX: Wire database connection
 
-	// Create Setup manager (first boot wizard)
-	fbClient := managers.NewFileBrowserClient(fmt.Sprintf("http://%s:6013", cfg.GatewayIP))
-	log.Info().Str("url", fmt.Sprintf("http://%s:6013", cfg.GatewayIP)).Msg("FileBrowser client initialized")
-
-	// Create Pi-hole password sync client
-	piholePwClient := managers.NewPiholePasswordClient()
-
-	// Startup sync: ensure service passwords match CubeOS admin password.
-	// Catches first-boot sync failures (e.g. service wasn't ready when setup ran).
-	// Runs in background — non-blocking, non-fatal.
-	go fbClient.EnsurePasswordSynced(db.DB)
-	go piholePwClient.EnsurePasswordSynced(db.DB)
-	go npmMgr.EnsureAdminPasswordSynced(db.DB)
-
-	setupMgr := managers.NewSetupManager(cfg, db.DB, halClient, fbClient, piholePwClient, npmMgr)
-
 	// Create handlers
 	h := handlers.NewHandlers(cfg, db, docker, halClient, systemMgr, networkMgr, fbClient, piholePwClient, npmMgr)
 	ext := handlers.NewExtendedHandlers(logMgr, firewallMgr, backupMgr, processMgr, wizardMgr, monitoringMgr, prefMgr, powerMgr, storageMgr, halClient)
 	appStoreHandler := handlers.NewAppStoreHandler(appStoreMgr, npmMgr)
-	setupHandler := handlers.NewSetupHandler(setupMgr)
+	setupHandler := handlers.NewSetupHandler(setupMgr, flowEngine, feStore)
 
 	// Create Chat handler (AI Assistant)
 	chatHandler := handlers.NewChatHandler(cfg)
