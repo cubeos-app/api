@@ -309,7 +309,8 @@ func SetupRequiredMiddleware(setupMgr *managers.SetupManager) func(http.Handler)
 			if strings.HasPrefix(path, "/api/v1/setup") ||
 				strings.HasPrefix(path, "/api/v1/swagger") ||
 				path == "/health" ||
-				path == "/api/v1/auth/login" {
+				path == "/api/v1/auth/login" ||
+				path == "/api/v1/metrics" {
 				next.ServeHTTP(w, r)
 				return
 			}

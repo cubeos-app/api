@@ -794,6 +794,28 @@ func intPtr(i int) *int64 {
 	return &v
 }
 
+// GetServiceCounts returns the total number of Swarm services and how many are
+// healthy (running replicas == desired replicas). Used by the metrics endpoint.
+func (s *SwarmManager) GetServiceCounts(ctx context.Context) (total, healthy int, err error) {
+	ctx, cancel := context.WithTimeout(ctx, 10*time.Second)
+	defer cancel()
+
+	services, err := s.client.ServiceList(ctx, types.ServiceListOptions{})
+	if err != nil {
+		return 0, 0, fmt.Errorf("list services: %w", err)
+	}
+
+	total = len(services)
+	for _, svc := range services {
+		replicas := s.getReplicaStatusWithContext(ctx, svc)
+		running, desired := parseReplicas(replicas)
+		if running > 0 && running == desired {
+			healthy++
+		}
+	}
+	return total, healthy, nil
+}
+
 // ImageExists checks whether a Docker image is present in the local daemon cache.
 // Uses `docker image inspect` — exit 0 = present, non-zero = absent.
 func (s *SwarmManager) ImageExists(ctx context.Context, imageRef string) (bool, error) {

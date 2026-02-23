@@ -90,6 +90,9 @@
 //	@tag.name					Workflows
 //	@tag.description			FlowEngine workflow run visibility (install, remove, progress)
 //
+//	@tag.name					Metrics
+//	@tag.description			Prometheus metrics endpoint (unauthenticated)
+//
 //	@tag.name					Setup
 //	@tag.description			First boot setup wizard
 //
@@ -540,12 +543,30 @@ func main() {
 		}
 	}()
 
+	// Create metrics collector (must be created before the router so the middleware can be registered)
+	metricsCollector := middleware.NewMetricsCollector()
+
+	// Create metrics handler (wired to collector, circuit breakers, workflow store, Swarm)
+	metricsHandler := handlers.NewMetricsHandler(
+		metricsCollector,
+		[]handlers.CircuitBreakerAccessor{
+			{Name: "hal", StateFunc: halClient.CircuitState},
+			{Name: "npm", StateFunc: npmMgr.CircuitState},
+			{Name: "pihole", StateFunc: piholeMgr.CircuitState},
+			{Name: "docker", StateFunc: func() circuitbreaker.State { return dockerCB.State() }},
+		},
+		feStore,
+		swarmMgr,
+	)
+	log.Info().Msg("MetricsHandler initialized")
+
 	// Create router
 	r := chi.NewRouter()
 
 	// Middleware
 	r.Use(chimw.Logger)
 	r.Use(chimw.Recoverer)
+	r.Use(metricsCollector.Middleware())
 	r.Use(chimw.RealIP)
 	r.Use(chimw.RequestID)
 
@@ -638,6 +659,9 @@ func main() {
 			httpSwagger.DocExpansion("none"),
 			httpSwagger.DomID("swagger-ui"),
 		))
+
+		// Prometheus metrics (unauthenticated — Prometheus scrape must work without a token)
+		r.Get("/metrics", metricsHandler.GetMetrics)
 
 		// Public auth routes
 		r.Post("/auth/login", h.Login)
