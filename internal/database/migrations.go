@@ -835,7 +835,23 @@ var migrations = []Migration{
 				}
 			}
 
-			log.Info().Msg("Migration 18: Added update_history, backup_schedules, and enhanced backup columns")
+			// Create config_snapshots table (P0 Resilience Layers)
+			_, err = db.Exec(`
+				CREATE TABLE IF NOT EXISTS config_snapshots (
+					id              INTEGER PRIMARY KEY AUTOINCREMENT,
+					trigger         TEXT NOT NULL DEFAULT 'manual',
+					description     TEXT DEFAULT '',
+					config_json     TEXT NOT NULL,
+					cubeos_version  TEXT NOT NULL,
+					schema_version  INTEGER NOT NULL,
+					created_at      DATETIME DEFAULT CURRENT_TIMESTAMP
+				)
+			`)
+			if err != nil {
+				return fmt.Errorf("failed to create config_snapshots table: %w", err)
+			}
+
+			log.Info().Msg("Migration 18: Added update_history, backup_schedules, config_snapshots, and enhanced backup columns")
 			return nil
 		},
 	},
@@ -933,6 +949,7 @@ func DropAllTables(db *sql.DB) error {
 		"network_config",
 		"vpn_configs",
 		"mounts",
+		"config_snapshots",
 		"backup_schedules",
 		"backups",
 		"update_history",

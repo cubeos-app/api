@@ -321,6 +321,19 @@ CREATE TABLE IF NOT EXISTS backup_schedules (
 );
 
 -- =============================================================================
+-- CONFIG_SNAPSHOTS: P0 Resilience — config state capture
+-- =============================================================================
+CREATE TABLE IF NOT EXISTS config_snapshots (
+    id              INTEGER PRIMARY KEY AUTOINCREMENT,
+    trigger         TEXT NOT NULL DEFAULT 'manual',     -- manual, pre_update, pre_restore, scheduled
+    description     TEXT DEFAULT '',
+    config_json     TEXT NOT NULL,                      -- Full ConfigSnapshot JSON
+    cubeos_version  TEXT NOT NULL,
+    schema_version  INTEGER NOT NULL,
+    created_at      DATETIME DEFAULT CURRENT_TIMESTAMP
+);
+
+-- =============================================================================
 -- USERS: Authentication
 -- =============================================================================
 CREATE TABLE IF NOT EXISTS users (

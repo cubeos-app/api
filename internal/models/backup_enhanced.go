@@ -30,21 +30,24 @@ type BackupCreateEnhancedRequest struct {
 	Destination BackupDestination `json:"destination"`
 	DestConfig  json.RawMessage   `json:"dest_config,omitempty"` // destination-specific config
 	Encrypt     bool              `json:"encrypt,omitempty"`
+	Passphrase  string            `json:"passphrase,omitempty"` // P0-aligned: portable encryption passphrase
 	Description string            `json:"description,omitempty"`
 }
 
 // BackupManifest describes backup contents for verification.
 // @Description Manifest of backup contents used for integrity verification.
 type BackupManifest struct {
-	Version     string            `json:"version"` // CubeOS version at backup time
-	Scope       BackupScope       `json:"scope"`
-	CreatedAt   string            `json:"created_at"`
-	SchemaVer   int               `json:"schema_version"`
-	Files       []BackupFileEntry `json:"files"`
-	Checksum    string            `json:"checksum"` // SHA256 of the archive
-	Encrypted   bool              `json:"encrypted"`
-	Apps        []string          `json:"apps"` // installed app names
-	NetworkMode string            `json:"network_mode"`
+	Version       string            `json:"version"` // CubeOS version at backup time
+	Scope         BackupScope       `json:"scope"`
+	CreatedAt     string            `json:"created_at"`
+	SchemaVer     int               `json:"schema_version"`
+	Files         []BackupFileEntry `json:"files"`
+	Checksum      string            `json:"checksum"` // SHA256 of the archive
+	Encrypted     bool              `json:"encrypted"`
+	Apps          []string          `json:"apps"` // installed app names
+	NetworkMode   string            `json:"network_mode"`
+	EncryptMode   string            `json:"encrypt_mode"`        // "device" or "portable" (P0-aligned)
+	HasConfigSnap bool              `json:"has_config_snapshot"` // true if config snapshot embedded
 }
 
 // BackupFileEntry describes one file in the backup.
@@ -53,6 +56,7 @@ type BackupFileEntry struct {
 	Path     string `json:"path"`
 	Size     int64  `json:"size"`
 	Checksum string `json:"checksum"` // SHA256
+	Category string `json:"category"` // "config", "database", "app_data", "coreapp_data", "registry" (P3-aligned)
 }
 
 // BackupSchedule defines a backup schedule.
