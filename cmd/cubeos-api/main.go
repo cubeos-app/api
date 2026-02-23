@@ -613,12 +613,13 @@ func main() {
 		MaxAge:           300,
 	}))
 
-	// Custom timeout: 60s for normal requests, skip for SSE job-streaming endpoints.
+	// Custom timeout: 60s for normal requests, skip for SSE and WebSocket endpoints.
 	// SSE connections stay open for the duration of workflow execution (potentially minutes).
+	// WebSocket connections are long-lived and manage their own lifecycle.
 	r.Use(func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-			// SSE job endpoints are long-lived — exempt from timeout
-			if strings.Contains(r.URL.Path, "/jobs/") {
+			// SSE job endpoints and WebSocket endpoints are long-lived — exempt from timeout
+			if strings.Contains(r.URL.Path, "/jobs/") || strings.Contains(r.URL.Path, "/ws/") {
 				next.ServeHTTP(w, r)
 				return
 			}
