@@ -98,7 +98,11 @@ func makeRetagImage() flowengine.ActivityFunc {
 	return func(ctx context.Context, input json.RawMessage) (json.RawMessage, error) {
 		var in RetagImageInput
 		if err := json.Unmarshal(input, &in); err != nil {
-			return nil, flowengine.NewPermanentError(fmt.Errorf("invalid retag_image input: %w", err))
+			log.Warn().Err(err).Msg("retag_image: invalid input, skipping (non-fatal)")
+			return marshalOutput(RetagImageOutput{
+				SourceImage: "unknown",
+				Skipped:     true,
+			})
 		}
 		if in.SourceImage == "" {
 			return nil, flowengine.NewPermanentError(fmt.Errorf("source_image is required"))
@@ -169,7 +173,11 @@ func makePushToRegistry() flowengine.ActivityFunc {
 	return func(ctx context.Context, input json.RawMessage) (json.RawMessage, error) {
 		var in PushToRegistryInput
 		if err := json.Unmarshal(input, &in); err != nil {
-			return nil, flowengine.NewPermanentError(fmt.Errorf("invalid push_to_registry input: %w", err))
+			log.Warn().Err(err).Msg("push_to_registry: invalid input, skipping (non-fatal)")
+			return marshalOutput(PushToRegistryOutput{
+				LocalImage: "unknown",
+				Skipped:    true,
+			})
 		}
 		if in.LocalImage == "" {
 			return nil, flowengine.NewPermanentError(fmt.Errorf("local_image is required"))
