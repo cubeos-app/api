@@ -362,8 +362,8 @@ func (h *RegistryHandler) DeleteImageTag(w http.ResponseWriter, r *http.Request)
 		return
 	}
 
-	// Block deletion of system-managed image tags
-	if isSystemImage(name) {
+	// Block deletion of system-managed image tags (Tier 1: all 10 protected)
+	if isProtectedRegistryImage(name) {
 		registryWriteError(w, http.StatusForbidden, fmt.Sprintf("Cannot delete system image tag %s:%s — it is required by CubeOS", name, tag))
 		return
 	}
@@ -407,13 +407,14 @@ type RegistryImage struct {
 	Tags     []string `json:"tags,omitempty"`
 	TagCount int      `json:"tag_count"`
 	FullName string   `json:"full_name,omitempty"`
-	System   bool     `json:"system"`
+	System   bool     `json:"system"`   // Tier 1: protected from registry deletion
+	Critical bool     `json:"critical"` // Tier 2: hidden from App Store entirely
 }
 
-// isSystemImage returns true for images that are part of the CubeOS platform
-// and should not be user-installed or deleted from the registry.
-func isSystemImage(name string) bool {
-	systemImages := map[string]bool{
+// isProtectedRegistryImage returns true for ALL system images that cannot
+// be deleted from the local registry (Tier 1 — all 10 coreapp images).
+func isProtectedRegistryImage(name string) bool {
+	protected := map[string]bool{
 		"cubeos-app/api":              true,
 		"cubeos-app/hal":              true,
 		"cubeos-app/dashboard":        true,
@@ -425,7 +426,21 @@ func isSystemImage(name string) bool {
 		"kiwix/kiwix-serve":           true,
 		"tsl0922/ttyd":                true,
 	}
-	return systemImages[name]
+	return protected[name]
+}
+
+// isCriticalSystemImage returns true for images that must NEVER appear as
+// installable apps (Tier 2 — 6 critical platform images).
+func isCriticalSystemImage(name string) bool {
+	critical := map[string]bool{
+		"cubeos-app/api":              true,
+		"cubeos-app/hal":              true,
+		"cubeos-app/dashboard":        true,
+		"cubeos-app/cubeos-docsindex": true,
+		"pihole/pihole":               true,
+		"jc21/nginx-proxy-manager":    true,
+	}
+	return critical[name]
 }
 
 // ListImages godoc
@@ -453,7 +468,8 @@ func (h *RegistryHandler) ListImages(w http.ResponseWriter, r *http.Request) {
 		img := RegistryImage{
 			Name:     name,
 			FullName: fmt.Sprintf("%s/%s", strings.TrimPrefix(h.registryURL, "http://"), name),
-			System:   isSystemImage(name),
+			System:   isProtectedRegistryImage(name),
+			Critical: isCriticalSystemImage(name),
 		}
 
 		if includeTags {
@@ -530,8 +546,8 @@ func (h *RegistryHandler) DeleteImage(w http.ResponseWriter, r *http.Request) {
 		tag = "latest"
 	}
 
-	// Block deletion of system-managed images
-	if isSystemImage(name) {
+	// Block deletion of system-managed images (Tier 1: all 10 protected)
+	if isProtectedRegistryImage(name) {
 		registryWriteError(w, http.StatusForbidden, fmt.Sprintf("Cannot delete system image %s — it is required by CubeOS", name))
 		return
 	}
@@ -601,8 +617,8 @@ func (h *RegistryHandler) CleanupRegistry(w http.ResponseWriter, r *http.Request
 	var deletedImages []string
 
 	for _, name := range images {
-		// Never clean up system images
-		if isSystemImage(name) {
+		// Never clean up system images (Tier 1: all 10 protected)
+		if isProtectedRegistryImage(name) {
 			continue
 		}
 		tags, _ := h.getImageTags(name)
