@@ -2,6 +2,7 @@
 package handlers
 
 import (
+	"database/sql"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -26,12 +27,13 @@ type RegistryHandler struct {
 	httpClient   *http.Client
 	portManager  *managers.PortManager  // B108: triple-source port allocation
 	orchestrator *managers.Orchestrator // Unified install pipeline (Batch 1)
+	db           *sql.DB               // Settings persistence
 }
 
 // NewRegistryHandler creates a new RegistryHandler instance.
 // For Swarm containers, use the gateway IP (not localhost:5000)
 // because containers in overlay network cannot reach localhost on the host.
-func NewRegistryHandler(registryURL, registryPath string, portMgr *managers.PortManager, orchestrator *managers.Orchestrator) *RegistryHandler {
+func NewRegistryHandler(registryURL, registryPath string, portMgr *managers.PortManager, orchestrator *managers.Orchestrator, db *sql.DB) *RegistryHandler {
 	if registryURL == "" {
 		// Check env var first, then fall back to gateway IP (works from inside Swarm overlay)
 		registryURL = os.Getenv("REGISTRY_URL")
@@ -47,6 +49,7 @@ func NewRegistryHandler(registryURL, registryPath string, portMgr *managers.Port
 		registryPath: registryPath,
 		portManager:  portMgr,
 		orchestrator: orchestrator,
+		db:           db,
 		httpClient: &http.Client{
 			Timeout: 10 * time.Second, // Reduced timeout for faster failure detection
 		},
@@ -68,6 +71,8 @@ func (h *RegistryHandler) Routes() chi.Router {
 	r.Post("/cleanup", h.CleanupRegistry)
 	r.Get("/disk-usage", h.GetDiskUsage)
 	r.Post("/deploy", h.DeployImage)
+	r.Get("/settings", h.GetRegistrySettings)
+	r.Put("/settings", h.UpdateRegistrySettings)
 
 	return r
 }
@@ -834,4 +839,206 @@ func registryFormatBytes(bytes int64) string {
 		exp++
 	}
 	return fmt.Sprintf("%.1f %cB", float64(bytes)/float64(div), "KMGTPE"[exp])
+}
+
+// =========================================================================
+// Registry Settings (T11)
+// =========================================================================
+
+// RegistrySettings represents configurable registry settings.
+type RegistrySettings struct {
+	AutoUpdate bool `json:"auto_update"`
+}
+
+// GetRegistrySettings godoc
+// @Summary Get registry settings
+// @Description Returns the current registry settings including auto-update toggle
+// @Tags Registry
+// @Produce json
+// @Security BearerAuth
+// @Success 200 {object} RegistrySettings "Current registry settings"
+// @Router /registry/settings [get]
+func (h *RegistryHandler) GetRegistrySettings(w http.ResponseWriter, r *http.Request) {
+	val := h.getSetting("registry_auto_update")
+	autoUpdate := val != "false" // default true
+
+	registryWriteJSON(w, http.StatusOK, RegistrySettings{
+		AutoUpdate: autoUpdate,
+	})
+}
+
+// UpdateRegistrySettings godoc
+// @Summary Update registry settings
+// @Description Updates registry settings (e.g., auto-update toggle)
+// @Tags Registry
+// @Accept json
+// @Produce json
+// @Security BearerAuth
+// @Param settings body RegistrySettings true "Registry settings"
+// @Success 200 {object} RegistrySettings "Updated registry settings"
+// @Failure 400 {object} ErrorResponse "Invalid request body"
+// @Router /registry/settings [put]
+func (h *RegistryHandler) UpdateRegistrySettings(w http.ResponseWriter, r *http.Request) {
+	var req RegistrySettings
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		registryWriteError(w, http.StatusBadRequest, "Invalid request body")
+		return
+	}
+
+	val := "false"
+	if req.AutoUpdate {
+		val = "true"
+	}
+	h.setSetting("registry_auto_update", val)
+
+	registryWriteJSON(w, http.StatusOK, RegistrySettings{
+		AutoUpdate: req.AutoUpdate,
+	})
+}
+
+func (h *RegistryHandler) getSetting(key string) string {
+	if h.db == nil {
+		return ""
+	}
+	var val string
+	err := h.db.QueryRow("SELECT value FROM settings WHERE key = ?", key).Scan(&val)
+	if err != nil {
+		return ""
+	}
+	return val
+}
+
+func (h *RegistryHandler) setSetting(key, value string) {
+	if h.db == nil {
+		return
+	}
+	_, _ = h.db.Exec(`INSERT INTO settings (key, value, updated_at) VALUES (?, ?, CURRENT_TIMESTAMP)
+		ON CONFLICT(key) DO UPDATE SET value = excluded.value, updated_at = CURRENT_TIMESTAMP`, key, value)
+}
+
+// =========================================================================
+// System Images (T14)
+// =========================================================================
+
+// SystemImage represents an image in the registry with running context.
+type SystemImage struct {
+	Name        string   `json:"name"`                   // e.g. "pihole/pihole"
+	Tags        []string `json:"tags"`                   // e.g. ["latest"]
+	Type        string   `json:"type"`                   // "core", "curated", "user"
+	Running     bool     `json:"running"`                // Is a Docker service/container using this image?
+	ServiceName string   `json:"service_name,omitempty"` // e.g. "cubeos-pihole"
+	Pinned      bool     `json:"pinned"`                 // Core/curated are always pinned
+}
+
+// ListSystemImages godoc
+// @Summary List all system images with running status
+// @Description Returns all images in the local registry enriched with running status, type classification (core/curated/user), and pinning state. Core and curated images are always pinned. User images are unpinned by default.
+// @Tags System
+// @Produce json
+// @Security BearerAuth
+// @Success 200 {object} map[string]interface{} "images: []SystemImage, total: int"
+// @Failure 500 {object} ErrorResponse "Failed to query registry or Docker"
+// @Router /system/images [get]
+func (h *RegistryHandler) ListSystemImages(w http.ResponseWriter, r *http.Request) {
+	repos, err := h.getImageList()
+	if err != nil {
+		registryWriteError(w, http.StatusInternalServerError, "Failed to query registry: "+err.Error())
+		return
+	}
+
+	runningImages := h.getRunningImages()
+
+	var images []SystemImage
+	for _, repo := range repos {
+		tags, _ := h.getImageTags(repo)
+		if len(tags) == 0 {
+			tags = []string{"unknown"}
+		}
+
+		imgType := classifyImage(repo)
+		fullRef := fmt.Sprintf("localhost:5000/%s:%s", repo, tags[0])
+		svcName, running := runningImages[fullRef]
+		if !running {
+			for _, tag := range tags {
+				ref := fmt.Sprintf("%s:%s", repo, tag)
+				if s, ok := runningImages[ref]; ok {
+					svcName = s
+					running = true
+					break
+				}
+			}
+		}
+
+		images = append(images, SystemImage{
+			Name:        repo,
+			Tags:        tags,
+			Type:        imgType,
+			Running:     running,
+			ServiceName: svcName,
+			Pinned:      imgType == "core" || imgType == "curated",
+		})
+	}
+
+	registryWriteJSON(w, http.StatusOK, map[string]interface{}{
+		"images": images,
+		"total":  len(images),
+	})
+}
+
+// classifyImage determines if a registry image is core, curated, or user-installed.
+func classifyImage(repo string) string {
+	coreImages := map[string]bool{
+		"pihole/pihole":               true,
+		"jc21/nginx-proxy-manager":    true,
+		"cubeos-app/api":              true,
+		"cubeos-app/hal":              true,
+		"cubeos-app/dashboard":        true,
+		"cubeos-app/cubeos-docsindex": true,
+		"amir20/dozzle":               true,
+	}
+	curatedImages := map[string]bool{
+		"kiwix/kiwix-serve": true,
+		"tsl0922/ttyd":      true,
+	}
+	if coreImages[repo] {
+		return "core"
+	}
+	if curatedImages[repo] {
+		return "curated"
+	}
+	return "user"
+}
+
+// getRunningImages returns a map of image reference -> service/container name
+// for all currently running Docker containers and Swarm services.
+func (h *RegistryHandler) getRunningImages() map[string]string {
+	result := make(map[string]string)
+
+	out, err := exec.Command("docker", "ps", "--format", "{{.Image}}|{{.Names}}").Output()
+	if err == nil {
+		for _, line := range strings.Split(strings.TrimSpace(string(out)), "\n") {
+			if line == "" {
+				continue
+			}
+			parts := strings.SplitN(line, "|", 2)
+			if len(parts) == 2 {
+				result[parts[0]] = parts[1]
+			}
+		}
+	}
+
+	out, err = exec.Command("docker", "service", "ls", "--format", "{{.Image}}|{{.Name}}").Output()
+	if err == nil {
+		for _, line := range strings.Split(strings.TrimSpace(string(out)), "\n") {
+			if line == "" {
+				continue
+			}
+			parts := strings.SplitN(line, "|", 2)
+			if len(parts) == 2 {
+				result[parts[0]] = parts[1]
+			}
+		}
+	}
+
+	return result
 }

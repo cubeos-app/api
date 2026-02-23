@@ -899,11 +899,6 @@ func (m *AppStoreManager) rewriteImagesToLocalRegistry(manifest string) string {
 		if strings.HasPrefix(image, "localhost:5000/") {
 			continue
 		}
-		// Skip CubeOS own images (built and deployed separately)
-		if strings.HasPrefix(image, "ghcr.io/cubeos-app/") {
-			continue
-		}
-
 		repo, tag := normalizeImageRef(image)
 
 		// Check if image exists in local registry

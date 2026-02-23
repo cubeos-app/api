@@ -46,6 +46,13 @@ fi
 docker pull ${GHCR_IMAGE}:${CI_COMMIT_SHORT_SHA}
 docker tag ${GHCR_IMAGE}:${CI_COMMIT_SHORT_SHA} ${GHCR_IMAGE}:latest
 
+# --- Push to local registry (keeps registry in sync) ---
+LOCAL_REG_IMAGE="localhost:5000/cubeos-app/api:latest"
+docker tag "${GHCR_IMAGE}:${CI_COMMIT_SHORT_SHA}" "${LOCAL_REG_IMAGE}" 2>/dev/null && \
+  docker push "${LOCAL_REG_IMAGE}" 2>/dev/null && \
+  echo "  Pushed to local registry: ${LOCAL_REG_IMAGE}" || \
+  echo "  WARN: Local registry push failed (non-fatal)"
+
 # =========================================================================
 # Pre-flight: kill zombie containers holding the port
 # =========================================================================
