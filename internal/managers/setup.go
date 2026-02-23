@@ -799,7 +799,7 @@ func (m *SetupManager) GenerateDefaultConfig() *models.SetupConfig {
 		Hostname:          hostname,
 		DeviceName:        "CubeOS Server",
 		WiFiSSID:          "CubeOS",
-		WiFiPassword:      "",
+		WiFiPassword:      "cubeos1234",
 		WiFiChannel:       6,
 		CountryCode:       "NL",
 		Timezone:          "UTC",

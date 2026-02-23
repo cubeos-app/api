@@ -176,6 +176,18 @@ func makeSetupConfigureWiFi(sc SetupConfigurer) flowengine.ActivityFunc {
 			return nil, flowengine.NewPermanentError(fmt.Errorf("invalid configure_wifi input: %w", err))
 		}
 
+		// Guard: skip WiFi rewrite when password is empty.
+		// CubeOS always uses WPA2; writing an empty wpa_passphrase breaks hostapd.
+		if env.WiFiPassword == "" {
+			log.Info().Msg("setup.configure_wifi: empty wifi_password, skipping AP rewrite")
+			return marshalOutput(map[string]interface{}{
+				"wifi_configured":         false,
+				"skipped":                 true,
+				"reason":                  "empty_password",
+				"original_hostapd_config": "",
+			})
+		}
+
 		// Snapshot current hostapd.conf for compensation rollback
 		originalConfig, err := sc.ReadHostapdConfig()
 		if err != nil {
