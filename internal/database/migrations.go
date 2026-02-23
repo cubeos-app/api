@@ -742,6 +742,103 @@ var migrations = []Migration{
 			return nil
 		},
 	},
+
+	// Version 18: Phase 4 — update_history, backup_schedules, enhanced backups
+	{
+		Version:     18,
+		Description: "Add update_history, backup_schedules tables and enhanced backup columns",
+		Up: func(db *sql.DB) error {
+			// Create update_history table
+			_, err := db.Exec(`
+				CREATE TABLE IF NOT EXISTS update_history (
+					id              INTEGER PRIMARY KEY AUTOINCREMENT,
+					from_version    TEXT NOT NULL,
+					to_version      TEXT NOT NULL,
+					status          TEXT NOT NULL DEFAULT 'pending',
+					started_at      DATETIME DEFAULT CURRENT_TIMESTAMP,
+					completed_at    DATETIME,
+					error_message   TEXT DEFAULT '',
+					manifest_json   TEXT DEFAULT '',
+					rollback_json   TEXT DEFAULT '',
+					workflow_id     TEXT DEFAULT ''
+				)
+			`)
+			if err != nil {
+				return fmt.Errorf("failed to create update_history table: %w", err)
+			}
+
+			// Create backup_schedules table
+			_, err = db.Exec(`
+				CREATE TABLE IF NOT EXISTS backup_schedules (
+					id              INTEGER PRIMARY KEY AUTOINCREMENT,
+					name            TEXT NOT NULL DEFAULT 'default',
+					enabled         BOOLEAN DEFAULT FALSE,
+					cron_expr       TEXT NOT NULL DEFAULT '0 2 * * *',
+					scope           TEXT NOT NULL DEFAULT 'tier1',
+					destination     TEXT NOT NULL DEFAULT 'local',
+					dest_config     TEXT DEFAULT '{}',
+					encryption      BOOLEAN DEFAULT FALSE,
+					retention_count INTEGER DEFAULT 5,
+					last_run_at     DATETIME,
+					last_status     TEXT DEFAULT '',
+					next_run_at     DATETIME,
+					created_at      DATETIME DEFAULT CURRENT_TIMESTAMP,
+					updated_at      DATETIME DEFAULT CURRENT_TIMESTAMP
+				)
+			`)
+			if err != nil {
+				return fmt.Errorf("failed to create backup_schedules table: %w", err)
+			}
+
+			// Add new columns to existing backups table
+			backupColumns := []struct {
+				name         string
+				definition   string
+				defaultValue string
+			}{
+				{"scope", "TEXT", "'tier1'"},
+				{"encryption", "BOOLEAN", "FALSE"},
+				{"manifest_json", "TEXT", "''"},
+				{"checksum", "TEXT", "''"},
+				{"schedule_id", "INTEGER", "NULL"},
+				{"size_bytes", "INTEGER", "0"},
+				{"destination_type", "TEXT", "'local'"},
+				{"destination_path", "TEXT", "''"},
+				{"workflow_id", "TEXT", "''"},
+			}
+
+			for _, col := range backupColumns {
+				query := fmt.Sprintf("ALTER TABLE backups ADD COLUMN %s %s DEFAULT %s",
+					col.name, col.definition, col.defaultValue)
+				_, err := db.Exec(query)
+				if err != nil && !isDuplicateColumnError(err) {
+					return fmt.Errorf("failed to add backups.%s: %w", col.name, err)
+				}
+			}
+
+			// Add settings defaults for update system
+			settingsDefaults := []struct {
+				key   string
+				value string
+			}{
+				{"update_check_enabled", "true"},
+				{"update_check_interval", "86400"},
+				{"update_manifest_cache", "{}"},
+				{"update_auto_apply", "false"},
+				{"last_update_check", ""},
+			}
+
+			for _, s := range settingsDefaults {
+				_, err := db.Exec(`INSERT OR IGNORE INTO settings (key, value) VALUES (?, ?)`, s.key, s.value)
+				if err != nil {
+					return fmt.Errorf("failed to insert setting %s: %w", s.key, err)
+				}
+			}
+
+			log.Info().Msg("Migration 18: Added update_history, backup_schedules, and enhanced backup columns")
+			return nil
+		},
+	},
 }
 
 // isDuplicateColumnError checks if an error is a "duplicate column" error
@@ -836,7 +933,9 @@ func DropAllTables(db *sql.DB) error {
 		"network_config",
 		"vpn_configs",
 		"mounts",
+		"backup_schedules",
 		"backups",
+		"update_history",
 		"users",
 		"preferences",
 		"nodes",

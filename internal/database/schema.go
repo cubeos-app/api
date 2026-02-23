@@ -9,7 +9,7 @@ import (
 )
 
 // CurrentSchemaVersion tracks the database schema version for migrations.
-const CurrentSchemaVersion = 17
+const CurrentSchemaVersion = 18
 
 // Schema defines the unified CubeOS database schema.
 // Design Principles:
@@ -269,8 +269,55 @@ CREATE TABLE IF NOT EXISTS backups (
     retention_days  INTEGER DEFAULT 30,
     last_run        DATETIME,
     last_status     TEXT DEFAULT '',
-    
+
+    -- Phase 4 enhanced columns
+    scope           TEXT DEFAULT 'tier1',           -- tier1, tier2, tier3
+    encryption      BOOLEAN DEFAULT FALSE,
+    manifest_json   TEXT DEFAULT '',                -- backup contents manifest
+    checksum        TEXT DEFAULT '',                -- SHA256 of the archive
+    schedule_id     INTEGER DEFAULT NULL,           -- FK to backup_schedules
+    size_bytes      INTEGER DEFAULT 0,
+    destination_type TEXT DEFAULT 'local',          -- local, usb, nfs, smb
+    destination_path TEXT DEFAULT '',
+    workflow_id     TEXT DEFAULT '',                -- FlowEngine workflow run ID
+
     created_at      DATETIME DEFAULT CURRENT_TIMESTAMP
+);
+
+-- =============================================================================
+-- UPDATE_HISTORY: System update tracking
+-- =============================================================================
+CREATE TABLE IF NOT EXISTS update_history (
+    id              INTEGER PRIMARY KEY AUTOINCREMENT,
+    from_version    TEXT NOT NULL,
+    to_version      TEXT NOT NULL,
+    status          TEXT NOT NULL DEFAULT 'pending',  -- pending, applying, completed, failed, rolled_back
+    started_at      DATETIME DEFAULT CURRENT_TIMESTAMP,
+    completed_at    DATETIME,
+    error_message   TEXT DEFAULT '',
+    manifest_json   TEXT DEFAULT '',                   -- cached release manifest at time of update
+    rollback_json   TEXT DEFAULT '',                   -- pre-update state for rollback
+    workflow_id     TEXT DEFAULT ''                    -- FlowEngine workflow run ID
+);
+
+-- =============================================================================
+-- BACKUP_SCHEDULES: Scheduled backup configurations
+-- =============================================================================
+CREATE TABLE IF NOT EXISTS backup_schedules (
+    id              INTEGER PRIMARY KEY AUTOINCREMENT,
+    name            TEXT NOT NULL DEFAULT 'default',
+    enabled         BOOLEAN DEFAULT FALSE,
+    cron_expr       TEXT NOT NULL DEFAULT '0 2 * * *',  -- Daily at 2 AM
+    scope           TEXT NOT NULL DEFAULT 'tier1',      -- tier1, tier2, tier3
+    destination     TEXT NOT NULL DEFAULT 'local',      -- local, usb, nfs, smb
+    dest_config     TEXT DEFAULT '{}',                  -- JSON: path, mount details
+    encryption      BOOLEAN DEFAULT FALSE,
+    retention_count INTEGER DEFAULT 5,                  -- Keep N most recent
+    last_run_at     DATETIME,
+    last_status     TEXT DEFAULT '',
+    next_run_at     DATETIME,
+    created_at      DATETIME DEFAULT CURRENT_TIMESTAMP,
+    updated_at      DATETIME DEFAULT CURRENT_TIMESTAMP
 );
 
 -- =============================================================================
