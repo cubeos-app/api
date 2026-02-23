@@ -34,19 +34,21 @@ type PortAllocator interface {
 // --- Input/Output Schemas ---
 
 // InsertAppInput is the input for the db.insert_app activity.
+// Fields map to the fat envelope keys produced by prior workflow steps.
 type InsertAppInput struct {
-	Name        string `json:"name"`
-	Port        int    `json:"port"`
-	FQDN        string `json:"fqdn"`
-	Subdomain   string `json:"subdomain,omitempty"`    // clean subdomain (e.g. "nextcloud")
-	BackendPort int    `json:"backend_port,omitempty"` // port for proxy forwarding
-	NPMProxyID  int64  `json:"npm_proxy_id,omitempty"` // NPM proxy host ID
-	Source      string `json:"source"`                 // "casaos", "registry", "custom"
-	Image       string `json:"image"`                  // Docker image reference
-	ComposePath string `json:"compose_path"`           // path to docker-compose.yml
-	DataPath    string `json:"data_path"`              // path to app data directory
-	StoreID     string `json:"store_id,omitempty"`
-	Enabled     bool   `json:"enabled"`
+	AppName     string `json:"app_name"`              // from validate/allocate_port output
+	Port        int    `json:"port"`                  // from allocate_port output
+	Domain      string `json:"domain,omitempty"`      // FQDN from add_dns output (e.g. "prowlarr.cubeos.cube")
+	Subdomain   string `json:"subdomain,omitempty"`   // from add_dns output
+	NPMProxyID  int64  `json:"host_id,omitempty"`     // from create_proxy output
+	Source      string `json:"source"`                // "casaos", "registry", "custom"
+	Image       string `json:"image,omitempty"`       // from process_manifest output
+	ComposePath string `json:"compose_path"`          // from write_compose output
+	DataPath    string `json:"data_path"`             // from create_dirs output
+	StoreID     string `json:"store_id,omitempty"`    // from validate output
+	Title       string `json:"title,omitempty"`       // from process_manifest output (display name)
+	Description string `json:"description,omitempty"` // from process_manifest output
+	WebUIType   string `json:"webui_type,omitempty"`  // from process_manifest output
 }
 
 // InsertAppOutput is the output of the db.insert_app activity.
@@ -149,78 +151,83 @@ func RegisterDatabaseActivities(registry *flowengine.ActivityRegistry, db AppDat
 
 // makeInsertApp creates the db.insert_app activity.
 // Idempotent: if an app with the same name already exists, returns skipped=true.
+// Inserts into apps table + port_allocations + fqdns (matching actual schema).
 func makeInsertApp(db AppDatabase) flowengine.ActivityFunc {
 	return func(ctx context.Context, input json.RawMessage) (json.RawMessage, error) {
 		var in InsertAppInput
 		if err := json.Unmarshal(input, &in); err != nil {
 			return nil, flowengine.NewPermanentError(fmt.Errorf("invalid insert_app input: %w", err))
 		}
-		if in.Name == "" {
-			return nil, flowengine.NewPermanentError(fmt.Errorf("name is required"))
+		if in.AppName == "" {
+			return nil, flowengine.NewPermanentError(fmt.Errorf("app_name is required"))
 		}
 
 		// Idempotency check: does an app with this name already exist?
 		var existingID int64
-		err := db.QueryRowContext(ctx, "SELECT id FROM apps WHERE name = ?", in.Name).Scan(&existingID)
+		err := db.QueryRowContext(ctx, "SELECT id FROM apps WHERE name = ?", in.AppName).Scan(&existingID)
 		if err == nil && existingID > 0 {
-			log.Info().Str("app", in.Name).Int64("id", existingID).Msg("insert_app: app already exists, skipping")
-			return marshalOutput(InsertAppOutput{AppID: existingID, Name: in.Name, Created: true, Skipped: true})
+			log.Info().Str("app", in.AppName).Int64("id", existingID).Msg("insert_app: app already exists, skipping")
+			return marshalOutput(InsertAppOutput{AppID: existingID, Name: in.AppName, Created: true, Skipped: true})
 		}
 
 		now := time.Now().UTC()
-		enabled := 1
-		if !in.Enabled {
-			enabled = 0
+
+		// Derive display name from title or app name
+		displayName := in.Title
+		if displayName == "" {
+			displayName = in.AppName
+		}
+		webUIType := in.WebUIType
+		if webUIType == "" {
+			webUIType = "browser"
 		}
 
 		result, err := db.ExecContext(ctx, `
-			INSERT INTO apps (name, port, fqdn, source, image, compose_path, data_path, store_id, enabled, created_at, updated_at)
-			VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-		`, in.Name, in.Port, in.FQDN, in.Source, in.Image, in.ComposePath, in.DataPath, in.StoreID, enabled, now, now)
+			INSERT INTO apps (name, display_name, description, type, source, store_id,
+				compose_path, data_path, enabled, deploy_mode, webui_type,
+				created_at, updated_at)
+			VALUES (?, ?, ?, 'user', ?, ?, ?, ?, 1, 'stack', ?, ?, ?)
+		`, in.AppName, displayName, in.Description, in.Source, in.StoreID,
+			in.ComposePath, in.DataPath, webUIType, now, now)
 		if err != nil {
 			// Unique constraint violation → permanent (duplicate)
 			if strings.Contains(err.Error(), "UNIQUE constraint") {
-				return nil, flowengine.NewPermanentError(fmt.Errorf("app %s already exists: %w", in.Name, err))
+				return nil, flowengine.NewPermanentError(fmt.Errorf("app %s already exists: %w", in.AppName, err))
 			}
 			return nil, flowengine.ClassifyError(err)
 		}
 
 		appID, _ := result.LastInsertId()
-		log.Info().Str("app", in.Name).Int64("id", appID).Msg("insert_app: app record created")
+		log.Info().Str("app", in.AppName).Int64("id", appID).Msg("insert_app: app record created")
 
-		// Also create the FQDN record if FQDN is set
-		if in.FQDN != "" {
+		// Create FQDN record (domain from add_dns output)
+		if in.Domain != "" {
 			subdomain := in.Subdomain
 			if subdomain == "" {
-				// Derive subdomain from FQDN by stripping the domain suffix
-				subdomain = strings.Split(in.FQDN, ".")[0]
+				subdomain = strings.Split(in.Domain, ".")[0]
 			}
-			backendPort := in.BackendPort
-			if backendPort == 0 {
-				backendPort = in.Port
-			}
-
+			backendPort := in.Port
 			_, err = db.ExecContext(ctx, `
 				INSERT OR IGNORE INTO fqdns (app_id, fqdn, subdomain, backend_port, npm_proxy_id, created_at)
 				VALUES (?, ?, ?, ?, ?, ?)
-			`, appID, in.FQDN, subdomain, backendPort, nullableInt64(in.NPMProxyID), now)
+			`, appID, in.Domain, subdomain, backendPort, nullableInt64(in.NPMProxyID), now)
 			if err != nil {
-				log.Warn().Err(err).Str("fqdn", in.FQDN).Msg("insert_app: failed to create FQDN record (non-fatal)")
+				log.Warn().Err(err).Str("fqdn", in.Domain).Msg("insert_app: failed to create FQDN record (non-fatal)")
 			}
 		}
 
 		// Create port allocation record
 		if in.Port > 0 {
 			_, err = db.ExecContext(ctx, `
-				INSERT OR IGNORE INTO port_allocations (app_id, port, created_at)
-				VALUES (?, ?, ?)
+				INSERT OR IGNORE INTO port_allocations (app_id, port, is_primary, created_at)
+				VALUES (?, ?, 1, ?)
 			`, appID, in.Port, now)
 			if err != nil {
 				log.Warn().Err(err).Int("port", in.Port).Msg("insert_app: failed to create port allocation record (non-fatal)")
 			}
 		}
 
-		return marshalOutput(InsertAppOutput{AppID: appID, Name: in.Name, Created: true, Skipped: false})
+		return marshalOutput(InsertAppOutput{AppID: appID, Name: in.AppName, Created: true, Skipped: false})
 	}
 }
 
