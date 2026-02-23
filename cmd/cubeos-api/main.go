@@ -384,6 +384,7 @@ func main() {
 		log.Fatal().Msg("FlowEngine: Orchestrator is required for app activities")
 	}
 	feactivities.RegisterAppRemoveActivities(feRegistry, db.DB)
+	feactivities.RegisterNetworkActivities(feRegistry, networkMgr, halClient)
 
 	flowEngine := flowengine.NewWorkflowEngine(feStore, feRegistry, flowengine.DefaultEngineConfig())
 
@@ -400,6 +401,9 @@ func main() {
 	if err := flowEngine.RegisterWorkflow(feworkflows.NewAppStoreRemoveWorkflow()); err != nil {
 		log.Fatal().Err(err).Msg("FlowEngine: failed to register appstore_remove workflow")
 	}
+	if err := flowEngine.RegisterWorkflow(feworkflows.NewNetworkModeSwitchWorkflow()); err != nil {
+		log.Fatal().Err(err).Msg("FlowEngine: failed to register network_mode_switch workflow")
+	}
 
 	if err := flowEngine.Start(engineCtx); err != nil {
 		log.Fatal().Err(err).Msg("FlowEngine: failed to start — cannot continue")
@@ -409,6 +413,7 @@ func main() {
 	// Wire engine into managers
 	orchestrator.SetFlowEngine(flowEngine, feStore)
 	appStoreMgr.SetFlowEngine(flowEngine, feStore)
+	networkMgr.SetFlowEngine(flowEngine, feStore)
 
 	// Create VPN manager (Sprint 3 - with HAL client)
 	vpnMgr := managers.NewVPNManager(cfg, halClient)

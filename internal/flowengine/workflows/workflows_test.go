@@ -232,3 +232,91 @@ func TestAllStepsHaveTimeouts(t *testing.T) {
 
 	_ = allWorkflows // suppress unused var
 }
+
+func TestNetworkModeSwitchWorkflowSteps(t *testing.T) {
+	w := NewNetworkModeSwitchWorkflow()
+
+	if w.Type() != "network_mode_switch" {
+		t.Errorf("expected type 'network_mode_switch', got %q", w.Type())
+	}
+	if w.Version() != 1 {
+		t.Errorf("expected version 1, got %d", w.Version())
+	}
+
+	steps := w.Steps()
+	if len(steps) != 7 {
+		t.Fatalf("expected 7 steps, got %d", len(steps))
+	}
+
+	// Verify step order
+	expectedNames := []string{
+		"validate", "snapshot_state", "teardown_previous", "configure_upstream",
+		"configure_services", "configure_dns", "persist",
+	}
+	for i, name := range expectedNames {
+		if steps[i].Name != name {
+			t.Errorf("step %d: expected name %q, got %q", i, name, steps[i].Name)
+		}
+	}
+
+	// Verify read-only steps have no compensation
+	for _, step := range steps {
+		switch step.Name {
+		case "validate", "snapshot_state":
+			if step.Compensate != "" {
+				t.Errorf("read-only step %q should have no compensation, got %q", step.Name, step.Compensate)
+			}
+		default:
+			if step.Compensate == "" {
+				t.Errorf("step %q should have compensation, got empty", step.Name)
+			}
+		}
+	}
+
+	// Verify compensation activity names
+	expectedCompensations := map[string]string{
+		"validate":           "",
+		"snapshot_state":     "",
+		"teardown_previous":  "net.restore_teardown",
+		"configure_upstream": "net.restore_upstream",
+		"configure_services": "net.restore_services",
+		"configure_dns":      "net.restore_dns",
+		"persist":            "net.restore_persist",
+	}
+	for _, step := range steps {
+		expected := expectedCompensations[step.Name]
+		if step.Compensate != expected {
+			t.Errorf("step %q compensation: expected %q, got %q", step.Name, expected, step.Compensate)
+		}
+	}
+
+	// Verify all steps have timeouts
+	for _, step := range steps {
+		if step.Timeout <= 0 {
+			t.Errorf("step %q has no timeout", step.Name)
+		}
+	}
+
+	// Verify configure_upstream has 45s timeout (DHCP polling can take 30s)
+	upstreamStep := steps[3]
+	if upstreamStep.Timeout.Seconds() != 45 {
+		t.Errorf("configure_upstream timeout: expected 45s, got %v", upstreamStep.Timeout)
+	}
+
+	// Verify validate has MaxAttempts=1 (no retry for validation)
+	validateStep := steps[0]
+	if validateStep.Retry == nil || validateStep.Retry.MaxAttempts != 1 {
+		t.Errorf("validate should have MaxAttempts=1")
+	}
+
+	// Verify configure_upstream has MaxAttempts=1 (netplan not safely retryable)
+	if upstreamStep.Retry == nil || upstreamStep.Retry.MaxAttempts != 1 {
+		t.Errorf("configure_upstream should have MaxAttempts=1")
+	}
+
+	// Verify configure_dns has MaxAttempts=3 (Pi-hole API is flaky)
+	dnsStep := steps[5]
+	if dnsStep.Retry == nil || dnsStep.Retry.MaxAttempts != 3 {
+		t.Errorf("configure_dns should have MaxAttempts=3")
+	}
+}

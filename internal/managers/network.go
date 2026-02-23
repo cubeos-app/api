@@ -18,6 +18,7 @@ import (
 	"time"
 
 	"cubeos-api/internal/config"
+	"cubeos-api/internal/flowengine"
 	"cubeos-api/internal/hal"
 	"cubeos-api/internal/models"
 
@@ -91,6 +92,15 @@ type NetworkManager struct {
 	piholeURL           string                           // Pi-hole API base URL (e.g. http://10.42.24.1:6001)
 	piholePassword      string                           // Pi-hole API password
 	onModeChange        func(newMode models.NetworkMode) // B3: callback for mode change notifications
+	engine              *flowengine.WorkflowEngine       // FlowEngine for saga-based mode switching
+	feStore             *flowengine.WorkflowStore        // FlowEngine store for WaitForCompletion
+}
+
+// SetFlowEngine wires the WorkflowEngine and WorkflowStore into the NetworkManager.
+// Call this after engine.Start() so the engine is ready before mode switches are submitted.
+func (m *NetworkManager) SetFlowEngine(e *flowengine.WorkflowEngine, s *flowengine.WorkflowStore) {
+	m.engine = e
+	m.feStore = s
 }
 
 // SetOnModeChange registers a callback that fires after every successful mode change.
@@ -475,8 +485,64 @@ func (m *NetworkManager) GetCurrentVPNMode() models.VPNMode {
 	return m.currentVPNMode
 }
 
-// SetMode changes the network operating mode (V2: supports 5 modes)
+// SetMode changes the network operating mode (V2: supports 5 modes).
+// When FlowEngine is wired, submits a saga workflow with rollback.
+// Falls back to inline execution when no engine is available (tests, migration).
 func (m *NetworkManager) SetMode(ctx context.Context, mode models.NetworkMode, wifiSSID, wifiPassword string, staticIP models.StaticIPConfig) error {
+	if m.engine != nil {
+		return m.setModeViaFlowEngine(ctx, mode, wifiSSID, wifiPassword, staticIP)
+	}
+	return m.setModeInline(ctx, mode, wifiSSID, wifiPassword, staticIP)
+}
+
+// setModeViaFlowEngine submits a network_mode_switch workflow and waits synchronously.
+func (m *NetworkManager) setModeViaFlowEngine(ctx context.Context, mode models.NetworkMode, wifiSSID, wifiPassword string, staticIP models.StaticIPConfig) error {
+	input, _ := json.Marshal(map[string]interface{}{
+		"target_mode":   string(mode),
+		"current_mode":  string(m.currentMode),
+		"ssid":          wifiSSID,
+		"password":      wifiPassword,
+		"static_ip":     staticIP,
+		"gateway_ip":    m.cfg.GatewayIP,
+		"subnet":        m.cfg.Subnet,
+		"ap_interface":  m.apInterface,
+		"wan_interface": m.wanInterface,
+		"fallback_ip":   m.fallbackIP,
+		"fallback_gw":   m.fallbackGateway,
+	})
+
+	wf, err := m.engine.Submit(ctx, flowengine.SubmitParams{
+		WorkflowType: "network_mode_switch",
+		ExternalID:   "mode-switch-" + string(mode),
+		Input:        input,
+	})
+	if err != nil {
+		return fmt.Errorf("failed to submit network mode switch workflow: %w", err)
+	}
+
+	log.Info().Str("workflow_id", wf.ID).Str("mode", string(mode)).
+		Msg("NetworkManager: network mode switch workflow submitted")
+
+	// Synchronous wait (90s timeout) — matches current handler behavior
+	waitCtx, cancel := context.WithTimeout(ctx, 90*time.Second)
+	defer cancel()
+
+	if err := flowengine.WaitForCompletion(waitCtx, m.feStore, wf.ID); err != nil {
+		return fmt.Errorf("network mode switch failed: %w", err)
+	}
+
+	// VPN teardown handled outside the workflow (same as inline path)
+	if !m.HasInternet() && m.currentVPNMode != models.VPNModeNone {
+		log.Warn().Msg("NetworkManager: disabling VPN because mode has no internet")
+		_ = m.SetVPNMode(ctx, models.VPNModeNone, nil)
+	}
+
+	return nil
+}
+
+// setModeInline is the original inline mode switching logic (pre-FlowEngine).
+// Kept as fallback for tests and migration. Contains all battle-tested bug fixes.
+func (m *NetworkManager) setModeInline(ctx context.Context, mode models.NetworkMode, wifiSSID, wifiPassword string, staticIP models.StaticIPConfig) error {
 	var err error
 
 	switch mode {
@@ -2497,4 +2563,110 @@ func (m *NetworkManager) ForgetNetwork(ctx context.Context, ssid string) error {
 	}
 
 	return fmt.Errorf("network '%s' not found in saved networks", ssid)
+}
+
+// =============================================================================
+// Exported methods for FlowEngine activities (NetworkModeSwitcher interface)
+// These delegate to the private battle-tested implementations.
+// =============================================================================
+
+// SetOfflineModeInline runs the inline offline mode logic (for FlowEngine activities).
+func (m *NetworkManager) SetOfflineModeInline(ctx context.Context) error {
+	return m.setOfflineMode(ctx)
+}
+
+// SetOnlineETHModeInline runs the inline ONLINE_ETH mode logic.
+func (m *NetworkManager) SetOnlineETHModeInline(ctx context.Context, staticIP models.StaticIPConfig) error {
+	return m.setOnlineETHMode(ctx, staticIP)
+}
+
+// SetOnlineWiFiModeInline runs the inline ONLINE_WIFI mode logic.
+func (m *NetworkManager) SetOnlineWiFiModeInline(ctx context.Context, ssid, password string, staticIP models.StaticIPConfig) error {
+	return m.setOnlineWiFiMode(ctx, ssid, password, staticIP)
+}
+
+// SetOnlineTetherModeInline runs the inline ONLINE_TETHER mode logic.
+func (m *NetworkManager) SetOnlineTetherModeInline(ctx context.Context) error {
+	return m.setOnlineTetherMode(ctx)
+}
+
+// SetServerETHModeInline runs the inline SERVER_ETH mode logic.
+func (m *NetworkManager) SetServerETHModeInline(ctx context.Context, staticIP models.StaticIPConfig) error {
+	return m.setServerETHMode(ctx, staticIP)
+}
+
+// SetServerWiFiModeInline runs the inline SERVER_WIFI mode logic.
+func (m *NetworkManager) SetServerWiFiModeInline(ctx context.Context, ssid, password string, staticIP models.StaticIPConfig) error {
+	return m.setServerWiFiMode(ctx, ssid, password, staticIP)
+}
+
+// GenerateNetplanYAML exports the private generateNetplanYAML for FlowEngine activities.
+func (m *NetworkManager) GenerateNetplanYAML(mode models.NetworkMode, wifiSSID, wifiPassword string, staticIP models.StaticIPConfig) string {
+	return m.generateNetplanYAML(mode, wifiSSID, wifiPassword, staticIP)
+}
+
+// WriteAndApplyNetplan exports the private writeAndApplyNetplan for FlowEngine activities.
+func (m *NetworkManager) WriteAndApplyNetplan(ctx context.Context, mode models.NetworkMode, wifiSSID, wifiPassword, reconfigureIface string, staticIP models.StaticIPConfig) {
+	m.writeAndApplyNetplan(ctx, mode, wifiSSID, wifiPassword, reconfigureIface, staticIP)
+}
+
+// PollForIP exports the private pollForIP for FlowEngine activities.
+// timeoutSeconds is the number of seconds to wait for IP acquisition.
+func (m *NetworkManager) PollForIP(ctx context.Context, iface string, timeoutSeconds int) error {
+	return m.pollForIP(ctx, iface, time.Duration(timeoutSeconds)*time.Second)
+}
+
+// ConfigurePiholeDHCPForMode exports the private configurePiholeDHCPForMode.
+func (m *NetworkManager) ConfigurePiholeDHCPForMode(ctx context.Context, mode models.NetworkMode) {
+	m.configurePiholeDHCPForMode(ctx, mode)
+}
+
+// SaveConfigToDB exports the private saveConfigToDB for FlowEngine activities.
+func (m *NetworkManager) SaveConfigToDB(mode models.NetworkMode, vpnMode models.VPNMode, wifiSSID, wifiPassword string, staticIP models.StaticIPConfig) {
+	m.saveConfigToDB(mode, vpnMode, wifiSSID, wifiPassword, staticIP)
+}
+
+// SetCurrentMode updates the in-memory current mode (used by FlowEngine persist activity).
+func (m *NetworkManager) SetCurrentMode(mode models.NetworkMode) {
+	m.currentMode = mode
+}
+
+// ResolveWiFiClientInterface exports the private resolveWiFiClientInterface.
+func (m *NetworkManager) ResolveWiFiClientInterface(ctx context.Context) string {
+	return m.resolveWiFiClientInterface(ctx)
+}
+
+// GetOnModeChange returns the registered mode change callback.
+func (m *NetworkManager) GetOnModeChange() func(models.NetworkMode) {
+	return m.onModeChange
+}
+
+// GetAPInterface returns the AP interface name.
+func (m *NetworkManager) GetAPInterface() string {
+	return m.apInterface
+}
+
+// GetWANInterface returns the WAN interface name.
+func (m *NetworkManager) GetWANInterface() string {
+	return m.wanInterface
+}
+
+// GetFallbackIP returns the fallback static IP.
+func (m *NetworkManager) GetFallbackIP() string {
+	return m.fallbackIP
+}
+
+// GetFallbackGateway returns the fallback gateway.
+func (m *NetworkManager) GetFallbackGateway() string {
+	return m.fallbackGateway
+}
+
+// GetSubnet returns the subnet CIDR.
+func (m *NetworkManager) GetSubnet() string {
+	return m.cfg.Subnet
+}
+
+// GetGatewayIP returns the gateway IP.
+func (m *NetworkManager) GetGatewayIP() string {
+	return m.cfg.GatewayIP
 }
