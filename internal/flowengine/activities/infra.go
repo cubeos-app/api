@@ -186,6 +186,18 @@ func makeCreateProxy(proxyMgr ProxyManager) flowengine.ActivityFunc {
 		if err := json.Unmarshal(input, &in); err != nil {
 			return nil, flowengine.NewPermanentError(fmt.Errorf("invalid create_proxy input: %w", err))
 		}
+
+		// Fat-envelope passes allocated port as "port", but this struct reads "forward_port".
+		// Accept either key so callers don't need to rename the field in workflow input.
+		// Must run BEFORE validation so the port fallback is applied before we check.
+		if in.ForwardPort == 0 {
+			var portFallback struct {
+				Port int `json:"port"`
+			}
+			_ = json.Unmarshal(input, &portFallback)
+			in.ForwardPort = portFallback.Port
+		}
+
 		if in.Domain == "" || in.ForwardPort == 0 {
 			return nil, flowengine.NewPermanentError(fmt.Errorf("domain and forward_port are required"))
 		}
@@ -206,19 +218,6 @@ func makeCreateProxy(proxyMgr ProxyManager) flowengine.ActivityFunc {
 				Created: true,
 				Skipped: true,
 			})
-		}
-
-		// Fallback: fat-envelope passes allocated port as "port", but this struct reads "forward_port".
-		// Accept either key so callers don't need to rename the field in workflow input.
-		if in.ForwardPort == 0 {
-			var portFallback struct {
-				Port int `json:"port"`
-			}
-			_ = json.Unmarshal(input, &portFallback)
-			in.ForwardPort = portFallback.Port
-		}
-		if in.ForwardPort == 0 {
-			return nil, flowengine.NewPermanentError(fmt.Errorf("forward_port is required"))
 		}
 
 		log.Info().Str("domain", in.Domain).Int("port", in.ForwardPort).Msg("create_proxy: creating proxy host")

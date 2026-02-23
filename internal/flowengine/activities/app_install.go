@@ -280,10 +280,11 @@ func makeRemoveDirs() flowengine.ActivityFunc {
 // preCreateBindMounts parses compose YAML and creates all bind mount source directories.
 // Docker Swarm (unlike docker-compose) does NOT auto-create bind mount host paths.
 // Without this, services fail to start with "invalid mount config" errors.
+// Handles both short-form ("host:container") and long-form (type/source/target map) volumes.
 func preCreateBindMounts(composeContent string) {
 	var compose struct {
 		Services map[string]struct {
-			Volumes []string `yaml:"volumes"`
+			Volumes []interface{} `yaml:"volumes"`
 		} `yaml:"services"`
 	}
 	if err := yaml.Unmarshal([]byte(composeContent), &compose); err != nil {
@@ -293,13 +294,8 @@ func preCreateBindMounts(composeContent string) {
 
 	for svcName, svc := range compose.Services {
 		for _, v := range svc.Volumes {
-			parts := strings.SplitN(v, ":", 3)
-			if len(parts) < 2 {
-				continue
-			}
-			hostPath := parts[0]
-			// Skip named volumes (no slash prefix)
-			if !strings.HasPrefix(hostPath, "/") {
+			hostPath := extractHostPath(v)
+			if hostPath == "" {
 				continue
 			}
 			if err := os.MkdirAll(hostPath, 0777); err != nil {
@@ -312,5 +308,37 @@ func preCreateBindMounts(composeContent string) {
 				log.Warn().Err(err).Str("path", hostPath).Msg("preCreateBindMounts: failed to chmod")
 			}
 		}
+	}
+}
+
+// extractHostPath extracts the host path from a volume entry.
+// Supports short-form string ("host:container[:opts]") and long-form map
+// (type: bind, source: /path, target: /path).
+func extractHostPath(v interface{}) string {
+	switch vol := v.(type) {
+	case string:
+		// Short form: "/host/path:/container/path" or "/host/path:/container/path:ro"
+		parts := strings.SplitN(vol, ":", 3)
+		if len(parts) < 2 {
+			return ""
+		}
+		hostPath := parts[0]
+		if !strings.HasPrefix(hostPath, "/") {
+			return "" // named volume, not a bind mount
+		}
+		return hostPath
+	case map[string]interface{}:
+		// Long form: {type: bind, source: /path, target: /path}
+		volType, _ := vol["type"].(string)
+		if volType != "" && volType != "bind" {
+			return "" // only create dirs for bind mounts
+		}
+		source, _ := vol["source"].(string)
+		if source == "" || !strings.HasPrefix(source, "/") {
+			return "" // no source or named volume
+		}
+		return source
+	default:
+		return ""
 	}
 }

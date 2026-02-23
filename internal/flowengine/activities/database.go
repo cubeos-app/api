@@ -471,10 +471,11 @@ type bindMount struct {
 }
 
 // extractBindMounts parses a docker-compose YAML and returns all bind mount definitions.
+// Handles both short-form ("host:container") and long-form (type/source/target map) volumes.
 func extractBindMounts(composeYAML string) []bindMount {
 	var compose struct {
 		Services map[string]struct {
-			Volumes []string `yaml:"volumes"`
+			Volumes []interface{} `yaml:"volumes"`
 		} `yaml:"services"`
 	}
 	if err := yaml.Unmarshal([]byte(composeYAML), &compose); err != nil {
@@ -485,28 +486,52 @@ func extractBindMounts(composeYAML string) []bindMount {
 	var mounts []bindMount
 	for _, svc := range compose.Services {
 		for _, v := range svc.Volumes {
-			parts := strings.SplitN(v, ":", 3)
-			if len(parts) < 2 {
-				continue
+			m := parseVolumeEntry(v)
+			if m != nil {
+				mounts = append(mounts, *m)
 			}
-			hostPath := parts[0]
-			containerPath := parts[1]
-			// Skip named volumes (no slash prefix)
-			if !strings.HasPrefix(hostPath, "/") {
-				continue
-			}
-			ro := false
-			if len(parts) == 3 && strings.Contains(parts[2], "ro") {
-				ro = true
-			}
-			mounts = append(mounts, bindMount{
-				hostPath:      hostPath,
-				containerPath: containerPath,
-				readOnly:      ro,
-			})
 		}
 	}
 	return mounts
+}
+
+// parseVolumeEntry parses a single volume entry (short-form string or long-form map)
+// and returns a bindMount if it's a bind mount, or nil otherwise.
+func parseVolumeEntry(v interface{}) *bindMount {
+	switch vol := v.(type) {
+	case string:
+		parts := strings.SplitN(vol, ":", 3)
+		if len(parts) < 2 {
+			return nil
+		}
+		hostPath := parts[0]
+		containerPath := parts[1]
+		if !strings.HasPrefix(hostPath, "/") {
+			return nil // named volume
+		}
+		ro := false
+		if len(parts) == 3 && strings.Contains(parts[2], "ro") {
+			ro = true
+		}
+		return &bindMount{hostPath: hostPath, containerPath: containerPath, readOnly: ro}
+	case map[string]interface{}:
+		volType, _ := vol["type"].(string)
+		if volType != "" && volType != "bind" {
+			return nil
+		}
+		source, _ := vol["source"].(string)
+		target, _ := vol["target"].(string)
+		if source == "" || !strings.HasPrefix(source, "/") || target == "" {
+			return nil
+		}
+		ro := false
+		if readOnly, ok := vol["read_only"].(bool); ok {
+			ro = readOnly
+		}
+		return &bindMount{hostPath: source, containerPath: target, readOnly: ro}
+	default:
+		return nil
+	}
 }
 
 // isConfigPath returns true if the container path looks like a config location.

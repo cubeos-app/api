@@ -572,7 +572,26 @@ func main() {
 		MaxAge:           300,
 	}))
 
-	r.Use(chimw.Timeout(60 * time.Second))
+	// Custom timeout: 60s for normal requests, skip for SSE job-streaming endpoints.
+	// SSE connections stay open for the duration of workflow execution (potentially minutes).
+	r.Use(func(next http.Handler) http.Handler {
+		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			// SSE job endpoints are long-lived — exempt from timeout
+			if strings.Contains(r.URL.Path, "/jobs/") {
+				next.ServeHTTP(w, r)
+				return
+			}
+			// Same behavior as chimw.Timeout: context deadline + 504 on expiry
+			ctx, cancel := context.WithTimeout(r.Context(), 60*time.Second)
+			defer func() {
+				cancel()
+				if ctx.Err() == context.DeadlineExceeded {
+					w.WriteHeader(http.StatusGatewayTimeout)
+				}
+			}()
+			next.ServeHTTP(w, r.WithContext(ctx))
+		})
+	})
 
 	// Global body size limit: 10MB (prevents OOM from oversized requests)
 	r.Use(middleware.MaxBodySize(10 * 1024 * 1024))

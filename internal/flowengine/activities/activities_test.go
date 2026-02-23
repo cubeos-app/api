@@ -615,5 +615,174 @@ func TestIsNotFoundError(t *testing.T) {
 	}
 }
 
+// --- Bug Fix Tests ---
+
+// TestCreateProxyFatEnvelopePort verifies that create_proxy accepts "port" from the
+// fat envelope (not just "forward_port"). This is the fix for Bug 1: the port fallback
+// must run BEFORE validation, not after.
+func TestCreateProxyFatEnvelopePort(t *testing.T) {
+	proxy := newMockProxy()
+	activity := makeCreateProxy(proxy)
+
+	// Fat envelope has "port" (from allocate_port) and "domain" (from add_dns),
+	// but NOT "forward_port". The activity must accept "port" as a fallback.
+	input := json.RawMessage(`{"domain":"prowlarr.cubeos.cube","port":6101}`)
+	output, err := activity(context.Background(), input)
+	if err != nil {
+		t.Fatalf("create_proxy should accept 'port' from fat envelope, got error: %v", err)
+	}
+
+	var out CreateProxyOutput
+	json.Unmarshal(output, &out)
+	if !out.Created || out.Skipped {
+		t.Errorf("expected created=true, skipped=false")
+	}
+	if out.Domain != "prowlarr.cubeos.cube" {
+		t.Errorf("expected domain=prowlarr.cubeos.cube, got %s", out.Domain)
+	}
+}
+
+// TestCreateProxyMissingBothPorts verifies that create_proxy still fails when
+// neither "forward_port" nor "port" is provided.
+func TestCreateProxyMissingBothPorts(t *testing.T) {
+	proxy := newMockProxy()
+	activity := makeCreateProxy(proxy)
+
+	input := json.RawMessage(`{"domain":"test.cubeos.cube"}`)
+	_, err := activity(context.Background(), input)
+	if err == nil {
+		t.Fatal("expected error when both forward_port and port are missing")
+	}
+}
+
+// TestPreCreateBindMountsLongForm verifies that preCreateBindMounts handles
+// long-form volume syntax (type/source/target maps) used by some CasaOS apps.
+func TestExtractBindMountsLongForm(t *testing.T) {
+	compose := `
+services:
+  app:
+    image: test:latest
+    volumes:
+      - type: bind
+        source: /cubeos/apps/test/appdata/config
+        target: /config
+      - /cubeos/apps/test/appdata/data:/data
+      - namedvol:/shared
+`
+	mounts := extractBindMounts(compose)
+	if len(mounts) != 2 {
+		t.Fatalf("expected 2 bind mounts, got %d", len(mounts))
+	}
+
+	// Check long-form mount
+	found := false
+	for _, m := range mounts {
+		if m.hostPath == "/cubeos/apps/test/appdata/config" && m.containerPath == "/config" {
+			found = true
+		}
+	}
+	if !found {
+		t.Error("long-form bind mount not extracted")
+	}
+
+	// Check short-form mount
+	found = false
+	for _, m := range mounts {
+		if m.hostPath == "/cubeos/apps/test/appdata/data" && m.containerPath == "/data" {
+			found = true
+		}
+	}
+	if !found {
+		t.Error("short-form bind mount not extracted")
+	}
+}
+
+// TestExtractBindMountsMixedFormats verifies parsing handles a mix of string
+// and long-form volumes without failing on either.
+func TestExtractBindMountsMixedFormats(t *testing.T) {
+	compose := `
+services:
+  web:
+    image: nginx
+    volumes:
+      - /cubeos/apps/web/html:/usr/share/nginx/html:ro
+      - type: bind
+        source: /cubeos/apps/web/config
+        target: /etc/nginx/conf.d
+        read_only: true
+      - type: volume
+        source: cache
+        target: /tmp/cache
+`
+	mounts := extractBindMounts(compose)
+	if len(mounts) != 2 {
+		t.Fatalf("expected 2 bind mounts (should skip type:volume), got %d", len(mounts))
+	}
+
+	// Check read-only flags
+	for _, m := range mounts {
+		if !m.readOnly {
+			t.Errorf("expected read_only=true for mount %s, got false", m.hostPath)
+		}
+	}
+}
+
+// TestExtractHostPathShortForm verifies extractHostPath with short-form strings.
+func TestExtractHostPathShortForm(t *testing.T) {
+	tests := []struct {
+		input    interface{}
+		expected string
+	}{
+		{"/host:/container", "/host"},
+		{"/host:/container:ro", "/host"},
+		{"namedvol:/container", ""},
+		{"single-entry", ""},
+	}
+	for _, tt := range tests {
+		result := extractHostPath(tt.input)
+		if result != tt.expected {
+			t.Errorf("extractHostPath(%v) = %q, want %q", tt.input, result, tt.expected)
+		}
+	}
+}
+
+// TestExtractHostPathLongForm verifies extractHostPath with long-form maps.
+func TestExtractHostPathLongForm(t *testing.T) {
+	tests := []struct {
+		name     string
+		input    map[string]interface{}
+		expected string
+	}{
+		{
+			"bind mount",
+			map[string]interface{}{"type": "bind", "source": "/cubeos/data", "target": "/data"},
+			"/cubeos/data",
+		},
+		{
+			"volume mount (skip)",
+			map[string]interface{}{"type": "volume", "source": "mydata", "target": "/data"},
+			"",
+		},
+		{
+			"no type (defaults to bind)",
+			map[string]interface{}{"source": "/cubeos/config", "target": "/config"},
+			"/cubeos/config",
+		},
+		{
+			"named source (skip)",
+			map[string]interface{}{"type": "bind", "source": "relative-path", "target": "/data"},
+			"",
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			result := extractHostPath(tt.input)
+			if result != tt.expected {
+				t.Errorf("extractHostPath(%v) = %q, want %q", tt.input, result, tt.expected)
+			}
+		})
+	}
+}
+
 // Suppress unused import warning for sql in tests
 var _ = (*sql.DB)(nil)
