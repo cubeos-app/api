@@ -87,6 +87,9 @@
 //	@tag.name					Registry
 //	@tag.description			Local Docker registry management
 //
+//	@tag.name					Workflows
+//	@tag.description			FlowEngine workflow run visibility (install, remove, progress)
+//
 //	@tag.name					Setup
 //	@tag.description			First boot setup wizard
 //
@@ -404,7 +407,7 @@ func main() {
 	log.Info().Msg("FlowEngine started")
 
 	// Wire engine into managers
-	orchestrator.SetFlowEngine(flowEngine)
+	orchestrator.SetFlowEngine(flowEngine, feStore)
 	appStoreMgr.SetFlowEngine(flowEngine, feStore)
 
 	// Create VPN manager (Sprint 3 - with HAL client)
@@ -452,6 +455,10 @@ func main() {
 		profilesHandler = handlers.NewProfilesHandler(orchestrator)
 		log.Info().Msg("AppsHandler and ProfilesHandler initialized")
 	}
+
+	// Create Workflows handler (FlowEngine visibility API)
+	workflowsHandler := handlers.NewWorkflowsHandler(feStore)
+	log.Info().Msg("WorkflowsHandler initialized")
 
 	// Create NetworkHandler for network mode management (Sprint 3)
 	networkHandler := handlers.NewNetworkHandler(networkMgr, halClient)
@@ -762,6 +769,9 @@ func main() {
 
 			// Documentation (offline docs viewer)
 			r.Mount("/documentation", docsHandler.Routes())
+
+			// Workflows API (FlowEngine visibility)
+			r.Mount("/workflows", workflowsHandler.Routes())
 
 			// Unified Apps API (Sprint 3)
 			if appsHandler != nil {

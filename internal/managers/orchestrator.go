@@ -8,9 +8,7 @@ import (
 	"fmt"
 	"net/http"
 	"os"
-	"os/exec"
 	"path/filepath"
-	"strconv"
 	"strings"
 	"time"
 
@@ -19,6 +17,7 @@ import (
 	"cubeos-api/internal/circuitbreaker"
 	"cubeos-api/internal/config"
 	"cubeos-api/internal/flowengine"
+	feworkflows "cubeos-api/internal/flowengine/workflows"
 	"cubeos-api/internal/hal"
 	"cubeos-api/internal/models"
 )
@@ -39,6 +38,7 @@ type Orchestrator struct {
 	ctx            context.Context
 	cancel         context.CancelFunc
 	engine         *flowengine.WorkflowEngine
+	feStore        *flowengine.WorkflowStore
 }
 
 // OrchestratorConfig holds configuration for the Orchestrator
@@ -134,10 +134,11 @@ func (o *Orchestrator) Close() error {
 	return nil
 }
 
-// SetFlowEngine wires the WorkflowEngine into the Orchestrator.
+// SetFlowEngine wires the WorkflowEngine and WorkflowStore into the Orchestrator.
 // Call this after engine.Start() so the engine is ready before workflows are submitted.
-func (o *Orchestrator) SetFlowEngine(e *flowengine.WorkflowEngine) {
+func (o *Orchestrator) SetFlowEngine(e *flowengine.WorkflowEngine, s *flowengine.WorkflowStore) {
 	o.engine = e
+	o.feStore = s
 }
 
 // AppExists reports whether an app with the given name already exists in the database.
@@ -155,10 +156,11 @@ func (o *Orchestrator) AppExists(ctx context.Context, name string) (bool, error)
 // App Lifecycle Operations
 // =============================================================================
 
-// InstallApp installs a new application.
-// Database operations are wrapped in a transaction for atomicity.
+// InstallApp submits an app_install workflow and returns immediately.
+// The workflow executes asynchronously; callers should return 202 Accepted
+// with the workflow ID for the client to poll progress.
+// Returns (nil, nil) to signal an async in-progress install.
 func (o *Orchestrator) InstallApp(ctx context.Context, req models.InstallAppRequest) (*models.App, error) {
-	// Validate app name
 	name := strings.ToLower(strings.TrimSpace(req.Name))
 	if name == "" {
 		return nil, fmt.Errorf("app name is required")
@@ -167,141 +169,54 @@ func (o *Orchestrator) InstallApp(ctx context.Context, req models.InstallAppRequ
 		return nil, fmt.Errorf("invalid app name: must be lowercase alphanumeric with hyphens")
 	}
 
-	// Check if app already exists
-	existing, _ := o.GetApp(ctx, name)
-	if existing != nil {
-		return nil, fmt.Errorf("app %s already exists", name)
+	if o.engine == nil {
+		return nil, fmt.Errorf("workflow engine not available")
 	}
 
-	// Determine paths based on app type
-	appType := models.AppTypeUser
 	basePath := "/cubeos/apps"
-	if req.Type != "" {
-		appType = req.Type
-	}
-	if appType == models.AppTypeSystem || appType == models.AppTypePlatform {
+	if req.Type == models.AppTypeSystem || req.Type == models.AppTypePlatform {
 		basePath = "/cubeos/coreapps"
 	}
-
 	composePath := filepath.Join(basePath, name, "appconfig", "docker-compose.yml")
 	dataPath := filepath.Join(basePath, name, "appdata")
 
-	// Determine deploy mode
-	deployMode := models.DeployModeStack
-	if req.DeployMode != "" {
-		deployMode = req.DeployMode
-	}
-	// Force compose mode for host network services
-	if name == "pihole" || name == "npm" {
-		deployMode = models.DeployModeCompose
+	source := string(req.Source)
+	if source == "" {
+		source = "custom"
 	}
 
-	// Allocate port
-	port, err := o.ports.AllocateUserPort()
+	input, err := json.Marshal(map[string]interface{}{
+		"name":         name,
+		"app_name":     name,
+		"stack_name":   name,
+		"source":       source,
+		"image":        req.Image,
+		"tag":          req.Tag,
+		"compose_path": composePath,
+		"base_path":    basePath,
+		"data_path":    dataPath,
+		"base_domain":  o.cfg.Domain,
+		"enabled":      true,
+	})
 	if err != nil {
-		return nil, fmt.Errorf("failed to allocate port: %w", err)
+		return nil, fmt.Errorf("failed to build workflow input: %w", err)
 	}
 
-	// Create directories
-	if err := os.MkdirAll(filepath.Dir(composePath), 0755); err != nil {
-		return nil, fmt.Errorf("failed to create app directory: %w", err)
-	}
-	if err := os.MkdirAll(dataPath, 0755); err != nil {
-		return nil, fmt.Errorf("failed to create data directory: %w", err)
-	}
-
-	// Generate display name
-	displayName := req.DisplayName
-	if displayName == "" {
-		displayName = toTitleCase(strings.ReplaceAll(name, "-", " "))
+	if _, err := o.engine.Submit(ctx, flowengine.SubmitParams{
+		WorkflowType: feworkflows.AppInstallType,
+		ExternalID:   name,
+		Input:        json.RawMessage(input),
+	}); err != nil {
+		return nil, fmt.Errorf("failed to submit install workflow: %w", err)
 	}
 
-	// Generate FQDN
-	fqdn := fmt.Sprintf("%s.%s", name, o.cfg.Domain)
-
-	// Begin transaction for all database inserts
-	tx, err := o.db.BeginTx(ctx, nil)
-	if err != nil {
-		return nil, fmt.Errorf("failed to begin transaction: %w", err)
-	}
-	defer tx.Rollback() // no-op after Commit
-
-	result, err := tx.ExecContext(ctx, `
-		INSERT INTO apps (name, display_name, description, type, category, source, 
-			compose_path, data_path, enabled, deploy_mode)
-		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-	`, name, displayName, req.Description, appType, req.Category, req.Source,
-		composePath, dataPath, true, deployMode)
-	if err != nil {
-		return nil, fmt.Errorf("failed to insert app: %w", err)
-	}
-
-	appID, err := result.LastInsertId()
-	if err != nil {
-		return nil, fmt.Errorf("failed to get app ID: %w", err)
-	}
-
-	// Insert port allocation
-	_, err = tx.ExecContext(ctx, `
-		INSERT INTO port_allocations (app_id, port, protocol, description, is_primary)
-		VALUES (?, ?, 'tcp', 'Web UI', TRUE)
-	`, appID, port)
-	if err != nil {
-		return nil, fmt.Errorf("failed to allocate port: %w", err)
-	}
-
-	// Insert FQDN
-	_, err = tx.ExecContext(ctx, `
-		INSERT INTO fqdns (app_id, fqdn, subdomain, backend_port)
-		VALUES (?, ?, ?, ?)
-	`, appID, fqdn, name, port)
-	if err != nil {
-		return nil, fmt.Errorf("failed to register FQDN: %w", err)
-	}
-
-	if err := tx.Commit(); err != nil {
-		return nil, fmt.Errorf("failed to commit app install: %w", err)
-	}
-
-	// Deploy the app (outside transaction — rollback DB on failure)
-	appDir := filepath.Join(basePath, name)
-	if err := o.deployApp(ctx, name, composePath, deployMode); err != nil {
-		o.rollbackInstall(ctx, name, appID, fqdn, appDir)
-		return nil, fmt.Errorf("failed to deploy app: %w", err)
-	}
-
-	// Register DNS entry with Pi-hole — FATAL: app is unreachable without DNS
-	if err := o.pihole.AddEntry(fqdn, models.DefaultGatewayIP); err != nil {
-		o.rollbackInstall(ctx, name, appID, fqdn, appDir)
-		return nil, fmt.Errorf("failed to add DNS entry for %s: %w", fqdn, err)
-	}
-	// Pi-hole v6 auto-applies DNS changes — no reload needed
-
-	// Create NPM proxy host — FATAL: app is unreachable without reverse proxy
-	proxyHost := &NPMProxyHostExtended{
-		DomainNames:           []string{fqdn},
-		ForwardScheme:         "http",
-		ForwardHost:           models.DefaultGatewayIP,
-		ForwardPort:           port,
-		BlockExploits:         true,
-		AllowWebsocketUpgrade: true,
-		AccessListID:          0,
-		CertificateID:         0,
-		AdvancedConfig:        "",
-		Meta:                  NPMMeta{},
-	}
-	if _, err := o.npm.CreateProxyHost(proxyHost); err != nil {
-		o.rollbackInstall(ctx, name, appID, fqdn, appDir)
-		return nil, fmt.Errorf("failed to create reverse proxy for %s: %w", fqdn, err)
-	}
-
-	// Return the created app
-	return o.GetApp(ctx, name)
+	// Return nil to signal async in-progress. Handler must return 202 Accepted.
+	return nil, nil
 }
 
-// InstallFromRegistryWithProgress installs a registry image with SSE progress tracking.
-// This creates the compose file from the image/tag, allocates a port, sets up DNS/proxy,
-// and deploys as a Swarm stack — emitting progress events to the provided Job throughout.
+// InstallFromRegistryWithProgress submits an app_install workflow for a registry image
+// and polls for completion while emitting SSE progress events via job.
+// Returns the installed app on success, or an error if the workflow fails.
 func (o *Orchestrator) InstallFromRegistryWithProgress(ctx context.Context, req models.InstallAppRequest, job *Job) (*models.App, error) {
 	name := strings.ToLower(strings.TrimSpace(req.Name))
 	if name == "" {
@@ -317,87 +232,34 @@ func (o *Orchestrator) InstallFromRegistryWithProgress(ctx context.Context, req 
 		req.Tag = "latest"
 	}
 
-	// Check if app already exists
-	existing, _ := o.GetApp(ctx, name)
-	if existing != nil {
-		return nil, fmt.Errorf("app %s already exists", name)
+	if o.engine == nil || o.feStore == nil {
+		return nil, fmt.Errorf("workflow engine not available")
 	}
 
-	job.Emit("setup", 10, "Creating app directories")
+	job.Emit("setup", 10, "Preparing installation")
 
-	// Create app directories
+	// Pre-allocate a port so the compose YAML can reference it before the workflow starts.
+	allocatedPort, err := o.ports.AllocateUserPort()
+	if err != nil {
+		return nil, fmt.Errorf("failed to allocate port: %w", err)
+	}
+
+	job.Emit("port", 20, fmt.Sprintf("Allocated port %d", allocatedPort))
+
 	appBase := filepath.Join("/cubeos/apps", name)
 	appConfig := filepath.Join(appBase, "appconfig")
 	appData := filepath.Join(appBase, "appdata")
-	if err := os.MkdirAll(appConfig, 0755); err != nil {
-		return nil, fmt.Errorf("failed to create app directory: %w", err)
-	}
-	if err := os.MkdirAll(appData, 0777); err != nil {
-		return nil, fmt.Errorf("failed to create data directory: %w", err)
-	}
-	os.Chmod(appData, 0777) // Explicit chmod to override umask
-
-	job.Emit("port", 20, "Allocating port")
-
-	// Allocate port: use requested port if provided and available, otherwise auto-allocate
-	var allocatedPort int
-	if req.Port > 0 {
-		allocated, _ := o.ports.IsPortAllocated(req.Port, "tcp")
-		if !allocated && !o.ports.IsPortReserved(req.Port) {
-			allocatedPort = req.Port
-		} else {
-			log.Warn().Int("port", req.Port).Msg("requested port unavailable, auto-allocating")
-			var err error
-			allocatedPort, err = o.ports.AllocateUserPort()
-			if err != nil {
-				os.RemoveAll(appBase)
-				return nil, fmt.Errorf("failed to allocate port: %w", err)
-			}
-		}
-	} else {
-		var err error
-		allocatedPort, err = o.ports.AllocateUserPort()
-		if err != nil {
-			os.RemoveAll(appBase)
-			return nil, fmt.Errorf("failed to allocate port: %w", err)
-		}
-	}
-
-	job.Emit("port", 25, fmt.Sprintf("Allocated port %d", allocatedPort))
-
-	// Detect container port from image EXPOSE directives via registry manifest
-	containerPort := allocatedPort
-	job.Emit("manifest", 30, "Detecting container EXPOSE port")
-	if detected := o.detectContainerPort(req.Image, req.Tag); detected > 0 {
-		containerPort = detected
-		log.Info().Str("image", req.Image).Int("port", detected).Msg("detected container EXPOSE port from registry manifest")
-	}
-
-	job.Emit("compose", 35, "Generating Docker config")
-
-	// Apply volume overrides: if user specified a custom path for /data, use it
-	dataMount := appData
-	if override, ok := req.VolumeOverrides["/data"]; ok && override != "" {
-		dataMount = override
-		// Ensure the custom path exists
-		if err := os.MkdirAll(dataMount, 0777); err != nil {
-			log.Warn().Err(err).Str("path", dataMount).Msg("failed to create custom volume path, falling back to default")
-			dataMount = appData
-		} else {
-			os.Chmod(dataMount, 0777)
-		}
-	}
-
-	// Build local registry image reference
+	composePath := filepath.Join(appConfig, "docker-compose.yml")
 	fullImage := fmt.Sprintf("localhost:5000/%s:%s", req.Image, req.Tag)
 
-	// Generate docker-compose.yml
-	compose := fmt.Sprintf(`version: "3.8"
-services:
+	// Generate compose YAML with the allocated port.
+	// The app_install workflow's allocate_port step will see port>0 in the input and
+	// use it directly without re-allocating.
+	composeYAML := fmt.Sprintf(`services:
   %s:
     image: %s
     ports:
-      - target: %d
+      - target: 8080
         published: %d
         mode: ingress
     deploy:
@@ -408,297 +270,92 @@ services:
         max_attempts: 3
     volumes:
       - %s:/data
-`, name, fullImage, containerPort, allocatedPort, dataMount)
+`, name, fullImage, allocatedPort, appData)
 
-	composePath := filepath.Join(appConfig, "docker-compose.yml")
-	if err := os.WriteFile(composePath, []byte(compose), 0644); err != nil {
-		os.RemoveAll(appBase)
-		return nil, fmt.Errorf("failed to write compose file: %w", err)
-	}
-
-	// Pre-create bind mount directories
-	preCreateBindMounts(compose)
-
-	job.Emit("database", 40, "Saving to database")
-
-	// Generate display name and FQDN
-	displayName := req.DisplayName
-	if displayName == "" {
-		displayName = toTitleCase(strings.ReplaceAll(name, "-", " "))
-	}
-	// Use custom subdomain if provided, otherwise derive from name
 	subdomain := name
 	if req.Subdomain != "" {
 		subdomain = strings.ToLower(strings.TrimSpace(req.Subdomain))
 	}
-	fqdn := fmt.Sprintf("%s.%s", subdomain, o.cfg.Domain)
 
-	// Database transaction: apps + port_allocations + fqdns
-	tx, err := o.db.BeginTx(ctx, nil)
+	input, err := json.Marshal(map[string]interface{}{
+		"name":         name,
+		"app_name":     name,
+		"stack_name":   name,
+		"source":       string(models.AppSourceRegistry),
+		"image":        req.Image,
+		"tag":          req.Tag,
+		"compose_yaml": composeYAML,
+		"base_path":    appBase,
+		"compose_path": composePath,
+		"data_path":    appData,
+		"base_domain":  o.cfg.Domain,
+		"subdomain":    subdomain,
+		"port":         allocatedPort, // hint for db.allocate_port (uses this instead of auto-alloc)
+		"enabled":      true,
+	})
 	if err != nil {
-		os.RemoveAll(appBase)
-		return nil, fmt.Errorf("failed to begin transaction: %w", err)
+		return nil, fmt.Errorf("failed to build workflow input: %w", err)
 	}
-	defer tx.Rollback()
 
-	result, err := tx.ExecContext(ctx, `
-		INSERT INTO apps (name, display_name, description, type, category, source, 
-			compose_path, data_path, enabled, deploy_mode)
-		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-	`, name, displayName, req.Description, models.AppTypeUser, "user", models.AppSourceRegistry,
-		composePath, dataMount, true, models.DeployModeStack)
+	wf, err := o.engine.Submit(ctx, flowengine.SubmitParams{
+		WorkflowType: feworkflows.AppInstallType,
+		ExternalID:   name,
+		Input:        json.RawMessage(input),
+	})
 	if err != nil {
-		os.RemoveAll(appBase)
-		return nil, fmt.Errorf("failed to insert app: %w", err)
+		return nil, fmt.Errorf("failed to submit install workflow: %w", err)
 	}
 
-	appID, err := result.LastInsertId()
-	if err != nil {
-		os.RemoveAll(appBase)
-		return nil, fmt.Errorf("failed to get app ID: %w", err)
-	}
-
-	_, err = tx.ExecContext(ctx, `
-		INSERT INTO port_allocations (app_id, port, protocol, description, is_primary)
-		VALUES (?, ?, 'tcp', 'Web UI', TRUE)
-	`, appID, allocatedPort)
-	if err != nil {
-		os.RemoveAll(appBase)
-		return nil, fmt.Errorf("failed to allocate port: %w", err)
-	}
-
-	// Clean any stale FQDN entry (e.g. from manual DB cleanup without CASCADE)
-	_, _ = tx.ExecContext(ctx, `DELETE FROM fqdns WHERE fqdn = ?`, fqdn)
-
-	_, err = tx.ExecContext(ctx, `
-		INSERT INTO fqdns (app_id, fqdn, subdomain, backend_port)
-		VALUES (?, ?, ?, ?)
-	`, appID, fqdn, subdomain, allocatedPort)
-	if err != nil {
-		os.RemoveAll(appBase)
-		return nil, fmt.Errorf("failed to register FQDN: %w", err)
-	}
-
-	if err := tx.Commit(); err != nil {
-		os.RemoveAll(appBase)
-		return nil, fmt.Errorf("failed to commit app install: %w", err)
-	}
-
-	job.Emit("deploy", 50, "Deploying Swarm stack")
-
-	// Deploy as Swarm stack
-	deployCtx, deployCancel := context.WithTimeout(ctx, 3*time.Minute)
-	defer deployCancel()
-
-	deployCmd := exec.CommandContext(deployCtx, "docker", "stack", "deploy",
-		"-c", composePath,
-		"--resolve-image=never",
-		name,
-	)
-	deployCmd.Dir = appConfig
-	if output, deployErr := deployCmd.CombinedOutput(); deployErr != nil {
-		o.rollbackInstall(ctx, name, appID, fqdn, appBase)
-		return nil, fmt.Errorf("stack deploy failed: %s", string(output))
-	}
-
-	job.Emit("deploy", 70, "Stack deployed, configuring network")
-
-	// DNS entry — FATAL: app is unreachable without DNS
-	job.Emit("dns", 80, "Configuring Pi-hole DNS")
-	if err := o.pihole.AddEntry(fqdn, models.DefaultGatewayIP); err != nil {
-		o.rollbackInstall(ctx, name, appID, fqdn, appBase)
-		return nil, fmt.Errorf("failed to add DNS entry for %s: %w", fqdn, err)
-	}
-
-	// NPM proxy host — FATAL: app is unreachable without reverse proxy
-	// Clean stale proxy for same FQDN before creating (handles orphans from manual cleanup)
-	job.Emit("proxy", 90, "Setting up reverse proxy")
-	if existingProxy, _ := o.npm.FindProxyHostByDomain(fqdn); existingProxy != nil {
-		if delErr := o.npm.DeleteProxyHost(existingProxy.ID); delErr != nil {
-			log.Warn().Err(delErr).Str("fqdn", fqdn).Int("proxyID", existingProxy.ID).Msg("Failed to clean stale NPM proxy")
-		}
-	}
-	proxyHost := &NPMProxyHostExtended{
-		DomainNames:           []string{fqdn},
-		ForwardScheme:         "http",
-		ForwardHost:           models.DefaultGatewayIP,
-		ForwardPort:           allocatedPort,
-		BlockExploits:         true,
-		AllowWebsocketUpgrade: true,
-		AccessListID:          0,
-		CertificateID:         0,
-		AdvancedConfig:        "",
-		Meta:                  NPMMeta{},
-	}
-	if _, err := o.npm.CreateProxyHost(proxyHost); err != nil {
-		o.rollbackInstall(ctx, name, appID, fqdn, appBase)
-		return nil, fmt.Errorf("failed to create reverse proxy for %s: %w", fqdn, err)
+	adapter := flowengine.NewProgressAdapter(job)
+	if err := adapter.PollAndEmit(ctx, o.feStore, wf.ID); err != nil {
+		return nil, err
 	}
 
 	return o.GetApp(ctx, name)
 }
 
-// detectContainerPort queries the local Docker registry to find the EXPOSE port
-// from an image's config. Returns 0 if detection fails (caller should use allocated port).
-func (o *Orchestrator) detectContainerPort(image, tag string) int {
-	if o.registryURL == "" || o.registryClient == nil {
-		return 0
-	}
-
-	// Fetch the image manifest to get the config digest
-	manifestURL := fmt.Sprintf("%s/v2/%s/manifests/%s", o.registryURL, image, tag)
-	req, err := http.NewRequest("GET", manifestURL, nil)
-	if err != nil {
-		return 0
-	}
-	req.Header.Set("Accept", "application/vnd.docker.distribution.manifest.v2+json")
-
-	resp, err := o.registryClient.Do(req)
-	if err != nil || resp.StatusCode != http.StatusOK {
-		return 0
-	}
-	defer resp.Body.Close()
-
-	var manifest struct {
-		Config struct {
-			Digest string `json:"digest"`
-		} `json:"config"`
-	}
-	if err := json.NewDecoder(resp.Body).Decode(&manifest); err != nil || manifest.Config.Digest == "" {
-		return 0
-	}
-
-	// Fetch the image config blob to find ExposedPorts
-	blobURL := fmt.Sprintf("%s/v2/%s/blobs/%s", o.registryURL, image, manifest.Config.Digest)
-	blobResp, err := o.registryClient.Get(blobURL)
-	if err != nil || blobResp.StatusCode != http.StatusOK {
-		return 0
-	}
-	defer blobResp.Body.Close()
-
-	var imgConfig struct {
-		Config struct {
-			ExposedPorts map[string]struct{} `json:"ExposedPorts"`
-		} `json:"config"`
-	}
-	if err := json.NewDecoder(blobResp.Body).Decode(&imgConfig); err != nil {
-		return 0
-	}
-
-	// Return first exposed port
-	for portSpec := range imgConfig.Config.ExposedPorts {
-		parts := strings.SplitN(portSpec, "/", 2)
-		if port, err := strconv.Atoi(parts[0]); err == nil && port > 0 {
-			return port
-		}
-	}
-	return 0
-}
-
-// UninstallApp removes an application
+// UninstallApp submits an app_remove workflow and waits for completion.
+// Protected system apps cannot be uninstalled.
 func (o *Orchestrator) UninstallApp(ctx context.Context, name string, keepData bool) error {
 	app, err := o.GetApp(ctx, name)
 	if err != nil {
 		return fmt.Errorf("app not found: %w", err)
 	}
 
-	// Prevent uninstalling protected system apps
 	if app.IsProtected() {
 		return fmt.Errorf("cannot uninstall protected system app: %s", name)
 	}
 
-	// Stop the app first
-	if err := o.StopApp(ctx, name); err != nil {
-		log.Warn().Err(err).Str("app", name).Msg("Failed to stop app during uninstall")
+	if o.engine == nil || o.feStore == nil {
+		return fmt.Errorf("workflow engine not available")
 	}
 
-	// Remove from Swarm/Docker
-	if app.UsesSwarm() {
-		if err := o.swarm.RemoveStack(name); err != nil {
-			log.Warn().Err(err).Str("app", name).Msg("Failed to remove stack during uninstall")
-		}
-	} else {
-		// Stop and remove container
-		o.docker.StopContainer(ctx, "cubeos-"+name, 10)
-	}
+	// Resolve primary FQDN from the already-loaded app relations.
+	fqdn := app.GetPrimaryFQDN()
 
-	// Remove NPM proxy host
-	if proxyHost, err := o.npm.FindProxyHostByDomain(app.GetPrimaryFQDN()); err == nil && proxyHost != nil {
-		if err := o.npm.DeleteProxyHost(proxyHost.ID); err != nil {
-			log.Warn().Err(err).Str("app", name).Msg("Failed to delete NPM proxy during uninstall")
-		}
-	}
-
-	// Remove DNS entry and reload Pi-hole so removal takes effect immediately (B116)
-	if fqdn := app.GetPrimaryFQDN(); fqdn != "" {
-		if err := o.pihole.RemoveEntry(fqdn); err != nil {
-			log.Warn().Err(err).Str("fqdn", fqdn).Msg("Failed to remove DNS entry during uninstall")
-		}
-	}
-
-	// Delete from database (cascades to ports and fqdns)
-	_, err = o.db.ExecContext(ctx, "DELETE FROM apps WHERE id = ?", app.ID)
+	input, err := json.Marshal(feworkflows.AppRemoveInput{
+		AppID:       app.ID,
+		AppName:     name,
+		FQDN:        fqdn,
+		ComposePath: app.ComposePath,
+		DataPath:    app.DataPath,
+		KeepData:    keepData,
+		UsesSwarm:   app.UsesSwarm(),
+	})
 	if err != nil {
-		return fmt.Errorf("failed to delete app from database: %w", err)
+		return fmt.Errorf("failed to build workflow input: %w", err)
 	}
 
-	// Remove compose config directory (always removed on uninstall)
-	if app.ComposePath != "" {
-		configDir := filepath.Dir(app.ComposePath)
-		if err := os.RemoveAll(configDir); err != nil {
-			log.Warn().Err(err).Str("path", configDir).Msg("Failed to remove config directory during uninstall")
-		}
+	wf, err := o.engine.Submit(ctx, flowengine.SubmitParams{
+		WorkflowType: feworkflows.AppRemoveWorkflowType,
+		ExternalID:   name,
+		Input:        json.RawMessage(input),
+	})
+	if err != nil {
+		return fmt.Errorf("failed to submit remove workflow: %w", err)
 	}
 
-	// Optionally remove data
-	if !keepData && app.DataPath != "" {
-		if err := os.RemoveAll(app.DataPath); err != nil {
-			log.Warn().Err(err).Str("path", app.DataPath).Msg("Failed to remove data directory during uninstall")
-		}
-	}
-
-	// Clean up parent app directory if empty
-	if app.ComposePath != "" {
-		parentDir := filepath.Dir(filepath.Dir(app.ComposePath)) // e.g. /cubeos/apps/appname
-		if entries, err := os.ReadDir(parentDir); err == nil && len(entries) == 0 {
-			os.Remove(parentDir) // Remove only if empty
-		}
-	}
-
-	return nil
-}
-
-// rollbackInstall performs best-effort cleanup when install fails after partial completion.
-// Removes Swarm stack, DNS entry, NPM proxy, DB row, and app directory.
-func (o *Orchestrator) rollbackInstall(ctx context.Context, name string, appID int64, fqdn, appDir string) {
-	log.Warn().Str("app", name).Msg("Rolling back failed install")
-
-	// Remove Swarm stack
-	if err := o.swarm.RemoveStack(name); err != nil {
-		log.Error().Err(err).Str("app", name).Msg("Rollback: failed to remove stack")
-	}
-
-	// Remove NPM proxy
-	if proxyHost, err := o.npm.FindProxyHostByDomain(fqdn); err == nil && proxyHost != nil {
-		if err := o.npm.DeleteProxyHost(proxyHost.ID); err != nil {
-			log.Error().Err(err).Str("fqdn", fqdn).Msg("Rollback: failed to delete NPM proxy")
-		}
-	}
-
-	// Remove DNS entry
-	if err := o.pihole.RemoveEntry(fqdn); err != nil {
-		log.Error().Err(err).Str("fqdn", fqdn).Msg("Rollback: failed to remove DNS entry")
-	}
-
-	// Remove DB row (cascades to ports + fqdns via foreign_keys=ON in DSN)
-	if _, err := o.db.ExecContext(ctx, "DELETE FROM apps WHERE id = ?", appID); err != nil {
-		log.Error().Err(err).Str("app", name).Msg("Rollback: failed to delete app row")
-	}
-
-	// Remove app directory
-	if appDir != "" {
-		os.RemoveAll(appDir)
-	}
+	return flowengine.WaitForCompletion(ctx, o.feStore, wf.ID)
 }
 
 // StartApp starts an application

@@ -10,6 +10,8 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"os"
+	"path/filepath"
 
 	"cubeos-api/internal/flowengine/activities"
 	"cubeos-api/internal/managers"
@@ -82,35 +84,101 @@ func (a *appConflictAdapter) AppExists(ctx context.Context, name string) (bool, 
 
 // --- appStoreManifestAdapter: activities.AppStoreManifestReader via *managers.AppStoreManager ---
 //
-// Session 1: ReadManifest is functional. ProcessManifest, RemapVolumes, and DetectWebUIType
-// are stubs that return errors — the active install path still uses InstallAppWithProgress.
-// Full implementations land in Session 3 when AppStoreManager is gutted.
+// ReadManifest reads the manifest YAML from disk and returns a JSON blob containing
+// the manifest content (manifest_yaml), app metadata, and store-specific hints.
+// This bypasses the json:"-" tag on StoreApp.ManifestPath.
+//
+// ProcessManifest applies CasaOS variable substitution, Swarm sanitization, and
+// port remapping using the allocated port from the fat envelope.
+//
+// RemapVolumes remaps external bind-mount paths to safe defaults under /cubeos/apps/.
+//
+// DetectWebUIType is a stub — the actual detection is performed by the app.detect_webui
+// activity (database.go) via HTTP probe. This method is never called.
 
 type appStoreManifestAdapter struct{ mgr *managers.AppStoreManager }
+
+// manifestPayload is the JSON structure embedded in ReadManifestOutput.Manifest.
+// All fields are consumed by ProcessManifest and RemapVolumes via the fat envelope.
+type manifestPayload struct {
+	AppName      string `json:"app_name"`
+	DataPath     string `json:"data_path"`
+	ManifestYAML string `json:"manifest_yaml"`
+	PortMap      string `json:"port_map,omitempty"` // CasaOS x-casaos port hint
+}
 
 func (a *appStoreManifestAdapter) ReadManifest(ctx context.Context, storeID, appName string) (json.RawMessage, error) {
 	app := a.mgr.GetApp(storeID, appName)
 	if app == nil {
 		return nil, fmt.Errorf("app %s/%s not found in catalog", storeID, appName)
 	}
-	data, err := json.Marshal(app)
+	if app.ManifestPath == "" {
+		return nil, fmt.Errorf("manifest path not set for %s/%s", storeID, appName)
+	}
+
+	// Read the raw YAML from disk (ManifestPath has json:"-" so it's not in catalog JSON).
+	raw, err := os.ReadFile(app.ManifestPath)
 	if err != nil {
-		return nil, fmt.Errorf("marshal manifest for %s/%s: %w", storeID, appName, err)
+		return nil, fmt.Errorf("failed to read manifest for %s/%s: %w", storeID, appName, err)
+	}
+
+	payload := manifestPayload{
+		AppName:      appName,
+		DataPath:     filepath.Join("/cubeos/apps", appName, "appdata"),
+		ManifestYAML: string(raw),
+		PortMap:      app.PortMap,
+	}
+	data, err := json.Marshal(payload)
+	if err != nil {
+		return nil, fmt.Errorf("failed to marshal manifest payload for %s/%s: %w", storeID, appName, err)
 	}
 	return json.RawMessage(data), nil
 }
 
-func (a *appStoreManifestAdapter) ProcessManifest(ctx context.Context, manifest json.RawMessage) (*activities.ProcessedManifest, error) {
-	// Session 1 stub: full implementation in Session 3.
-	return nil, fmt.Errorf("ProcessManifest: not yet implemented (Session 3)")
+func (a *appStoreManifestAdapter) ProcessManifest(ctx context.Context, manifest json.RawMessage, port int) (*activities.ProcessedManifest, error) {
+	var payload manifestPayload
+	if err := json.Unmarshal(manifest, &payload); err != nil {
+		return nil, fmt.Errorf("failed to unmarshal manifest payload: %w", err)
+	}
+	if payload.ManifestYAML == "" {
+		return nil, fmt.Errorf("manifest_yaml is empty")
+	}
+	if payload.AppName == "" {
+		return nil, fmt.Errorf("app_name is missing from manifest payload")
+	}
+	if payload.DataPath == "" {
+		payload.DataPath = filepath.Join("/cubeos/apps", payload.AppName, "appdata")
+	}
+
+	// Apply CasaOS variable substitution + Swarm sanitization.
+	processed := a.mgr.ProcessManifestYAML(payload.ManifestYAML, payload.AppName, payload.DataPath)
+
+	// Remap the published host port to the CubeOS-allocated port.
+	if port > 0 {
+		remapped, err := managers.RemapPorts(processed, port, payload.PortMap)
+		if err == nil {
+			processed = remapped
+		}
+		// non-fatal: if remapping fails the original is used
+	}
+
+	return &activities.ProcessedManifest{
+		ComposeYAML: processed,
+	}, nil
 }
 
 func (a *appStoreManifestAdapter) RemapVolumes(ctx context.Context, compose string, appName string) (string, error) {
-	// Session 1 stub: return compose unchanged; full implementation in Session 3.
-	return compose, nil
+	dataPath := filepath.Join("/cubeos/apps", appName, "appdata")
+	remapped, _, err := managers.RemapExternalVolumes(compose, appName, dataPath, map[string]string{})
+	if err != nil {
+		// non-fatal: return original compose if remapping fails
+		return compose, nil
+	}
+	return remapped, nil
 }
 
 func (a *appStoreManifestAdapter) DetectWebUIType(ctx context.Context, manifest json.RawMessage) (string, error) {
-	// Session 1 stub: default to "http".
-	return "http", nil
+	// Detection is performed by the app.detect_webui activity (database.go) via HTTP probe.
+	// This method satisfies the interface but is never called by any registered activity.
+	return "browser", nil
 }

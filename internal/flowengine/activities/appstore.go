@@ -16,7 +16,8 @@ type AppStoreManifestReader interface {
 	// ReadManifest fetches the raw manifest for a store app.
 	ReadManifest(ctx context.Context, storeID, appName string) (json.RawMessage, error)
 	// ProcessManifest transforms a raw manifest into a compose-ready config.
-	ProcessManifest(ctx context.Context, manifest json.RawMessage) (*ProcessedManifest, error)
+	// port is the allocated host port from the fat envelope (used to remap published ports).
+	ProcessManifest(ctx context.Context, manifest json.RawMessage, port int) (*ProcessedManifest, error)
 	// RemapVolumes adjusts volume paths for the CubeOS directory structure.
 	RemapVolumes(ctx context.Context, compose string, appName string) (string, error)
 	// DetectWebUIType determines the app's web UI access type.
@@ -62,9 +63,11 @@ type ReadManifestOutput struct {
 }
 
 // ProcessManifestInput is the input for the appstore.process_manifest activity.
+// Port is auto-populated from the fat envelope (set by the allocate_port step).
 type ProcessManifestInput struct {
 	AppName  string          `json:"app_name"`
 	Manifest json.RawMessage `json:"manifest"`
+	Port     int             `json:"port,omitempty"` // allocated host port from fat envelope
 }
 
 // ProcessManifestOutput is the output of the appstore.process_manifest activity.
@@ -162,8 +165,8 @@ func makeProcessManifest(storeMgr AppStoreManifestReader) flowengine.ActivityFun
 			return nil, flowengine.NewPermanentError(fmt.Errorf("manifest is required"))
 		}
 
-		log.Info().Str("app", in.AppName).Msg("process_manifest: processing manifest")
-		processed, err := storeMgr.ProcessManifest(ctx, in.Manifest)
+		log.Info().Str("app", in.AppName).Int("port", in.Port).Msg("process_manifest: processing manifest")
+		processed, err := storeMgr.ProcessManifest(ctx, in.Manifest, in.Port)
 		if err != nil {
 			return nil, flowengine.ClassifyError(err)
 		}

@@ -213,6 +213,14 @@ func makeWriteCompose() flowengine.ActivityFunc {
 		if err := json.Unmarshal(input, &in); err != nil {
 			return nil, flowengine.NewPermanentError(fmt.Errorf("invalid write_compose input: %w", err))
 		}
+		// Fallback: accept "compose_yaml" key as alias for "content" (used by appstore pipeline).
+		if in.Content == "" {
+			var composeFallback struct {
+				ComposeYAML string `json:"compose_yaml"`
+			}
+			_ = json.Unmarshal(input, &composeFallback)
+			in.Content = composeFallback.ComposeYAML
+		}
 		if in.ComposePath == "" || in.Content == "" {
 			return nil, flowengine.NewPermanentError(fmt.Errorf("compose_path and content are required"))
 		}

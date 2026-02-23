@@ -225,6 +225,57 @@ func (s *WorkflowStore) GetWorkflowSteps(workflowID string) ([]WorkflowStep, err
 	return steps, rows.Err()
 }
 
+// ListWorkflowsFilter holds query parameters for listing workflows.
+type ListWorkflowsFilter struct {
+	WorkflowType string // optional: filter by workflow type
+	State        string // optional: filter by state (e.g. "running", "completed")
+	Limit        int    // 0 = default 50
+	Offset       int
+}
+
+// ListWorkflows returns workflows matching the filter, ordered by created_at DESC.
+func (s *WorkflowStore) ListWorkflows(filter ListWorkflowsFilter) ([]WorkflowRun, error) {
+	if filter.Limit <= 0 {
+		filter.Limit = 50
+	}
+
+	query := `
+		SELECT id, workflow_type, version, external_id, current_state, current_step,
+			input, output, error, metadata, locked_by, locked_until,
+			max_retries, retry_count, created_at, updated_at
+		FROM workflow_runs
+		WHERE 1=1`
+	args := []interface{}{}
+
+	if filter.WorkflowType != "" {
+		query += " AND workflow_type = ?"
+		args = append(args, filter.WorkflowType)
+	}
+	if filter.State != "" {
+		query += " AND current_state = ?"
+		args = append(args, filter.State)
+	}
+
+	query += " ORDER BY created_at DESC LIMIT ? OFFSET ?"
+	args = append(args, filter.Limit, filter.Offset)
+
+	rows, err := s.db.Query(query, args...)
+	if err != nil {
+		return nil, fmt.Errorf("list workflows: %w", err)
+	}
+	defer rows.Close()
+
+	var workflows []WorkflowRun
+	for rows.Next() {
+		wf, err := scanWorkflowRunFromRows(rows)
+		if err != nil {
+			return nil, err
+		}
+		workflows = append(workflows, *wf)
+	}
+	return workflows, rows.Err()
+}
+
 // GetIncompleteWorkflows retrieves all workflows that are not in a terminal state.
 // Used by the engine on startup to recover in-flight workflows.
 func (s *WorkflowStore) GetIncompleteWorkflows() ([]WorkflowRun, error) {

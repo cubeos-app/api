@@ -1107,6 +1107,12 @@ func (m *AppStoreManager) processManifest(manifest, appID, dataDir string, req *
 	return sanitized
 }
 
+// ProcessManifestYAML applies CasaOS variable substitution and Swarm sanitization
+// to a raw compose YAML string. Exported for use by the FlowEngine activity adapter.
+func (m *AppStoreManager) ProcessManifestYAML(manifestYAML, appID, dataDir string) string {
+	return m.processManifest(manifestYAML, appID, dataDir, &models.AppInstallRequest{})
+}
+
 // ──────────────────────────────────────────────────────────────────────────────
 // Registry-Aware Install Flow (T15/T16)
 // ──────────────────────────────────────────────────────────────────────────────
@@ -1288,7 +1294,7 @@ func extractImageRefs(manifest string) []string {
 	return refs
 }
 
-// remapPorts rewrites the host-published port in a compose manifest so that the
+// RemapPorts rewrites the host-published port in a compose manifest so that the
 // app's main web UI port uses the CubeOS-allocated port (6100-6999 range) instead
 // of whatever the CasaOS manifest originally declared.
 //
@@ -1297,6 +1303,10 @@ func extractImageRefs(manifest string) []string {
 //
 // portMap is the original web UI port from x-casaos metadata (e.g. "5000").
 // If portMap is empty, the first published port of the first service is remapped.
+func RemapPorts(manifest string, allocatedPort int, portMap string) (string, error) {
+	return remapPorts(manifest, allocatedPort, portMap)
+}
+
 func remapPorts(manifest string, allocatedPort int, portMap string) (string, error) {
 	var compose map[string]interface{}
 	if err := yaml.Unmarshal([]byte(manifest), &compose); err != nil {

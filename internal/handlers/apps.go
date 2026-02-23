@@ -177,8 +177,9 @@ func (h *AppsHandler) InstallApp(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// All other sources: synchronous install
-	app, err := h.orchestrator.InstallApp(r.Context(), req)
+	// All other sources: submit install workflow (async).
+	// InstallApp returns (nil, nil) to signal the workflow was submitted successfully.
+	_, err := h.orchestrator.InstallApp(r.Context(), req)
 	if err != nil {
 		if strings.Contains(err.Error(), "already exists") || strings.Contains(err.Error(), "already installed") {
 			writeError(w, http.StatusConflict, err.Error())
@@ -188,7 +189,10 @@ func (h *AppsHandler) InstallApp(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	writeJSON(w, http.StatusCreated, app)
+	writeJSON(w, http.StatusAccepted, map[string]interface{}{
+		"status":  "installing",
+		"message": "Install workflow submitted. Use GET /apps/{name} to poll status.",
+	})
 }
 
 // UninstallApp godoc

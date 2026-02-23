@@ -208,6 +208,19 @@ func makeCreateProxy(proxyMgr ProxyManager) flowengine.ActivityFunc {
 			})
 		}
 
+		// Fallback: fat-envelope passes allocated port as "port", but this struct reads "forward_port".
+		// Accept either key so callers don't need to rename the field in workflow input.
+		if in.ForwardPort == 0 {
+			var portFallback struct {
+				Port int `json:"port"`
+			}
+			_ = json.Unmarshal(input, &portFallback)
+			in.ForwardPort = portFallback.Port
+		}
+		if in.ForwardPort == 0 {
+			return nil, flowengine.NewPermanentError(fmt.Errorf("forward_port is required"))
+		}
+
 		log.Info().Str("domain", in.Domain).Int("port", in.ForwardPort).Msg("create_proxy: creating proxy host")
 		hostID, err := proxyMgr.CreateProxyHost(ctx, in.Domain, in.ForwardHost, in.ForwardPort, in.ForwardScheme)
 		if err != nil {

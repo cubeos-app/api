@@ -1,5 +1,11 @@
 package flowengine
 
+import (
+	"context"
+	"fmt"
+	"time"
+)
+
 // ProgressEmitter is the interface that a Job must satisfy for the ProgressAdapter.
 // Matched by *managers.Job so the adapter bridges FlowEngine → SSE without
 // importing the managers package from here.
@@ -73,6 +79,97 @@ func (p *ProgressAdapter) OnWorkflowComplete(workflowType, externalID string, st
 		p.emitter.EmitDone("Installation complete")
 	default:
 		p.emitter.EmitError("failed", 0, string(state))
+	}
+}
+
+// PollAndEmit polls the WorkflowStore for step status changes and emits SSE progress events
+// to the wrapped ProgressEmitter. Blocks until the workflow reaches a terminal state.
+//
+// Returns nil if the workflow completed successfully, or an error if it failed/compensated.
+// The caller is responsible for emitting EmitDone/EmitError after this returns.
+func (p *ProgressAdapter) PollAndEmit(ctx context.Context, store *WorkflowStore, workflowID string) error {
+	ticker := time.NewTicker(300 * time.Millisecond)
+	defer ticker.Stop()
+
+	emitted := make(map[string]StepStatus) // track last-known status per step
+
+	for {
+		select {
+		case <-ctx.Done():
+			return ctx.Err()
+		case <-ticker.C:
+		}
+
+		wf, err := store.GetWorkflow(workflowID)
+		if err != nil {
+			continue
+		}
+
+		steps, err := store.GetWorkflowSteps(workflowID)
+		if err != nil {
+			continue
+		}
+
+		for _, step := range steps {
+			prev, seen := emitted[step.StepName]
+			if seen && prev == step.Status {
+				continue
+			}
+			emitted[step.StepName] = step.Status
+
+			switch step.Status {
+			case StepRunning:
+				p.OnStepStart(step.StepName)
+			case StepCompleted:
+				p.OnStepComplete(step.StepName)
+			case StepFailed:
+				p.OnStepFail(step.StepName, step.Error)
+			}
+		}
+
+		switch wf.CurrentState {
+		case StateCompleted:
+			return nil
+		case StateFailed, StateCompensated:
+			msg := wf.Error
+			if msg == "" {
+				msg = string(wf.CurrentState)
+			}
+			return fmt.Errorf("workflow %s", msg)
+		}
+	}
+}
+
+// WaitForCompletion polls the WorkflowStore until the workflow reaches a terminal state.
+// Unlike PollAndEmit, it emits no SSE events. Useful for synchronous callers.
+//
+// Returns nil on success, error on failure/compensation.
+func WaitForCompletion(ctx context.Context, store *WorkflowStore, workflowID string) error {
+	ticker := time.NewTicker(500 * time.Millisecond)
+	defer ticker.Stop()
+
+	for {
+		select {
+		case <-ctx.Done():
+			return ctx.Err()
+		case <-ticker.C:
+		}
+
+		wf, err := store.GetWorkflow(workflowID)
+		if err != nil {
+			continue
+		}
+
+		switch wf.CurrentState {
+		case StateCompleted:
+			return nil
+		case StateFailed, StateCompensated:
+			msg := wf.Error
+			if msg == "" {
+				msg = string(wf.CurrentState)
+			}
+			return fmt.Errorf("workflow %s", msg)
+		}
 	}
 }
 
