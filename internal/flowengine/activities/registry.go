@@ -88,6 +88,12 @@ func RegisterRegistryActivities(registry *flowengine.ActivityRegistry, db *sql.D
 // makeRetagImage creates the registry.retag_image activity.
 // Tags a Docker image for the local registry.
 // Idempotent: if local image already exists, returns tagged=true, skipped=true.
+//
+// Docker CLI commands (tag/push/pull) run on the host via the Docker socket.
+// The host daemon trusts localhost:5000 implicitly but NOT the gateway IP
+// (10.42.24.1:5000) unless configured as an insecure registry. So we use
+// localhost:5000 for the docker tag/push target (LocalImage) and keep the
+// gateway IP for RegistryImage (used in HTTP API calls from inside containers).
 func makeRetagImage() flowengine.ActivityFunc {
 	return func(ctx context.Context, input json.RawMessage) (json.RawMessage, error) {
 		var in RetagImageInput
@@ -112,7 +118,11 @@ func makeRetagImage() flowengine.ActivityFunc {
 		if parts := strings.SplitN(in.SourceImage, "/", 2); len(parts) == 2 && strings.Contains(parts[0], ".") {
 			localName = parts[1]
 		}
-		localImage := registryHost + "/" + localName
+
+		// localhost:5000 for Docker CLI (host daemon trusts localhost implicitly)
+		localImage := "localhost:5000/" + localName
+		// Gateway IP for HTTP API calls from containers in overlay network
+		registryImage := registryHost + "/" + localName
 
 		// Idempotency check: does the local image already exist?
 		checkCmd := exec.CommandContext(ctx, "docker", "image", "inspect", localImage)
@@ -121,7 +131,7 @@ func makeRetagImage() flowengine.ActivityFunc {
 			return marshalOutput(RetagImageOutput{
 				SourceImage:   in.SourceImage,
 				LocalImage:    localImage,
-				RegistryImage: localImage,
+				RegistryImage: registryImage,
 				Tagged:        true,
 				Skipped:       true,
 			})
@@ -136,7 +146,7 @@ func makeRetagImage() flowengine.ActivityFunc {
 			return marshalOutput(RetagImageOutput{
 				SourceImage:   in.SourceImage,
 				LocalImage:    localImage,
-				RegistryImage: localImage,
+				RegistryImage: registryImage,
 				Tagged:        false,
 				Skipped:       true,
 			})
@@ -145,7 +155,7 @@ func makeRetagImage() flowengine.ActivityFunc {
 		return marshalOutput(RetagImageOutput{
 			SourceImage:   in.SourceImage,
 			LocalImage:    localImage,
-			RegistryImage: localImage,
+			RegistryImage: registryImage,
 			Tagged:        true,
 			Skipped:       false,
 		})

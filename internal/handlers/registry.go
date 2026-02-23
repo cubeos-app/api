@@ -263,19 +263,17 @@ func (h *RegistryHandler) CacheImage(w http.ResponseWriter, r *http.Request) {
 
 	imageRef := req.Image
 
-	// Derive local registry image name
-	// e.g. "nginx:latest" -> "10.42.24.1:5000/nginx:latest"
-	// e.g. "ghcr.io/org/repo:v1" -> "10.42.24.1:5000/org/repo:v1"
-	registryHost := strings.TrimPrefix(h.registryURL, "http://")
-	registryHost = strings.TrimPrefix(registryHost, "https://")
-
-	// Strip the original registry host if present
+	// Derive local image name — strip external registry host if present
+	// e.g. "nginx:latest" -> "nginx:latest"
+	// e.g. "ghcr.io/org/repo:v1" -> "org/repo:v1"
 	localName := imageRef
 	if parts := strings.SplitN(imageRef, "/", 2); len(parts) == 2 && strings.Contains(parts[0], ".") {
-		// Has a registry host prefix (e.g. ghcr.io/org/repo:tag)
 		localName = parts[1]
 	}
-	localImage := registryHost + "/" + localName
+
+	// Docker CLI runs on the host via socket — use localhost:5000 which the
+	// Docker daemon trusts implicitly (no insecure-registries config needed).
+	localImage := "localhost:5000/" + localName
 
 	// Step 1: Pull the remote image
 	pullCmd := exec.CommandContext(r.Context(), "docker", "pull", imageRef)
@@ -389,7 +387,7 @@ func (h *RegistryHandler) DeleteImageTag(w http.ResponseWriter, r *http.Request)
 	}
 
 	// Delete by digest
-	deleteURL := fmt.Sprintf("%s/v2/%s/manifests/%s", h.registryURL, url.PathEscape(name), url.PathEscape(digest))
+	deleteURL := fmt.Sprintf("%s/v2/%s/manifests/%s", h.registryURL, name, url.PathEscape(digest))
 	req2, err := http.NewRequest("DELETE", deleteURL, nil)
 	if err != nil {
 		registryWriteError(w, http.StatusInternalServerError, "Failed to create delete request: "+err.Error())
@@ -575,7 +573,7 @@ func (h *RegistryHandler) DeleteImage(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Delete by digest
-	deleteURL := fmt.Sprintf("%s/v2/%s/manifests/%s", h.registryURL, url.PathEscape(name), url.PathEscape(digest))
+	deleteURL := fmt.Sprintf("%s/v2/%s/manifests/%s", h.registryURL, name, url.PathEscape(digest))
 	req, err := http.NewRequest("DELETE", deleteURL, nil)
 	if err != nil {
 		registryWriteError(w, http.StatusInternalServerError, "Failed to create delete request: "+err.Error())
@@ -653,7 +651,7 @@ func (h *RegistryHandler) CleanupRegistry(w http.ResponseWriter, r *http.Request
 				if err != nil {
 					continue
 				}
-				deleteURL := fmt.Sprintf("%s/v2/%s/manifests/%s", h.registryURL, url.PathEscape(name), url.PathEscape(digest))
+				deleteURL := fmt.Sprintf("%s/v2/%s/manifests/%s", h.registryURL, name, url.PathEscape(digest))
 				delReq, err := http.NewRequest("DELETE", deleteURL, nil)
 				if err != nil {
 					continue
@@ -849,7 +847,7 @@ func (h *RegistryHandler) getImageList() ([]string, error) {
 }
 
 func (h *RegistryHandler) getImageTags(name string) ([]string, error) {
-	tagURL := fmt.Sprintf("%s/v2/%s/tags/list", h.registryURL, url.PathEscape(name))
+	tagURL := fmt.Sprintf("%s/v2/%s/tags/list", h.registryURL, name)
 	resp, err := h.httpClient.Get(tagURL)
 	if err != nil {
 		return nil, err
@@ -871,7 +869,7 @@ func (h *RegistryHandler) getImageTags(name string) ([]string, error) {
 }
 
 func (h *RegistryHandler) getManifestDigest(name, tag string) (string, error) {
-	manifestURL := fmt.Sprintf("%s/v2/%s/manifests/%s", h.registryURL, url.PathEscape(name), url.PathEscape(tag))
+	manifestURL := fmt.Sprintf("%s/v2/%s/manifests/%s", h.registryURL, name, url.PathEscape(tag))
 	req, err := http.NewRequest("GET", manifestURL, nil)
 	if err != nil {
 		return "", fmt.Errorf("failed to create request: %w", err)
