@@ -177,11 +177,14 @@ type backupScheduler struct {
 	running    bool
 }
 
-// SetFlowEngine wires the FlowEngine for scheduled backup submission.
+// SetFlowEngine wires the FlowEngine for scheduled backup submission and auto-restore.
 func (m *BackupManager) SetFlowEngine(engine *flowengine.WorkflowEngine, store *flowengine.WorkflowStore) {
 	m.ensureScheduler()
 	m.scheduler.flowEngine = engine
 	m.scheduler.feStore = store
+	// Also set top-level fields for CheckPendingRestore
+	m.flowEngine = engine
+	m.feStore = store
 }
 
 func (m *BackupManager) ensureScheduler() {

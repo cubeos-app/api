@@ -19,6 +19,8 @@ import (
 	"time"
 
 	"cubeos-api/internal/database"
+	"cubeos-api/internal/flowengine"
+	feworkflows "cubeos-api/internal/flowengine/workflows"
 	"cubeos-api/internal/models"
 
 	"github.com/rs/zerolog/log"
@@ -26,9 +28,19 @@ import (
 
 // BackupManager handles backup and restore operations
 type BackupManager struct {
-	backupDir string
-	db        *sql.DB
-	scheduler *backupScheduler
+	backupDir  string
+	db         *sql.DB
+	scheduler  *backupScheduler
+	flowEngine *flowengine.WorkflowEngine
+	feStore    *flowengine.WorkflowStore
+}
+
+// PendingRestore represents a USB-detected backup waiting for auto-restore.
+type PendingRestore struct {
+	BackupFile   string `json:"backup_file"`
+	SourceDevice string `json:"source_device"`
+	DetectedAt   string `json:"detected_at"`
+	AutoRestore  bool   `json:"auto_restore"`
 }
 
 // NewBackupManager creates a new BackupManager
@@ -198,9 +210,9 @@ func (m *BackupManager) CreateBackup(backupType, description string, includeDock
 		return &models.SuccessResponse{Status: "error", Message: "Invalid backup type"}, nil
 	}
 
-	// Generate backup ID and filename
+	// Generate backup ID and filename (cubeos-backup- prefix matches boot script glob)
 	timestamp := time.Now().Format("20060102-150405")
-	backupID := fmt.Sprintf("%s-%s", backupType, timestamp)
+	backupID := fmt.Sprintf("cubeos-backup-%s-%s", backupType, timestamp)
 	filename := backupID + ".tar.gz"
 	filepath := filepath.Join(m.backupDir, filename)
 
@@ -1184,4 +1196,90 @@ func (m *BackupManager) RecordBackupInDB(ctx context.Context, name, scope, destT
 		name, destPath, scope, destType, destPath, checksum, workflowID, sizeBytes, manifestJSON,
 	)
 	return err
+}
+
+// CheckPendingRestore checks for a USB-detected backup pending auto-restore.
+// Called once at API startup. If pending-restore.json exists, it verifies the
+// backup and submits a restore workflow via FlowEngine, then writes .setup_complete
+// to skip the setup wizard.
+func (m *BackupManager) CheckPendingRestore(ctx context.Context) error {
+	dataDir := os.Getenv("CUBEOS_DATA_DIR")
+	if dataDir == "" {
+		dataDir = "/cubeos/data"
+	}
+	pendingPath := filepath.Join(dataDir, "pending-restore.json")
+
+	data, err := os.ReadFile(pendingPath)
+	if err != nil {
+		if os.IsNotExist(err) {
+			return nil // No pending restore — normal boot
+		}
+		return fmt.Errorf("failed to read pending-restore.json: %w", err)
+	}
+
+	var pending PendingRestore
+	if err := json.Unmarshal(data, &pending); err != nil {
+		log.Error().Err(err).Msg("bare-metal restore: invalid pending-restore.json")
+		os.Remove(pendingPath)
+		return fmt.Errorf("invalid pending-restore.json: %w", err)
+	}
+
+	log.Info().
+		Str("backup_file", pending.BackupFile).
+		Str("source_device", pending.SourceDevice).
+		Str("detected_at", pending.DetectedAt).
+		Msg("bare-metal restore: pending restore detected")
+
+	// Verify the backup archive
+	manifest, err := m.VerifyBackup(pending.BackupFile)
+	if err != nil {
+		log.Error().Err(err).Str("file", pending.BackupFile).Msg("bare-metal restore: backup verification failed")
+		os.Remove(pendingPath)
+		return fmt.Errorf("backup verification failed: %w", err)
+	}
+	log.Info().
+		Str("scope", string(manifest.Scope)).
+		Int("files", len(manifest.Files)).
+		Msg("bare-metal restore: backup verified")
+
+	// Submit restore workflow
+	if m.flowEngine == nil {
+		os.Remove(pendingPath)
+		return fmt.Errorf("bare-metal restore: FlowEngine not wired")
+	}
+
+	restoreInput := feworkflows.RestoreInput{
+		BackupPath: pending.BackupFile,
+		Confirm:    true,
+	}
+	inputJSON, err := json.Marshal(restoreInput)
+	if err != nil {
+		os.Remove(pendingPath)
+		return fmt.Errorf("bare-metal restore: failed to marshal input: %w", err)
+	}
+
+	externalID := "bare-metal-restore-" + pending.DetectedAt
+	wf, err := m.flowEngine.Submit(ctx, flowengine.SubmitParams{
+		WorkflowType: feworkflows.RestoreWorkflowType,
+		ExternalID:   externalID,
+		Input:        inputJSON,
+	})
+	if err != nil {
+		os.Remove(pendingPath)
+		return fmt.Errorf("bare-metal restore: failed to submit workflow: %w", err)
+	}
+
+	log.Info().Str("workflow_id", wf.ID).Msg("bare-metal restore: restore workflow submitted")
+
+	// Write .setup_complete flag to skip the setup wizard
+	setupFlag := filepath.Join(dataDir, ".setup_complete")
+	if err := os.WriteFile(setupFlag, []byte("restored\n"), 0644); err != nil {
+		log.Warn().Err(err).Msg("bare-metal restore: failed to write .setup_complete")
+	}
+
+	// Remove the pending marker
+	os.Remove(pendingPath)
+	log.Info().Msg("bare-metal restore: pending-restore.json consumed, restore in progress")
+
+	return nil
 }

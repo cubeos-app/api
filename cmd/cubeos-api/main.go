@@ -469,6 +469,15 @@ func main() {
 	// Start backup scheduler (after FlowEngine is ready)
 	backupMgr.StartScheduler(engineCtx)
 
+	// Bare-metal restore: check for USB-detected backup pending auto-restore.
+	// Runs async with a short delay to let FlowEngine start polling.
+	go func() {
+		time.Sleep(5 * time.Second)
+		if err := backupMgr.CheckPendingRestore(engineCtx); err != nil {
+			log.Error().Err(err).Msg("Bare-metal restore check failed")
+		}
+	}()
+
 	// Create VPN manager (Sprint 3 - with HAL client)
 	vpnMgr := managers.NewVPNManager(cfg, halClient)
 	log.Info().Msg("VPNManager initialized (HAL-enabled)")

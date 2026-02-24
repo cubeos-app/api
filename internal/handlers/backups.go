@@ -3,6 +3,8 @@ package handlers
 import (
 	"encoding/json"
 	"net/http"
+	"os"
+	"path/filepath"
 	"strconv"
 
 	"github.com/go-chi/chi/v5"
@@ -48,6 +50,7 @@ func (h *BackupsHandler) Routes() chi.Router {
 	r.Post("/quick", h.QuickBackup)
 	r.Get("/destinations", h.ListDestinations)
 	r.Post("/destinations/test", h.TestDestination)
+	r.Get("/restore-status", h.GetRestoreStatus)
 	r.Get("/{backup_id}", h.GetBackup)
 	r.Delete("/{backup_id}", h.DeleteBackup)
 	r.Get("/{backup_id}/download", h.DownloadBackup)
@@ -178,6 +181,61 @@ func (h *BackupsHandler) CreateBackup(w http.ResponseWriter, r *http.Request) {
 func (h *BackupsHandler) GetBackupStats(w http.ResponseWriter, r *http.Request) {
 	stats := h.backup.GetStats()
 	writeJSON(w, http.StatusOK, stats)
+}
+
+// GetRestoreStatus godoc
+// @Summary Get restore status
+// @Description Returns the status of the most recent restore operation, including bare-metal auto-restore. Checks both active FlowEngine workflows and pre-submission pending state.
+// @Tags Backup
+// @Produce json
+// @Security BearerAuth
+// @Success 200 {object} map[string]interface{} "Restore status"
+// @Failure 500 {object} models.ErrorResponse "Failed to check restore status"
+// @Router /backups/restore-status [get]
+func (h *BackupsHandler) GetRestoreStatus(w http.ResponseWriter, r *http.Request) {
+	result := map[string]interface{}{
+		"active":      false,
+		"state":       "none",
+		"workflow_id": "",
+		"step":        0,
+		"created_at":  "",
+	}
+
+	// Check for pre-submission pending state (USB backup copied but API hasn't submitted yet)
+	dataDir := os.Getenv("CUBEOS_DATA_DIR")
+	if dataDir == "" {
+		dataDir = "/cubeos/data"
+	}
+	pendingPath := filepath.Join(dataDir, "pending-restore.json")
+	if _, err := os.Stat(pendingPath); err == nil {
+		result["active"] = true
+		result["state"] = "pending_submission"
+		writeJSON(w, http.StatusOK, result)
+		return
+	}
+
+	// Check FlowEngine for the latest restore workflow
+	if h.feStore != nil {
+		workflows, err := h.feStore.ListWorkflows(flowengine.ListWorkflowsFilter{
+			WorkflowType: feworkflows.RestoreWorkflowType,
+			Limit:        1,
+		})
+		if err != nil {
+			writeError(w, http.StatusInternalServerError, "Failed to query restore workflows: "+err.Error())
+			return
+		}
+
+		if len(workflows) > 0 {
+			wf := workflows[0]
+			result["active"] = wf.CurrentState == flowengine.StateRunning || wf.CurrentState == flowengine.StatePending
+			result["state"] = string(wf.CurrentState)
+			result["workflow_id"] = wf.ID
+			result["step"] = wf.CurrentStep
+			result["created_at"] = wf.CreatedAt.Format("2006-01-02T15:04:05Z07:00")
+		}
+	}
+
+	writeJSON(w, http.StatusOK, result)
 }
 
 // QuickBackup godoc

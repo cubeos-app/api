@@ -466,9 +466,9 @@ func makeBackupCreateArchive(backupMgr BackupManagerInterface) flowengine.Activi
 			scope = models.BackupScopeTier1
 		}
 
-		// Generate archive filename
+		// Generate archive filename (cubeos-backup- prefix matches boot script glob)
 		timestamp := time.Now().Format("20060102-150405")
-		filename := fmt.Sprintf("%s-%s.tar.gz", scope, timestamp)
+		filename := fmt.Sprintf("cubeos-backup-%s-%s.tar.gz", scope, timestamp)
 		archivePath := filepath.Join(envelope.TempDir, filename)
 
 		// Create tar.gz
