@@ -414,6 +414,7 @@ func main() {
 	}
 	feactivities.RegisterAppRemoveActivities(feRegistry, db.DB)
 	feactivities.RegisterNetworkActivities(feRegistry, networkMgr, halClient)
+	feactivities.RegisterWifiClientActivities(feRegistry, networkMgr, halClient)
 	feactivities.RegisterSetupActivities(feRegistry, setupMgr)
 	feactivities.RegisterRegistryActivities(feRegistry, db.DB)
 	feactivities.RegisterUpdateActivities(feRegistry, db.DB, &updateSwarmAdapter{swarmMgr}, updateMgr)
@@ -437,6 +438,9 @@ func main() {
 	}
 	if err := flowEngine.RegisterWorkflow(feworkflows.NewNetworkModeSwitchWorkflow()); err != nil {
 		log.Fatal().Err(err).Msg("FlowEngine: failed to register network_mode_switch workflow")
+	}
+	if err := flowEngine.RegisterWorkflow(feworkflows.NewWifiClientSwitchWorkflow()); err != nil {
+		log.Fatal().Err(err).Msg("FlowEngine: failed to register wifi_client_switch workflow")
 	}
 	if err := flowEngine.RegisterWorkflow(feworkflows.NewFirstBootSetupWorkflow()); err != nil {
 		log.Fatal().Err(err).Msg("FlowEngine: failed to register first_boot_setup workflow")

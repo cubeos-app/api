@@ -2,9 +2,11 @@
 package handlers
 
 import (
+	"bufio"
 	"encoding/json"
 	"fmt"
 	"net/http"
+	"os"
 	"strings"
 
 	"github.com/go-chi/chi/v5"
@@ -86,6 +88,9 @@ func (h *NetworkHandler) Routes() chi.Router {
 	// DNS configuration
 	r.Get("/dns", h.GetDNSConfig)
 	r.Post("/dns", h.SetDNSConfig)
+
+	// Pi Imager WiFi credentials pre-fill
+	r.Get("/imager-wifi", h.GetImagerWiFiCreds)
 
 	return r
 }
@@ -1287,5 +1292,56 @@ func (h *NetworkHandler) SetDNSConfig(w http.ResponseWriter, r *http.Request) {
 		"success": true,
 		"config":  current,
 		"message": "DNS configuration updated",
+	})
+}
+
+// GetImagerWiFiCreds godoc
+// @Summary Get Pi Imager WiFi credentials
+// @Description Returns WiFi credentials configured via Raspberry Pi Imager (for wifi_client pre-fill). Never exposes the actual password.
+// @Tags Network
+// @Produce json
+// @Security BearerAuth
+// @Success 200 {object} map[string]interface{} "Imager WiFi credentials"
+// @Failure 404 {object} ErrorResponse "No Pi Imager credentials found"
+// @Failure 500 {object} ErrorResponse "Error reading credentials"
+// @Router /network/imager-wifi [get]
+func (h *NetworkHandler) GetImagerWiFiCreds(w http.ResponseWriter, r *http.Request) {
+	credsPath := os.Getenv("CUBEOS_DATA_DIR")
+	if credsPath == "" {
+		credsPath = "/cubeos"
+	}
+	credsPath = strings.TrimSuffix(credsPath, "/data") // CUBEOS_DATA_DIR may be /cubeos/data
+	credsPath = credsPath + "/config/wifi/imager-wifi.env"
+
+	f, err := os.Open(credsPath)
+	if err != nil {
+		writeError(w, http.StatusNotFound, "No Pi Imager WiFi credentials found")
+		return
+	}
+	defer f.Close()
+
+	var ssid string
+	var hasPassword bool
+
+	scanner := bufio.NewScanner(f)
+	for scanner.Scan() {
+		line := strings.TrimSpace(scanner.Text())
+		if strings.HasPrefix(line, "UPSTREAM_SSID=") {
+			ssid = strings.TrimPrefix(line, "UPSTREAM_SSID=")
+		}
+		if strings.HasPrefix(line, "UPSTREAM_PASSWORD=") {
+			pw := strings.TrimPrefix(line, "UPSTREAM_PASSWORD=")
+			hasPassword = pw != ""
+		}
+	}
+
+	if ssid == "" {
+		writeError(w, http.StatusNotFound, "No Pi Imager WiFi credentials found")
+		return
+	}
+
+	writeJSON(w, http.StatusOK, map[string]interface{}{
+		"ssid":         ssid,
+		"has_password": hasPassword,
 	})
 }

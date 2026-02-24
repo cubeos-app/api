@@ -3106,6 +3106,55 @@ func (c *Client) StopAP(ctx context.Context, iface string) error {
 	return c.StopService(ctx, "hostapd")
 }
 
+// StopHostapd stops the access point and releases wlan0 via dedicated endpoint.
+// Unlike StopAP (which uses generic service stop), this also flushes wlan0 IP
+// and verifies the interface is released for station use.
+func (c *Client) StopHostapd(ctx context.Context) error {
+	return c.doPost(ctx, "/network/hostapd/stop", nil)
+}
+
+// ConnectStation connects wlan0 as a WiFi station with timeout.
+// Returns (connected, error). On timeout, connected=false with nil error.
+func (c *Client) ConnectStation(ctx context.Context, iface, ssid, password string, timeoutSeconds int) (bool, error) {
+	var result struct {
+		Connected bool   `json:"connected"`
+		IP        string `json:"ip,omitempty"`
+		Gateway   string `json:"gateway,omitempty"`
+	}
+	req := map[string]interface{}{
+		"ssid":            ssid,
+		"password":        password,
+		"interface":       iface,
+		"timeout_seconds": timeoutSeconds,
+	}
+	err := c.doPostWithResult(ctx, "/network/station/connect", req, &result)
+	if err != nil {
+		// 408 timeout means connection failed but not a server error
+		if halErr, ok := err.(*HALError); ok && halErr.StatusCode == http.StatusRequestTimeout {
+			return false, nil
+		}
+		return false, err
+	}
+	return result.Connected, nil
+}
+
+// VerifyStation checks if wlan0 station mode is working.
+func (c *Client) VerifyStation(ctx context.Context, iface string) (bool, error) {
+	var result struct {
+		Connected bool `json:"connected"`
+		Internet  bool `json:"internet"`
+	}
+	if err := c.doGet(ctx, "/network/station/verify?interface="+url.QueryEscape(iface), &result); err != nil {
+		return false, err
+	}
+	return result.Connected, nil
+}
+
+// RevertToAP reverts from station mode to access point mode.
+func (c *Client) RevertToAP(ctx context.Context) error {
+	return c.doPost(ctx, "/network/ap/revert", nil)
+}
+
 // MountUSB mounts a USB device (legacy compatibility)
 func (c *Client) MountUSB(ctx context.Context, device string) (string, error) {
 	return c.MountUSBStorage(ctx, device)

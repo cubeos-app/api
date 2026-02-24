@@ -1295,65 +1295,81 @@ func (m *NetworkManager) setEthClientMode(ctx context.Context, staticIP models.S
 	return nil
 }
 
-// setWifiClientMode configures server mode via WiFi (V2)
-// No AP, connects wlan0 to existing WiFi network
+// setWifiClientMode configures wifi_client mode with 30s timeout + auto-revert.
+// No AP, connects wlan0 to existing WiFi network. On failure, reverts to
+// offline_hotspot so the user is never bricked.
 func (m *NetworkManager) setWifiClientMode(ctx context.Context, ssid, password string, staticIP models.StaticIPConfig) error {
 	log.Info().Str("ssid", ssid).Msg("NetworkManager: switching to wifi_client mode")
 
-	// Stop the access point (this frees wlan0 for client use)
-	if err := m.hal.StopAP(ctx, m.apInterface); err != nil {
-		log.Warn().Err(err).Msg("NetworkManager: failed to stop AP")
-	}
+	previousMode := m.currentMode
 
-	// Disable NAT
+	// Step 1: Stop the access point via dedicated HAL endpoint
+	if err := m.hal.StopHostapd(ctx); err != nil {
+		log.Warn().Err(err).Msg("NetworkManager: StopHostapd failed")
+	}
+	// Give hostapd time to fully release the interface
+	time.Sleep(2 * time.Second)
+
+	// Step 2: Disable NAT (we're a plain client)
 	_ = m.hal.DisableNAT(ctx)
 	_ = m.hal.DisableIPForward(ctx)
 
-	// Give hostapd time to release the interface
-	time.Sleep(2 * time.Second)
-
-	// Connect wlan0 to the WiFi network (not the USB dongle)
-	if err := m.hal.ConnectWiFi(ctx, m.apInterface, ssid, password); err != nil {
-		return fmt.Errorf("failed to connect to WiFi: %w", err)
+	// Step 3: Connect station with 30s timeout
+	connected, err := m.hal.ConnectStation(ctx, m.apInterface, ssid, password, 30)
+	if err != nil || !connected {
+		log.Error().Err(err).Msg("NetworkManager: station connection failed — reverting to offline_hotspot")
+		if revertErr := m.revertToOfflineHotspot(ctx); revertErr != nil {
+			log.Error().Err(revertErr).Msg("NetworkManager: CRITICAL — AP revert also failed")
+		}
+		if err != nil {
+			return fmt.Errorf("wifi_client connection failed (reverted to offline_hotspot): %w", err)
+		}
+		return fmt.Errorf("wifi_client connection timed out (reverted to offline_hotspot)")
 	}
 
-	// Wait for connection
-	time.Sleep(5 * time.Second)
+	// Step 4: Verify connectivity
+	verified, verifyErr := m.hal.VerifyStation(ctx, m.apInterface)
+	if verifyErr != nil || !verified {
+		log.Warn().Err(verifyErr).Msg("NetworkManager: station verify failed — reverting")
+		if revertErr := m.revertToOfflineHotspot(ctx); revertErr != nil {
+			log.Error().Err(revertErr).Msg("NetworkManager: CRITICAL — AP revert also failed")
+		}
+		if verifyErr != nil {
+			return fmt.Errorf("wifi_client verification failed (reverted to offline_hotspot): %w", verifyErr)
+		}
+		return fmt.Errorf("wifi_client verification failed (reverted to offline_hotspot)")
+	}
 
-	// Configure upstream IP: static or DHCP
+	// Step 5: Configure static IP if requested (otherwise DHCP already assigned)
 	if staticIP.IsConfigured() {
-		log.Info().Str("ip", staticIP.StaticIPAddress).Str("gw", staticIP.StaticIPGateway).
-			Msg("NetworkManager: setting static IP on wlan0 (server WiFi mode)")
 		if err := m.hal.SetStaticIP(ctx, m.apInterface, staticIP.StaticIPAddress, staticIP.StaticIPGateway); err != nil {
-			log.Warn().Err(err).Msg("NetworkManager: static IP on wlan0 failed")
-		}
-	} else {
-		// B88: Use netplan write+apply+poll instead of checking for existing IP only.
-		// The WiFi connect above may not have triggered DHCP via networkd yet.
-		log.Info().Str("iface", m.apInterface).Str("ssid", ssid).
-			Msg("NetworkManager: writing DHCP netplan for server WiFi (B88)")
-		yaml := m.generateNetplanYAML(models.NetworkModeWifiClient, ssid, password, staticIP)
-		if err := m.hal.WriteNetplan(ctx, yaml, m.apInterface); err != nil {
-			log.Warn().Err(err).Msg("NetworkManager: server WiFi netplan write failed")
-		}
-
-		// Poll for IP — fall back to static if DHCP fails
-		if err := m.pollForIP(ctx, m.apInterface, 15*time.Second); err != nil {
-			log.Warn().Str("fallbackIP", m.fallbackIP).Str("fallbackGateway", m.fallbackGateway).
-				Msg("NetworkManager: no IP assigned, using fallback")
-			if err := m.hal.SetStaticIP(ctx, m.apInterface, m.fallbackIP, m.fallbackGateway); err != nil {
-				return fmt.Errorf("failed to set fallback IP: %w", err)
-			}
+			log.Warn().Err(err).Msg("NetworkManager: static IP failed")
 		}
 	}
 
+	// Step 6: Persist mode
 	m.currentMode = models.NetworkModeWifiClient
-
-	// T09: Disable Pi-hole DHCP (no AP, no local clients)
 	m.configurePiholeDHCPForMode(ctx, models.NetworkModeWifiClient)
-
-	// T10: Write netplan for reboot persistence (includes wlan0 WiFi creds)
 	m.writeAndApplyNetplan(ctx, models.NetworkModeWifiClient, ssid, password, m.apInterface, staticIP)
+
+	log.Info().Str("previousMode", string(previousMode)).Msg("NetworkManager: wifi_client mode active")
+	return nil
+}
+
+// revertToOfflineHotspot restores AP mode when wifi_client fails.
+// This is the safety net — the user must NEVER be left without dashboard access.
+func (m *NetworkManager) revertToOfflineHotspot(ctx context.Context) error {
+	log.Warn().Msg("NetworkManager: reverting to offline_hotspot (safety fallback)")
+
+	if err := m.hal.RevertToAP(ctx); err != nil {
+		return fmt.Errorf("HAL AP revert failed: %w", err)
+	}
+
+	m.currentMode = models.NetworkModeOfflineHotspot
+	m.configurePiholeDHCPForMode(ctx, models.NetworkModeOfflineHotspot)
+
+	// Persist the revert to database so it survives reboot
+	m.saveConfigToDB(models.NetworkModeOfflineHotspot, m.currentVPNMode, "", "", models.StaticIPConfig{})
 
 	return nil
 }
