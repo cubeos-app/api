@@ -249,6 +249,7 @@ func main() {
 	logMgr := managers.NewLogManager()
 	firewallMgr := managers.NewFirewallManager(cfg, halClient)
 	backupMgr := managers.NewBackupManager()
+	backupMgr.SetDB(db.DB)
 	processMgr := managers.NewProcessManager()
 	monitoringMgr := managers.NewMonitoringManager(systemMgr, networkMgr)
 	prefMgr := managers.NewPreferencesManager()
@@ -413,6 +414,7 @@ func main() {
 	feactivities.RegisterSetupActivities(feRegistry, setupMgr)
 	feactivities.RegisterRegistryActivities(feRegistry, db.DB)
 	feactivities.RegisterUpdateActivities(feRegistry, db.DB, &updateSwarmAdapter{swarmMgr}, updateMgr)
+	feactivities.RegisterBackupActivities(feRegistry, db.DB, &backupMgrAdapter{backupMgr}, swarmMgr)
 
 	flowEngine := flowengine.NewWorkflowEngine(feStore, feRegistry, flowengine.DefaultEngineConfig())
 
@@ -440,6 +442,12 @@ func main() {
 	}
 	if err := flowEngine.RegisterWorkflow(&feworkflows.SystemUpdateWorkflow{}); err != nil {
 		log.Fatal().Err(err).Msg("FlowEngine: failed to register system_update workflow")
+	}
+	if err := flowEngine.RegisterWorkflow(&feworkflows.BackupWorkflow{}); err != nil {
+		log.Fatal().Err(err).Msg("FlowEngine: failed to register backup workflow")
+	}
+	if err := flowEngine.RegisterWorkflow(&feworkflows.RestoreWorkflow{}); err != nil {
+		log.Fatal().Err(err).Msg("FlowEngine: failed to register restore workflow")
 	}
 
 	if err := flowEngine.Start(engineCtx); err != nil {
@@ -541,9 +549,10 @@ func main() {
 	smbHandler := handlers.NewSMBHandler(storageMgr)
 	log.Info().Msg("SMBHandler initialized")
 
-	// Create Backups handler (wired to BackupManager)
+	// Create Backups handler (wired to BackupManager + FlowEngine)
 	backupsHandler := handlers.NewBackupsHandler(backupMgr)
-	log.Info().Msg("BackupsHandler initialized (wired to BackupManager)")
+	backupsHandler.SetFlowEngine(flowEngine, feStore)
+	log.Info().Msg("BackupsHandler initialized (wired to BackupManager + FlowEngine)")
 
 	// Create Updates handler (Batch 4.1B)
 	updatesHandler := handlers.NewUpdatesHandler(updateMgr, flowEngine, db.DB)

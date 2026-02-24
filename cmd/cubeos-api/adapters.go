@@ -7,6 +7,7 @@ package main
 // the idealized activity interfaces and the concrete manager method signatures.
 
 import (
+	"archive/tar"
 	"context"
 	"encoding/json"
 	"fmt"
@@ -16,6 +17,7 @@ import (
 
 	"cubeos-api/internal/flowengine/activities"
 	"cubeos-api/internal/managers"
+	"cubeos-api/internal/models"
 
 	"gopkg.in/yaml.v3"
 )
@@ -208,6 +210,64 @@ func (a *appStoreManifestAdapter) DetectWebUIType(ctx context.Context, manifest 
 	// Detection is performed by the app.detect_webui activity (database.go) via HTTP probe.
 	// This method satisfies the interface but is never called by any registered activity.
 	return "browser", nil
+}
+
+// --- backupMgrAdapter: activities.BackupManagerInterface via *managers.BackupManager ---
+
+type backupMgrAdapter struct{ mgr *managers.BackupManager }
+
+func (a *backupMgrAdapter) BackupDir() string {
+	return a.mgr.BackupDir()
+}
+
+func (a *backupMgrAdapter) ScopePaths(scope models.BackupScope) []activities.BackupPathEntry {
+	mgrPaths := a.mgr.ScopePaths(scope)
+	result := make([]activities.BackupPathEntry, len(mgrPaths))
+	for i, p := range mgrPaths {
+		result[i] = activities.BackupPathEntry{
+			SourcePath:  p.SourcePath,
+			ArchivePath: p.ArchivePath,
+			Description: p.Description,
+			Category:    p.Category,
+		}
+	}
+	return result
+}
+
+func (a *backupMgrAdapter) HotBackupDatabase(ctx context.Context, destPath string) error {
+	return a.mgr.HotBackupDatabase(ctx, destPath)
+}
+
+func (a *backupMgrAdapter) CreateBackupManifest(scope models.BackupScope, archivePath string) (*models.BackupManifest, error) {
+	return a.mgr.CreateBackupManifest(scope, archivePath)
+}
+
+func (a *backupMgrAdapter) GenerateConfigSnapshot(ctx context.Context) (*models.ConfigSnapshot, error) {
+	return a.mgr.GenerateConfigSnapshot(ctx)
+}
+
+func (a *backupMgrAdapter) StoreConfigSnapshot(ctx context.Context, trigger, description string, snapshot *models.ConfigSnapshot) error {
+	return a.mgr.StoreConfigSnapshot(ctx, trigger, description, snapshot)
+}
+
+func (a *backupMgrAdapter) AddJSONToTar(tw *tar.Writer, archivePath string, v interface{}) error {
+	return a.mgr.AddJSONToTar(tw, archivePath, v)
+}
+
+func (a *backupMgrAdapter) AddFileToTar(tw *tar.Writer, srcPath, archivePath string) error {
+	return a.mgr.AddFileToTar(tw, srcPath, archivePath)
+}
+
+func (a *backupMgrAdapter) CheckDiskSpace(path string) (uint64, error) {
+	return a.mgr.CheckDiskSpace(path)
+}
+
+func (a *backupMgrAdapter) VerifyBackup(backupPath string) (*models.BackupManifest, error) {
+	return a.mgr.VerifyBackup(backupPath)
+}
+
+func (a *backupMgrAdapter) RecordBackupInDB(ctx context.Context, name, scope, destType, destPath, checksum, workflowID string, sizeBytes int64, manifest *models.BackupManifest) error {
+	return a.mgr.RecordBackupInDB(ctx, name, scope, destType, destPath, checksum, workflowID, sizeBytes, manifest)
 }
 
 // --- updateSwarmAdapter: activities.UpdateSwarmManager via *managers.SwarmManager ---
