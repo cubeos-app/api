@@ -28,6 +28,7 @@ import (
 type BackupManager struct {
 	backupDir string
 	db        *sql.DB
+	scheduler *backupScheduler
 }
 
 // NewBackupManager creates a new BackupManager

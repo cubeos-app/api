@@ -3,6 +3,7 @@ package handlers
 import (
 	"encoding/json"
 	"net/http"
+	"strconv"
 
 	"github.com/go-chi/chi/v5"
 
@@ -52,6 +53,16 @@ func (h *BackupsHandler) Routes() chi.Router {
 	r.Get("/{backup_id}/download", h.DownloadBackup)
 	r.Post("/{backup_id}/restore", h.RestoreBackup)
 	r.Post("/{backup_id}/verify", h.VerifyBackup)
+
+	// Schedule CRUD
+	r.Route("/schedules", func(r chi.Router) {
+		r.Get("/", h.ListSchedules)
+		r.Post("/", h.CreateSchedule)
+		r.Get("/{id}", h.GetSchedule)
+		r.Put("/{id}", h.UpdateSchedule)
+		r.Delete("/{id}", h.DeleteSchedule)
+		r.Post("/{id}/run", h.TriggerSchedule)
+	})
 
 	return r
 }
@@ -526,4 +537,224 @@ func (h *BackupsHandler) TestDestination(w http.ResponseWriter, r *http.Request)
 	resp.Success = true
 	resp.Message = "Destination is accessible and writable"
 	writeJSON(w, http.StatusOK, resp)
+}
+
+// =============================================================================
+// Schedule CRUD Endpoints
+// =============================================================================
+
+// ListSchedules godoc
+// @Summary List backup schedules
+// @Description Returns all configured backup schedules with their status and next run time
+// @Tags Backup
+// @Produce json
+// @Security BearerAuth
+// @Success 200 {object} map[string]interface{} "Schedule list"
+// @Failure 500 {object} models.ErrorResponse "Failed to list schedules"
+// @Router /backups/schedules [get]
+func (h *BackupsHandler) ListSchedules(w http.ResponseWriter, r *http.Request) {
+	schedules, err := h.backup.GetSchedules(r.Context())
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "Failed to list schedules: "+err.Error())
+		return
+	}
+	if schedules == nil {
+		schedules = []models.BackupSchedule{}
+	}
+	writeJSON(w, http.StatusOK, map[string]interface{}{
+		"schedules": schedules,
+		"count":     len(schedules),
+	})
+}
+
+// CreateSchedule godoc
+// @Summary Create a backup schedule
+// @Description Creates a new backup schedule with a cron expression, scope, destination, and retention policy
+// @Tags Backup
+// @Accept json
+// @Produce json
+// @Security BearerAuth
+// @Param request body models.BackupSchedule true "Schedule configuration"
+// @Success 201 {object} models.BackupSchedule "Created schedule"
+// @Failure 400 {object} models.ErrorResponse "Invalid request"
+// @Failure 500 {object} models.ErrorResponse "Failed to create schedule"
+// @Router /backups/schedules [post]
+func (h *BackupsHandler) CreateSchedule(w http.ResponseWriter, r *http.Request) {
+	var schedule models.BackupSchedule
+	if err := json.NewDecoder(r.Body).Decode(&schedule); err != nil {
+		writeError(w, http.StatusBadRequest, "Invalid request body: "+err.Error())
+		return
+	}
+
+	if schedule.Name == "" {
+		writeError(w, http.StatusBadRequest, "name is required")
+		return
+	}
+	if schedule.CronExpr == "" {
+		writeError(w, http.StatusBadRequest, "cron_expr is required")
+		return
+	}
+
+	created, err := h.backup.CreateSchedule(r.Context(), schedule)
+	if err != nil {
+		writeError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+
+	writeJSON(w, http.StatusCreated, created)
+}
+
+// GetSchedule godoc
+// @Summary Get a backup schedule
+// @Description Returns details of a specific backup schedule
+// @Tags Backup
+// @Produce json
+// @Security BearerAuth
+// @Param id path int true "Schedule ID"
+// @Success 200 {object} models.BackupSchedule "Schedule details"
+// @Failure 400 {object} models.ErrorResponse "Invalid ID"
+// @Failure 404 {object} models.ErrorResponse "Schedule not found"
+// @Failure 500 {object} models.ErrorResponse "Failed to get schedule"
+// @Router /backups/schedules/{id} [get]
+func (h *BackupsHandler) GetSchedule(w http.ResponseWriter, r *http.Request) {
+	id, err := strconv.Atoi(chi.URLParam(r, "id"))
+	if err != nil {
+		writeError(w, http.StatusBadRequest, "Invalid schedule ID")
+		return
+	}
+
+	schedule, err := h.backup.GetSchedule(r.Context(), id)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "Failed to get schedule: "+err.Error())
+		return
+	}
+	if schedule == nil {
+		writeError(w, http.StatusNotFound, "Schedule not found")
+		return
+	}
+
+	writeJSON(w, http.StatusOK, schedule)
+}
+
+// UpdateSchedule godoc
+// @Summary Update a backup schedule
+// @Description Updates an existing backup schedule configuration
+// @Tags Backup
+// @Accept json
+// @Produce json
+// @Security BearerAuth
+// @Param id path int true "Schedule ID"
+// @Param request body models.BackupSchedule true "Updated schedule configuration"
+// @Success 200 {object} models.SuccessResponse "Schedule updated"
+// @Failure 400 {object} models.ErrorResponse "Invalid request"
+// @Failure 404 {object} models.ErrorResponse "Schedule not found"
+// @Failure 500 {object} models.ErrorResponse "Failed to update schedule"
+// @Router /backups/schedules/{id} [put]
+func (h *BackupsHandler) UpdateSchedule(w http.ResponseWriter, r *http.Request) {
+	id, err := strconv.Atoi(chi.URLParam(r, "id"))
+	if err != nil {
+		writeError(w, http.StatusBadRequest, "Invalid schedule ID")
+		return
+	}
+
+	var schedule models.BackupSchedule
+	if err := json.NewDecoder(r.Body).Decode(&schedule); err != nil {
+		writeError(w, http.StatusBadRequest, "Invalid request body: "+err.Error())
+		return
+	}
+	schedule.ID = id
+
+	if schedule.CronExpr == "" {
+		writeError(w, http.StatusBadRequest, "cron_expr is required")
+		return
+	}
+
+	// Check that the schedule exists
+	existing, err := h.backup.GetSchedule(r.Context(), id)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "Failed to get schedule: "+err.Error())
+		return
+	}
+	if existing == nil {
+		writeError(w, http.StatusNotFound, "Schedule not found")
+		return
+	}
+
+	if err := h.backup.UpdateSchedule(r.Context(), schedule); err != nil {
+		writeError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+
+	writeJSON(w, http.StatusOK, models.SuccessResponse{
+		Status:  "success",
+		Message: "Schedule updated",
+	})
+}
+
+// DeleteSchedule godoc
+// @Summary Delete a backup schedule
+// @Description Permanently removes a backup schedule
+// @Tags Backup
+// @Produce json
+// @Security BearerAuth
+// @Param id path int true "Schedule ID"
+// @Success 200 {object} models.SuccessResponse "Schedule deleted"
+// @Failure 400 {object} models.ErrorResponse "Invalid ID"
+// @Failure 404 {object} models.ErrorResponse "Schedule not found"
+// @Failure 500 {object} models.ErrorResponse "Failed to delete schedule"
+// @Router /backups/schedules/{id} [delete]
+func (h *BackupsHandler) DeleteSchedule(w http.ResponseWriter, r *http.Request) {
+	id, err := strconv.Atoi(chi.URLParam(r, "id"))
+	if err != nil {
+		writeError(w, http.StatusBadRequest, "Invalid schedule ID")
+		return
+	}
+
+	if err := h.backup.DeleteSchedule(r.Context(), id); err != nil {
+		if err.Error() == "schedule not found" {
+			writeError(w, http.StatusNotFound, "Schedule not found")
+			return
+		}
+		writeError(w, http.StatusInternalServerError, "Failed to delete schedule: "+err.Error())
+		return
+	}
+
+	writeJSON(w, http.StatusOK, models.SuccessResponse{
+		Status:  "success",
+		Message: "Schedule deleted",
+	})
+}
+
+// TriggerSchedule godoc
+// @Summary Trigger a backup schedule immediately
+// @Description Manually triggers a backup schedule to run immediately, submitting a backup workflow via FlowEngine
+// @Tags Backup
+// @Produce json
+// @Security BearerAuth
+// @Param id path int true "Schedule ID"
+// @Success 202 {object} map[string]string "Backup triggered"
+// @Failure 400 {object} models.ErrorResponse "Invalid ID"
+// @Failure 404 {object} models.ErrorResponse "Schedule not found"
+// @Failure 500 {object} models.ErrorResponse "Failed to trigger schedule"
+// @Router /backups/schedules/{id}/run [post]
+func (h *BackupsHandler) TriggerSchedule(w http.ResponseWriter, r *http.Request) {
+	id, err := strconv.Atoi(chi.URLParam(r, "id"))
+	if err != nil {
+		writeError(w, http.StatusBadRequest, "Invalid schedule ID")
+		return
+	}
+
+	if err := h.backup.TriggerSchedule(r.Context(), id); err != nil {
+		if err.Error() == "schedule not found" {
+			writeError(w, http.StatusNotFound, "Schedule not found")
+			return
+		}
+		writeError(w, http.StatusInternalServerError, "Failed to trigger schedule: "+err.Error())
+		return
+	}
+
+	writeJSON(w, http.StatusAccepted, map[string]string{
+		"status":  "accepted",
+		"message": "Backup schedule triggered",
+	})
 }

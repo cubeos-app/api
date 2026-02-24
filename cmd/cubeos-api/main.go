@@ -464,6 +464,10 @@ func main() {
 	appStoreMgr.SetFlowEngine(flowEngine, feStore)
 	networkMgr.SetFlowEngine(flowEngine, feStore)
 	setupMgr.SetFlowEngine(flowEngine, feStore)
+	backupMgr.SetFlowEngine(flowEngine, feStore)
+
+	// Start backup scheduler (after FlowEngine is ready)
+	backupMgr.StartScheduler(engineCtx)
 
 	// Create VPN manager (Sprint 3 - with HAL client)
 	vpnMgr := managers.NewVPNManager(cfg, halClient)
@@ -966,6 +970,9 @@ func main() {
 	// Block until signal received
 	sig := <-quit
 	log.Info().Str("signal", sig.String()).Msg("received signal, shutting down gracefully")
+
+	// Stop backup scheduler before FlowEngine
+	backupMgr.StopScheduler()
 
 	// Stop FlowEngine before closing HTTP connections
 	engineCancel()
