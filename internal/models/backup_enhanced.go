@@ -75,3 +75,35 @@ type BackupSchedule struct {
 	LastStatus     string            `json:"last_status,omitempty"`
 	NextRunAt      string            `json:"next_run_at,omitempty"`
 }
+
+// BackupDestinationInfo describes an available backup destination.
+// @Description Information about an available backup destination.
+type BackupDestinationInfo struct {
+	Type        string            `json:"type"`             // "local", "usb", "nfs", "smb"
+	Name        string            `json:"name"`             // human-readable name
+	Description string            `json:"description"`      // description of the destination
+	Available   bool              `json:"available"`        // whether the destination is currently usable
+	Config      map[string]string `json:"config,omitempty"` // pre-populated config for USB devices
+}
+
+// BackupDestinationsResponse is the response for listing backup destinations.
+// @Description List of available backup destinations.
+type BackupDestinationsResponse struct {
+	Destinations []BackupDestinationInfo `json:"destinations"`
+}
+
+// BackupDestinationTestRequest is the request to test a backup destination.
+// @Description Request to test connectivity and write access to a backup destination.
+type BackupDestinationTestRequest struct {
+	Destination string          `json:"destination"` // "local", "usb", "nfs", "smb"
+	Config      json.RawMessage `json:"config"`      // destination-specific configuration
+}
+
+// BackupDestinationTestResponse is the response from testing a backup destination.
+// @Description Result of testing a backup destination.
+type BackupDestinationTestResponse struct {
+	Destination    string `json:"destination"`
+	Success        bool   `json:"success"`
+	Message        string `json:"message"`
+	AvailableSpace int64  `json:"available_space,omitempty"` // bytes, -1 or 0 if unknown
+}

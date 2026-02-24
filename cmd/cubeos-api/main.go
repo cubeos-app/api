@@ -250,6 +250,9 @@ func main() {
 	firewallMgr := managers.NewFirewallManager(cfg, halClient)
 	backupMgr := managers.NewBackupManager()
 	backupMgr.SetDB(db.DB)
+	if err := managers.EnsureKeyfile(); err != nil {
+		log.Warn().Err(err).Msg("backup: failed to ensure encryption keyfile (non-fatal)")
+	}
 	processMgr := managers.NewProcessManager()
 	monitoringMgr := managers.NewMonitoringManager(systemMgr, networkMgr)
 	prefMgr := managers.NewPreferencesManager()
@@ -414,7 +417,8 @@ func main() {
 	feactivities.RegisterSetupActivities(feRegistry, setupMgr)
 	feactivities.RegisterRegistryActivities(feRegistry, db.DB)
 	feactivities.RegisterUpdateActivities(feRegistry, db.DB, &updateSwarmAdapter{swarmMgr}, updateMgr)
-	feactivities.RegisterBackupActivities(feRegistry, db.DB, &backupMgrAdapter{backupMgr}, swarmMgr)
+	destRegistry := managers.NewBackupDestinationRegistry(halClient)
+	feactivities.RegisterBackupActivities(feRegistry, db.DB, &backupMgrAdapter{backupMgr}, swarmMgr, &destRegistryAdapter{destRegistry}, &backupEncryptorAdapter{})
 
 	flowEngine := flowengine.NewWorkflowEngine(feStore, feRegistry, flowengine.DefaultEngineConfig())
 
@@ -549,10 +553,10 @@ func main() {
 	smbHandler := handlers.NewSMBHandler(storageMgr)
 	log.Info().Msg("SMBHandler initialized")
 
-	// Create Backups handler (wired to BackupManager + FlowEngine)
-	backupsHandler := handlers.NewBackupsHandler(backupMgr)
+	// Create Backups handler (wired to BackupManager + FlowEngine + destinations)
+	backupsHandler := handlers.NewBackupsHandler(backupMgr, halClient, destRegistry)
 	backupsHandler.SetFlowEngine(flowEngine, feStore)
-	log.Info().Msg("BackupsHandler initialized (wired to BackupManager + FlowEngine)")
+	log.Info().Msg("BackupsHandler initialized (wired to BackupManager + FlowEngine + destinations)")
 
 	// Create Updates handler (Batch 4.1B)
 	updatesHandler := handlers.NewUpdatesHandler(updateMgr, flowEngine, db.DB)

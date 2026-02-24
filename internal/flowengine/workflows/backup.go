@@ -2,6 +2,7 @@
 package workflows
 
 import (
+	"encoding/json"
 	"time"
 
 	"cubeos-api/internal/flowengine"
@@ -19,7 +20,7 @@ const (
 //
 // Step order:
 //
-//  0. backup.validate_target  — Verify destination writable + has space
+//  0. backup.validate_target  — Verify destination writable + has space (uses destination adapter)
 //  1. backup.snapshot_config  — P0 seed: serialize DB + env files → cubeos-config.json
 //  2. backup.stop_apps_if_needed — Optional: stop apps for Tier 3 consistency
 //  3. backup.snapshot_database — VACUUM INTO temp path
@@ -27,8 +28,9 @@ const (
 //  5. backup.create_archive   — tar.gz creation with all files
 //  6. backup.write_manifest   — Generate + embed manifest.json with per-file categories
 //  7. backup.compute_checksum — SHA256 of final archive
-//  8. backup.move_to_destination — Move archive to final destination
-//  9. backup.record_in_db     — INSERT/UPDATE backups table + config_snapshots table
+//  8. backup.encrypt_archive  — Optional AES-256-GCM encryption (device or portable mode)
+//  9. backup.move_to_destination — Move archive to final destination (uses destination adapter)
+//  10. backup.record_in_db     — INSERT/UPDATE backups table + config_snapshots table
 type BackupWorkflow struct{}
 
 func (w *BackupWorkflow) Type() string { return BackupWorkflowType }
@@ -101,15 +103,23 @@ func (w *BackupWorkflow) Steps() []flowengine.StepDefinition {
 			Timeout:    60 * time.Second,
 		},
 		{
-			// Step 8: Move archive from temp to final destination
+			// Step 8: Optional encryption (AES-256-GCM, device or portable mode)
+			Name:       "encrypt_archive",
+			Action:     "backup.encrypt_archive",
+			Compensate: "", // encrypted file is in temp dir, cleaned up with it
+			Retry:      &flowengine.RetryPolicy{MaxAttempts: 1},
+			Timeout:    300 * time.Second, // large backups may take time to encrypt
+		},
+		{
+			// Step 9: Move archive from temp to final destination (uses destination adapter)
 			Name:       "move_to_destination",
 			Action:     "backup.move_to_destination",
 			Compensate: "backup.cleanup_dest",
 			Retry:      &flowengine.RetryPolicy{MaxAttempts: 2, InitialInterval: 1 * time.Second},
-			Timeout:    30 * time.Second,
+			Timeout:    60 * time.Second, // remote destinations may be slower
 		},
 		{
-			// Step 9: Record backup in database
+			// Step 10: Record backup in database
 			Name:       "record_in_db",
 			Action:     "backup.record_in_db",
 			Compensate: "", // DB record is harmless on failure
@@ -121,10 +131,12 @@ func (w *BackupWorkflow) Steps() []flowengine.StepDefinition {
 
 // BackupInput is the JSON input for the backup workflow.
 type BackupInput struct {
-	Scope       string `json:"scope"`       // tier1, tier2, tier3
-	Destination string `json:"destination"` // local, usb, nfs, smb
-	DestPath    string `json:"dest_path"`   // override destination path
-	Encrypt     bool   `json:"encrypt"`
-	Description string `json:"description"`
-	StopApps    bool   `json:"stop_apps"` // explicitly stop apps for consistency
+	Scope       string          `json:"scope"`                 // tier1, tier2, tier3
+	Destination string          `json:"destination"`           // local, usb, nfs, smb
+	DestPath    string          `json:"dest_path"`             // override destination path
+	DestConfig  json.RawMessage `json:"dest_config,omitempty"` // destination-specific config
+	Encrypt     bool            `json:"encrypt"`               // enable encryption
+	Passphrase  string          `json:"passphrase,omitempty"`  // P0 Mode 2: portable encryption passphrase
+	Description string          `json:"description"`
+	StopApps    bool            `json:"stop_apps"` // explicitly stop apps for consistency
 }

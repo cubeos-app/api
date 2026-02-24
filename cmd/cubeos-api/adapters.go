@@ -270,6 +270,24 @@ func (a *backupMgrAdapter) RecordBackupInDB(ctx context.Context, name, scope, de
 	return a.mgr.RecordBackupInDB(ctx, name, scope, destType, destPath, checksum, workflowID, sizeBytes, manifest)
 }
 
+// --- destRegistryAdapter: activities.BackupDestinationRegistryInterface via *managers.BackupDestinationRegistry ---
+
+type destRegistryAdapter struct {
+	reg *managers.BackupDestinationRegistry
+}
+
+func (a *destRegistryAdapter) Get(dest models.BackupDestination) (activities.BackupDestinationAdapterInterface, error) {
+	return a.reg.Get(dest)
+}
+
+// --- backupEncryptorAdapter: activities.BackupEncryptor via managers.EncryptBackup ---
+
+type backupEncryptorAdapter struct{}
+
+func (a *backupEncryptorAdapter) EncryptBackup(inputPath, outputPath string, mode string, passphrase string) error {
+	return managers.EncryptBackup(inputPath, outputPath, managers.EncryptionMode(mode), passphrase)
+}
+
 // --- updateSwarmAdapter: activities.UpdateSwarmManager via *managers.SwarmManager ---
 
 type updateSwarmAdapter struct{ mgr *managers.SwarmManager }

@@ -36,6 +36,24 @@ type BackupManagerInterface interface {
 	RecordBackupInDB(ctx context.Context, name, scope, destType, destPath, checksum, workflowID string, sizeBytes int64, manifest *models.BackupManifest) error
 }
 
+// BackupDestinationRegistryInterface abstracts the destination registry for activities.
+type BackupDestinationRegistryInterface interface {
+	Get(dest models.BackupDestination) (BackupDestinationAdapterInterface, error)
+}
+
+// BackupDestinationAdapterInterface abstracts a single destination adapter for activities.
+type BackupDestinationAdapterInterface interface {
+	Type() models.BackupDestination
+	Validate(ctx context.Context, config json.RawMessage) error
+	AvailableSpace(ctx context.Context, config json.RawMessage) (int64, error)
+	Write(ctx context.Context, config json.RawMessage, localPath, filename string) (string, error)
+}
+
+// BackupEncryptor abstracts backup encryption for activities.
+type BackupEncryptor interface {
+	EncryptBackup(inputPath, outputPath string, mode string, passphrase string) error
+}
+
 // BackupPathEntry mirrors managers.BackupPathEntry for the activity layer.
 type BackupPathEntry struct {
 	SourcePath  string
@@ -55,12 +73,14 @@ type DockerStackLister interface {
 
 // BackupValidateInput is the input for backup.validate_target.
 type BackupValidateInput struct {
-	Scope       string `json:"scope"`
-	Destination string `json:"destination"`
-	DestPath    string `json:"dest_path"`
-	Description string `json:"description"`
-	StopApps    bool   `json:"stop_apps"`
-	Encrypt     bool   `json:"encrypt"`
+	Scope       string          `json:"scope"`
+	Destination string          `json:"destination"`
+	DestPath    string          `json:"dest_path"`
+	DestConfig  json.RawMessage `json:"dest_config,omitempty"`
+	Description string          `json:"description"`
+	StopApps    bool            `json:"stop_apps"`
+	Encrypt     bool            `json:"encrypt"`
+	Passphrase  string          `json:"passphrase,omitempty"`
 }
 
 // BackupValidateOutput is the output of backup.validate_target.
@@ -105,6 +125,13 @@ type BackupWriteManifestOutput struct {
 // BackupChecksumOutput is the output of backup.compute_checksum.
 type BackupChecksumOutput struct {
 	Checksum string `json:"checksum"`
+}
+
+// BackupEncryptOutput is the output of backup.encrypt_archive.
+type BackupEncryptOutput struct {
+	ArchivePath string `json:"archive_path"` // may have changed if encryption applied
+	Encrypted   bool   `json:"encrypted"`
+	EncryptMode string `json:"encrypt_mode"` // "device" or "portable"
 }
 
 // BackupMoveOutput is the output of backup.move_to_destination.
@@ -160,9 +187,9 @@ type RestoreHealthOutput struct {
 }
 
 // RegisterBackupActivities registers all backup/restore activities in the registry.
-func RegisterBackupActivities(registry *flowengine.ActivityRegistry, db *sql.DB, backupMgr BackupManagerInterface, swarmMgr DockerStackLister) {
+func RegisterBackupActivities(registry *flowengine.ActivityRegistry, db *sql.DB, backupMgr BackupManagerInterface, swarmMgr DockerStackLister, destRegistry BackupDestinationRegistryInterface, encryptor BackupEncryptor) {
 	// Backup activities
-	registry.MustRegister("backup.validate_target", makeBackupValidateTarget(backupMgr))
+	registry.MustRegister("backup.validate_target", makeBackupValidateTarget(backupMgr, destRegistry))
 	registry.MustRegister("backup.snapshot_config", makeBackupSnapshotConfig(backupMgr))
 	registry.MustRegister("backup.stop_apps_if_needed", makeBackupStopApps(swarmMgr, db))
 	registry.MustRegister("backup.restart_stopped_apps", makeBackupRestartApps(swarmMgr, db))
@@ -171,7 +198,8 @@ func RegisterBackupActivities(registry *flowengine.ActivityRegistry, db *sql.DB,
 	registry.MustRegister("backup.create_archive", makeBackupCreateArchive(backupMgr))
 	registry.MustRegister("backup.write_manifest", makeBackupWriteManifest(backupMgr))
 	registry.MustRegister("backup.compute_checksum", makeBackupComputeChecksum())
-	registry.MustRegister("backup.move_to_destination", makeBackupMoveToDest(backupMgr))
+	registry.MustRegister("backup.encrypt_archive", makeBackupEncryptArchive(encryptor))
+	registry.MustRegister("backup.move_to_destination", makeBackupMoveToDest(backupMgr, destRegistry))
 	registry.MustRegister("backup.cleanup_dest", makeBackupCleanupDest())
 	registry.MustRegister("backup.cleanup_temp", makeBackupCleanupTemp())
 	registry.MustRegister("backup.record_in_db", makeBackupRecordInDB(backupMgr))
@@ -190,7 +218,7 @@ func RegisterBackupActivities(registry *flowengine.ActivityRegistry, db *sql.DB,
 
 // --- Backup Activity Implementations ---
 
-func makeBackupValidateTarget(backupMgr BackupManagerInterface) flowengine.ActivityFunc {
+func makeBackupValidateTarget(backupMgr BackupManagerInterface, destRegistry BackupDestinationRegistryInterface) flowengine.ActivityFunc {
 	return func(ctx context.Context, input json.RawMessage) (json.RawMessage, error) {
 		var in BackupValidateInput
 		if err := json.Unmarshal(input, &in); err != nil {
@@ -202,23 +230,51 @@ func makeBackupValidateTarget(backupMgr BackupManagerInterface) flowengine.Activ
 			scope = "tier1"
 		}
 
-		// Determine destination path
+		dest := models.BackupDestination(in.Destination)
+		if dest == "" {
+			dest = models.BackupDestLocal
+		}
+
+		// Use destination adapter for validation if registry is available
+		if destRegistry != nil {
+			adapter, err := destRegistry.Get(dest)
+			if err != nil {
+				return nil, flowengine.NewPermanentError(fmt.Errorf("unsupported destination %s: %w", dest, err))
+			}
+
+			// Validate destination is accessible
+			if err := adapter.Validate(ctx, in.DestConfig); err != nil {
+				return nil, flowengine.NewPermanentError(fmt.Errorf("destination validation failed: %w", err))
+			}
+
+			// Check available space (require at least 100MB)
+			freeBytes, err := adapter.AvailableSpace(ctx, in.DestConfig)
+			if err != nil {
+				log.Warn().Err(err).Msg("backup: failed to check disk space, proceeding anyway")
+			} else if freeBytes >= 0 && freeBytes < 100*1024*1024 {
+				return nil, flowengine.NewPermanentError(fmt.Errorf("insufficient space: %d bytes free, need at least 100MB", freeBytes))
+			}
+		} else {
+			// Fallback: direct local validation
+			destPath := in.DestPath
+			if destPath == "" {
+				destPath = backupMgr.BackupDir()
+			}
+			if err := os.MkdirAll(destPath, 0755); err != nil {
+				return nil, flowengine.NewPermanentError(fmt.Errorf("destination not writable: %w", err))
+			}
+			freeBytes, err := backupMgr.CheckDiskSpace(destPath)
+			if err != nil {
+				log.Warn().Err(err).Msg("backup: failed to check disk space, proceeding anyway")
+			} else if freeBytes < 100*1024*1024 {
+				return nil, flowengine.NewPermanentError(fmt.Errorf("insufficient disk space: %d bytes free, need at least 100MB", freeBytes))
+			}
+		}
+
+		// Determine dest_path for local reference
 		destPath := in.DestPath
 		if destPath == "" {
 			destPath = backupMgr.BackupDir()
-		}
-
-		// Ensure destination exists and is writable
-		if err := os.MkdirAll(destPath, 0755); err != nil {
-			return nil, flowengine.NewPermanentError(fmt.Errorf("destination not writable: %w", err))
-		}
-
-		// Check disk space (require at least 100MB for safety)
-		freeBytes, err := backupMgr.CheckDiskSpace(destPath)
-		if err != nil {
-			log.Warn().Err(err).Msg("backup: failed to check disk space, proceeding anyway")
-		} else if freeBytes < 100*1024*1024 {
-			return nil, flowengine.NewPermanentError(fmt.Errorf("insufficient disk space: %d bytes free, need at least 100MB", freeBytes))
 		}
 
 		// Create temp directory for staging
@@ -227,7 +283,7 @@ func makeBackupValidateTarget(backupMgr BackupManagerInterface) flowengine.Activ
 			return nil, flowengine.NewTransientError(fmt.Errorf("failed to create temp dir: %w", err))
 		}
 
-		log.Info().Str("scope", scope).Str("temp_dir", tempDir).Str("dest", destPath).Msg("backup: validation passed")
+		log.Info().Str("scope", scope).Str("temp_dir", tempDir).Str("dest", string(dest)).Msg("backup: validation passed")
 
 		return marshalOutput(BackupValidateOutput{
 			TempDir:  tempDir,
@@ -559,30 +615,102 @@ func makeBackupComputeChecksum() flowengine.ActivityFunc {
 	}
 }
 
-func makeBackupMoveToDest(backupMgr BackupManagerInterface) flowengine.ActivityFunc {
+func makeBackupEncryptArchive(encryptor BackupEncryptor) flowengine.ActivityFunc {
 	return func(ctx context.Context, input json.RawMessage) (json.RawMessage, error) {
 		var envelope struct {
 			ArchivePath string `json:"archive_path"`
-			DestPath    string `json:"dest_path"`
+			Encrypt     bool   `json:"encrypt"`
+			Passphrase  string `json:"passphrase"`
+		}
+		if err := json.Unmarshal(input, &envelope); err != nil {
+			return nil, flowengine.NewPermanentError(fmt.Errorf("invalid encrypt_archive input: %w", err))
+		}
+
+		// Skip encryption if not requested
+		if !envelope.Encrypt || encryptor == nil {
+			return marshalOutput(BackupEncryptOutput{
+				ArchivePath: envelope.ArchivePath,
+				Encrypted:   false,
+			})
+		}
+
+		// Determine mode: portable if passphrase provided, device otherwise
+		mode := "device"
+		if envelope.Passphrase != "" {
+			mode = "portable"
+		}
+
+		encryptedPath := envelope.ArchivePath + ".enc"
+		if err := encryptor.EncryptBackup(envelope.ArchivePath, encryptedPath, mode, envelope.Passphrase); err != nil {
+			return nil, flowengine.NewPermanentError(fmt.Errorf("encryption failed: %w", err))
+		}
+
+		// Remove unencrypted archive
+		os.Remove(envelope.ArchivePath)
+
+		log.Info().Str("mode", mode).Str("path", encryptedPath).Msg("backup: archive encrypted")
+
+		return marshalOutput(BackupEncryptOutput{
+			ArchivePath: encryptedPath,
+			Encrypted:   true,
+			EncryptMode: mode,
+		})
+	}
+}
+
+func makeBackupMoveToDest(backupMgr BackupManagerInterface, destRegistry BackupDestinationRegistryInterface) flowengine.ActivityFunc {
+	return func(ctx context.Context, input json.RawMessage) (json.RawMessage, error) {
+		var envelope struct {
+			ArchivePath string          `json:"archive_path"`
+			DestPath    string          `json:"dest_path"`
+			Destination string          `json:"destination"`
+			DestConfig  json.RawMessage `json:"dest_config,omitempty"`
 		}
 		if err := json.Unmarshal(input, &envelope); err != nil {
 			return nil, flowengine.NewPermanentError(fmt.Errorf("invalid move_to_destination input: %w", err))
 		}
-		if envelope.ArchivePath == "" || envelope.DestPath == "" {
-			return nil, flowengine.NewPermanentError(fmt.Errorf("archive_path and dest_path are required"))
+		if envelope.ArchivePath == "" {
+			return nil, flowengine.NewPermanentError(fmt.Errorf("archive_path is required"))
 		}
 
 		filename := filepath.Base(envelope.ArchivePath)
-		finalPath := filepath.Join(envelope.DestPath, filename)
+		dest := models.BackupDestination(envelope.Destination)
 
-		// Ensure destination exists
-		if err := os.MkdirAll(envelope.DestPath, 0755); err != nil {
+		// Use destination adapter if registry is available and destination is not local default
+		if destRegistry != nil && dest != "" {
+			adapter, err := destRegistry.Get(dest)
+			if err == nil {
+				finalPath, err := adapter.Write(ctx, envelope.DestConfig, envelope.ArchivePath, filename)
+				if err != nil {
+					return nil, flowengine.ClassifyError(fmt.Errorf("destination write failed: %w", err))
+				}
+
+				// Remove source after successful write
+				os.Remove(envelope.ArchivePath)
+
+				log.Info().Str("final", finalPath).Str("dest", string(dest)).Msg("backup: archive moved to destination")
+				return marshalOutput(BackupMoveOutput{
+					FinalPath: finalPath,
+					Filename:  filename,
+				})
+			}
+			// Fall through to legacy path if adapter not found
+			log.Warn().Err(err).Str("dest", string(dest)).Msg("backup: destination adapter not found, using legacy path")
+		}
+
+		// Legacy local path
+		destPath := envelope.DestPath
+		if destPath == "" {
+			destPath = backupMgr.BackupDir()
+		}
+
+		finalPath := filepath.Join(destPath, filename)
+
+		if err := os.MkdirAll(destPath, 0755); err != nil {
 			return nil, flowengine.ClassifyError(err)
 		}
 
-		// Try rename first (same filesystem), fallback to copy
 		if err := os.Rename(envelope.ArchivePath, finalPath); err != nil {
-			// Cross-filesystem: copy + remove
 			if err := copyFile(envelope.ArchivePath, finalPath); err != nil {
 				return nil, flowengine.ClassifyError(err)
 			}
@@ -643,6 +771,8 @@ func makeBackupRecordInDB(backupMgr BackupManagerInterface) flowengine.ActivityF
 			Description  string `json:"description"`
 			ManifestJSON string `json:"manifest_json"`
 			TempDir      string `json:"temp_dir"`
+			Encrypted    bool   `json:"encrypted"`
+			EncryptMode  string `json:"encrypt_mode"`
 		}
 		if err := json.Unmarshal(input, &envelope); err != nil {
 			return nil, flowengine.NewPermanentError(fmt.Errorf("invalid record_in_db input: %w", err))
@@ -654,6 +784,8 @@ func makeBackupRecordInDB(backupMgr BackupManagerInterface) flowengine.ActivityF
 			manifest = &models.BackupManifest{}
 			json.Unmarshal([]byte(envelope.ManifestJSON), manifest)
 			manifest.Checksum = envelope.Checksum
+			manifest.Encrypted = envelope.Encrypted
+			manifest.EncryptMode = envelope.EncryptMode
 		}
 
 		backupName := strings.TrimSuffix(envelope.Filename, ".tar.gz")
@@ -681,12 +813,14 @@ func makeBackupRecordInDB(backupMgr BackupManagerInterface) flowengine.ActivityF
 		// Also write .meta file for backward compatibility with ListBackups
 		metaPath := envelope.FinalPath + ".meta"
 		meta := map[string]interface{}{
-			"type":        envelope.Scope,
-			"description": envelope.Description,
-			"created_at":  time.Now().Format(time.RFC3339),
-			"scope":       envelope.Scope,
-			"checksum":    envelope.Checksum,
-			"compressed":  true,
+			"type":         envelope.Scope,
+			"description":  envelope.Description,
+			"created_at":   time.Now().Format(time.RFC3339),
+			"scope":        envelope.Scope,
+			"checksum":     envelope.Checksum,
+			"compressed":   true,
+			"encrypted":    envelope.Encrypted,
+			"encrypt_mode": envelope.EncryptMode,
 		}
 		metaData, _ := json.MarshalIndent(meta, "", "  ")
 		os.WriteFile(metaPath, metaData, 0644)

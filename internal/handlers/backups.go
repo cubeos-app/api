@@ -8,21 +8,26 @@ import (
 
 	"cubeos-api/internal/flowengine"
 	feworkflows "cubeos-api/internal/flowengine/workflows"
+	"cubeos-api/internal/hal"
 	"cubeos-api/internal/managers"
 	"cubeos-api/internal/models"
 )
 
 // BackupsHandler handles backup management endpoints
 type BackupsHandler struct {
-	backup     *managers.BackupManager
-	flowEngine *flowengine.WorkflowEngine
-	feStore    *flowengine.WorkflowStore
+	backup       *managers.BackupManager
+	flowEngine   *flowengine.WorkflowEngine
+	feStore      *flowengine.WorkflowStore
+	halClient    *hal.Client
+	destRegistry *managers.BackupDestinationRegistry
 }
 
 // NewBackupsHandler creates a new backups handler wired to the BackupManager
-func NewBackupsHandler(backup *managers.BackupManager) *BackupsHandler {
+func NewBackupsHandler(backup *managers.BackupManager, halClient *hal.Client, destRegistry *managers.BackupDestinationRegistry) *BackupsHandler {
 	return &BackupsHandler{
-		backup: backup,
+		backup:       backup,
+		halClient:    halClient,
+		destRegistry: destRegistry,
 	}
 }
 
@@ -40,6 +45,8 @@ func (h *BackupsHandler) Routes() chi.Router {
 	r.Post("/", h.CreateBackup)
 	r.Get("/stats", h.GetBackupStats)
 	r.Post("/quick", h.QuickBackup)
+	r.Get("/destinations", h.ListDestinations)
+	r.Post("/destinations/test", h.TestDestination)
 	r.Get("/{backup_id}", h.GetBackup)
 	r.Delete("/{backup_id}", h.DeleteBackup)
 	r.Get("/{backup_id}/download", h.DownloadBackup)
@@ -119,8 +126,10 @@ func (h *BackupsHandler) CreateBackup(w http.ResponseWriter, r *http.Request) {
 	workflowInput := feworkflows.BackupInput{
 		Scope:       string(req.Scope),
 		Destination: string(req.Destination),
+		DestConfig:  req.DestConfig,
 		Description: req.Description,
 		Encrypt:     req.Encrypt,
+		Passphrase:  req.Passphrase,
 	}
 
 	inputJSON, err := json.Marshal(workflowInput)
@@ -387,4 +396,134 @@ func (h *BackupsHandler) VerifyBackup(w http.ResponseWriter, r *http.Request) {
 		"status":   "verified",
 		"manifest": manifest,
 	})
+}
+
+// ListDestinations godoc
+// @Summary List available backup destinations
+// @Description Returns a list of available backup destinations. Local is always available. USB shown if detected. NFS/SMB always listed as options.
+// @Tags Backup
+// @Produce json
+// @Security BearerAuth
+// @Success 200 {object} models.BackupDestinationsResponse "Available destinations"
+// @Failure 500 {object} models.ErrorResponse "Failed to list destinations"
+// @Router /backups/destinations [get]
+func (h *BackupsHandler) ListDestinations(w http.ResponseWriter, r *http.Request) {
+	destinations := []models.BackupDestinationInfo{
+		{
+			Type:        string(models.BackupDestLocal),
+			Name:        "Local Storage",
+			Description: "Store backups on the local filesystem (/cubeos/data/backups/)",
+			Available:   true,
+		},
+	}
+
+	// Check USB availability via HAL
+	usbAvailable := false
+	if h.halClient != nil {
+		devices, err := h.halClient.GetUSBStorageDevices(r.Context())
+		if err == nil && len(devices) > 0 {
+			usbAvailable = true
+			for _, d := range devices {
+				destinations = append(destinations, models.BackupDestinationInfo{
+					Type:        string(models.BackupDestUSB),
+					Name:        "USB: " + d.Name,
+					Description: d.Model + " (" + d.SizeHuman + ")",
+					Available:   true,
+					Config: map[string]string{
+						"device": d.Path,
+					},
+				})
+			}
+		}
+	}
+
+	// USB type without specific device (if no devices detected)
+	if !usbAvailable {
+		destinations = append(destinations, models.BackupDestinationInfo{
+			Type:        string(models.BackupDestUSB),
+			Name:        "USB Storage",
+			Description: "Store backups on a USB drive (no USB storage detected)",
+			Available:   false,
+		})
+	}
+
+	// NFS and SMB are always listed as options
+	destinations = append(destinations,
+		models.BackupDestinationInfo{
+			Type:        string(models.BackupDestNFS),
+			Name:        "NFS Share",
+			Description: "Store backups on a remote NFS share",
+			Available:   true,
+		},
+		models.BackupDestinationInfo{
+			Type:        string(models.BackupDestSMB),
+			Name:        "SMB/CIFS Share",
+			Description: "Store backups on a remote SMB/CIFS share (Windows, Samba, NAS)",
+			Available:   true,
+		},
+	)
+
+	writeJSON(w, http.StatusOK, models.BackupDestinationsResponse{
+		Destinations: destinations,
+	})
+}
+
+// TestDestination godoc
+// @Summary Test a backup destination
+// @Description Tests connectivity and write access to a backup destination. Validates the configuration without creating a backup.
+// @Tags Backup
+// @Accept json
+// @Produce json
+// @Security BearerAuth
+// @Param request body models.BackupDestinationTestRequest true "Destination test configuration"
+// @Success 200 {object} models.BackupDestinationTestResponse "Test result"
+// @Failure 400 {object} models.ErrorResponse "Invalid request"
+// @Failure 500 {object} models.ErrorResponse "Test failed"
+// @Router /backups/destinations/test [post]
+func (h *BackupsHandler) TestDestination(w http.ResponseWriter, r *http.Request) {
+	var req models.BackupDestinationTestRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		writeError(w, http.StatusBadRequest, "Invalid request body: "+err.Error())
+		return
+	}
+
+	if req.Destination == "" {
+		writeError(w, http.StatusBadRequest, "destination is required")
+		return
+	}
+
+	if h.destRegistry == nil {
+		writeError(w, http.StatusInternalServerError, "Destination registry not initialized")
+		return
+	}
+
+	dest := models.BackupDestination(req.Destination)
+	adapter, err := h.destRegistry.Get(dest)
+	if err != nil {
+		writeError(w, http.StatusBadRequest, "Unsupported destination: "+string(dest))
+		return
+	}
+
+	ctx := r.Context()
+	resp := models.BackupDestinationTestResponse{
+		Destination: req.Destination,
+	}
+
+	// Test validation
+	if err := adapter.Validate(ctx, req.Config); err != nil {
+		resp.Success = false
+		resp.Message = "Validation failed: " + err.Error()
+		writeJSON(w, http.StatusOK, resp)
+		return
+	}
+
+	// Check available space
+	space, err := adapter.AvailableSpace(ctx, req.Config)
+	if err == nil && space >= 0 {
+		resp.AvailableSpace = space
+	}
+
+	resp.Success = true
+	resp.Message = "Destination is accessible and writable"
+	writeJSON(w, http.StatusOK, resp)
 }
