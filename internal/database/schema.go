@@ -9,7 +9,7 @@ import (
 )
 
 // CurrentSchemaVersion tracks the database schema version for migrations.
-const CurrentSchemaVersion = 18
+const CurrentSchemaVersion = 19
 
 // Schema defines the unified CubeOS database schema.
 // Design Principles:
@@ -175,13 +175,13 @@ CREATE TABLE IF NOT EXISTS app_health (
 -- =============================================================================
 CREATE TABLE IF NOT EXISTS network_config (
     id              INTEGER PRIMARY KEY CHECK (id = 1),  -- Single row
-    mode            TEXT DEFAULT 'offline',         -- 'offline' | 'online_eth' | 'online_wifi' | 'server_eth' | 'server_wifi'
+    mode            TEXT DEFAULT 'offline_hotspot',  -- 'offline_hotspot' | 'wifi_router' | 'wifi_bridge' | 'android_tether' | 'eth_client' | 'wifi_client'
     
     -- VPN overlay (V2)
     vpn_mode        TEXT DEFAULT 'none',            -- 'none' | 'wireguard' | 'openvpn' | 'tor'
     vpn_config_id   INTEGER DEFAULT NULL,           -- FK to vpn_configs (nullable)
     
-    -- WiFi client credentials (for online_wifi and server_wifi)
+    -- WiFi client credentials (for wifi_bridge and wifi_client)
     wifi_ssid       TEXT DEFAULT '',                -- Upstream WiFi SSID
     wifi_password   TEXT DEFAULT '',                -- Encrypted or reference to secrets.env
     
@@ -211,9 +211,9 @@ CREATE TABLE IF NOT EXISTS network_config (
     -- Static IP override for upstream interface (T11 — Network Modes Batch 3)
     -- When use_static_ip = TRUE, the upstream interface uses static config instead of DHCP.
     -- Which interface these apply to depends on the current mode:
-    --   ONLINE_ETH  → eth0,   ONLINE_WIFI  → wlan1,
-    --   SERVER_ETH  → eth0,   SERVER_WIFI  → wlan0,
-    --   OFFLINE     → N/A (no upstream)
+    --   wifi_router  → eth0,   wifi_bridge   → wlan1,
+    --   eth_client   → eth0,   wifi_client   → wlan0,
+    --   offline_hotspot → N/A (no upstream)
     use_static_ip       BOOLEAN DEFAULT FALSE,
     static_ip_address   TEXT DEFAULT '',            -- e.g. '192.168.1.100'
     static_ip_netmask   TEXT DEFAULT '255.255.255.0',
@@ -506,7 +506,7 @@ INSERT OR IGNORE INTO system_state (key, value) VALUES
 -- =============================================================================
 -- DEFAULT NETWORK CONFIG
 -- =============================================================================
-INSERT OR IGNORE INTO network_config (id, mode) VALUES (1, 'offline');
+INSERT OR IGNORE INTO network_config (id, mode) VALUES (1, 'offline_hotspot');
 
 -- =============================================================================
 -- SETUP STATUS

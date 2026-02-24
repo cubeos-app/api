@@ -1,5 +1,5 @@
 // Package managers provides network mode management for CubeOS.
-// Network Modes V2: Supports 5 modes (OFFLINE, ONLINE_ETH, ONLINE_WIFI, SERVER_ETH, SERVER_WIFI)
+// Network Modes V2: Supports 6 modes (offline_hotspot, wifi_router, wifi_bridge, android_tether, eth_client, wifi_client)
 // plus VPN overlay (None, WireGuard, OpenVPN, Tor)
 package managers
 
@@ -148,7 +148,7 @@ func NewNetworkManager(cfg *config.Config, halClient *hal.Client, db *sqlx.DB) *
 func loadConfigFromDB(db *sqlx.DB) (models.NetworkMode, models.VPNMode) {
 	if db == nil {
 		log.Warn().Msg("NetworkManager: no database connection, defaulting to offline")
-		return models.NetworkModeOffline, models.VPNModeNone
+		return models.NetworkModeOfflineHotspot, models.VPNModeNone
 	}
 
 	var mode, vpnMode string
@@ -159,7 +159,7 @@ func loadConfigFromDB(db *sqlx.DB) (models.NetworkMode, models.VPNMode) {
 		} else {
 			log.Error().Err(err).Msg("NetworkManager: failed to load config from database")
 		}
-		return models.NetworkModeOffline, models.VPNModeNone
+		return models.NetworkModeOfflineHotspot, models.VPNModeNone
 	}
 
 	return parseNetworkMode(mode), parseVPNMode(vpnMode)
@@ -168,18 +168,18 @@ func loadConfigFromDB(db *sqlx.DB) (models.NetworkMode, models.VPNMode) {
 // parseNetworkMode converts string to models.NetworkMode (V2: includes SERVER modes)
 func parseNetworkMode(mode string) models.NetworkMode {
 	switch models.NetworkMode(mode) {
-	case models.NetworkModeOnlineETH:
-		return models.NetworkModeOnlineETH
-	case models.NetworkModeOnlineWiFi:
-		return models.NetworkModeOnlineWiFi
-	case models.NetworkModeOnlineTether:
-		return models.NetworkModeOnlineTether
-	case models.NetworkModeServerETH:
-		return models.NetworkModeServerETH
-	case models.NetworkModeServerWiFi:
-		return models.NetworkModeServerWiFi
+	case models.NetworkModeWifiRouter:
+		return models.NetworkModeWifiRouter
+	case models.NetworkModeWifiBridge:
+		return models.NetworkModeWifiBridge
+	case models.NetworkModeAndroidTether:
+		return models.NetworkModeAndroidTether
+	case models.NetworkModeEthClient:
+		return models.NetworkModeEthClient
+	case models.NetworkModeWifiClient:
+		return models.NetworkModeWifiClient
 	default:
-		return models.NetworkModeOffline
+		return models.NetworkModeOfflineHotspot
 	}
 }
 
@@ -329,7 +329,7 @@ func (m *NetworkManager) GetStatus(ctx context.Context) (*NetworkStatus, error) 
 
 	// Find upstream interface based on mode
 	switch m.currentMode {
-	case models.NetworkModeOnlineETH, models.NetworkModeServerETH:
+	case models.NetworkModeWifiRouter, models.NetworkModeEthClient:
 		for _, iface := range interfaces {
 			if iface.Name == m.wanInterface && len(iface.IPv4Addresses) > 0 {
 				status.Upstream = &UpstreamStatus{
@@ -340,7 +340,7 @@ func (m *NetworkManager) GetStatus(ctx context.Context) (*NetworkStatus, error) 
 				break
 			}
 		}
-	case models.NetworkModeOnlineWiFi, models.NetworkModeServerWiFi:
+	case models.NetworkModeWifiBridge, models.NetworkModeWifiClient:
 		resolvedIface := m.resolveWiFiClientInterface(ctx)
 		for _, iface := range interfaces {
 			if iface.Name == resolvedIface && len(iface.IPv4Addresses) > 0 {
@@ -352,7 +352,7 @@ func (m *NetworkManager) GetStatus(ctx context.Context) (*NetworkStatus, error) 
 				break
 			}
 		}
-	case models.NetworkModeOnlineTether:
+	case models.NetworkModeAndroidTether:
 		// Tethering interface has dynamic name (enx*) — find it via HAL or interface list
 		tetherStatus, tetherErr := m.hal.GetAndroidTetheringStatus(ctx)
 		if tetherErr == nil && tetherStatus.Connected && tetherStatus.Interface != "" {
@@ -383,10 +383,10 @@ func (m *NetworkManager) GetStatus(ctx context.Context) (*NetworkStatus, error) 
 	if status.Upstream == nil {
 		var expectedIface, ifaceType string
 		switch m.currentMode {
-		case models.NetworkModeOnlineETH, models.NetworkModeServerETH:
+		case models.NetworkModeWifiRouter, models.NetworkModeEthClient:
 			expectedIface = m.wanInterface
 			ifaceType = "ethernet"
-		case models.NetworkModeOnlineWiFi, models.NetworkModeServerWiFi:
+		case models.NetworkModeWifiBridge, models.NetworkModeWifiClient:
 			expectedIface = m.resolveWiFiClientInterface(ctx)
 			ifaceType = "wifi"
 		}
@@ -456,14 +456,14 @@ func (m *NetworkManager) checkInternetConnectivity() bool {
 
 // IsServerMode returns true if current mode is a server mode (V2)
 func (m *NetworkManager) IsServerMode() bool {
-	return m.currentMode == models.NetworkModeServerETH || m.currentMode == models.NetworkModeServerWiFi
+	return m.currentMode == models.NetworkModeEthClient || m.currentMode == models.NetworkModeWifiClient
 }
 
 // HasInternet returns true if current mode has internet capability (V2)
 func (m *NetworkManager) HasInternet() bool {
 	switch m.currentMode {
-	case models.NetworkModeOnlineETH, models.NetworkModeOnlineWiFi, models.NetworkModeOnlineTether,
-		models.NetworkModeServerETH, models.NetworkModeServerWiFi:
+	case models.NetworkModeWifiRouter, models.NetworkModeWifiBridge, models.NetworkModeAndroidTether,
+		models.NetworkModeEthClient, models.NetworkModeWifiClient:
 		return true
 	default:
 		return false
@@ -546,24 +546,24 @@ func (m *NetworkManager) setModeInline(ctx context.Context, mode models.NetworkM
 	var err error
 
 	switch mode {
-	case models.NetworkModeOffline:
-		err = m.setOfflineMode(ctx)
-	case models.NetworkModeOnlineETH:
-		err = m.setOnlineETHMode(ctx, staticIP)
-	case models.NetworkModeOnlineWiFi:
+	case models.NetworkModeOfflineHotspot:
+		err = m.setOfflineHotspotMode(ctx)
+	case models.NetworkModeWifiRouter:
+		err = m.setWifiRouterMode(ctx, staticIP)
+	case models.NetworkModeWifiBridge:
 		if wifiSSID == "" {
-			return fmt.Errorf("wifi SSID required for ONLINE_WIFI mode")
+			return fmt.Errorf("wifi SSID required for wifi_bridge mode")
 		}
-		err = m.setOnlineWiFiMode(ctx, wifiSSID, wifiPassword, staticIP)
-	case models.NetworkModeOnlineTether:
-		err = m.setOnlineTetherMode(ctx)
-	case models.NetworkModeServerETH:
-		err = m.setServerETHMode(ctx, staticIP)
-	case models.NetworkModeServerWiFi:
+		err = m.setWifiBridgeMode(ctx, wifiSSID, wifiPassword, staticIP)
+	case models.NetworkModeAndroidTether:
+		err = m.setAndroidTetherMode(ctx)
+	case models.NetworkModeEthClient:
+		err = m.setEthClientMode(ctx, staticIP)
+	case models.NetworkModeWifiClient:
 		if wifiSSID == "" {
-			return fmt.Errorf("wifi SSID required for SERVER_WIFI mode")
+			return fmt.Errorf("wifi SSID required for wifi_client mode")
 		}
-		err = m.setServerWiFiMode(ctx, wifiSSID, wifiPassword, staticIP)
+		err = m.setWifiClientMode(ctx, wifiSSID, wifiPassword, staticIP)
 	default:
 		return fmt.Errorf("unknown network mode: %s", mode)
 	}
@@ -673,11 +673,11 @@ func (m *NetworkManager) generateNetplanYAML(mode models.NetworkMode, wifiSSID, 
 	}
 
 	switch mode {
-	case models.NetworkModeOffline:
-		// OFFLINE: Air-gapped operation. wlan0 (AP) serves 10.42.24.0/24.
+	case models.NetworkModeOfflineHotspot:
+		// offline_hotspot: Air-gapped operation. wlan0 (AP) serves 10.42.24.0/24.
 		// B92/B92b: eth0 has NO address — dual-IP on the same subnet causes
 		// ARP conflicts killing connectivity. Must match cubeos-boot-lib.sh.
-		return fmt.Sprintf(`# CubeOS netplan — OFFLINE mode
+		return fmt.Sprintf(`# CubeOS netplan — offline_hotspot mode
 # Auto-generated by CubeOS API — do not edit manually.
 network:
   version: 2
@@ -693,11 +693,11 @@ network:
       optional: true
 `, gatewayIP)
 
-	case models.NetworkModeOnlineTether:
-		// ONLINE_TETHER: AP + NAT via Android USB tethering.
+	case models.NetworkModeAndroidTether:
+		// android_tether: AP + NAT via Android USB tethering.
 		// Tethering interface (enx*) has dynamic name and is managed manually via HAL
 		// (ip link set up + dhclient), NOT via netplan. Only wlan0 (AP) goes in netplan.
-		return fmt.Sprintf(`# CubeOS netplan — ONLINE_TETHER mode
+		return fmt.Sprintf(`# CubeOS netplan — android_tether mode
 # Auto-generated by CubeOS API — do not edit manually.
 # Android tethering interface (enx*) managed outside netplan.
 network:
@@ -714,12 +714,12 @@ network:
       optional: true
 `, gatewayIP)
 
-	case models.NetworkModeOnlineETH:
+	case models.NetworkModeWifiRouter:
 		if staticIP.IsConfigured() {
 			// Static IP on eth0 — user-defined upstream address
 			cidr := staticIP.NetmaskToCIDR()
 			dnsBlock := m.buildDNSBlock(staticIP, gatewayIP)
-			return fmt.Sprintf(`# CubeOS netplan — ONLINE_ETH mode (static IP)
+			return fmt.Sprintf(`# CubeOS netplan — wifi_router mode (static IP)
 # Auto-generated by CubeOS API — do not edit manually.
 network:
   version: 2
@@ -740,7 +740,7 @@ network:
 `, staticIP.StaticIPAddress, cidr, staticIP.StaticIPGateway, dnsBlock, gatewayIP)
 		}
 		// DHCP on eth0 (default)
-		return fmt.Sprintf(`# CubeOS netplan — ONLINE_ETH mode
+		return fmt.Sprintf(`# CubeOS netplan — wifi_router mode
 # Auto-generated by CubeOS API — do not edit manually.
 network:
   version: 2
@@ -762,14 +762,14 @@ network:
       optional: true
 `, gatewayIP, gatewayIP)
 
-	case models.NetworkModeOnlineWiFi:
+	case models.NetworkModeWifiBridge:
 		if staticIP.IsConfigured() {
 			// Static IP on wlan1 — user-defined upstream address
 			cidr := staticIP.NetmaskToCIDR()
 			dnsBlock := m.buildDNSBlock(staticIP, gatewayIP)
 			// B126: wlan0 MUST be under ethernets, NOT wifis. When under wifis,
 			// netplan spawns wpa_supplicant which fights hostapd for control of wlan0.
-			return fmt.Sprintf(`# CubeOS netplan — ONLINE_WIFI mode (static IP)
+			return fmt.Sprintf(`# CubeOS netplan — wifi_bridge mode (static IP)
 # Auto-generated by CubeOS API — do not edit manually.
 network:
   version: 2
@@ -796,7 +796,7 @@ network:
 		// DHCP on wlan1 (default)
 		// B126: wlan0 MUST be under ethernets, NOT wifis. When under wifis,
 		// netplan spawns wpa_supplicant which fights hostapd for control of wlan0.
-		return fmt.Sprintf(`# CubeOS netplan — ONLINE_WIFI mode
+		return fmt.Sprintf(`# CubeOS netplan — wifi_bridge mode
 # Auto-generated by CubeOS API — do not edit manually.
 network:
   version: 2
@@ -821,11 +821,11 @@ network:
           password: "%s"
 `, gatewayIP, gatewayIP, wifiSSID, wifiPassword)
 
-	case models.NetworkModeServerETH:
+	case models.NetworkModeEthClient:
 		if staticIP.IsConfigured() {
 			cidr := staticIP.NetmaskToCIDR()
 			dnsBlock := m.buildDNSBlock(staticIP, "")
-			return fmt.Sprintf(`# CubeOS netplan — SERVER_ETH mode (static IP)
+			return fmt.Sprintf(`# CubeOS netplan — eth_client mode (static IP)
 # Auto-generated by CubeOS API — do not edit manually.
 network:
   version: 2
@@ -840,7 +840,7 @@ network:
 %s      optional: true
 `, staticIP.StaticIPAddress, cidr, staticIP.StaticIPGateway, dnsBlock)
 		}
-		return `# CubeOS netplan — SERVER_ETH mode
+		return `# CubeOS netplan — eth_client mode
 # Auto-generated by CubeOS API — do not edit manually.
 network:
   version: 2
@@ -852,11 +852,11 @@ network:
       optional: true
 `
 
-	case models.NetworkModeServerWiFi:
+	case models.NetworkModeWifiClient:
 		if staticIP.IsConfigured() {
 			cidr := staticIP.NetmaskToCIDR()
 			dnsBlock := m.buildDNSBlock(staticIP, "")
-			return fmt.Sprintf(`# CubeOS netplan — SERVER_WIFI mode (static IP)
+			return fmt.Sprintf(`# CubeOS netplan — wifi_client mode (static IP)
 # Auto-generated by CubeOS API — do not edit manually.
 network:
   version: 2
@@ -874,7 +874,7 @@ network:
           password: "%s"
 `, staticIP.StaticIPAddress, cidr, staticIP.StaticIPGateway, dnsBlock, wifiSSID, wifiPassword)
 		}
-		return fmt.Sprintf(`# CubeOS netplan — SERVER_WIFI mode
+		return fmt.Sprintf(`# CubeOS netplan — wifi_client mode
 # Auto-generated by CubeOS API — do not edit manually.
 network:
   version: 2
@@ -889,9 +889,9 @@ network:
 `, wifiSSID, wifiPassword)
 
 	default:
-		// Safety fallback: OFFLINE — same as NetworkModeOffline above
+		// Safety fallback: offline_hotspot — same as NetworkModeOfflineHotspot above
 		// B92b: eth0 has NO address to prevent ARP conflicts with wlan0.
-		return fmt.Sprintf(`# CubeOS netplan — OFFLINE mode (fallback)
+		return fmt.Sprintf(`# CubeOS netplan — offline_hotspot mode (fallback)
 # Auto-generated by CubeOS API — do not edit manually.
 network:
   version: 2
@@ -980,14 +980,14 @@ func (m *NetworkManager) pollForIP(ctx context.Context, iface string, timeout ti
 	return fmt.Errorf("timeout waiting for IP on %s after %s (%d attempts)", iface, timeout, attempt)
 }
 
-// setOfflineMode configures offline (AP only) mode
-func (m *NetworkManager) setOfflineMode(ctx context.Context) error {
+// setOfflineHotspotMode configures offline (AP only) mode
+func (m *NetworkManager) setOfflineHotspotMode(ctx context.Context) error {
 	// Disable NAT - ignore errors (might already be disabled)
 	_ = m.hal.DisableNAT(ctx)
 	_ = m.hal.DisableIPForward(ctx)
 
 	// Disconnect any upstream WiFi
-	if m.currentMode == models.NetworkModeOnlineWiFi || m.currentMode == models.NetworkModeServerWiFi {
+	if m.currentMode == models.NetworkModeWifiBridge || m.currentMode == models.NetworkModeWifiClient {
 		_ = m.hal.DisconnectWiFi(ctx, m.resolveWiFiClientInterface(ctx))
 	}
 
@@ -998,21 +998,21 @@ func (m *NetworkManager) setOfflineMode(ctx context.Context) error {
 		}
 	}
 
-	m.currentMode = models.NetworkModeOffline
+	m.currentMode = models.NetworkModeOfflineHotspot
 
-	// T09: Configure Pi-hole DHCP for OFFLINE (active on all interfaces)
-	m.configurePiholeDHCPForMode(ctx, models.NetworkModeOffline)
+	// T09: Configure Pi-hole DHCP for offline_hotspot (active on all interfaces)
+	m.configurePiholeDHCPForMode(ctx, models.NetworkModeOfflineHotspot)
 
 	// T10: Write netplan for reboot persistence
-	m.writeAndApplyNetplan(ctx, models.NetworkModeOffline, "", "", "", models.StaticIPConfig{})
+	m.writeAndApplyNetplan(ctx, models.NetworkModeOfflineHotspot, "", "", "", models.StaticIPConfig{})
 
 	return nil
 }
 
-// setOnlineETHMode configures online via Ethernet mode
-// setOnlineETHMode configures online via Ethernet mode
+// setWifiRouterMode configures online via Ethernet mode
+// setWifiRouterMode configures online via Ethernet mode
 // B88: DHCP path uses netplan write+apply+poll instead of HAL RequestDHCP
-func (m *NetworkManager) setOnlineETHMode(ctx context.Context, staticIP models.StaticIPConfig) error {
+func (m *NetworkManager) setWifiRouterMode(ctx context.Context, staticIP models.StaticIPConfig) error {
 	// Check if ethernet is up
 	iface, err := m.hal.GetInterface(ctx, m.wanInterface)
 	if err != nil {
@@ -1037,14 +1037,14 @@ func (m *NetworkManager) setOnlineETHMode(ctx context.Context, staticIP models.S
 		// This replaces the fragile hal.RequestDHCP()+sleep pattern.
 		log.Info().Str("iface", m.wanInterface).
 			Msg("NetworkManager: writing DHCP netplan for ethernet (B88)")
-		yaml := m.generateNetplanYAML(models.NetworkModeOnlineETH, "", "", staticIP)
+		yaml := m.generateNetplanYAML(models.NetworkModeWifiRouter, "", "", staticIP)
 		if err := m.hal.WriteNetplan(ctx, yaml, m.wanInterface); err != nil {
 			return fmt.Errorf("failed to write/apply DHCP netplan on %s: %w", m.wanInterface, err)
 		}
 
 		// Poll for IP acquisition (systemd-networkd handles DHCP natively).
 		// B94: DHCP timeout is non-fatal — networkd continues retrying in the background.
-		// This matches ONLINE_WIFI behavior where DHCP failure is a warning, not an error.
+		// This matches wifi_bridge behavior where DHCP failure is a warning, not an error.
 		if err := m.pollForIP(ctx, m.wanInterface, 30*time.Second); err != nil {
 			log.Warn().Err(err).Str("iface", m.wanInterface).
 				Msg("NetworkManager: ethernet DHCP timeout — networkd will keep retrying in background")
@@ -1052,9 +1052,9 @@ func (m *NetworkManager) setOnlineETHMode(ctx context.Context, staticIP models.S
 	}
 
 	// B94: Set mode optimistically BEFORE NAT/AP setup.
-	// Netplan is written, so the system is transitioning to ONLINE_ETH regardless
+	// Netplan is written, so the system is transitioning to wifi_router regardless
 	// of whether DHCP has resolved yet. This prevents state desync on timeout.
-	m.currentMode = models.NetworkModeOnlineETH
+	m.currentMode = models.NetworkModeWifiRouter
 
 	// Ensure AP is running (recover if switching from server mode)
 	if m.IsServerMode() {
@@ -1074,25 +1074,25 @@ func (m *NetworkManager) setOnlineETHMode(ctx context.Context, staticIP models.S
 	}
 
 	// T09: Configure Pi-hole DHCP (active, no-dhcp-interface=eth0)
-	m.configurePiholeDHCPForMode(ctx, models.NetworkModeOnlineETH)
+	m.configurePiholeDHCPForMode(ctx, models.NetworkModeWifiRouter)
 
 	// Write netplan for reboot persistence.
 	// DHCP path already wrote+applied netplan above, but we call this unconditionally
 	// to handle the static IP path (which uses runtime SetStaticIP and needs persistence).
 	// For the DHCP path this is a no-op write (same YAML).
-	m.writeAndApplyNetplan(ctx, models.NetworkModeOnlineETH, "", "", "", staticIP)
+	m.writeAndApplyNetplan(ctx, models.NetworkModeWifiRouter, "", "", "", staticIP)
 
 	return nil
 }
 
-// setOnlineTetherMode configures online via Android USB tethering.
+// setAndroidTetherMode configures online via Android USB tethering.
 // The tethering interface (enx*) has a dynamic name based on the phone's MAC,
 // so we can't use netplan for it. Instead:
-//  1. Write OFFLINE-style netplan (wlan0 AP only) for persistence
+//  1. Write offline_hotspot-style netplan (wlan0 AP only) for persistence
 //  2. Detect the tethering interface via HAL
 //  3. Bring it UP + DHCP via HAL's EnableAndroidTethering (B96b: includes ip link set up)
 //  4. Enable IP forwarding + NAT on the detected interface
-func (m *NetworkManager) setOnlineTetherMode(ctx context.Context) error {
+func (m *NetworkManager) setAndroidTetherMode(ctx context.Context) error {
 	// Detect Android tethering interface via HAL
 	tetherStatus, err := m.hal.GetAndroidTetheringStatus(ctx)
 	if err != nil {
@@ -1105,8 +1105,8 @@ func (m *NetworkManager) setOnlineTetherMode(ctx context.Context) error {
 	tetherIface := tetherStatus.Interface
 	log.Info().Str("iface", tetherIface).Msg("NetworkManager: detected Android tethering interface")
 
-	// Write OFFLINE-style netplan (wlan0 AP only, tether interface managed manually)
-	yaml := m.generateNetplanYAML(models.NetworkModeOnlineTether, "", "", models.StaticIPConfig{})
+	// Write offline_hotspot-style netplan (wlan0 AP only, tether interface managed manually)
+	yaml := m.generateNetplanYAML(models.NetworkModeAndroidTether, "", "", models.StaticIPConfig{})
 	if err := m.hal.WriteNetplan(ctx, yaml, ""); err != nil {
 		log.Warn().Err(err).Msg("NetworkManager: failed to write tether netplan (non-fatal)")
 	}
@@ -1122,8 +1122,8 @@ func (m *NetworkManager) setOnlineTetherMode(ctx context.Context) error {
 			Msg("NetworkManager: tether DHCP timeout — will keep retrying")
 	}
 
-	// Set mode optimistically (same pattern as ONLINE_ETH / B94)
-	m.currentMode = models.NetworkModeOnlineTether
+	// Set mode optimistically (same pattern as wifi_router / B94)
+	m.currentMode = models.NetworkModeAndroidTether
 
 	// Ensure AP is running (recover if switching from server mode)
 	if m.IsServerMode() {
@@ -1143,12 +1143,12 @@ func (m *NetworkManager) setOnlineTetherMode(ctx context.Context) error {
 	}
 
 	// Configure Pi-hole DHCP (exclude tethering interface from DHCP)
-	m.configurePiholeDHCPForMode(ctx, models.NetworkModeOnlineTether)
+	m.configurePiholeDHCPForMode(ctx, models.NetworkModeAndroidTether)
 
 	return nil
 }
 
-// setOnlineWiFiMode configures online via WiFi client mode.
+// setWifiBridgeMode configures online via WiFi client mode.
 //
 // B126 FIX: Netplan-first flow. Previously this called hal.ConnectWiFi (wpa_cli)
 // before writing netplan, which failed because wpa_supplicant was not running on
@@ -1158,7 +1158,7 @@ func (m *NetworkManager) setOnlineTetherMode(ctx context.Context) error {
 // the WiFi credentials in the access-points block), then lets networkd handle
 // wpa_supplicant startup, association, and DHCP — matching the boot-script flow
 // in cubeos-boot-lib.sh.
-func (m *NetworkManager) setOnlineWiFiMode(ctx context.Context, ssid, password string, staticIP models.StaticIPConfig) error {
+func (m *NetworkManager) setWifiBridgeMode(ctx context.Context, ssid, password string, staticIP models.StaticIPConfig) error {
 	// Dynamically detect WiFi client interface (USB dongle with wlx* prefix)
 	// Falls back to configured m.wifiClientInterface (default: wlan1)
 	iface := m.wifiClientInterface
@@ -1190,7 +1190,7 @@ func (m *NetworkManager) setOnlineWiFiMode(ctx context.Context, ssid, password s
 		Bool("static_ip", staticIP.IsConfigured()).
 		Msg("NetworkManager: writing netplan with WiFi credentials (B126 netplan-first)")
 
-	yaml := m.generateNetplanYAML(models.NetworkModeOnlineWiFi, ssid, password, staticIP)
+	yaml := m.generateNetplanYAML(models.NetworkModeWifiBridge, ssid, password, staticIP)
 	if err := m.hal.WriteNetplan(ctx, yaml, iface); err != nil {
 		return fmt.Errorf("failed to write WiFi netplan: %w", err)
 	}
@@ -1221,24 +1221,24 @@ func (m *NetworkManager) setOnlineWiFiMode(ctx context.Context, ssid, password s
 		return fmt.Errorf("failed to enable NAT: %w", err)
 	}
 
-	m.currentMode = models.NetworkModeOnlineWiFi
+	m.currentMode = models.NetworkModeWifiBridge
 
 	// T09: Configure Pi-hole DHCP (active, no-dhcp-interface=wlan1)
-	m.configurePiholeDHCPForMode(ctx, models.NetworkModeOnlineWiFi)
+	m.configurePiholeDHCPForMode(ctx, models.NetworkModeWifiBridge)
 
 	// Netplan already written above. writeAndApplyNetplan is only needed for
 	// static IP persistence on reboot (the DHCP netplan was already written).
 	if staticIP.IsConfigured() {
-		m.writeAndApplyNetplan(ctx, models.NetworkModeOnlineWiFi, ssid, password, iface, staticIP)
+		m.writeAndApplyNetplan(ctx, models.NetworkModeWifiBridge, ssid, password, iface, staticIP)
 	}
 
 	return nil
 }
 
-// setServerETHMode configures server mode via Ethernet (V2)
+// setEthClientMode configures server mode via Ethernet (V2)
 // No AP, just connects to existing network
-func (m *NetworkManager) setServerETHMode(ctx context.Context, staticIP models.StaticIPConfig) error {
-	log.Info().Msg("NetworkManager: switching to SERVER_ETH mode")
+func (m *NetworkManager) setEthClientMode(ctx context.Context, staticIP models.StaticIPConfig) error {
+	log.Info().Msg("NetworkManager: switching to eth_client mode")
 
 	// Stop the access point
 	if err := m.hal.StopAP(ctx, m.apInterface); err != nil {
@@ -1265,7 +1265,7 @@ func (m *NetworkManager) setServerETHMode(ctx context.Context, staticIP models.S
 		// B88: Use netplan write+apply+poll instead of HAL RequestDHCP
 		log.Info().Str("iface", m.wanInterface).
 			Msg("NetworkManager: writing DHCP netplan for server ethernet (B88)")
-		yaml := m.generateNetplanYAML(models.NetworkModeServerETH, "", "", staticIP)
+		yaml := m.generateNetplanYAML(models.NetworkModeEthClient, "", "", staticIP)
 		if err := m.hal.WriteNetplan(ctx, yaml, m.wanInterface); err != nil {
 			log.Warn().Err(err).Str("fallbackIP", m.fallbackIP).
 				Msg("NetworkManager: netplan write failed, using fallback static IP")
@@ -1284,21 +1284,21 @@ func (m *NetworkManager) setServerETHMode(ctx context.Context, staticIP models.S
 	// Wait for network to settle
 	time.Sleep(2 * time.Second)
 
-	m.currentMode = models.NetworkModeServerETH
+	m.currentMode = models.NetworkModeEthClient
 
 	// T09: Disable Pi-hole DHCP (no AP, no local clients)
-	m.configurePiholeDHCPForMode(ctx, models.NetworkModeServerETH)
+	m.configurePiholeDHCPForMode(ctx, models.NetworkModeEthClient)
 
 	// T10: Write netplan for reboot persistence
-	m.writeAndApplyNetplan(ctx, models.NetworkModeServerETH, "", "", m.wanInterface, staticIP)
+	m.writeAndApplyNetplan(ctx, models.NetworkModeEthClient, "", "", m.wanInterface, staticIP)
 
 	return nil
 }
 
-// setServerWiFiMode configures server mode via WiFi (V2)
+// setWifiClientMode configures server mode via WiFi (V2)
 // No AP, connects wlan0 to existing WiFi network
-func (m *NetworkManager) setServerWiFiMode(ctx context.Context, ssid, password string, staticIP models.StaticIPConfig) error {
-	log.Info().Str("ssid", ssid).Msg("NetworkManager: switching to SERVER_WIFI mode")
+func (m *NetworkManager) setWifiClientMode(ctx context.Context, ssid, password string, staticIP models.StaticIPConfig) error {
+	log.Info().Str("ssid", ssid).Msg("NetworkManager: switching to wifi_client mode")
 
 	// Stop the access point (this frees wlan0 for client use)
 	if err := m.hal.StopAP(ctx, m.apInterface); err != nil {
@@ -1332,7 +1332,7 @@ func (m *NetworkManager) setServerWiFiMode(ctx context.Context, ssid, password s
 		// The WiFi connect above may not have triggered DHCP via networkd yet.
 		log.Info().Str("iface", m.apInterface).Str("ssid", ssid).
 			Msg("NetworkManager: writing DHCP netplan for server WiFi (B88)")
-		yaml := m.generateNetplanYAML(models.NetworkModeServerWiFi, ssid, password, staticIP)
+		yaml := m.generateNetplanYAML(models.NetworkModeWifiClient, ssid, password, staticIP)
 		if err := m.hal.WriteNetplan(ctx, yaml, m.apInterface); err != nil {
 			log.Warn().Err(err).Msg("NetworkManager: server WiFi netplan write failed")
 		}
@@ -1347,13 +1347,13 @@ func (m *NetworkManager) setServerWiFiMode(ctx context.Context, ssid, password s
 		}
 	}
 
-	m.currentMode = models.NetworkModeServerWiFi
+	m.currentMode = models.NetworkModeWifiClient
 
 	// T09: Disable Pi-hole DHCP (no AP, no local clients)
-	m.configurePiholeDHCPForMode(ctx, models.NetworkModeServerWiFi)
+	m.configurePiholeDHCPForMode(ctx, models.NetworkModeWifiClient)
 
 	// T10: Write netplan for reboot persistence (includes wlan0 WiFi creds)
-	m.writeAndApplyNetplan(ctx, models.NetworkModeServerWiFi, ssid, password, m.apInterface, staticIP)
+	m.writeAndApplyNetplan(ctx, models.NetworkModeWifiClient, ssid, password, m.apInterface, staticIP)
 
 	return nil
 }
@@ -1363,8 +1363,8 @@ func (m *NetworkManager) ScanWiFiNetworks(ctx context.Context) ([]models.WiFiNet
 	// Determine which interface to scan with
 	scanInterface := m.wifiClientInterface
 
-	// For SERVER_WIFI mode, use wlan0
-	if m.currentMode == models.NetworkModeServerWiFi {
+	// For wifi_client mode, use wlan0
+	if m.currentMode == models.NetworkModeWifiClient {
 		scanInterface = m.apInterface
 	} else {
 		// Try dynamic detection first — finds any USB WiFi dongle (wlx* interface)
@@ -1410,11 +1410,11 @@ func (m *NetworkManager) ScanWiFiNetworks(ctx context.Context) ([]models.WiFiNet
 	return result, nil
 }
 
-// ConnectToWiFi connects to a WiFi network (upstream for ONLINE_WIFI mode)
+// ConnectToWiFi connects to a WiFi network (upstream for wifi_bridge mode)
 func (m *NetworkManager) ConnectToWiFi(ctx context.Context, ssid, password string) error {
-	// For regular modes, use USB dongle (dynamically detected). For SERVER_WIFI, use wlan0.
+	// For regular modes, use USB dongle (dynamically detected). For wifi_client, use wlan0.
 	iface := m.wifiClientInterface
-	if m.currentMode == models.NetworkModeServerWiFi {
+	if m.currentMode == models.NetworkModeWifiClient {
 		iface = m.apInterface
 	} else {
 		// Try dynamic detection for USB WiFi dongle
@@ -1429,7 +1429,7 @@ func (m *NetworkManager) ConnectToWiFi(ctx context.Context, ssid, password strin
 // DisconnectWiFi disconnects from upstream WiFi
 func (m *NetworkManager) DisconnectWiFi(ctx context.Context) error {
 	iface := m.wifiClientInterface
-	if m.currentMode == models.NetworkModeServerWiFi {
+	if m.currentMode == models.NetworkModeWifiClient {
 		iface = m.apInterface
 	} else {
 		if detected, err := m.DetectWiFiClientInterface(ctx); err == nil && detected != "" {
@@ -1477,7 +1477,7 @@ func (m *NetworkManager) resolveWiFiClientInterface(ctx context.Context) string 
 func (m *NetworkManager) GetNetworkConfig(ctx context.Context) (*models.NetworkConfig, error) {
 	if m.db == nil {
 		return &models.NetworkConfig{
-			Mode:      models.NetworkModeOffline,
+			Mode:      models.NetworkModeOfflineHotspot,
 			VPNMode:   models.VPNModeNone,
 			GatewayIP: models.DefaultGatewayIP,
 			Subnet:    models.DefaultSubnet,
@@ -1500,7 +1500,7 @@ func (m *NetworkManager) GetNetworkConfig(ctx context.Context) (*models.NetworkC
 	if err != nil {
 		if err == sql.ErrNoRows {
 			return &models.NetworkConfig{
-				Mode:      models.NetworkModeOffline,
+				Mode:      models.NetworkModeOfflineHotspot,
 				VPNMode:   models.VPNModeNone,
 				GatewayIP: models.DefaultGatewayIP,
 				Subnet:    models.DefaultSubnet,
@@ -1667,8 +1667,8 @@ func (m *NetworkManager) parseDHCPLeases(ctx context.Context) []models.APClient 
 // IsValidMode checks if a mode string is valid (V2)
 func IsValidMode(mode string) bool {
 	switch models.NetworkMode(mode) {
-	case models.NetworkModeOffline, models.NetworkModeOnlineETH, models.NetworkModeOnlineWiFi,
-		models.NetworkModeOnlineTether, models.NetworkModeServerETH, models.NetworkModeServerWiFi:
+	case models.NetworkModeOfflineHotspot, models.NetworkModeWifiRouter, models.NetworkModeWifiBridge,
+		models.NetworkModeAndroidTether, models.NetworkModeEthClient, models.NetworkModeWifiClient:
 		return true
 	default:
 		return false
@@ -2311,29 +2311,29 @@ func (m *NetworkManager) configurePiholeDHCPForMode(ctx context.Context, mode mo
 	var dnsmasqLines []string
 
 	switch mode {
-	case models.NetworkModeOffline:
+	case models.NetworkModeOfflineHotspot:
 		// DHCP on all interfaces — both wlan0 and eth0 serve CubeOS clients
 		dhcpActive = true
 		dnsmasqLines = []string{wildcard}
 
-	case models.NetworkModeOnlineETH:
+	case models.NetworkModeWifiRouter:
 		// DHCP on wlan0 AP only; eth0 is upstream DHCP client
 		dhcpActive = true
 		dnsmasqLines = []string{wildcard, "no-dhcp-interface=eth0"}
 
-	case models.NetworkModeOnlineWiFi:
+	case models.NetworkModeWifiBridge:
 		// DHCP on wlan0 AP only; wlan1 is upstream WiFi client
 		dhcpActive = true
 		dnsmasqLines = []string{wildcard, "no-dhcp-interface=wlan1"}
 
-	case models.NetworkModeOnlineTether:
+	case models.NetworkModeAndroidTether:
 		// DHCP on wlan0 AP only; tethering interface (enx*) is upstream.
 		// The tethering interface is on a different subnet so dnsmasq won't
 		// serve DHCP on it, but we exclude eth0 to prevent conflicts.
 		dhcpActive = true
 		dnsmasqLines = []string{wildcard, "no-dhcp-interface=eth0"}
 
-	case models.NetworkModeServerETH, models.NetworkModeServerWiFi:
+	case models.NetworkModeEthClient, models.NetworkModeWifiClient:
 		// No AP, no DHCP — CubeOS is a client on existing network
 		dhcpActive = false
 		dnsmasqLines = []string{wildcard}
@@ -2373,7 +2373,7 @@ type WiFiStatus struct {
 func (m *NetworkManager) GetWiFiStatus(ctx context.Context) (*WiFiStatus, error) {
 	// Determine which interface to check
 	iface := m.resolveWiFiClientInterface(ctx)
-	if m.currentMode == models.NetworkModeServerWiFi {
+	if m.currentMode == models.NetworkModeWifiClient {
 		iface = m.apInterface
 	}
 
@@ -2570,34 +2570,34 @@ func (m *NetworkManager) ForgetNetwork(ctx context.Context, ssid string) error {
 // These delegate to the private battle-tested implementations.
 // =============================================================================
 
-// SetOfflineModeInline runs the inline offline mode logic (for FlowEngine activities).
-func (m *NetworkManager) SetOfflineModeInline(ctx context.Context) error {
-	return m.setOfflineMode(ctx)
+// SetOfflineHotspotModeInline runs the inline offline_hotspot mode logic (for FlowEngine activities).
+func (m *NetworkManager) SetOfflineHotspotModeInline(ctx context.Context) error {
+	return m.setOfflineHotspotMode(ctx)
 }
 
-// SetOnlineETHModeInline runs the inline ONLINE_ETH mode logic.
-func (m *NetworkManager) SetOnlineETHModeInline(ctx context.Context, staticIP models.StaticIPConfig) error {
-	return m.setOnlineETHMode(ctx, staticIP)
+// SetWifiRouterModeInline runs the inline wifi_router mode logic.
+func (m *NetworkManager) SetWifiRouterModeInline(ctx context.Context, staticIP models.StaticIPConfig) error {
+	return m.setWifiRouterMode(ctx, staticIP)
 }
 
-// SetOnlineWiFiModeInline runs the inline ONLINE_WIFI mode logic.
-func (m *NetworkManager) SetOnlineWiFiModeInline(ctx context.Context, ssid, password string, staticIP models.StaticIPConfig) error {
-	return m.setOnlineWiFiMode(ctx, ssid, password, staticIP)
+// SetWifiBridgeModeInline runs the inline wifi_bridge mode logic.
+func (m *NetworkManager) SetWifiBridgeModeInline(ctx context.Context, ssid, password string, staticIP models.StaticIPConfig) error {
+	return m.setWifiBridgeMode(ctx, ssid, password, staticIP)
 }
 
-// SetOnlineTetherModeInline runs the inline ONLINE_TETHER mode logic.
-func (m *NetworkManager) SetOnlineTetherModeInline(ctx context.Context) error {
-	return m.setOnlineTetherMode(ctx)
+// SetAndroidTetherModeInline runs the inline android_tether mode logic.
+func (m *NetworkManager) SetAndroidTetherModeInline(ctx context.Context) error {
+	return m.setAndroidTetherMode(ctx)
 }
 
-// SetServerETHModeInline runs the inline SERVER_ETH mode logic.
-func (m *NetworkManager) SetServerETHModeInline(ctx context.Context, staticIP models.StaticIPConfig) error {
-	return m.setServerETHMode(ctx, staticIP)
+// SetEthClientModeInline runs the inline eth_client mode logic.
+func (m *NetworkManager) SetEthClientModeInline(ctx context.Context, staticIP models.StaticIPConfig) error {
+	return m.setEthClientMode(ctx, staticIP)
 }
 
-// SetServerWiFiModeInline runs the inline SERVER_WIFI mode logic.
-func (m *NetworkManager) SetServerWiFiModeInline(ctx context.Context, ssid, password string, staticIP models.StaticIPConfig) error {
-	return m.setServerWiFiMode(ctx, ssid, password, staticIP)
+// SetWifiClientModeInline runs the inline wifi_client mode logic.
+func (m *NetworkManager) SetWifiClientModeInline(ctx context.Context, ssid, password string, staticIP models.StaticIPConfig) error {
+	return m.setWifiClientMode(ctx, ssid, password, staticIP)
 }
 
 // GenerateNetplanYAML exports the private generateNetplanYAML for FlowEngine activities.

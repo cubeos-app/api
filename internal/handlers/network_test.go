@@ -57,23 +57,23 @@ func TestSetNetworkModeValidation(t *testing.T) {
 			name:       "invalid mode",
 			body:       `{"mode": "turbo"}`,
 			wantStatus: http.StatusBadRequest,
-			wantError:  "Invalid network mode. Valid modes: offline, online_eth, online_wifi, online_tether, server_eth, server_wifi",
+			wantError:  "Invalid network mode. Valid modes: offline_hotspot, wifi_router, wifi_bridge, android_tether, eth_client, wifi_client",
 		},
 		{
-			name:       "online_wifi without SSID",
-			body:       `{"mode": "online_wifi"}`,
+			name:       "wifi_bridge without SSID",
+			body:       `{"mode": "wifi_bridge"}`,
 			wantStatus: http.StatusBadRequest,
 			wantError:  "SSID is required for WiFi modes",
 		},
 		{
-			name:       "server_wifi without SSID",
-			body:       `{"mode": "server_wifi"}`,
+			name:       "wifi_client without SSID",
+			body:       `{"mode": "wifi_client"}`,
 			wantStatus: http.StatusBadRequest,
 			wantError:  "SSID is required for WiFi modes",
 		},
 		{
-			name:       "online_wifi with empty SSID",
-			body:       `{"mode": "online_wifi", "ssid": ""}`,
+			name:       "wifi_bridge with empty SSID",
+			body:       `{"mode": "wifi_bridge", "ssid": ""}`,
 			wantStatus: http.StatusBadRequest,
 			wantError:  "SSID is required for WiFi modes",
 		},
@@ -140,12 +140,12 @@ func TestGetAvailableModes(t *testing.T) {
 
 	// Verify all expected mode IDs are present
 	expectedIDs := map[string]bool{
-		"offline":       false,
-		"online_eth":    false,
-		"online_wifi":   false,
-		"online_tether": false,
-		"server_eth":    false,
-		"server_wifi":   false,
+		"offline_hotspot": false,
+		"wifi_router":     false,
+		"wifi_bridge":     false,
+		"android_tether":  false,
+		"eth_client":      false,
+		"wifi_client":     false,
 	}
 
 	for _, m := range modes {
@@ -631,11 +631,12 @@ func TestGetModeDescription(t *testing.T) {
 		mode string
 		want string
 	}{
-		{"offline", "Air-gapped access point mode"},
-		{"online_eth", "AP + NAT via Ethernet uplink"},
-		{"online_wifi", "AP + NAT via USB WiFi dongle"},
-		{"server_eth", "No AP, direct Ethernet connection"},
-		{"server_wifi", "No AP, direct WiFi connection"},
+		{"offline_hotspot", "Air-gapped access point mode"},
+		{"wifi_router", "AP + NAT via Ethernet uplink"},
+		{"wifi_bridge", "AP + NAT via USB WiFi dongle"},
+		{"android_tether", "AP + NAT via Android USB tethering"},
+		{"eth_client", "No AP, direct Ethernet connection"},
+		{"wifi_client", "No AP, direct WiFi connection"},
 		{"unknown", "Unknown mode"},
 		{"", "Unknown mode"},
 	}

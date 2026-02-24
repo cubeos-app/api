@@ -855,6 +855,29 @@ var migrations = []Migration{
 			return nil
 		},
 	},
+	// Version 19: Phase 6a — rename network mode constants (v1 → v2 names)
+	{
+		Version:     19,
+		Description: "Rename network mode constants (v1 to v2 mode names)",
+		Up: func(db *sql.DB) error {
+			mappings := [][2]string{
+				{"offline", "offline_hotspot"},
+				{"online_eth", "wifi_router"},
+				{"online_wifi", "wifi_bridge"},
+				{"online_tether", "android_tether"},
+				{"server_eth", "eth_client"},
+				{"server_wifi", "wifi_client"},
+			}
+			for _, m := range mappings {
+				_, err := db.Exec("UPDATE network_config SET mode = ? WHERE mode = ?", m[1], m[0])
+				if err != nil {
+					return fmt.Errorf("failed to rename mode %s → %s: %w", m[0], m[1], err)
+				}
+			}
+			log.Info().Msg("Migration 19: Renamed network mode constants to v2 names")
+			return nil
+		},
+	},
 }
 
 // isDuplicateColumnError checks if an error is a "duplicate column" error

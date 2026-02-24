@@ -136,12 +136,12 @@ func (h *NetworkHandler) GetNetworkMode(w http.ResponseWriter, r *http.Request) 
 
 // SetNetworkMode godoc
 // @Summary Set network mode
-// @Description Changes the network operating mode (offline, online_eth, online_wifi, server_eth, server_wifi)
+// @Description Changes the network operating mode (offline_hotspot, wifi_router, wifi_bridge, android_tether, eth_client, wifi_client)
 // @Tags Network
 // @Accept json
 // @Produce json
 // @Security BearerAuth
-// @Param request body object true "Network mode configuration" example({"mode": "online_eth"})
+// @Param request body object true "Network mode configuration" example({"mode": "wifi_router"})
 // @Success 200 {object} map[string]interface{} "Mode changed with status"
 // @Failure 400 {object} ErrorResponse "Invalid mode or missing parameters"
 // @Failure 500 {object} ErrorResponse "Failed to change mode"
@@ -174,20 +174,20 @@ func (h *NetworkHandler) SetNetworkMode(w http.ResponseWriter, r *http.Request) 
 	}
 
 	validModes := map[string]bool{
-		"offline":       true,
-		"online_eth":    true,
-		"online_wifi":   true,
-		"online_tether": true,
-		"server_eth":    true,
-		"server_wifi":   true,
+		"offline_hotspot": true,
+		"wifi_router":     true,
+		"wifi_bridge":     true,
+		"android_tether":  true,
+		"eth_client":      true,
+		"wifi_client":     true,
 	}
 
 	if !validModes[req.Mode] {
-		writeError(w, http.StatusBadRequest, "Invalid network mode. Valid modes: offline, online_eth, online_wifi, online_tether, server_eth, server_wifi")
+		writeError(w, http.StatusBadRequest, "Invalid network mode. Valid modes: offline_hotspot, wifi_router, wifi_bridge, android_tether, eth_client, wifi_client")
 		return
 	}
 
-	if (req.Mode == "online_wifi" || req.Mode == "server_wifi") && req.SSID == "" {
+	if (req.Mode == "wifi_bridge" || req.Mode == "wifi_client") && req.SSID == "" {
 		writeError(w, http.StatusBadRequest, "SSID is required for WiFi modes")
 		return
 	}
@@ -202,11 +202,11 @@ func (h *NetworkHandler) SetNetworkMode(w http.ResponseWriter, r *http.Request) 
 			writeError(w, http.StatusBadRequest, "static_gateway is required when use_static_ip is true")
 			return
 		}
-		if req.Mode == "offline" {
-			writeError(w, http.StatusBadRequest, "Static IP is not applicable in offline mode (no upstream interface)")
+		if req.Mode == "offline_hotspot" {
+			writeError(w, http.StatusBadRequest, "Static IP is not applicable in offline_hotspot mode (no upstream interface)")
 			return
 		}
-		if req.Mode == "online_tether" {
+		if req.Mode == "android_tether" {
 			writeError(w, http.StatusBadRequest, "Static IP is not applicable in tethering mode (DHCP from phone)")
 			return
 		}
@@ -214,18 +214,18 @@ func (h *NetworkHandler) SetNetworkMode(w http.ResponseWriter, r *http.Request) 
 
 	var mode models.NetworkMode
 	switch req.Mode {
-	case "offline":
-		mode = models.NetworkModeOffline
-	case "online_eth":
-		mode = models.NetworkModeOnlineETH
-	case "online_wifi":
-		mode = models.NetworkModeOnlineWiFi
-	case "online_tether":
-		mode = models.NetworkModeOnlineTether
-	case "server_eth":
-		mode = models.NetworkModeServerETH
-	case "server_wifi":
-		mode = models.NetworkModeServerWiFi
+	case "offline_hotspot":
+		mode = models.NetworkModeOfflineHotspot
+	case "wifi_router":
+		mode = models.NetworkModeWifiRouter
+	case "wifi_bridge":
+		mode = models.NetworkModeWifiBridge
+	case "android_tether":
+		mode = models.NetworkModeAndroidTether
+	case "eth_client":
+		mode = models.NetworkModeEthClient
+	case "wifi_client":
+		mode = models.NetworkModeWifiClient
 	}
 
 	// Build static IP config
@@ -265,12 +265,12 @@ func (h *NetworkHandler) SetNetworkMode(w http.ResponseWriter, r *http.Request) 
 // @Router /network/modes [get]
 func (h *NetworkHandler) GetAvailableModes(w http.ResponseWriter, r *http.Request) {
 	modes := []map[string]interface{}{
-		{"id": "offline", "name": "Offline (AP Only)", "description": "Air-gapped access point mode"},
-		{"id": "online_eth", "name": "Online via Ethernet", "description": "AP + NAT via Ethernet uplink"},
-		{"id": "online_wifi", "name": "Online via WiFi", "description": "AP + NAT via USB WiFi dongle"},
-		{"id": "online_tether", "name": "Online via Tethering", "description": "AP + NAT via Android USB tethering"},
-		{"id": "server_eth", "name": "Server via Ethernet", "description": "No AP, direct Ethernet connection"},
-		{"id": "server_wifi", "name": "Server via WiFi", "description": "No AP, direct WiFi connection"},
+		{"id": "offline_hotspot", "name": "Offline Hotspot", "description": "Air-gapped access point mode"},
+		{"id": "wifi_router", "name": "WiFi Router", "description": "AP + NAT via Ethernet uplink"},
+		{"id": "wifi_bridge", "name": "WiFi Bridge", "description": "AP + NAT via USB WiFi dongle"},
+		{"id": "android_tether", "name": "Android Tether", "description": "AP + NAT via Android USB tethering"},
+		{"id": "eth_client", "name": "Ethernet Client", "description": "No AP, direct Ethernet connection"},
+		{"id": "wifi_client", "name": "WiFi Client", "description": "No AP, direct WiFi connection"},
 	}
 	writeJSON(w, http.StatusOK, map[string]interface{}{
 		"modes": modes,
@@ -1196,11 +1196,12 @@ func isValidMAC(mac string) bool {
 
 func getModeDescription(mode string) string {
 	descriptions := map[string]string{
-		"offline":     "Air-gapped access point mode",
-		"online_eth":  "AP + NAT via Ethernet uplink",
-		"online_wifi": "AP + NAT via USB WiFi dongle",
-		"server_eth":  "No AP, direct Ethernet connection",
-		"server_wifi": "No AP, direct WiFi connection",
+		"offline_hotspot": "Air-gapped access point mode",
+		"wifi_router":     "AP + NAT via Ethernet uplink",
+		"wifi_bridge":     "AP + NAT via USB WiFi dongle",
+		"android_tether":  "AP + NAT via Android USB tethering",
+		"eth_client":      "No AP, direct Ethernet connection",
+		"wifi_client":     "No AP, direct WiFi connection",
 	}
 	if desc, ok := descriptions[mode]; ok {
 		return desc

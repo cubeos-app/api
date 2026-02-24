@@ -302,7 +302,7 @@ func main() {
 	// B3: Auto-sync app store catalog when switching to an online network mode.
 	// Runs in background goroutine so it doesn't block the mode switch response.
 	networkMgr.SetOnModeChange(func(mode models.NetworkMode) {
-		if mode != models.NetworkModeOffline {
+		if mode != models.NetworkModeOfflineHotspot {
 			go func() {
 				log.Info().Str("mode", string(mode)).Msg("Network mode changed to online — syncing app store catalog")
 				if err := appStoreMgr.SyncAllStores(); err != nil {

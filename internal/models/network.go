@@ -16,42 +16,37 @@ package models
 import "time"
 
 // ============================================================================
-// NETWORK MODES (Extended from 3 to 5 modes)
+// NETWORK MODES (V2 names — Phase 6a)
 // ============================================================================
 
 type NetworkMode string
 
 const (
-	// Original 3 modes
-	NetworkModeOffline    NetworkMode = "offline"     // AP only, no internet
-	NetworkModeOnlineETH  NetworkMode = "online_eth"  // AP + NAT via eth0
-	NetworkModeOnlineWiFi NetworkMode = "online_wifi" // AP + NAT via USB dongle
-
-	// NEW: Android USB tethering mode
-	NetworkModeOnlineTether NetworkMode = "online_tether" // AP + NAT via Android USB tethering
-
-	// NEW: Server modes (no AP, direct network)
-	NetworkModeServerETH  NetworkMode = "server_eth"  // No AP, eth0 DHCP client
-	NetworkModeServerWiFi NetworkMode = "server_wifi" // No AP, wlan0 WiFi client
+	NetworkModeOfflineHotspot NetworkMode = "offline_hotspot" // AP only, no internet
+	NetworkModeWifiRouter     NetworkMode = "wifi_router"     // AP + NAT via eth0
+	NetworkModeWifiBridge     NetworkMode = "wifi_bridge"     // AP + NAT via USB dongle
+	NetworkModeAndroidTether  NetworkMode = "android_tether"  // AP + NAT via Android USB tethering
+	NetworkModeEthClient      NetworkMode = "eth_client"      // No AP, eth0 DHCP client
+	NetworkModeWifiClient     NetworkMode = "wifi_client"     // No AP, wlan0 WiFi client
 )
 
 // AllNetworkModes returns all valid network modes
 func AllNetworkModes() []NetworkMode {
 	return []NetworkMode{
-		NetworkModeOffline,
-		NetworkModeOnlineETH,
-		NetworkModeOnlineWiFi,
-		NetworkModeOnlineTether,
-		NetworkModeServerETH,
-		NetworkModeServerWiFi,
+		NetworkModeOfflineHotspot,
+		NetworkModeWifiRouter,
+		NetworkModeWifiBridge,
+		NetworkModeAndroidTether,
+		NetworkModeEthClient,
+		NetworkModeWifiClient,
 	}
 }
 
 // IsValid checks if the network mode is valid
 func (m NetworkMode) IsValid() bool {
 	switch m {
-	case NetworkModeOffline, NetworkModeOnlineETH, NetworkModeOnlineWiFi,
-		NetworkModeOnlineTether, NetworkModeServerETH, NetworkModeServerWiFi:
+	case NetworkModeOfflineHotspot, NetworkModeWifiRouter, NetworkModeWifiBridge,
+		NetworkModeAndroidTether, NetworkModeEthClient, NetworkModeWifiClient:
 		return true
 	}
 	return false
@@ -59,27 +54,43 @@ func (m NetworkMode) IsValid() bool {
 
 // IsOffline returns true if no internet connectivity
 func (m NetworkMode) IsOffline() bool {
-	return m == NetworkModeOffline
+	return m == NetworkModeOfflineHotspot
 }
 
 // HasInternet returns true if mode has internet access
 func (m NetworkMode) HasInternet() bool {
-	return m != NetworkModeOffline
+	return m != NetworkModeOfflineHotspot
 }
 
-// IsServerMode returns true for server modes (no AP)
+// IsServerMode returns true for client-only modes (no AP)
 func (m NetworkMode) IsServerMode() bool {
-	return m == NetworkModeServerETH || m == NetworkModeServerWiFi
+	return m == NetworkModeEthClient || m == NetworkModeWifiClient
+}
+
+// IsAPMode returns true if mode runs an access point (AP active).
+// These modes require Pi-hole DHCP to be enabled.
+func (m NetworkMode) IsAPMode() bool {
+	switch m {
+	case NetworkModeOfflineHotspot, NetworkModeWifiRouter, NetworkModeWifiBridge, NetworkModeAndroidTether:
+		return true
+	}
+	return false
+}
+
+// IsDHCPRequired returns true if Pi-hole DHCP should be active.
+// Mirrors IsAPMode — DHCP is only needed when AP serves clients.
+func (m NetworkMode) IsDHCPRequired() bool {
+	return m.IsAPMode()
 }
 
 // HasAP returns true if mode runs an access point
 func (m NetworkMode) HasAP() bool {
-	return !m.IsServerMode()
+	return m.IsAPMode()
 }
 
 // RequiresWiFiCredentials returns true if mode needs SSID/password
 func (m NetworkMode) RequiresWiFiCredentials() bool {
-	return m == NetworkModeOnlineWiFi || m == NetworkModeServerWiFi
+	return m == NetworkModeWifiBridge || m == NetworkModeWifiClient
 }
 
 // String returns the string representation
@@ -148,7 +159,7 @@ type NetworkConfig struct {
 	VPNMode     VPNMode `db:"vpn_mode" json:"vpn_mode"`
 	VPNConfigID *int64  `db:"vpn_config_id" json:"vpn_config_id,omitempty"`
 
-	// WiFi client credentials (for online_wifi and server_wifi)
+	// WiFi client credentials (for wifi_bridge and wifi_client)
 	WiFiSSID     string `db:"wifi_ssid" json:"wifi_ssid,omitempty"`
 	WiFiPassword string `db:"wifi_password" json:"-"` // Never expose
 
@@ -262,9 +273,9 @@ type NetworkStatus struct {
 	VPNConfig string  `json:"vpn_config,omitempty"` // Config name if active
 	PublicIP  string  `json:"public_ip,omitempty"`  // Current public IP
 
-	// Server mode specific
-	IsServer   bool   `json:"is_server"`             // True for server_eth/server_wifi
-	FallbackIP string `json:"fallback_ip,omitempty"` // Fallback IP for server modes
+	// Client-only mode specific
+	IsServer   bool   `json:"is_server"`             // True for eth_client/wifi_client
+	FallbackIP string `json:"fallback_ip,omitempty"` // Fallback IP for client-only modes
 }
 
 // APStatus represents access point state

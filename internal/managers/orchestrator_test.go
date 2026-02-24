@@ -721,9 +721,9 @@ func TestNetworkModeConstants(t *testing.T) {
 		mode models.NetworkMode
 		str  string
 	}{
-		{models.NetworkModeOffline, "offline"},
-		{models.NetworkModeOnlineETH, "online_eth"},
-		{models.NetworkModeOnlineWiFi, "online_wifi"},
+		{models.NetworkModeOfflineHotspot, "offline_hotspot"},
+		{models.NetworkModeWifiRouter, "wifi_router"},
+		{models.NetworkModeWifiBridge, "wifi_bridge"},
 	}
 
 	for _, tt := range tests {

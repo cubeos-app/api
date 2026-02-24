@@ -612,7 +612,7 @@ func (m *UpdateManager) isOffline() bool {
 	if err != nil {
 		return false
 	}
-	return mode == "offline"
+	return mode == "offline_hotspot"
 }
 
 func (m *UpdateManager) loadCachedManifest() *models.ReleaseManifest {

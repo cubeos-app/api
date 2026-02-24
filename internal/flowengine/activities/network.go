@@ -18,13 +18,13 @@ import (
 // Using the full manager preserves all battle-tested bug fixes (B88, B92, B94,
 // B96b, B118, B126) without rewriting the logic.
 type NetworkModeSwitcher interface {
-	// Mode switching internals (will be exported by NetworkManager refactor)
-	SetOfflineModeInline(ctx context.Context) error
-	SetOnlineETHModeInline(ctx context.Context, staticIP models.StaticIPConfig) error
-	SetOnlineWiFiModeInline(ctx context.Context, ssid, password string, staticIP models.StaticIPConfig) error
-	SetOnlineTetherModeInline(ctx context.Context) error
-	SetServerETHModeInline(ctx context.Context, staticIP models.StaticIPConfig) error
-	SetServerWiFiModeInline(ctx context.Context, ssid, password string, staticIP models.StaticIPConfig) error
+	// Mode switching internals (exported by NetworkManager)
+	SetOfflineHotspotModeInline(ctx context.Context) error
+	SetWifiRouterModeInline(ctx context.Context, staticIP models.StaticIPConfig) error
+	SetWifiBridgeModeInline(ctx context.Context, ssid, password string, staticIP models.StaticIPConfig) error
+	SetAndroidTetherModeInline(ctx context.Context) error
+	SetEthClientModeInline(ctx context.Context, staticIP models.StaticIPConfig) error
+	SetWifiClientModeInline(ctx context.Context, ssid, password string, staticIP models.StaticIPConfig) error
 
 	// Netplan + persistence helpers
 	GenerateNetplanYAML(mode models.NetworkMode, wifiSSID, wifiPassword string, staticIP models.StaticIPConfig) string
@@ -120,22 +120,22 @@ func makeNetValidate(nm NetworkModeSwitcher, halClient *hal.Client) flowengine.A
 
 		// Validate mode is one of the 6 valid modes
 		switch targetMode {
-		case models.NetworkModeOffline, models.NetworkModeOnlineETH, models.NetworkModeOnlineWiFi,
-			models.NetworkModeOnlineTether, models.NetworkModeServerETH, models.NetworkModeServerWiFi:
+		case models.NetworkModeOfflineHotspot, models.NetworkModeWifiRouter, models.NetworkModeWifiBridge,
+			models.NetworkModeAndroidTether, models.NetworkModeEthClient, models.NetworkModeWifiClient:
 			// valid
 		default:
 			return nil, flowengine.NewPermanentError(fmt.Errorf("unknown network mode: %s", env.TargetMode))
 		}
 
 		// Check SSID required for wifi modes
-		if (targetMode == models.NetworkModeOnlineWiFi || targetMode == models.NetworkModeServerWiFi) && env.SSID == "" {
+		if (targetMode == models.NetworkModeWifiBridge || targetMode == models.NetworkModeWifiClient) && env.SSID == "" {
 			return nil, flowengine.NewPermanentError(fmt.Errorf("wifi SSID required for %s mode", env.TargetMode))
 		}
 
 		// Resolve upstream interface for the target mode
 		var upstreamIface string
 		switch targetMode {
-		case models.NetworkModeOnlineETH, models.NetworkModeServerETH:
+		case models.NetworkModeWifiRouter, models.NetworkModeEthClient:
 			upstreamIface = env.WANInterface
 			// Check eth0 exists via HAL
 			iface, err := halClient.GetInterface(ctx, upstreamIface)
@@ -144,7 +144,7 @@ func makeNetValidate(nm NetworkModeSwitcher, halClient *hal.Client) flowengine.A
 			}
 			log.Info().Str("iface", iface.Name).Bool("up", iface.IsUp).Msg("net.validate: ethernet interface found")
 
-		case models.NetworkModeOnlineWiFi:
+		case models.NetworkModeWifiBridge:
 			// Detect USB WiFi dongle (wlan1/wlx*)
 			detected, err := nm.DetectWiFiClientInterface(ctx)
 			if err != nil {
@@ -153,7 +153,7 @@ func makeNetValidate(nm NetworkModeSwitcher, halClient *hal.Client) flowengine.A
 			upstreamIface = detected
 			log.Info().Str("iface", upstreamIface).Msg("net.validate: WiFi client interface detected")
 
-		case models.NetworkModeOnlineTether:
+		case models.NetworkModeAndroidTether:
 			// Check Android tethering device
 			tetherStatus, err := halClient.GetAndroidTetheringStatus(ctx)
 			if err != nil {
@@ -165,7 +165,7 @@ func makeNetValidate(nm NetworkModeSwitcher, halClient *hal.Client) flowengine.A
 			upstreamIface = tetherStatus.Interface
 			log.Info().Str("iface", upstreamIface).Msg("net.validate: tethering interface detected")
 
-		case models.NetworkModeServerWiFi:
+		case models.NetworkModeWifiClient:
 			// wlan0 will be freed from AP — just validate it exists
 			upstreamIface = env.APInterface
 			_, err := halClient.GetInterface(ctx, upstreamIface)
@@ -173,7 +173,7 @@ func makeNetValidate(nm NetworkModeSwitcher, halClient *hal.Client) flowengine.A
 				return nil, flowengine.NewPermanentError(fmt.Errorf("WiFi interface %s not available: %w", upstreamIface, err))
 			}
 
-		case models.NetworkModeOffline:
+		case models.NetworkModeOfflineHotspot:
 			// No upstream interface needed
 			upstreamIface = ""
 		}
@@ -255,7 +255,7 @@ func makeNetTeardownPrevious(nm NetworkModeSwitcher, halClient *hal.Client) flow
 
 		// Disable NAT and IP forwarding — non-fatal (may already be disabled)
 		switch currentMode {
-		case models.NetworkModeOnlineETH, models.NetworkModeOnlineWiFi, models.NetworkModeOnlineTether:
+		case models.NetworkModeWifiRouter, models.NetworkModeWifiBridge, models.NetworkModeAndroidTether:
 			if err := halClient.DisableNAT(ctx); err != nil {
 				log.Warn().Err(err).Msg("net.teardown_previous: DisableNAT failed (non-fatal)")
 			}
@@ -266,12 +266,12 @@ func makeNetTeardownPrevious(nm NetworkModeSwitcher, halClient *hal.Client) flow
 
 		// Disconnect upstream WiFi if coming from a WiFi mode
 		switch currentMode {
-		case models.NetworkModeOnlineWiFi:
+		case models.NetworkModeWifiBridge:
 			iface := nm.ResolveWiFiClientInterface(ctx)
 			if err := halClient.DisconnectWiFi(ctx, iface); err != nil {
 				log.Warn().Err(err).Str("iface", iface).Msg("net.teardown_previous: DisconnectWiFi failed (non-fatal)")
 			}
-		case models.NetworkModeServerWiFi:
+		case models.NetworkModeWifiClient:
 			if err := halClient.DisconnectWiFi(ctx, env.APInterface); err != nil {
 				log.Warn().Err(err).Msg("net.teardown_previous: DisconnectWiFi wlan0 failed (non-fatal)")
 			}
@@ -327,27 +327,27 @@ func makeNetConfigureUpstream(nm NetworkModeSwitcher, halClient *hal.Client) flo
 		targetMode := models.NetworkMode(env.TargetMode)
 
 		switch targetMode {
-		case models.NetworkModeOffline:
+		case models.NetworkModeOfflineHotspot:
 			// No upstream to configure
-			log.Info().Msg("net.configure_upstream: OFFLINE mode, no upstream needed")
+			log.Info().Msg("net.configure_upstream: offline_hotspot mode, no upstream needed")
 			return marshalOutput(map[string]interface{}{
 				"upstream_configured": true,
 				"ip_acquired":         false,
 			})
 
-		case models.NetworkModeOnlineETH:
+		case models.NetworkModeWifiRouter:
 			return configureUpstreamETH(ctx, nm, halClient, env)
 
-		case models.NetworkModeOnlineWiFi:
+		case models.NetworkModeWifiBridge:
 			return configureUpstreamWiFi(ctx, nm, halClient, env)
 
-		case models.NetworkModeOnlineTether:
+		case models.NetworkModeAndroidTether:
 			return configureUpstreamTether(ctx, nm, halClient, env)
 
-		case models.NetworkModeServerETH:
+		case models.NetworkModeEthClient:
 			return configureUpstreamServerETH(ctx, nm, halClient, env)
 
-		case models.NetworkModeServerWiFi:
+		case models.NetworkModeWifiClient:
 			return configureUpstreamServerWiFi(ctx, nm, halClient, env)
 
 		default:
@@ -356,7 +356,7 @@ func makeNetConfigureUpstream(nm NetworkModeSwitcher, halClient *hal.Client) flo
 	}
 }
 
-// configureUpstreamETH handles ONLINE_ETH upstream configuration.
+// configureUpstreamETH handles wifi_router upstream configuration.
 // B88: Netplan-first DHCP. B94: Non-fatal DHCP timeout.
 func configureUpstreamETH(ctx context.Context, nm NetworkModeSwitcher, halClient *hal.Client, env netEnvelope) (json.RawMessage, error) {
 	iface, err := halClient.GetInterface(ctx, env.WANInterface)
@@ -378,7 +378,7 @@ func configureUpstreamETH(ctx context.Context, nm NetworkModeSwitcher, halClient
 		}
 	} else if len(iface.IPv4Addresses) == 0 {
 		// B88: Write netplan with dhcp4:true → netplan apply → networkd handles DHCP
-		yaml := nm.GenerateNetplanYAML(models.NetworkModeOnlineETH, "", "", env.StaticIP)
+		yaml := nm.GenerateNetplanYAML(models.NetworkModeWifiRouter, "", "", env.StaticIP)
 		if err := halClient.WriteNetplan(ctx, yaml, env.WANInterface); err != nil {
 			return nil, fmt.Errorf("failed to write/apply DHCP netplan on %s: %w", env.WANInterface, err)
 		}
@@ -396,7 +396,7 @@ func configureUpstreamETH(ctx context.Context, nm NetworkModeSwitcher, halClient
 	})
 }
 
-// configureUpstreamWiFi handles ONLINE_WIFI upstream configuration.
+// configureUpstreamWiFi handles wifi_bridge upstream configuration.
 // B126: Netplan-first flow — write netplan with WiFi creds, let networkd start wpa_supplicant.
 func configureUpstreamWiFi(ctx context.Context, nm NetworkModeSwitcher, halClient *hal.Client, env netEnvelope) (json.RawMessage, error) {
 	iface := env.UpstreamInterface
@@ -422,7 +422,7 @@ func configureUpstreamWiFi(ctx context.Context, nm NetworkModeSwitcher, halClien
 	// B126: Write netplan FIRST with WiFi creds → networkd starts wpa_supplicant
 	log.Info().Str("iface", iface).Str("ssid", env.SSID).
 		Msg("net.configure_upstream: writing netplan with WiFi credentials (B126)")
-	yaml := nm.GenerateNetplanYAML(models.NetworkModeOnlineWiFi, env.SSID, env.Password, env.StaticIP)
+	yaml := nm.GenerateNetplanYAML(models.NetworkModeWifiBridge, env.SSID, env.Password, env.StaticIP)
 	if err := halClient.WriteNetplan(ctx, yaml, iface); err != nil {
 		return nil, fmt.Errorf("failed to write WiFi netplan: %w", err)
 	}
@@ -441,13 +441,13 @@ func configureUpstreamWiFi(ctx context.Context, nm NetworkModeSwitcher, halClien
 	})
 }
 
-// configureUpstreamTether handles ONLINE_TETHER upstream configuration.
+// configureUpstreamTether handles android_tether upstream configuration.
 // B96b: EnableAndroidTethering includes ip link set up.
 func configureUpstreamTether(ctx context.Context, nm NetworkModeSwitcher, halClient *hal.Client, env netEnvelope) (json.RawMessage, error) {
 	tetherIface := env.UpstreamInterface
 
-	// Write OFFLINE-style netplan (wlan0 AP only, tether managed manually)
-	yaml := nm.GenerateNetplanYAML(models.NetworkModeOnlineTether, "", "", models.StaticIPConfig{})
+	// Write offline_hotspot-style netplan (wlan0 AP only, tether managed manually)
+	yaml := nm.GenerateNetplanYAML(models.NetworkModeAndroidTether, "", "", models.StaticIPConfig{})
 	if err := halClient.WriteNetplan(ctx, yaml, ""); err != nil {
 		log.Warn().Err(err).Msg("net.configure_upstream: tether netplan write failed (non-fatal)")
 	}
@@ -470,7 +470,7 @@ func configureUpstreamTether(ctx context.Context, nm NetworkModeSwitcher, halCli
 	})
 }
 
-// configureUpstreamServerETH handles SERVER_ETH upstream configuration.
+// configureUpstreamServerETH handles eth_client upstream configuration.
 // B88: Netplan-first DHCP with fallback to static IP.
 func configureUpstreamServerETH(ctx context.Context, nm NetworkModeSwitcher, halClient *hal.Client, env netEnvelope) (json.RawMessage, error) {
 	if err := halClient.BringInterfaceUp(ctx, env.WANInterface); err != nil {
@@ -483,7 +483,7 @@ func configureUpstreamServerETH(ctx context.Context, nm NetworkModeSwitcher, hal
 		}
 	} else {
 		// B88: netplan write+apply+poll with fallback to static
-		yaml := nm.GenerateNetplanYAML(models.NetworkModeServerETH, "", "", env.StaticIP)
+		yaml := nm.GenerateNetplanYAML(models.NetworkModeEthClient, "", "", env.StaticIP)
 		if err := halClient.WriteNetplan(ctx, yaml, env.WANInterface); err != nil {
 			log.Warn().Err(err).Str("fallbackIP", env.FallbackIP).
 				Msg("net.configure_upstream: netplan write failed, using fallback static IP")
@@ -505,7 +505,7 @@ func configureUpstreamServerETH(ctx context.Context, nm NetworkModeSwitcher, hal
 	})
 }
 
-// configureUpstreamServerWiFi handles SERVER_WIFI upstream configuration.
+// configureUpstreamServerWiFi handles wifi_client upstream configuration.
 // B88: Netplan-first DHCP with fallback to static IP.
 func configureUpstreamServerWiFi(ctx context.Context, nm NetworkModeSwitcher, halClient *hal.Client, env netEnvelope) (json.RawMessage, error) {
 	// Wait for hostapd to release wlan0 (teardown step stopped AP if needed)
@@ -520,7 +520,7 @@ func configureUpstreamServerWiFi(ctx context.Context, nm NetworkModeSwitcher, ha
 		}
 	} else {
 		// B88: netplan write+apply+poll with fallback to static
-		yaml := nm.GenerateNetplanYAML(models.NetworkModeServerWiFi, env.SSID, env.Password, env.StaticIP)
+		yaml := nm.GenerateNetplanYAML(models.NetworkModeWifiClient, env.SSID, env.Password, env.StaticIP)
 		if err := halClient.WriteNetplan(ctx, yaml, env.APInterface); err != nil {
 			log.Warn().Err(err).Msg("net.configure_upstream: server WiFi netplan write failed")
 		}
@@ -579,10 +579,10 @@ func makeNetConfigureServices(nm NetworkModeSwitcher, halClient *hal.Client) flo
 		natEnabled := false
 
 		switch targetMode {
-		case models.NetworkModeOffline, models.NetworkModeOnlineETH, models.NetworkModeOnlineWiFi, models.NetworkModeOnlineTether:
+		case models.NetworkModeOfflineHotspot, models.NetworkModeWifiRouter, models.NetworkModeWifiBridge, models.NetworkModeAndroidTether:
 			// AP modes: ensure AP is running
 			// If coming from server mode, AP was stopped — restart it
-			if previousMode == models.NetworkModeServerETH || previousMode == models.NetworkModeServerWiFi {
+			if previousMode == models.NetworkModeEthClient || previousMode == models.NetworkModeWifiClient {
 				if err := halClient.StartAP(ctx, env.APInterface); err != nil {
 					log.Error().Err(err).Msg("net.configure_services: failed to start AP")
 				}
@@ -590,7 +590,7 @@ func makeNetConfigureServices(nm NetworkModeSwitcher, halClient *hal.Client) flo
 			apRunning = true
 
 			// Online modes need NAT + forwarding
-			if targetMode != models.NetworkModeOffline {
+			if targetMode != models.NetworkModeOfflineHotspot {
 				if err := halClient.EnableIPForward(ctx); err != nil {
 					return nil, fmt.Errorf("failed to enable IP forwarding: %w", err)
 				}
@@ -606,9 +606,9 @@ func makeNetConfigureServices(nm NetworkModeSwitcher, halClient *hal.Client) flo
 				natEnabled = true
 			}
 
-		case models.NetworkModeServerETH, models.NetworkModeServerWiFi:
+		case models.NetworkModeEthClient, models.NetworkModeWifiClient:
 			// Server modes: stop AP (if was running from an AP mode)
-			if previousMode != models.NetworkModeServerETH && previousMode != models.NetworkModeServerWiFi {
+			if previousMode != models.NetworkModeEthClient && previousMode != models.NetworkModeWifiClient {
 				if err := halClient.StopAP(ctx, env.APInterface); err != nil {
 					log.Warn().Err(err).Msg("net.configure_services: failed to stop AP (may not be running)")
 				}
@@ -723,11 +723,11 @@ func makeNetPersist(nm NetworkModeSwitcher, halClient *hal.Client) flowengine.Ac
 		// Write final netplan for reboot persistence
 		reconfigureIface := ""
 		switch targetMode {
-		case models.NetworkModeOnlineETH, models.NetworkModeServerETH:
+		case models.NetworkModeWifiRouter, models.NetworkModeEthClient:
 			reconfigureIface = env.WANInterface
-		case models.NetworkModeOnlineWiFi:
+		case models.NetworkModeWifiBridge:
 			reconfigureIface = env.UpstreamInterface
-		case models.NetworkModeServerWiFi:
+		case models.NetworkModeWifiClient:
 			reconfigureIface = env.APInterface
 		}
 		nm.WriteAndApplyNetplan(ctx, targetMode, env.SSID, env.Password, reconfigureIface, env.StaticIP)
