@@ -403,6 +403,8 @@ type BackupInfo struct {
 	Description string   `json:"description,omitempty"`
 	Includes    []string `json:"includes,omitempty"`
 	Compressed  bool     `json:"compressed"`
+	Encrypted   bool     `json:"encrypted,omitempty"`
+	EncryptMode string   `json:"encrypt_mode,omitempty"`
 }
 
 type BackupListResponse struct {

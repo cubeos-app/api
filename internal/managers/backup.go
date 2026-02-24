@@ -79,7 +79,21 @@ func (m *BackupManager) ListBackups() []models.BackupInfo {
 	}
 
 	for _, entry := range entries {
-		if entry.IsDir() || !strings.HasSuffix(entry.Name(), ".tar.gz") {
+		name := entry.Name()
+		if entry.IsDir() {
+			continue
+		}
+
+		// Accept .tar.gz and .tar.gz.enc backup files
+		var backupID string
+		var encrypted bool
+		switch {
+		case strings.HasSuffix(name, ".tar.gz.enc"):
+			backupID = strings.TrimSuffix(name, ".tar.gz.enc")
+			encrypted = true
+		case strings.HasSuffix(name, ".tar.gz"):
+			backupID = strings.TrimSuffix(name, ".tar.gz")
+		default:
 			continue
 		}
 
@@ -90,15 +104,16 @@ func (m *BackupManager) ListBackups() []models.BackupInfo {
 
 		// Parse backup metadata from filename or .meta file
 		backup := models.BackupInfo{
-			ID:        strings.TrimSuffix(entry.Name(), ".tar.gz"),
-			Filename:  entry.Name(),
+			ID:        backupID,
+			Filename:  name,
 			SizeBytes: info.Size(),
 			SizeHuman: m.humanSize(info.Size()),
 			CreatedAt: info.ModTime().Format(time.RFC3339),
+			Encrypted: encrypted,
 		}
 
-		// Try to read metadata file
-		metaPath := filepath.Join(m.backupDir, backup.ID+".meta")
+		// Try to read metadata file (stored as <filename>.meta)
+		metaPath := filepath.Join(m.backupDir, name+".meta")
 		if metaData, err := os.ReadFile(metaPath); err == nil {
 			var meta map[string]interface{}
 			if json.Unmarshal(metaData, &meta) == nil {
@@ -115,16 +130,22 @@ func (m *BackupManager) ListBackups() []models.BackupInfo {
 						}
 					}
 				}
+				if enc, ok := meta["encrypted"].(bool); ok {
+					backup.Encrypted = enc
+				}
+				if mode, ok := meta["encrypt_mode"].(string); ok {
+					backup.EncryptMode = mode
+				}
 			}
 		}
 
 		// Infer type from filename if not in metadata
 		if backup.Type == "" {
-			if strings.Contains(entry.Name(), "full") {
+			if strings.Contains(name, "full") {
 				backup.Type = "full"
-			} else if strings.Contains(entry.Name(), "config") {
+			} else if strings.Contains(name, "config") {
 				backup.Type = "config"
-			} else if strings.Contains(entry.Name(), "database") {
+			} else if strings.Contains(name, "database") {
 				backup.Type = "database"
 			} else {
 				backup.Type = "unknown"
