@@ -384,6 +384,11 @@ func main() {
 
 	setupMgr := managers.NewSetupManager(cfg, db.DB, halClient, fbClient, piholePwClient, npmMgr)
 
+	// Create UpdateManager for background system update checks (Batch 4.1)
+	updateMgr := managers.NewUpdateManager(db.DB)
+	updateMgr.Start(context.Background())
+	defer updateMgr.Stop()
+
 	// ==========================================================================
 	// FlowEngine (Batch 2.5b): mandatory engine — log.Fatal if it fails to start
 	// ==========================================================================
@@ -407,6 +412,7 @@ func main() {
 	feactivities.RegisterNetworkActivities(feRegistry, networkMgr, halClient)
 	feactivities.RegisterSetupActivities(feRegistry, setupMgr)
 	feactivities.RegisterRegistryActivities(feRegistry, db.DB)
+	feactivities.RegisterUpdateActivities(feRegistry, db.DB, &updateSwarmAdapter{swarmMgr}, updateMgr)
 
 	flowEngine := flowengine.NewWorkflowEngine(feStore, feRegistry, flowengine.DefaultEngineConfig())
 
@@ -431,6 +437,9 @@ func main() {
 	}
 	if err := flowEngine.RegisterWorkflow(feworkflows.NewRegistryCacheWorkflow()); err != nil {
 		log.Fatal().Err(err).Msg("FlowEngine: failed to register registry_cache workflow")
+	}
+	if err := flowEngine.RegisterWorkflow(&feworkflows.SystemUpdateWorkflow{}); err != nil {
+		log.Fatal().Err(err).Msg("FlowEngine: failed to register system_update workflow")
 	}
 
 	if err := flowEngine.Start(engineCtx); err != nil {
@@ -505,12 +514,6 @@ func main() {
 	syncMgr.Start()
 	defer syncMgr.Stop()
 
-	// Create UpdateManager for background system update checks (Batch 4.1)
-	updateMgr := managers.NewUpdateManager(db.DB)
-	updateMgr.Start(context.Background())
-	defer updateMgr.Stop()
-	_ = updateMgr // handlers wired in Batch 4.1B
-
 	registryHandler := handlers.NewRegistryHandler(registryURL, registryPath, portMgr, orchestrator, db.DB, syncMgr, appStoreMgr, networkMgr, flowEngine, feStore)
 	log.Info().Msg("PortsHandler, FQDNsHandler, and RegistryHandler initialized")
 
@@ -541,6 +544,10 @@ func main() {
 	// Create Backups handler (wired to BackupManager)
 	backupsHandler := handlers.NewBackupsHandler(backupMgr)
 	log.Info().Msg("BackupsHandler initialized (wired to BackupManager)")
+
+	// Create Updates handler (Batch 4.1B)
+	updatesHandler := handlers.NewUpdatesHandler(updateMgr, flowEngine, db.DB)
+	log.Info().Msg("UpdatesHandler initialized")
 
 	// Apply saved UPS configuration to HAL on startup (non-blocking)
 	go func() {
@@ -719,6 +726,7 @@ func main() {
 				r.Post("/shutdown", h.Shutdown)
 				r.Get("/browse", appStoreHandler.BrowseDirectories)
 				r.Get("/images", registryHandler.ListSystemImages)
+				r.Mount("/updates", updatesHandler.Routes())
 			})
 
 			// Network Management (all routes via NetworkHandler)

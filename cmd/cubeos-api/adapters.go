@@ -12,6 +12,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"time"
 
 	"cubeos-api/internal/flowengine/activities"
 	"cubeos-api/internal/managers"
@@ -207,4 +208,28 @@ func (a *appStoreManifestAdapter) DetectWebUIType(ctx context.Context, manifest 
 	// Detection is performed by the app.detect_webui activity (database.go) via HTTP probe.
 	// This method satisfies the interface but is never called by any registered activity.
 	return "browser", nil
+}
+
+// --- updateSwarmAdapter: activities.UpdateSwarmManager via *managers.SwarmManager ---
+
+type updateSwarmAdapter struct{ mgr *managers.SwarmManager }
+
+func (a *updateSwarmAdapter) DeployStack(name, composePath string) error {
+	return a.mgr.DeployStack(name, composePath)
+}
+
+func (a *updateSwarmAdapter) ListUpdateStacks() ([]activities.UpdateStack, error) {
+	stacks, err := a.mgr.ListStacks()
+	if err != nil {
+		return nil, err
+	}
+	result := make([]activities.UpdateStack, len(stacks))
+	for i, s := range stacks {
+		result[i] = activities.UpdateStack{Name: s.Name, Services: s.Services}
+	}
+	return result, nil
+}
+
+func (a *updateSwarmAdapter) WaitForServiceConvergence(ctx context.Context, stackName string, timeout time.Duration) error {
+	return a.mgr.WaitForServiceConvergence(ctx, stackName, timeout)
 }
