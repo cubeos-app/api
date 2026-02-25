@@ -337,6 +337,29 @@ func (h *Handlers) GetSystemInfo(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, info)
 }
 
+// ValidateConfig godoc
+// @Summary Validate running configuration
+// @Description Re-runs startup configuration validation checks and returns individual results. Useful for debugging config issues on-device.
+// @Tags System
+// @Produce json
+// @Security BearerAuth
+// @Success 200 {object} map[string]interface{} "Validation results with overall valid flag and per-field checks"
+// @Router /system/config/validate [get]
+func (h *Handlers) ValidateConfig(w http.ResponseWriter, r *http.Request) {
+	results := h.cfg.ValidateAll()
+	allValid := true
+	for _, res := range results {
+		if !res.Valid {
+			allValid = false
+			break
+		}
+	}
+	writeJSON(w, http.StatusOK, map[string]interface{}{
+		"valid":  allValid,
+		"checks": results,
+	})
+}
+
 // GetSystemStats godoc
 // @Summary Get system statistics
 // @Description Returns current system statistics including CPU, memory, and disk usage

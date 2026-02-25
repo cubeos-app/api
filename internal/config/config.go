@@ -2,13 +2,14 @@ package config
 
 import (
 	"fmt"
+	"net"
 	"os"
-
-	"github.com/rs/zerolog/log"
+	"path/filepath"
 	"strconv"
 	"strings"
 
 	"github.com/joho/godotenv"
+	"github.com/rs/zerolog/log"
 )
 
 // Config holds all application settings
@@ -226,6 +227,197 @@ func Load() *Config {
 		BatteryCapacityMAH: getEnvIntOptional("BATTERY_CAPACITY_MAH", 3000),
 		CriticalBatteryPct: getEnvIntOptional("CRITICAL_BATTERY_PERCENT", 10),
 	}
+}
+
+// Validate checks that all configuration values are semantically correct.
+// It returns the first error found, or nil if everything is valid.
+// Call this after Load() to catch misconfiguration before the API starts serving.
+func (c *Config) Validate() error {
+	var errs []string
+
+	// Required string fields
+	requiredFields := map[string]string{
+		"DatabasePath": c.DatabasePath,
+		"JWTSecret":    c.JWTSecret,
+		"GatewayIP":    c.GatewayIP,
+		"Domain":       c.Domain,
+		"DataDir":      c.DataDir,
+	}
+	for name, val := range requiredFields {
+		if val == "" {
+			errs = append(errs, fmt.Sprintf("%s must not be empty", name))
+		}
+	}
+
+	// Port range validation (1–65535)
+	ports := map[string]int{
+		"Port":          c.Port,
+		"DashboardPort": c.DashboardPort,
+		"NPMPort":       c.NPMPort,
+		"PiholePort":    c.PiholePort,
+	}
+	for name, port := range ports {
+		if port < 1 || port > 65535 {
+			errs = append(errs, fmt.Sprintf("%s=%d is outside valid range 1-65535", name, port))
+		}
+	}
+	// Optional ports: only validate if non-zero (zero means disabled)
+	optionalPorts := map[string]int{
+		"OllamaPort":   c.OllamaPort,
+		"ChromaDBPort": c.ChromaDBPort,
+	}
+	for name, port := range optionalPorts {
+		if port != 0 && (port < 1 || port > 65535) {
+			errs = append(errs, fmt.Sprintf("%s=%d is outside valid range 1-65535", name, port))
+		}
+	}
+
+	// GatewayIP must be a valid IPv4 address
+	if c.GatewayIP != "" {
+		ip := net.ParseIP(c.GatewayIP)
+		if ip == nil || ip.To4() == nil {
+			errs = append(errs, fmt.Sprintf("GatewayIP=%q is not a valid IPv4 address", c.GatewayIP))
+		}
+	}
+
+	// Subnet must be valid CIDR
+	if c.Subnet != "" {
+		if _, _, err := net.ParseCIDR(c.Subnet); err != nil {
+			errs = append(errs, fmt.Sprintf("Subnet=%q is not valid CIDR: %v", c.Subnet, err))
+		}
+	}
+
+	// DataDir must exist and be writable
+	if c.DataDir != "" {
+		info, err := os.Stat(c.DataDir)
+		if err != nil {
+			errs = append(errs, fmt.Sprintf("DataDir=%q does not exist: %v", c.DataDir, err))
+		} else if !info.IsDir() {
+			errs = append(errs, fmt.Sprintf("DataDir=%q is not a directory", c.DataDir))
+		} else {
+			// Write test: create and remove a temp file
+			testFile := filepath.Join(c.DataDir, ".cubeos_validate_test")
+			if err := os.WriteFile(testFile, []byte("ok"), 0600); err != nil {
+				errs = append(errs, fmt.Sprintf("DataDir=%q is not writable: %v", c.DataDir, err))
+			} else {
+				os.Remove(testFile)
+			}
+		}
+	}
+
+	// DatabasePath parent directory must exist
+	if c.DatabasePath != "" {
+		dbDir := filepath.Dir(c.DatabasePath)
+		if info, err := os.Stat(dbDir); err != nil {
+			errs = append(errs, fmt.Sprintf("DatabasePath parent dir=%q does not exist: %v", dbDir, err))
+		} else if !info.IsDir() {
+			errs = append(errs, fmt.Sprintf("DatabasePath parent dir=%q is not a directory", dbDir))
+		}
+	}
+
+	if len(errs) > 0 {
+		return fmt.Errorf("config validation failed:\n  - %s", strings.Join(errs, "\n  - "))
+	}
+	return nil
+}
+
+// ValidateResult holds the result of a single config validation check.
+type ValidateResult struct {
+	Field   string `json:"field"`
+	Valid   bool   `json:"valid"`
+	Message string `json:"message,omitempty"`
+}
+
+// ValidateAll runs all validation checks and returns individual results.
+// Unlike Validate(), this does not short-circuit — it reports all issues.
+func (c *Config) ValidateAll() []ValidateResult {
+	var results []ValidateResult
+
+	// Required string fields
+	requiredFields := []struct{ name, val string }{
+		{"DatabasePath", c.DatabasePath},
+		{"JWTSecret", c.JWTSecret},
+		{"GatewayIP", c.GatewayIP},
+		{"Domain", c.Domain},
+		{"DataDir", c.DataDir},
+	}
+	for _, f := range requiredFields {
+		if f.val == "" {
+			results = append(results, ValidateResult{Field: f.name, Valid: false, Message: "must not be empty"})
+		} else {
+			results = append(results, ValidateResult{Field: f.name, Valid: true})
+		}
+	}
+
+	// Port validation
+	portFields := []struct {
+		name string
+		port int
+	}{
+		{"Port", c.Port},
+		{"DashboardPort", c.DashboardPort},
+		{"NPMPort", c.NPMPort},
+		{"PiholePort", c.PiholePort},
+	}
+	for _, f := range portFields {
+		if f.port < 1 || f.port > 65535 {
+			results = append(results, ValidateResult{Field: f.name, Valid: false, Message: fmt.Sprintf("%d is outside valid range 1-65535", f.port)})
+		} else {
+			results = append(results, ValidateResult{Field: f.name, Valid: true})
+		}
+	}
+
+	// GatewayIP format
+	if c.GatewayIP != "" {
+		ip := net.ParseIP(c.GatewayIP)
+		if ip == nil || ip.To4() == nil {
+			results = append(results, ValidateResult{Field: "GatewayIP_format", Valid: false, Message: "not a valid IPv4 address"})
+		} else {
+			results = append(results, ValidateResult{Field: "GatewayIP_format", Valid: true})
+		}
+	}
+
+	// Subnet CIDR
+	if c.Subnet != "" {
+		if _, _, err := net.ParseCIDR(c.Subnet); err != nil {
+			results = append(results, ValidateResult{Field: "Subnet_format", Valid: false, Message: err.Error()})
+		} else {
+			results = append(results, ValidateResult{Field: "Subnet_format", Valid: true})
+		}
+	}
+
+	// DataDir existence
+	if c.DataDir != "" {
+		if info, err := os.Stat(c.DataDir); err != nil {
+			results = append(results, ValidateResult{Field: "DataDir_exists", Valid: false, Message: err.Error()})
+		} else if !info.IsDir() {
+			results = append(results, ValidateResult{Field: "DataDir_exists", Valid: false, Message: "not a directory"})
+		} else {
+			results = append(results, ValidateResult{Field: "DataDir_exists", Valid: true})
+			// Writability test
+			testFile := filepath.Join(c.DataDir, ".cubeos_validate_test")
+			if err := os.WriteFile(testFile, []byte("ok"), 0600); err != nil {
+				results = append(results, ValidateResult{Field: "DataDir_writable", Valid: false, Message: err.Error()})
+			} else {
+				os.Remove(testFile)
+				results = append(results, ValidateResult{Field: "DataDir_writable", Valid: true})
+			}
+		}
+	}
+
+	// DatabasePath parent
+	if c.DatabasePath != "" {
+		dbDir := filepath.Dir(c.DatabasePath)
+		if info, err := os.Stat(dbDir); err != nil {
+			results = append(results, ValidateResult{Field: "DatabasePath_parent", Valid: false, Message: err.Error()})
+		} else if !info.IsDir() {
+			results = append(results, ValidateResult{Field: "DatabasePath_parent", Valid: false, Message: "not a directory"})
+		} else {
+			results = append(results, ValidateResult{Field: "DatabasePath_parent", Valid: true})
+		}
+	}
+
+	return results
 }
 
 // IsCoreService checks if a container is a core service

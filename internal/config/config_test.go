@@ -3,6 +3,7 @@ package config
 import (
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 )
 
@@ -99,5 +100,238 @@ func TestConfigMethods(t *testing.T) {
 	expected = "http://10.42.24.1:6031"
 	if chromaURL != expected {
 		t.Errorf("GetChromaDBURL returned %s, expected %s", chromaURL, expected)
+	}
+}
+
+func TestValidate_ValidConfig(t *testing.T) {
+	tmpDir, err := os.MkdirTemp("", "cubeos-validate-*")
+	if err != nil {
+		t.Fatalf("failed to create temp dir: %v", err)
+	}
+	defer os.RemoveAll(tmpDir)
+
+	dbDir := filepath.Join(tmpDir, "data")
+	if err := os.MkdirAll(dbDir, 0755); err != nil {
+		t.Fatalf("failed to create data dir: %v", err)
+	}
+
+	cfg := &Config{
+		Port:          6010,
+		DatabasePath:  filepath.Join(dbDir, "cubeos.db"),
+		JWTSecret:     "test-secret-12345",
+		GatewayIP:     "10.42.24.1",
+		Domain:        "cubeos.cube",
+		Subnet:        "10.42.24.0/24",
+		DataDir:       dbDir,
+		DashboardPort: 6011,
+		NPMPort:       6000,
+		PiholePort:    6001,
+		OllamaPort:    6030,
+		ChromaDBPort:  6031,
+	}
+
+	if err := cfg.Validate(); err != nil {
+		t.Errorf("expected valid config, got error: %v", err)
+	}
+}
+
+func TestValidate_EmptyRequiredFields(t *testing.T) {
+	cfg := &Config{
+		Port:          6010,
+		DashboardPort: 6011,
+		NPMPort:       6000,
+		PiholePort:    6001,
+		// All string fields empty
+	}
+
+	err := cfg.Validate()
+	if err == nil {
+		t.Fatal("expected validation error for empty required fields")
+	}
+
+	errStr := err.Error()
+	for _, field := range []string{"DatabasePath", "JWTSecret", "GatewayIP", "Domain", "DataDir"} {
+		if !strings.Contains(errStr, field) {
+			t.Errorf("expected error to mention %s, got: %s", field, errStr)
+		}
+	}
+}
+
+func TestValidate_InvalidPort(t *testing.T) {
+	tmpDir, err := os.MkdirTemp("", "cubeos-validate-*")
+	if err != nil {
+		t.Fatalf("failed to create temp dir: %v", err)
+	}
+	defer os.RemoveAll(tmpDir)
+
+	cfg := &Config{
+		Port:          0, // invalid
+		DatabasePath:  filepath.Join(tmpDir, "cubeos.db"),
+		JWTSecret:     "test-secret",
+		GatewayIP:     "10.42.24.1",
+		Domain:        "cubeos.cube",
+		Subnet:        "10.42.24.0/24",
+		DataDir:       tmpDir,
+		DashboardPort: 70000, // invalid
+		NPMPort:       6000,
+		PiholePort:    6001,
+	}
+
+	err = cfg.Validate()
+	if err == nil {
+		t.Fatal("expected validation error for invalid ports")
+	}
+	if !strings.Contains(err.Error(), "Port=0") {
+		t.Errorf("expected error about Port=0, got: %v", err)
+	}
+	if !strings.Contains(err.Error(), "DashboardPort=70000") {
+		t.Errorf("expected error about DashboardPort=70000, got: %v", err)
+	}
+}
+
+func TestValidate_InvalidGatewayIP(t *testing.T) {
+	tmpDir, err := os.MkdirTemp("", "cubeos-validate-*")
+	if err != nil {
+		t.Fatalf("failed to create temp dir: %v", err)
+	}
+	defer os.RemoveAll(tmpDir)
+
+	cfg := &Config{
+		Port:          6010,
+		DatabasePath:  filepath.Join(tmpDir, "cubeos.db"),
+		JWTSecret:     "test-secret",
+		GatewayIP:     "not-an-ip",
+		Domain:        "cubeos.cube",
+		Subnet:        "10.42.24.0/24",
+		DataDir:       tmpDir,
+		DashboardPort: 6011,
+		NPMPort:       6000,
+		PiholePort:    6001,
+	}
+
+	err = cfg.Validate()
+	if err == nil {
+		t.Fatal("expected validation error for invalid GatewayIP")
+	}
+	if !strings.Contains(err.Error(), "GatewayIP") {
+		t.Errorf("expected error about GatewayIP, got: %v", err)
+	}
+}
+
+func TestValidate_InvalidSubnet(t *testing.T) {
+	tmpDir, err := os.MkdirTemp("", "cubeos-validate-*")
+	if err != nil {
+		t.Fatalf("failed to create temp dir: %v", err)
+	}
+	defer os.RemoveAll(tmpDir)
+
+	cfg := &Config{
+		Port:          6010,
+		DatabasePath:  filepath.Join(tmpDir, "cubeos.db"),
+		JWTSecret:     "test-secret",
+		GatewayIP:     "10.42.24.1",
+		Domain:        "cubeos.cube",
+		Subnet:        "bad-cidr",
+		DataDir:       tmpDir,
+		DashboardPort: 6011,
+		NPMPort:       6000,
+		PiholePort:    6001,
+	}
+
+	err = cfg.Validate()
+	if err == nil {
+		t.Fatal("expected validation error for invalid Subnet")
+	}
+	if !strings.Contains(err.Error(), "Subnet") {
+		t.Errorf("expected error about Subnet, got: %v", err)
+	}
+}
+
+func TestValidate_NonexistentDataDir(t *testing.T) {
+	cfg := &Config{
+		Port:          6010,
+		DatabasePath:  "/tmp/cubeos-test-nonexistent/cubeos.db",
+		JWTSecret:     "test-secret",
+		GatewayIP:     "10.42.24.1",
+		Domain:        "cubeos.cube",
+		Subnet:        "10.42.24.0/24",
+		DataDir:       "/tmp/cubeos-test-nonexistent-dir-xyz",
+		DashboardPort: 6011,
+		NPMPort:       6000,
+		PiholePort:    6001,
+	}
+
+	err := cfg.Validate()
+	if err == nil {
+		t.Fatal("expected validation error for nonexistent DataDir")
+	}
+	if !strings.Contains(err.Error(), "DataDir") {
+		t.Errorf("expected error about DataDir, got: %v", err)
+	}
+}
+
+func TestValidate_IPv6GatewayIP(t *testing.T) {
+	tmpDir, err := os.MkdirTemp("", "cubeos-validate-*")
+	if err != nil {
+		t.Fatalf("failed to create temp dir: %v", err)
+	}
+	defer os.RemoveAll(tmpDir)
+
+	cfg := &Config{
+		Port:          6010,
+		DatabasePath:  filepath.Join(tmpDir, "cubeos.db"),
+		JWTSecret:     "test-secret",
+		GatewayIP:     "::1", // IPv6 — should fail (must be IPv4)
+		Domain:        "cubeos.cube",
+		Subnet:        "10.42.24.0/24",
+		DataDir:       tmpDir,
+		DashboardPort: 6011,
+		NPMPort:       6000,
+		PiholePort:    6001,
+	}
+
+	err = cfg.Validate()
+	if err == nil {
+		t.Fatal("expected validation error for IPv6 GatewayIP")
+	}
+	if !strings.Contains(err.Error(), "GatewayIP") {
+		t.Errorf("expected error about GatewayIP, got: %v", err)
+	}
+}
+
+func TestValidateAll_ReturnsAllChecks(t *testing.T) {
+	tmpDir, err := os.MkdirTemp("", "cubeos-validate-*")
+	if err != nil {
+		t.Fatalf("failed to create temp dir: %v", err)
+	}
+	defer os.RemoveAll(tmpDir)
+
+	cfg := &Config{
+		Port:          6010,
+		DatabasePath:  filepath.Join(tmpDir, "cubeos.db"),
+		JWTSecret:     "test-secret",
+		GatewayIP:     "10.42.24.1",
+		Domain:        "cubeos.cube",
+		Subnet:        "10.42.24.0/24",
+		DataDir:       tmpDir,
+		DashboardPort: 6011,
+		NPMPort:       6000,
+		PiholePort:    6001,
+	}
+
+	results := cfg.ValidateAll()
+	if len(results) == 0 {
+		t.Fatal("expected non-empty validation results")
+	}
+
+	allValid := true
+	for _, r := range results {
+		if !r.Valid {
+			allValid = false
+			t.Errorf("field %s failed: %s", r.Field, r.Message)
+		}
+	}
+	if !allValid {
+		t.Error("expected all checks to pass for a valid config")
 	}
 }

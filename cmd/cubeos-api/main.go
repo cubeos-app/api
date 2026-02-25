@@ -180,6 +180,11 @@ func main() {
 	// Load configuration
 	cfg := config.Load()
 
+	// Validate configuration before proceeding
+	if err := cfg.Validate(); err != nil {
+		log.Fatal().Err(err).Msg("configuration validation failed — check /cubeos/config/defaults.env")
+	}
+
 	// Override swagger host to empty string so it uses the browser's
 	// current host (works correctly through NPM reverse proxy at port 80)
 	docs.SwaggerInfo.Host = ""
@@ -756,6 +761,7 @@ func main() {
 				r.Post("/shutdown", h.Shutdown)
 				r.Get("/browse", appStoreHandler.BrowseDirectories)
 				r.Get("/images", registryHandler.ListSystemImages)
+				r.Get("/config/validate", h.ValidateConfig)
 				r.Mount("/updates", updatesHandler.Routes())
 			})
 
