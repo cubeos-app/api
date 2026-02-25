@@ -17,7 +17,7 @@ import (
 	"github.com/rs/zerolog/log"
 )
 
-// FileBrowserClient manages credentials sync with the Dufs file manager.
+// FileManagerClient manages credentials sync with the Dufs file manager.
 // Dufs uses HTTP Basic Auth configured via --auth on the command line.
 // To change the password, we update the docker-compose.yml and redeploy
 // the Swarm stack — similar to the Pi-hole sync approach.
@@ -26,17 +26,17 @@ import (
 //   - First boot: setup.go calls SyncAdminPasswordWithRetry("admin", newPassword)
 //   - Password change: handlers.go calls SyncAdminPassword(oldPassword, newPassword)
 //   - API startup: main.go calls EnsurePasswordSynced(db) to catch missed syncs
-type FileBrowserClient struct {
+type FileManagerClient struct {
 	baseURL     string
 	composeFile string // /cubeos/coreapps/filebrowser/appconfig/docker-compose.yml
 	stackName   string // filebrowser
 	httpClient  *http.Client
 }
 
-// NewFileBrowserClient creates a new Dufs file manager sync client.
+// NewFileManagerClient creates a new Dufs file manager sync client.
 // baseURL should be the full URL to the Dufs instance, e.g. "http://10.42.24.1:6013".
-func NewFileBrowserClient(baseURL string) *FileBrowserClient {
-	return &FileBrowserClient{
+func NewFileManagerClient(baseURL string) *FileManagerClient {
+	return &FileManagerClient{
 		baseURL:     baseURL,
 		composeFile: "/cubeos/coreapps/filebrowser/appconfig/docker-compose.yml",
 		stackName:   "filebrowser",
@@ -46,28 +46,10 @@ func NewFileBrowserClient(baseURL string) *FileBrowserClient {
 	}
 }
 
-// checkPassword verifies if the given password works for Dufs by attempting
-// HTTP Basic Auth against the root endpoint.
-func (c *FileBrowserClient) checkPassword(password string) bool {
-	req, err := http.NewRequest("GET", c.baseURL+"/", nil)
-	if err != nil {
-		return false
-	}
-	req.SetBasicAuth("admin", password)
-
-	resp, err := c.httpClient.Do(req)
-	if err != nil {
-		return false
-	}
-	defer resp.Body.Close()
-
-	return resp.StatusCode == http.StatusOK
-}
-
 // readCurrentPassword extracts the current admin password from the
 // docker-compose.yml --auth argument.
 // Format: --auth "admin:PASSWORD@/:rw"
-func (c *FileBrowserClient) readCurrentPassword() string {
+func (c *FileManagerClient) readCurrentPassword() string {
 	data, err := os.ReadFile(c.composeFile)
 	if err != nil {
 		return ""
@@ -84,7 +66,7 @@ func (c *FileBrowserClient) readCurrentPassword() string {
 
 // updateComposePassword updates the --auth argument in docker-compose.yml
 // with the new password and redeploys the Swarm stack.
-func (c *FileBrowserClient) updateComposePassword(newPassword string) error {
+func (c *FileManagerClient) updateComposePassword(newPassword string) error {
 	data, err := os.ReadFile(c.composeFile)
 	if err != nil {
 		return fmt.Errorf("read compose file: %w", err)
@@ -107,7 +89,7 @@ func (c *FileBrowserClient) updateComposePassword(newPassword string) error {
 }
 
 // redeployStack runs docker stack deploy to apply the updated compose file.
-func (c *FileBrowserClient) redeployStack(ctx context.Context) error {
+func (c *FileManagerClient) redeployStack(ctx context.Context) error {
 	cmd := exec.CommandContext(ctx, "docker", "stack", "deploy",
 		"-c", c.composeFile,
 		c.stackName,
@@ -122,7 +104,7 @@ func (c *FileBrowserClient) redeployStack(ctx context.Context) error {
 
 // doSync updates the Dufs admin password by modifying the compose file
 // and redeploying the Swarm stack.
-func (c *FileBrowserClient) doSync(newPassword string) error {
+func (c *FileManagerClient) doSync(newPassword string) error {
 	l := log.With().Str("component", "filebrowser-sync").Logger()
 
 	// Step 1: Update the compose file
@@ -146,7 +128,7 @@ func (c *FileBrowserClient) doSync(newPassword string) error {
 // SyncAdminPassword updates the Dufs admin password. Non-fatal wrapper.
 // The currentPassword parameter is ignored — Dufs doesn't need it for
 // password changes (we update the compose file directly).
-func (c *FileBrowserClient) SyncAdminPassword(currentPassword, newPassword string) {
+func (c *FileManagerClient) SyncAdminPassword(currentPassword, newPassword string) {
 	l := log.With().Str("component", "filebrowser-sync").Logger()
 
 	if err := c.doSync(newPassword); err != nil {
@@ -159,7 +141,7 @@ func (c *FileBrowserClient) SyncAdminPassword(currentPassword, newPassword strin
 // Designed to run as a goroutine — non-blocking, non-fatal.
 //
 // Retry schedule: 5s, 10s, 15s, 20s, 25s, 30s (6 attempts over ~2 min).
-func (c *FileBrowserClient) SyncAdminPasswordWithRetry(currentPassword, newPassword string) {
+func (c *FileManagerClient) SyncAdminPasswordWithRetry(currentPassword, newPassword string) {
 	l := log.With().Str("component", "filebrowser-sync").Logger()
 
 	const maxAttempts = 6
@@ -194,7 +176,7 @@ func (c *FileBrowserClient) SyncAdminPasswordWithRetry(currentPassword, newPassw
 //
 // Called once during API startup as a background goroutine.
 // Non-fatal — logs warnings on failure but never blocks the API.
-func (c *FileBrowserClient) EnsurePasswordSynced(dbConn *sql.DB) {
+func (c *FileManagerClient) EnsurePasswordSynced(dbConn *sql.DB) {
 	l := log.With().Str("component", "filebrowser-sync").Logger()
 
 	// Only run if setup is complete
@@ -240,7 +222,7 @@ func (c *FileBrowserClient) EnsurePasswordSynced(dbConn *sql.DB) {
 }
 
 // IsAvailable checks if the Dufs service is reachable.
-func (c *FileBrowserClient) IsAvailable() bool {
+func (c *FileManagerClient) IsAvailable() bool {
 	resp, err := c.httpClient.Get(c.baseURL + "/")
 	if err != nil {
 		return false

@@ -181,10 +181,7 @@ func TestAppsRoutes(t *testing.T) {
 		t.Fatal("Routes() returned nil")
 	}
 
-	// Verify the router is a chi.Router
-	if _, ok := routes.(chi.Router); !ok {
-		t.Fatal("Routes() did not return a chi.Router")
-	}
+	// Routes() returns chi.Router — verified by type system
 }
 
 // TestAppsRouteMethods verifies all expected endpoints return valid HTTP responses

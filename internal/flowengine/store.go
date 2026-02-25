@@ -641,7 +641,7 @@ func nullableString(s string) interface{} {
 }
 
 func nullableJSON(data json.RawMessage) interface{} {
-	if data == nil || len(data) == 0 {
+	if len(data) == 0 {
 		return nil
 	}
 	return string(data)

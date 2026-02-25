@@ -232,7 +232,7 @@ func main() {
 		defer docker.Close()
 	}
 
-	// Create HAL client for hardware access (Sprint 3)
+	// Create HAL client for hardware access
 	// HAL runs on host network at port 6005, accessible from container via host IP
 	halURL := os.Getenv("HAL_URL")
 	if halURL == "" {
@@ -267,7 +267,7 @@ func main() {
 	piholeMgr := managers.NewPiholeManager(cfg)
 	log.Info().Msg("PiholeManager initialized (Pi-hole v6 REST API)")
 
-	// Create NPM manager for proxy host management (Sprint 4)
+	// Create NPM manager for proxy host management
 	// Must be initialized before AppStoreManager which depends on it
 	npmMgr := managers.NewNPMManager(cfg, "/cubeos/config")
 	if err := npmMgr.Init(); err != nil {
@@ -320,7 +320,7 @@ func main() {
 		registryURL = "http://" + cfg.GatewayIP + ":5000"
 	}
 
-	// Create Orchestrator for unified app management (Sprint 3)
+	// Create Orchestrator for unified app management
 	orchestrator, err := managers.NewOrchestrator(managers.OrchestratorConfig{
 		DB:            db.DB,
 		Config:        cfg,
@@ -373,8 +373,8 @@ func main() {
 
 	// Create Setup manager (first boot wizard) — must be created before FlowEngine
 	// so setup activities can be registered.
-	fbClient := managers.NewFileBrowserClient(fmt.Sprintf("http://%s:6013", cfg.GatewayIP))
-	log.Info().Str("url", fmt.Sprintf("http://%s:6013", cfg.GatewayIP)).Msg("FileBrowser client initialized")
+	fbClient := managers.NewFileManagerClient(fmt.Sprintf("http://%s:6013", cfg.GatewayIP))
+	log.Info().Str("url", fmt.Sprintf("http://%s:6013", cfg.GatewayIP)).Msg("File manager client initialized")
 
 	// Create Pi-hole password sync client
 	piholePwClient := managers.NewPiholePasswordClient()
@@ -482,11 +482,11 @@ func main() {
 		}
 	}()
 
-	// Create VPN manager (Sprint 3 - with HAL client)
+	// Create VPN manager
 	vpnMgr := managers.NewVPNManager(cfg, halClient)
 	log.Info().Msg("VPNManager initialized (HAL-enabled)")
 
-	// Create Mounts manager (Sprint 3 - with HAL client)
+	// Create Mounts manager
 	mountsMgr := managers.NewMountsManager(cfg, halClient)
 	log.Info().Msg("MountsManager initialized (HAL-enabled)")
 	mountsMgr.SetDB(db.DB) // FIX: Wire database connection
@@ -503,7 +503,7 @@ func main() {
 	// Create Docs handler (Documentation viewer)
 	docsHandler := handlers.NewDocsHandler()
 
-	// Create unified API handlers (Sprint 3)
+	// Create unified API handlers
 	var appsHandler *handlers.AppsHandler
 	var profilesHandler *handlers.ProfilesHandler
 	if orchestrator != nil {
@@ -516,19 +516,19 @@ func main() {
 	workflowsHandler := handlers.NewWorkflowsHandler(feStore)
 	log.Info().Msg("WorkflowsHandler initialized")
 
-	// Create NetworkHandler for network mode management (Sprint 3)
+	// Create NetworkHandler for network mode management
 	networkHandler := handlers.NewNetworkHandler(networkMgr, halClient)
 
-	// Create FirewallHandler for firewall management (Sprint 5C)
+	// Create FirewallHandler for firewall management
 	firewallHandler := handlers.NewFirewallHandler(firewallMgr, halClient)
 	log.Info().Msg("FirewallHandler initialized")
 
-	// Create VPN and Mounts handlers (Sprint 3)
+	// Create VPN and Mounts handlers
 	vpnHandler := handlers.NewVPNHandler(vpnMgr)
 	mountsHandler := handlers.NewMountsHandler(mountsMgr)
 	log.Info().Msg("VPNHandler and MountsHandler initialized")
 
-	// Create Ports, FQDNs, and Registry handlers (Sprint 4)
+	// Create Ports, FQDNs, and Registry handlers
 	portsHandler := handlers.NewPortsHandler(portMgr)
 
 	// PiholeManager already created earlier (used by AppStoreManager)
@@ -546,15 +546,15 @@ func main() {
 	registryHandler := handlers.NewRegistryHandler(registryURL, registryPath, portMgr, orchestrator, db.DB, syncMgr, appStoreMgr, networkMgr, flowEngine, feStore)
 	log.Info().Msg("PortsHandler, FQDNsHandler, and RegistryHandler initialized")
 
-	// Create CasaOS Import handler (Sprint 4D)
+	// Create CasaOS Import handler
 	casaosHandler := handlers.NewCasaOSHandler(appStoreMgr, orchestrator, cfg.GatewayIP, cfg.Domain)
 	log.Info().Msg("CasaOSHandler initialized")
 
-	// Create NPM handler (Sprint 4E)
+	// Create NPM handler
 	npmHandler := handlers.NewNPMHandler(npmMgr)
 	log.Info().Msg("NPMHandler initialized")
 
-	// Create HAL-based handlers (Sprint 6)
+	// Create HAL-based handlers
 	hardwareHandler := handlers.NewHardwareHandler(halClient, setupMgr)
 	halStorageHandler := handlers.NewStorageHandler(halClient)
 	communicationHandler := handlers.NewCommunicationHandler(halClient)
@@ -811,7 +811,7 @@ func main() {
 				r.Get("/errors", ext.GetRecentErrors)
 			})
 
-			// Firewall (Sprint 5C - using dedicated FirewallHandler)
+			// Firewall
 			r.Mount("/firewall", firewallHandler.Routes())
 
 			// Backups - use handler instead of inline routes
@@ -882,43 +882,43 @@ func main() {
 			// Workflows API (FlowEngine visibility)
 			r.Mount("/workflows", workflowsHandler.Routes())
 
-			// Unified Apps API (Sprint 3)
+			// Unified Apps API
 			if appsHandler != nil {
 				r.Mount("/apps", appsHandler.Routes())
 			} else {
 				r.Mount("/apps", unavailableHandler("Orchestrator unavailable — apps API requires a working Orchestrator"))
 			}
 
-			// Profiles API (Sprint 3)
+			// Profiles API
 			if profilesHandler != nil {
 				r.Mount("/profiles", profilesHandler.Routes())
 			} else {
 				r.Mount("/profiles", unavailableHandler("Orchestrator unavailable — profiles API requires a working Orchestrator"))
 			}
 
-			// VPN API (Sprint 3)
+			// VPN API
 			r.Mount("/vpn", vpnHandler.Routes())
 
-			// Mounts API (Sprint 3)
+			// Mounts API
 			r.Mount("/mounts", mountsHandler.Routes())
 
-			// Ports API (Sprint 4)
+			// Ports API
 			r.Mount("/ports", portsHandler.Routes())
 
-			// FQDNs API (Sprint 4)
+			// FQDNs API
 			r.Mount("/fqdns", fqdnsHandler.Routes())
 
-			// Registry API (Sprint 4)
+			// Registry API
 			r.Mount("/registry", registryHandler.Routes())
 
-			// CasaOS Import API (Sprint 4D)
+			// CasaOS Import API
 			r.Mount("/casaos", casaosHandler.Routes())
 
-			// NPM API (Sprint 4E)
+			// NPM API
 			r.Mount("/npm", npmHandler.Routes())
 
 			// ===========================================================
-			// HAL-based Hardware APIs (Sprint 6)
+			// HAL-based Hardware APIs
 			// ===========================================================
 
 			// Support Bundle (diagnostic download via HAL)

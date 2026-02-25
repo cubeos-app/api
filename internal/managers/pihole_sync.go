@@ -10,7 +10,6 @@ import (
 	"net/http"
 	"os"
 	"os/exec"
-	"strings"
 	"time"
 
 	"cubeos-api/internal/models"
@@ -228,17 +227,4 @@ func (c *PiholePasswordClient) EnsurePasswordSynced(dbConn *sql.DB) {
 
 	l.Info().Msg("Pi-hole password out of sync — attempting startup resync")
 	c.SyncAdminPasswordWithRetry("cubeos", cfg.AdminPassword)
-}
-
-// isContainerRunning checks if a Docker container exists and is running.
-func isContainerRunning(containerName string) bool {
-	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-	defer cancel()
-
-	cmd := exec.CommandContext(ctx, "docker", "inspect", "-f", "{{.State.Running}}", containerName)
-	output, err := cmd.Output()
-	if err != nil {
-		return false
-	}
-	return strings.TrimSpace(string(output)) == "true"
 }

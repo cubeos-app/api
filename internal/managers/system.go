@@ -181,7 +181,7 @@ func (m *SystemManager) GetMACAddresses() map[string]string {
 	}
 
 	for _, iface := range interfaces {
-		if iface.HardwareAddr != nil && len(iface.HardwareAddr) > 0 {
+		if len(iface.HardwareAddr) > 0 {
 			macs[iface.Name] = iface.HardwareAddr.String()
 		}
 	}

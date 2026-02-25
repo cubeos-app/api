@@ -984,18 +984,6 @@ func (o *Orchestrator) PruneOrphanApps(ctx context.Context) error {
 // Helper Functions
 // =============================================================================
 
-func (o *Orchestrator) deployApp(ctx context.Context, name, composePath string, mode models.DeployMode) error {
-	if mode == models.DeployModeStack {
-		return o.swarm.DeployStack(name, composePath)
-	}
-
-	// Compose mode: no-op here. Host-network services (pihole, npm) are managed
-	// externally via systemd or docker-compose directly on the host. The orchestrator
-	// only tracks their state in the database; actual lifecycle is handled outside Swarm.
-	log.Debug().Str("app", name).Msg("Compose mode deploy is a no-op — managed externally")
-	return nil
-}
-
 func (o *Orchestrator) getAppStatus(ctx context.Context, app *models.App) *models.AppStatus {
 	status := &models.AppStatus{
 		Running: false,
@@ -1121,18 +1109,6 @@ func isValidAppName(name string) bool {
 		return false
 	}
 	return true
-}
-
-// toTitleCase capitalizes the first letter of each word.
-// Replaces deprecated strings.Title without requiring golang.org/x/text.
-func toTitleCase(s string) string {
-	words := strings.Fields(s)
-	for i, w := range words {
-		if len(w) > 0 {
-			words[i] = strings.ToUpper(w[:1]) + w[1:]
-		}
-	}
-	return strings.Join(words, " ")
 }
 
 func boolPtr(b bool) *bool {

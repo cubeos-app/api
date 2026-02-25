@@ -21,7 +21,7 @@ type Migration struct {
 var migrations = []Migration{
 	// Version 1 is the initial schema, created by InitSchema()
 
-	// Version 2: Add missing columns from Sprint 2 unified schema
+	// Version 2: Add missing columns from unified schema
 	{
 		Version:     2,
 		Description: "Add Sprint 2 unified schema columns to apps table",

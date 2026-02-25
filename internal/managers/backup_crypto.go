@@ -414,7 +414,7 @@ func readPiSerial() (string, error) {
 		}
 	}
 
-	return "", errors.New("Pi serial number not found")
+	return "", errors.New("pi serial number not found")
 }
 
 // incrementNonce sets the nonce for a given chunk index.

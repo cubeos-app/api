@@ -32,19 +32,6 @@ func toHostPath(userPath string) string {
 	return filepath.Join(hostRootPrefix, userPath)
 }
 
-// toUserPath strips the host root prefix, returning the clean path the user
-// and Docker Swarm expect (e.g., "/host-root/media/usb" → "/media/usb").
-func toUserPath(fsPath string) string {
-	if hostRootPrefix == "" {
-		return fsPath
-	}
-	clean := strings.TrimPrefix(fsPath, hostRootPrefix)
-	if clean == "" {
-		return "/"
-	}
-	return clean
-}
-
 // VolumeMapping represents a single bind mount mapping for an app.
 type VolumeMapping struct {
 	ID               int64  `json:"id,omitempty"`
@@ -780,63 +767,6 @@ func validateHostPath(path string) error {
 	}
 
 	return nil
-}
-
-// getServiceTaskError checks why services in a stack are failing by
-// inspecting task errors via `docker service ps`.
-func (m *AppStoreManager) getServiceTaskError(stackName string) string {
-	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
-	defer cancel()
-
-	// List services in the stack
-	out, err := exec.CommandContext(ctx, "docker", "stack", "services",
-		"--format", "{{.Name}}", stackName).CombinedOutput()
-	if err != nil {
-		return ""
-	}
-
-	serviceNames := strings.Split(strings.TrimSpace(string(out)), "\n")
-	for _, svcName := range serviceNames {
-		if svcName == "" {
-			continue
-		}
-
-		// Get the latest task error for this service
-		taskOut, err := exec.CommandContext(ctx, "docker", "service", "ps",
-			"--no-trunc",
-			"--format", "{{.Error}}",
-			"--filter", "desired-state=running",
-			svcName).CombinedOutput()
-		if err != nil {
-			continue
-		}
-
-		for _, line := range strings.Split(string(taskOut), "\n") {
-			line = strings.TrimSpace(line)
-			if line != "" {
-				return fmt.Sprintf("%s: %s", svcName, line)
-			}
-		}
-
-		// Also check shutdown/failed tasks for errors
-		taskOut2, err := exec.CommandContext(ctx, "docker", "service", "ps",
-			"--no-trunc",
-			"--format", "{{.Error}}",
-			"--filter", "desired-state=shutdown",
-			svcName).CombinedOutput()
-		if err != nil {
-			continue
-		}
-
-		for _, line := range strings.Split(string(taskOut2), "\n") {
-			line = strings.TrimSpace(line)
-			if line != "" {
-				return fmt.Sprintf("%s: %s", svcName, line)
-			}
-		}
-	}
-
-	return ""
 }
 
 // BrowseDirectories lists subdirectories at a given path on the HOST filesystem.

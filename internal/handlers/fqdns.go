@@ -1,5 +1,5 @@
 // internal/handlers/fqdns.go
-// Sprint 4B: FQDN Management API
+// FQDN Management API
 // Manages DNS entries and reverse proxy mappings
 
 package handlers

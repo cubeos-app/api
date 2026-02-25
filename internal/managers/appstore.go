@@ -49,9 +49,6 @@ type AppStoreManager struct {
 	// Registry-aware install flow (T15/T16)
 	registryURL    string       // Local registry URL (e.g., http://10.42.24.1:5000)
 	registryClient *http.Client // HTTP client for registry API calls
-	onlineMu       sync.Mutex   // Protects online cache
-	onlineCached   bool         // Cached online status
-	onlineCacheAt  time.Time    // When online status was last checked
 
 	// FlowEngine (Batch 2.5b): wired after construction via SetFlowEngine
 	engine  *flowengine.WorkflowEngine
@@ -448,7 +445,7 @@ func (m *AppStoreManager) SyncStore(storeID string) error {
 	// Find Apps directory
 	appsDir := m.findAppsDir(extractPath)
 	if appsDir == "" {
-		return fmt.Errorf("Apps directory not found")
+		return fmt.Errorf("apps directory not found")
 	}
 
 	// Parse manifests
@@ -983,33 +980,6 @@ func (m *AppStoreManager) checkRegistryImage(repo, tag string) bool {
 	return resp.StatusCode == http.StatusOK
 }
 
-// isOnline checks if the device has internet connectivity by pinging Docker Hub.
-// Result is cached for 30 seconds to avoid per-install latency.
-func (m *AppStoreManager) isOnline() bool {
-	m.onlineMu.Lock()
-	defer m.onlineMu.Unlock()
-
-	// Return cached result if fresh (within 30s)
-	if !m.onlineCacheAt.IsZero() && time.Since(m.onlineCacheAt) < 30*time.Second {
-		return m.onlineCached
-	}
-
-	// Ping Docker Hub registry endpoint
-	client := &http.Client{Timeout: 5 * time.Second}
-	resp, err := client.Head("https://registry-1.docker.io/v2/")
-	if err != nil {
-		m.onlineCached = false
-		m.onlineCacheAt = time.Now()
-		return false
-	}
-	defer resp.Body.Close()
-
-	// 200 or 401 (unauthorized but reachable) both indicate online
-	m.onlineCached = resp.StatusCode == http.StatusOK || resp.StatusCode == http.StatusUnauthorized
-	m.onlineCacheAt = time.Now()
-	return m.onlineCached
-}
-
 // RemapPorts rewrites the host-published port in a compose manifest so that the
 // app's main web UI port uses the CubeOS-allocated port (6100-6999 range) instead
 // of whatever the CasaOS manifest originally declared.
@@ -1234,14 +1204,10 @@ func sanitizeForSwarm(manifest string) (string, error) {
 
 	// Strip root "name:" — stack name comes from CLI argument, not the file.
 	// CasaOS uses this as the project name and store_app_id.
-	if _, exists := compose["name"]; exists {
-		delete(compose, "name")
-	}
+	delete(compose, "name")
 
 	// Strip "version:" — deprecated in modern compose, can cause warnings
-	if _, exists := compose["version"]; exists {
-		delete(compose, "version")
-	}
+	delete(compose, "version")
 
 	// Strip all x-* extensions at root level (x-casaos metadata, etc.)
 	for key := range compose {

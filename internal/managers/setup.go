@@ -29,7 +29,7 @@ type SetupManager struct {
 	cfg         *config.Config
 	db          *sql.DB
 	hal         *hal.Client
-	filebrowser *FileBrowserClient
+	filebrowser *FileManagerClient
 	piholePw    *PiholePasswordClient
 	npmMgr      *NPMManager
 	configPath  string
@@ -46,7 +46,7 @@ func (m *SetupManager) SetFlowEngine(e *flowengine.WorkflowEngine, s *flowengine
 }
 
 // NewSetupManager creates a new setup manager
-func NewSetupManager(cfg *config.Config, db *sql.DB, halClient *hal.Client, fbClient *FileBrowserClient, piholePwClient *PiholePasswordClient, npmMgr *NPMManager) *SetupManager {
+func NewSetupManager(cfg *config.Config, db *sql.DB, halClient *hal.Client, fbClient *FileManagerClient, piholePwClient *PiholePasswordClient, npmMgr *NPMManager) *SetupManager {
 	m := &SetupManager{
 		cfg:         cfg,
 		db:          db,

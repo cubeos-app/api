@@ -3,7 +3,6 @@ package handlers
 import (
 	"database/sql"
 	"encoding/json"
-	"fmt"
 	"net/http"
 	"time"
 
@@ -27,7 +26,7 @@ type Handlers struct {
 	network     *managers.NetworkManager
 	docker      *managers.DockerManager
 	hal         *hal.Client
-	filebrowser *managers.FileBrowserClient
+	filebrowser *managers.FileManagerClient
 	piholePw    *managers.PiholePasswordClient
 	npmMgr      *managers.NPMManager
 	startTime   time.Time
@@ -36,7 +35,7 @@ type Handlers struct {
 // NewHandlers creates a new Handlers instance.
 // systemMgr and networkMgr are passed in to avoid creating duplicate instances
 // (they are shared with WSManager, MonitoringManager, etc.).
-func NewHandlers(cfg *config.Config, db *sqlx.DB, docker *managers.DockerManager, halClient *hal.Client, systemMgr *managers.SystemManager, networkMgr *managers.NetworkManager, fbClient *managers.FileBrowserClient, piholePwClient *managers.PiholePasswordClient, npmMgr *managers.NPMManager) *Handlers {
+func NewHandlers(cfg *config.Config, db *sqlx.DB, docker *managers.DockerManager, halClient *hal.Client, systemMgr *managers.SystemManager, networkMgr *managers.NetworkManager, fbClient *managers.FileManagerClient, piholePwClient *managers.PiholePasswordClient, npmMgr *managers.NPMManager) *Handlers {
 	return &Handlers{
 		cfg:         cfg,
 		db:          db,
@@ -914,18 +913,4 @@ func (h *Handlers) DockerDiskUsage(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	writeJSON(w, http.StatusOK, usage)
-}
-
-// formatByteSize converts bytes to human readable format
-func formatByteSize(bytes int64) string {
-	const unit = 1024
-	if bytes < unit {
-		return fmt.Sprintf("%d B", bytes)
-	}
-	div, exp := int64(unit), 0
-	for n := bytes / unit; n >= unit; n /= unit {
-		div *= unit
-		exp++
-	}
-	return fmt.Sprintf("%.1f %cB", float64(bytes)/float64(div), "KMGTPE"[exp])
 }

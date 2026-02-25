@@ -114,7 +114,7 @@ func TestIntPtr(t *testing.T) {
 		t.Run("", func(t *testing.T) {
 			val := intPtr(tt.input)
 			if val == nil {
-				t.Error("intPtr() returned nil")
+				t.Fatal("intPtr() returned nil")
 			}
 			if *val != int64(tt.input) {
 				t.Errorf("intPtr() = %d, want %d", *val, tt.input)

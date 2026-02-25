@@ -2148,13 +2148,13 @@ func (m *NetworkManager) piholeAuth(ctx context.Context) (string, error) {
 	client := &http.Client{Timeout: 5 * time.Second}
 	resp, err := client.Do(req)
 	if err != nil {
-		return "", fmt.Errorf("Pi-hole auth request failed: %w", err)
+		return "", fmt.Errorf("pi-hole auth request failed: %w", err)
 	}
 	defer resp.Body.Close()
 
 	body, _ := io.ReadAll(resp.Body)
 	if resp.StatusCode != http.StatusOK {
-		return "", fmt.Errorf("Pi-hole auth failed (HTTP %d): %s", resp.StatusCode, string(body))
+		return "", fmt.Errorf("pi-hole auth failed (HTTP %d): %s", resp.StatusCode, string(body))
 	}
 
 	// Pi-hole v6 returns: {"session": {"valid": true, "sid": "xxx", ...}}
@@ -2169,7 +2169,7 @@ func (m *NetworkManager) piholeAuth(ctx context.Context) (string, error) {
 	}
 
 	if !authResp.Session.Valid || authResp.Session.SID == "" {
-		return "", fmt.Errorf("Pi-hole auth returned invalid session")
+		return "", fmt.Errorf("pi-hole auth returned invalid session")
 	}
 
 	return authResp.Session.SID, nil
@@ -2192,13 +2192,13 @@ func (m *NetworkManager) getPiholeUpstreams(ctx context.Context) ([]string, erro
 	client := &http.Client{Timeout: 5 * time.Second}
 	resp, err := client.Do(req)
 	if err != nil {
-		return nil, fmt.Errorf("Pi-hole config request failed: %w", err)
+		return nil, fmt.Errorf("pi-hole config request failed: %w", err)
 	}
 	defer resp.Body.Close()
 
 	body, _ := io.ReadAll(resp.Body)
 	if resp.StatusCode != http.StatusOK {
-		return nil, fmt.Errorf("Pi-hole config request failed (HTTP %d): %s", resp.StatusCode, string(body))
+		return nil, fmt.Errorf("pi-hole config request failed (HTTP %d): %s", resp.StatusCode, string(body))
 	}
 
 	// Pi-hole v6 returns: {"config": {"dns": {"upstreams": ["1.1.1.1", "8.8.8.8"]}}}
@@ -2230,7 +2230,7 @@ func (m *NetworkManager) getPiholeUpstreams(ctx context.Context) ([]string, erro
 		return configResp.Upstreams, nil
 	}
 
-	return nil, fmt.Errorf("Pi-hole returned no upstream DNS servers")
+	return nil, fmt.Errorf("pi-hole returned no upstream DNS servers")
 }
 
 // setPiholeUpstreams updates the upstream DNS servers via Pi-hole's API.
@@ -2254,7 +2254,7 @@ func (m *NetworkManager) setPiholeUpstreams(ctx context.Context, upstreams []str
 	client := &http.Client{Timeout: 5 * time.Second}
 	resp, err := client.Do(req)
 	if err != nil {
-		return fmt.Errorf("Pi-hole config update failed: %w", err)
+		return fmt.Errorf("pi-hole config update failed: %w", err)
 	}
 	defer resp.Body.Close()
 
@@ -2266,12 +2266,12 @@ func (m *NetworkManager) setPiholeUpstreams(ctx context.Context, upstreams []str
 		req2.Header.Set("X-FTL-SID", sid)
 		resp2, err2 := client.Do(req2)
 		if err2 != nil {
-			return fmt.Errorf("Pi-hole config update failed (PUT %d: %s, PATCH: %v)", resp.StatusCode, string(body), err2)
+			return fmt.Errorf("pi-hole config update failed (PUT %d: %s, PATCH: %v)", resp.StatusCode, string(body), err2)
 		}
 		defer resp2.Body.Close()
 		if resp2.StatusCode != http.StatusOK && resp2.StatusCode != http.StatusCreated {
 			body2, _ := io.ReadAll(resp2.Body)
-			return fmt.Errorf("Pi-hole config update failed (PUT %d, PATCH %d): %s", resp.StatusCode, resp2.StatusCode, string(body2))
+			return fmt.Errorf("pi-hole config update failed (PUT %d, PATCH %d): %s", resp.StatusCode, resp2.StatusCode, string(body2))
 		}
 	}
 
@@ -2301,7 +2301,7 @@ func (m *NetworkManager) setPiholeDHCPActive(ctx context.Context, active bool) e
 
 		sid, err := m.piholeAuth(ctx)
 		if err != nil {
-			lastErr = fmt.Errorf("Pi-hole auth failed (attempt %d): %w", attempt+1, err)
+			lastErr = fmt.Errorf("pi-hole auth failed (attempt %d): %w", attempt+1, err)
 			log.Warn().Err(err).Int("attempt", attempt+1).Msg("setPiholeDHCPActive: auth retry")
 			continue
 		}
@@ -2320,7 +2320,7 @@ func (m *NetworkManager) setPiholeDHCPActive(ctx context.Context, active bool) e
 		client := &http.Client{Timeout: 5 * time.Second}
 		resp, err := client.Do(req)
 		if err != nil {
-			lastErr = fmt.Errorf("Pi-hole DHCP request failed (attempt %d): %w", attempt+1, err)
+			lastErr = fmt.Errorf("pi-hole DHCP request failed (attempt %d): %w", attempt+1, err)
 			log.Warn().Err(err).Int("attempt", attempt+1).Msg("setPiholeDHCPActive: request retry")
 			continue
 		}
@@ -2332,7 +2332,7 @@ func (m *NetworkManager) setPiholeDHCPActive(ctx context.Context, active bool) e
 		}
 
 		body, _ := io.ReadAll(resp.Body)
-		lastErr = fmt.Errorf("Pi-hole DHCP update failed (HTTP %d): %s", resp.StatusCode, string(body))
+		lastErr = fmt.Errorf("pi-hole DHCP update failed (HTTP %d): %s", resp.StatusCode, string(body))
 		log.Warn().Int("status", resp.StatusCode).Str("body", string(body)).Int("attempt", attempt+1).
 			Msg("setPiholeDHCPActive: unexpected status")
 	}
@@ -2359,7 +2359,7 @@ func (m *NetworkManager) setPiholeDnsmasqLines(ctx context.Context, lines []stri
 
 		sid, err := m.piholeAuth(ctx)
 		if err != nil {
-			lastErr = fmt.Errorf("Pi-hole auth failed (attempt %d): %w", attempt+1, err)
+			lastErr = fmt.Errorf("pi-hole auth failed (attempt %d): %w", attempt+1, err)
 			log.Warn().Err(err).Int("attempt", attempt+1).Msg("setPiholeDnsmasqLines: auth retry")
 			continue
 		}
@@ -2379,7 +2379,7 @@ func (m *NetworkManager) setPiholeDnsmasqLines(ctx context.Context, lines []stri
 		client := &http.Client{Timeout: 5 * time.Second}
 		resp, err := client.Do(req)
 		if err != nil {
-			lastErr = fmt.Errorf("Pi-hole dnsmasq request failed (attempt %d): %w", attempt+1, err)
+			lastErr = fmt.Errorf("pi-hole dnsmasq request failed (attempt %d): %w", attempt+1, err)
 			log.Warn().Err(err).Int("attempt", attempt+1).Msg("setPiholeDnsmasqLines: request retry")
 			continue
 		}
@@ -2391,7 +2391,7 @@ func (m *NetworkManager) setPiholeDnsmasqLines(ctx context.Context, lines []stri
 		}
 
 		body, _ := io.ReadAll(resp.Body)
-		lastErr = fmt.Errorf("Pi-hole dnsmasq update failed (HTTP %d): %s", resp.StatusCode, string(body))
+		lastErr = fmt.Errorf("pi-hole dnsmasq update failed (HTTP %d): %s", resp.StatusCode, string(body))
 		log.Warn().Int("status", resp.StatusCode).Str("body", string(body)).Int("attempt", attempt+1).
 			Msg("setPiholeDnsmasqLines: unexpected status")
 	}
