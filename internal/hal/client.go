@@ -59,6 +59,7 @@ const (
 // Client is a HAL API client
 type Client struct {
 	baseURL    string
+	apiKey     string // X-HAL-Key for ACL authentication (from HAL_API_KEY env var)
 	httpClient *http.Client
 	cb         *circuitbreaker.CircuitBreaker
 }
@@ -73,6 +74,7 @@ func NewClient(baseURL string) *Client {
 	}
 	return &Client{
 		baseURL: baseURL,
+		apiKey:  os.Getenv("HAL_API_KEY"),
 		httpClient: &http.Client{
 			Timeout: DefaultTimeout,
 		},
@@ -1227,6 +1229,9 @@ func (c *Client) doRequest(ctx context.Context, method, path string, body interf
 	if body != nil {
 		req.Header.Set("Content-Type", "application/json")
 	}
+	if c.apiKey != "" {
+		req.Header.Set("X-HAL-Key", c.apiKey)
+	}
 
 	var resp *http.Response
 	var respBody []byte
@@ -1329,6 +1334,9 @@ func (c *Client) doStreamRequest(ctx context.Context, path string) (*http.Respon
 		return nil, fmt.Errorf("failed to create stream request: %w", err)
 	}
 	req.Header.Set("Accept", "text/event-stream")
+	if c.apiKey != "" {
+		req.Header.Set("X-HAL-Key", c.apiKey)
+	}
 
 	// Use a separate client with no timeout for long-lived SSE streams
 	streamClient := &http.Client{}
