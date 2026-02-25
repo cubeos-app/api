@@ -308,6 +308,33 @@ type ListeningPortsResponse struct {
 }
 
 // =============================================================================
+// Response Types - Hardware Detection
+// =============================================================================
+
+// DetectedInterface represents a network interface with hardware classification.
+type DetectedInterface struct {
+	Name      string `json:"name"`
+	Type      string `json:"type"`
+	Bus       string `json:"bus"`
+	BuiltIn   bool   `json:"built_in"`
+	IsUp      bool   `json:"is_up"`
+	MAC       string `json:"mac"`
+	Driver    string `json:"driver"`
+	APCapable bool   `json:"ap_capable"`
+	Role      string `json:"role"`
+	PhyName   string `json:"phy_name,omitempty"`
+}
+
+// InterfaceDetectionResult contains the full hardware interface scan result.
+type InterfaceDetectionResult struct {
+	Interfaces      []DetectedInterface `json:"interfaces"`
+	AutoAssigned    bool                `json:"auto_assigned"`
+	APInterface     string              `json:"ap_interface"`
+	UplinkInterface string              `json:"uplink_interface"`
+	Tier            string              `json:"tier"`
+}
+
+// =============================================================================
 // Response Types - VPN
 // =============================================================================
 
@@ -3350,4 +3377,13 @@ func (c *Client) GetPublicIP(ctx context.Context) (string, error) {
 		return "", err
 	}
 	return result["public_ip"], nil
+}
+
+// DetectInterfaces calls HAL to scan and classify all network interfaces.
+func (c *Client) DetectInterfaces(ctx context.Context) (*InterfaceDetectionResult, error) {
+	var result InterfaceDetectionResult
+	if err := c.doGet(ctx, "/hardware/interfaces", &result); err != nil {
+		return nil, err
+	}
+	return &result, nil
 }

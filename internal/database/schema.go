@@ -9,7 +9,7 @@ import (
 )
 
 // CurrentSchemaVersion tracks the database schema version for migrations.
-const CurrentSchemaVersion = 19
+const CurrentSchemaVersion = 20
 
 // Schema defines the unified CubeOS database schema.
 // Design Principles:
@@ -189,7 +189,9 @@ CREATE TABLE IF NOT EXISTS network_config (
     eth_interface   TEXT DEFAULT 'eth0',
     wifi_ap_interface TEXT DEFAULT 'wlan0',
     wifi_client_interface TEXT DEFAULT 'wlan1',     -- USB dongle
-    
+    uplink_interface TEXT DEFAULT 'eth0',          -- Currently active uplink (varies by mode)
+    interfaces_auto_detected BOOLEAN DEFAULT FALSE, -- True when HAL auto-detected interface roles
+
     -- DHCP server configuration (for AP modes)
     gateway_ip      TEXT DEFAULT '10.42.24.1',
     subnet          TEXT DEFAULT '10.42.24.0/24',

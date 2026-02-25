@@ -878,6 +878,36 @@ var migrations = []Migration{
 			return nil
 		},
 	},
+	// Version 20: Phase 6c — add uplink_interface and interfaces_auto_detected
+	{
+		Version:     20,
+		Description: "Add uplink_interface and interfaces_auto_detected columns to network_config",
+		Up: func(db *sql.DB) error {
+			columns := []struct {
+				name string
+				typ  string
+				def  string
+			}{
+				{"uplink_interface", "TEXT", "'eth0'"},
+				{"interfaces_auto_detected", "BOOLEAN", "FALSE"},
+			}
+			for _, col := range columns {
+				query := fmt.Sprintf("ALTER TABLE network_config ADD COLUMN %s %s DEFAULT %s",
+					col.name, col.typ, col.def)
+				_, err := db.Exec(query)
+				if err != nil && !isDuplicateColumnError(err) {
+					return fmt.Errorf("failed to add network_config.%s: %w", col.name, err)
+				}
+			}
+			// Copy eth_interface value into uplink_interface for existing rows
+			_, err := db.Exec("UPDATE network_config SET uplink_interface = eth_interface WHERE uplink_interface = 'eth0' AND eth_interface != 'eth0'")
+			if err != nil {
+				log.Warn().Err(err).Msg("Migration 20: could not sync uplink_interface (non-critical)")
+			}
+			log.Info().Msg("Migration 20: Added uplink_interface and interfaces_auto_detected to network_config")
+			return nil
+		},
+	},
 }
 
 // isDuplicateColumnError checks if an error is a "duplicate column" error

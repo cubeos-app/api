@@ -48,6 +48,8 @@ func (h *NetworkHandler) Routes() chi.Router {
 	// Network interfaces
 	r.Get("/interfaces", h.GetInterfaces)
 	r.Get("/interfaces/detailed", h.GetInterfacesDetailed)
+	r.Get("/interfaces/detect", h.DetectInterfaces)
+	r.Post("/interfaces/assign", h.AssignInterfaces)
 
 	// WiFi management
 	r.Get("/wifi/scan", h.ScanWiFiNetworks)
@@ -269,17 +271,137 @@ func (h *NetworkHandler) SetNetworkMode(w http.ResponseWriter, r *http.Request) 
 // @Success 200 {object} map[string]interface{} "Available modes"
 // @Router /network/modes [get]
 func (h *NetworkHandler) GetAvailableModes(w http.ResponseWriter, r *http.Request) {
-	modes := []map[string]interface{}{
-		{"id": "offline_hotspot", "name": "Offline Hotspot", "description": "Air-gapped access point mode"},
-		{"id": "wifi_router", "name": "WiFi Router", "description": "AP + NAT via Ethernet uplink"},
-		{"id": "wifi_bridge", "name": "WiFi Bridge", "description": "AP + NAT via USB WiFi dongle"},
-		{"id": "android_tether", "name": "Android Tether", "description": "AP + NAT via Android USB tethering"},
-		{"id": "eth_client", "name": "Ethernet Client", "description": "No AP, direct Ethernet connection"},
-		{"id": "wifi_client", "name": "WiFi Client", "description": "No AP, direct WiFi connection"},
+	// Try to get hardware capabilities from HAL
+	var detection *hal.InterfaceDetectionResult
+	if h.halClient != nil {
+		var err error
+		detection, err = h.halClient.DetectInterfaces(r.Context())
+		if err != nil {
+			// HAL unavailable — fall back to all modes available
+		}
 	}
+
+	hasWiFi := false
+	hasEthernet := false
+	hasAPCapable := false
+	hasSecondWiFi := false
+	wifiCount := 0
+
+	if detection != nil {
+		for _, iface := range detection.Interfaces {
+			switch iface.Type {
+			case "wifi":
+				hasWiFi = true
+				wifiCount++
+				if iface.APCapable {
+					hasAPCapable = true
+				}
+			case "ethernet":
+				hasEthernet = true
+			}
+		}
+		hasSecondWiFi = wifiCount >= 2
+	}
+
+	type modeInfo struct {
+		ID          string `json:"id"`
+		Name        string `json:"name"`
+		Description string `json:"description"`
+		Available   bool   `json:"available"`
+		Reason      string `json:"reason,omitempty"`
+	}
+
+	modes := []modeInfo{
+		{ID: "offline_hotspot", Name: "Offline Hotspot", Description: "Air-gapped access point mode",
+			Available: detection == nil || hasAPCapable,
+			Reason:    condReason(!hasAPCapable && detection != nil, "No AP-capable WiFi interface detected")},
+		{ID: "wifi_router", Name: "WiFi Router", Description: "AP + NAT via Ethernet uplink",
+			Available: detection == nil || (hasAPCapable && hasEthernet),
+			Reason:    condReason(detection != nil && (!hasAPCapable || !hasEthernet), "Requires AP-capable WiFi + Ethernet")},
+		{ID: "wifi_bridge", Name: "WiFi Bridge", Description: "AP + NAT via USB WiFi dongle",
+			Available: detection == nil || (hasAPCapable && hasSecondWiFi),
+			Reason:    condReason(detection != nil && (!hasAPCapable || !hasSecondWiFi), "Requires 2 WiFi interfaces (built-in + USB)")},
+		{ID: "android_tether", Name: "Android Tether", Description: "AP + NAT via Android USB tethering",
+			Available: detection == nil || hasAPCapable,
+			Reason:    condReason(!hasAPCapable && detection != nil, "No AP-capable WiFi interface detected")},
+		{ID: "eth_client", Name: "Ethernet Client", Description: "No AP, direct Ethernet connection",
+			Available: detection == nil || hasEthernet,
+			Reason:    condReason(!hasEthernet && detection != nil, "No Ethernet interface detected")},
+		{ID: "wifi_client", Name: "WiFi Client", Description: "No AP, direct WiFi connection",
+			Available: detection == nil || hasWiFi,
+			Reason:    condReason(!hasWiFi && detection != nil, "No WiFi interface detected")},
+	}
+
 	writeJSON(w, http.StatusOK, map[string]interface{}{
-		"modes": modes,
-		"count": len(modes),
+		"modes":             modes,
+		"count":             len(modes),
+		"hardware_detected": detection != nil,
+	})
+}
+
+func condReason(cond bool, reason string) string {
+	if cond {
+		return reason
+	}
+	return ""
+}
+
+// DetectInterfaces godoc
+// @Summary Detect network interfaces with hardware classification
+// @Description Calls HAL to scan and classify all network interfaces with bus type and role assignment
+// @Tags Network
+// @Produce json
+// @Security BearerAuth
+// @Success 200 {object} map[string]interface{} "Detected interfaces with roles"
+// @Failure 503 {object} ErrorResponse "HAL service unavailable"
+// @Router /network/interfaces/detect [get]
+func (h *NetworkHandler) DetectInterfaces(w http.ResponseWriter, r *http.Request) {
+	if h.halClient == nil {
+		writeError(w, http.StatusServiceUnavailable, "HAL service unavailable")
+		return
+	}
+	result, err := h.halClient.DetectInterfaces(r.Context())
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "Interface detection failed: "+err.Error())
+		return
+	}
+	writeJSON(w, http.StatusOK, result)
+}
+
+// AssignInterfaces godoc
+// @Summary Assign interface roles manually
+// @Description Saves AP and uplink interface assignments to the database
+// @Tags Network
+// @Accept json
+// @Produce json
+// @Security BearerAuth
+// @Param body body object true "Interface assignments" example({"ap_interface": "wlan0", "uplink_interface": "eth0"})
+// @Success 200 {object} map[string]interface{} "Interfaces assigned"
+// @Failure 400 {object} ErrorResponse "Invalid request"
+// @Router /network/interfaces/assign [post]
+func (h *NetworkHandler) AssignInterfaces(w http.ResponseWriter, r *http.Request) {
+	var req struct {
+		APInterface     string `json:"ap_interface"`
+		UplinkInterface string `json:"uplink_interface"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		writeError(w, http.StatusBadRequest, "Invalid request body")
+		return
+	}
+	if req.APInterface == "" && req.UplinkInterface == "" {
+		writeError(w, http.StatusBadRequest, "At least one interface must be specified")
+		return
+	}
+
+	if err := h.network.SaveInterfaceAssignment(req.APInterface, req.UplinkInterface); err != nil {
+		writeError(w, http.StatusInternalServerError, "Failed to save interface assignment: "+err.Error())
+		return
+	}
+
+	writeJSON(w, http.StatusOK, map[string]interface{}{
+		"status":           "ok",
+		"ap_interface":     req.APInterface,
+		"uplink_interface": req.UplinkInterface,
 	})
 }
 
@@ -491,7 +613,7 @@ func (h *NetworkHandler) GetAPStatus(w http.ResponseWriter, r *http.Request) {
 		"running":   hostapdRunning,
 		"ssid":      ssid,
 		"channel":   channel,
-		"interface": "wlan0",
+		"interface": h.network.APInterface(),
 		"hidden":    hidden,
 		"clients":   len(clients),
 	})
@@ -816,11 +938,11 @@ func (h *NetworkHandler) GetInterfacesDetailed(w http.ResponseWriter, r *http.Re
 		case strings.HasPrefix(iface.Name, "eth"):
 			di.Type = "ethernet"
 			di.Role = "wan"
-		case iface.Name == "wlan0":
+		case iface.Name == h.network.APInterface():
 			di.Type = "wifi"
 			di.Role = "ap"
 			di.IsWireless = true
-		case strings.HasPrefix(iface.Name, "wlan") || strings.HasPrefix(iface.Name, "wlx"):
+		case strings.HasPrefix(iface.Name, "wlan") || strings.HasPrefix(iface.Name, "wlx") || strings.HasPrefix(iface.Name, "wlp"):
 			di.Type = "wifi"
 			di.Role = "client"
 			di.IsWireless = true

@@ -127,6 +127,15 @@ func NewNetworkManager(cfg *config.Config, halClient *hal.Client, db *sqlx.DB) *
 	mode, vpnMode := loadConfigFromDB(db)
 	log.Info().Str("mode", string(mode)).Str("vpn", string(vpnMode)).Msg("NetworkManager: loaded config from database")
 
+	// If DB has auto-detected interfaces, prefer those over env var defaults
+	dbIfaceCfg := loadInterfacesFromDB(db)
+	if dbIfaceCfg != nil && dbIfaceCfg.AutoDetected {
+		apIface = dbIfaceCfg.APInterface
+		wanIface = dbIfaceCfg.UplinkInterface
+		wifiClientIface = dbIfaceCfg.WiFiClientInterface
+		log.Info().Str("ap", apIface).Str("uplink", wanIface).Msg("NetworkManager: using auto-detected interfaces from DB")
+	}
+
 	return &NetworkManager{
 		cfg:                 cfg,
 		hal:                 halClient,
@@ -142,6 +151,81 @@ func NewNetworkManager(cfg *config.Config, halClient *hal.Client, db *sqlx.DB) *
 		piholeURL:           piholeURL,
 		piholePassword:      piholePassword,
 	}
+}
+
+// dbInterfaceConfig holds interface names loaded from the database.
+type dbInterfaceConfig struct {
+	APInterface         string
+	UplinkInterface     string
+	WiFiClientInterface string
+	AutoDetected        bool
+}
+
+// loadInterfacesFromDB reads interface assignments from network_config.
+func loadInterfacesFromDB(db *sqlx.DB) *dbInterfaceConfig {
+	if db == nil {
+		return nil
+	}
+	var cfg dbInterfaceConfig
+	err := db.QueryRow(`SELECT wifi_ap_interface, COALESCE(uplink_interface, eth_interface), wifi_client_interface, COALESCE(interfaces_auto_detected, FALSE) FROM network_config WHERE id = 1`).
+		Scan(&cfg.APInterface, &cfg.UplinkInterface, &cfg.WiFiClientInterface, &cfg.AutoDetected)
+	if err != nil {
+		return nil
+	}
+	return &cfg
+}
+
+// saveInterfacesToDB persists auto-detected interface assignments.
+func (m *NetworkManager) saveInterfacesToDB(apIface, uplinkIface, wifiClientIface string) error {
+	_, err := m.db.Exec(`UPDATE network_config SET wifi_ap_interface = ?, uplink_interface = ?, wifi_client_interface = ?, eth_interface = ?, interfaces_auto_detected = TRUE WHERE id = 1`,
+		apIface, uplinkIface, wifiClientIface, uplinkIface)
+	return err
+}
+
+// DetectAndAssignInterfaces calls HAL to scan hardware, auto-assigns roles,
+// persists to DB, and updates the in-memory interface names.
+func (m *NetworkManager) DetectAndAssignInterfaces(ctx context.Context) (*hal.InterfaceDetectionResult, error) {
+	result, err := m.hal.DetectInterfaces(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("HAL interface detection failed: %w", err)
+	}
+
+	if result.AutoAssigned {
+		if result.APInterface != "" {
+			m.apInterface = result.APInterface
+		}
+		if result.UplinkInterface != "" {
+			m.wanInterface = result.UplinkInterface
+			m.wifiClientInterface = result.UplinkInterface
+		}
+
+		uplinkIface := result.UplinkInterface
+		if uplinkIface == "" {
+			uplinkIface = m.wanInterface
+		}
+		if err := m.saveInterfacesToDB(m.apInterface, uplinkIface, m.wifiClientInterface); err != nil {
+			log.Warn().Err(err).Msg("Failed to persist detected interfaces to DB")
+		}
+	}
+
+	return result, nil
+}
+
+// APInterface returns the current AP interface name.
+func (m *NetworkManager) APInterface() string {
+	return m.apInterface
+}
+
+// SaveInterfaceAssignment persists manually-assigned interface roles and updates in-memory state.
+func (m *NetworkManager) SaveInterfaceAssignment(apIface, uplinkIface string) error {
+	if apIface != "" {
+		m.apInterface = apIface
+	}
+	if uplinkIface != "" {
+		m.wanInterface = uplinkIface
+		m.wifiClientInterface = uplinkIface
+	}
+	return m.saveInterfacesToDB(m.apInterface, m.wanInterface, m.wifiClientInterface)
 }
 
 // loadConfigFromDB loads the network mode and VPN mode from database (V2)
@@ -2037,7 +2121,7 @@ func (m *NetworkManager) SetDNSConfig(ctx context.Context, cfg *DNSConfig) error
 	}
 
 	// If direct write fails, try using resolvconf command
-	cmd := exec.CommandContext(ctx, "resolvconf", "-a", "eth0")
+	cmd := exec.CommandContext(ctx, "resolvconf", "-a", m.wanInterface)
 	cmd.Stdin = strings.NewReader(content)
 	if err := cmd.Run(); err == nil {
 		return nil
