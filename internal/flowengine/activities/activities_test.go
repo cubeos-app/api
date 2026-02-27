@@ -69,6 +69,21 @@ func (m *mockDockerManager) WaitForServiceConvergence(ctx context.Context, stack
 	return m.convergeErr
 }
 
+// mockAccessProfileReader returns a fixed profile for testing.
+// Use "all_in_one" for existing tests (DNS/proxy actually execute).
+type mockAccessProfileReader struct {
+	profile string
+}
+
+func (m *mockAccessProfileReader) GetAccessProfile() (string, error) {
+	return m.profile, nil
+}
+
+// allInOneProfile returns a profile reader that allows DNS/proxy operations.
+func allInOneProfile() *mockAccessProfileReader {
+	return &mockAccessProfileReader{profile: "all_in_one"}
+}
+
 type mockDNSManager struct {
 	entries   map[string]string // domain → IP
 	addErr    error
@@ -343,7 +358,7 @@ func TestWaitConvergenceTimeout(t *testing.T) {
 
 func TestAddDNSNew(t *testing.T) {
 	dns := newMockDNS()
-	activity := makeAddDNS(dns)
+	activity := makeAddDNS(dns, allInOneProfile())
 
 	input, _ := json.Marshal(AddDNSInput{Domain: "test.cubeos.cube", IP: "10.42.24.1"})
 	output, err := activity(context.Background(), input)
@@ -364,7 +379,7 @@ func TestAddDNSNew(t *testing.T) {
 func TestAddDNSIdempotent(t *testing.T) {
 	dns := newMockDNS()
 	dns.entries["test.cubeos.cube"] = "10.42.24.1"
-	activity := makeAddDNS(dns)
+	activity := makeAddDNS(dns, allInOneProfile())
 
 	input, _ := json.Marshal(AddDNSInput{Domain: "test.cubeos.cube"})
 	output, err := activity(context.Background(), input)
@@ -381,7 +396,7 @@ func TestAddDNSIdempotent(t *testing.T) {
 
 func TestAddDNSDefaultIP(t *testing.T) {
 	dns := newMockDNS()
-	activity := makeAddDNS(dns)
+	activity := makeAddDNS(dns, allInOneProfile())
 
 	input, _ := json.Marshal(AddDNSInput{Domain: "test.cubeos.cube"}) // no IP
 	_, err := activity(context.Background(), input)
@@ -395,7 +410,7 @@ func TestAddDNSDefaultIP(t *testing.T) {
 
 func TestRemoveDNSIdempotent(t *testing.T) {
 	dns := newMockDNS()
-	activity := makeRemoveDNS(dns)
+	activity := makeRemoveDNS(dns, allInOneProfile())
 
 	// Domain doesn't exist — should return removed=false
 	input, _ := json.Marshal(RemoveDNSInput{Domain: "ghost.cubeos.cube"})
@@ -413,7 +428,7 @@ func TestRemoveDNSIdempotent(t *testing.T) {
 
 func TestCreateProxyNew(t *testing.T) {
 	proxy := newMockProxy()
-	activity := makeCreateProxy(proxy)
+	activity := makeCreateProxy(proxy, allInOneProfile())
 
 	input, _ := json.Marshal(CreateProxyInput{Domain: "test.cubeos.cube", ForwardPort: 6100})
 	output, err := activity(context.Background(), input)
@@ -431,7 +446,7 @@ func TestCreateProxyNew(t *testing.T) {
 func TestCreateProxyIdempotent(t *testing.T) {
 	proxy := newMockProxy()
 	proxy.hosts["test.cubeos.cube"] = 42
-	activity := makeCreateProxy(proxy)
+	activity := makeCreateProxy(proxy, allInOneProfile())
 
 	input, _ := json.Marshal(CreateProxyInput{Domain: "test.cubeos.cube", ForwardPort: 6100})
 	output, err := activity(context.Background(), input)
@@ -451,7 +466,7 @@ func TestCreateProxyIdempotent(t *testing.T) {
 
 func TestRemoveProxyIdempotent(t *testing.T) {
 	proxy := newMockProxy()
-	activity := makeRemoveProxy(proxy)
+	activity := makeRemoveProxy(proxy, allInOneProfile())
 
 	input, _ := json.Marshal(RemoveProxyInput{Domain: "ghost.cubeos.cube"})
 	output, err := activity(context.Background(), input)
@@ -463,6 +478,48 @@ func TestRemoveProxyIdempotent(t *testing.T) {
 	json.Unmarshal(output, &out)
 	if out.Removed {
 		t.Error("expected removed=false for non-existent proxy")
+	}
+}
+
+// --- Standard Profile Skip Tests ---
+
+func TestAddDNSSkipsOnStandardProfile(t *testing.T) {
+	dns := newMockDNS()
+	activity := makeAddDNS(dns, &mockAccessProfileReader{profile: "standard"})
+
+	input, _ := json.Marshal(AddDNSInput{Domain: "test.cubeos.cube", IP: "10.42.24.1"})
+	output, err := activity(context.Background(), input)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	var out AddDNSOutput
+	json.Unmarshal(output, &out)
+	if out.Created || !out.Skipped {
+		t.Errorf("expected created=false, skipped=true for standard profile")
+	}
+	if len(dns.entries) != 0 {
+		t.Error("DNS entry should not be created for standard profile")
+	}
+}
+
+func TestCreateProxySkipsOnStandardProfile(t *testing.T) {
+	proxy := newMockProxy()
+	activity := makeCreateProxy(proxy, &mockAccessProfileReader{profile: "standard"})
+
+	input, _ := json.Marshal(CreateProxyInput{Domain: "test.cubeos.cube", ForwardPort: 6100})
+	output, err := activity(context.Background(), input)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	var out CreateProxyOutput
+	json.Unmarshal(output, &out)
+	if out.Created || !out.Skipped {
+		t.Errorf("expected created=false, skipped=true for standard profile")
+	}
+	if len(proxy.hosts) != 0 {
+		t.Error("proxy host should not be created for standard profile")
 	}
 }
 
@@ -622,7 +679,7 @@ func TestIsNotFoundError(t *testing.T) {
 // must run BEFORE validation, not after.
 func TestCreateProxyFatEnvelopePort(t *testing.T) {
 	proxy := newMockProxy()
-	activity := makeCreateProxy(proxy)
+	activity := makeCreateProxy(proxy, allInOneProfile())
 
 	// Fat envelope has "port" (from allocate_port) and "domain" (from add_dns),
 	// but NOT "forward_port". The activity must accept "port" as a fallback.
@@ -646,7 +703,7 @@ func TestCreateProxyFatEnvelopePort(t *testing.T) {
 // neither "forward_port" nor "port" is provided.
 func TestCreateProxyMissingBothPorts(t *testing.T) {
 	proxy := newMockProxy()
-	activity := makeCreateProxy(proxy)
+	activity := makeCreateProxy(proxy, allInOneProfile())
 
 	input := json.RawMessage(`{"domain":"test.cubeos.cube"}`)
 	_, err := activity(context.Background(), input)

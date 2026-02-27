@@ -9,18 +9,28 @@ package main
 import (
 	"archive/tar"
 	"context"
+	"database/sql"
 	"encoding/json"
 	"fmt"
 	"os"
 	"path/filepath"
 	"time"
 
+	"cubeos-api/internal/database"
 	"cubeos-api/internal/flowengine/activities"
 	"cubeos-api/internal/managers"
 	"cubeos-api/internal/models"
 
 	"gopkg.in/yaml.v3"
 )
+
+// --- accessProfileAdapter: activities.AccessProfileReader via database.GetAccessProfile ---
+
+type accessProfileAdapter struct{ db *sql.DB }
+
+func (a *accessProfileAdapter) GetAccessProfile() (string, error) {
+	return database.GetAccessProfile(a.db)
+}
 
 // --- dnsAdapter: activities.DNSManager via *managers.PiholeManager ---
 

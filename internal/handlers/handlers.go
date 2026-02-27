@@ -12,6 +12,7 @@ import (
 	"golang.org/x/crypto/bcrypt"
 
 	"cubeos-api/internal/config"
+	"cubeos-api/internal/database"
 	"cubeos-api/internal/hal"
 	"cubeos-api/internal/managers"
 	"cubeos-api/internal/middleware"
@@ -358,6 +359,23 @@ func (h *Handlers) ValidateConfig(w http.ResponseWriter, r *http.Request) {
 		"valid":  allValid,
 		"checks": results,
 	})
+}
+
+// GetAccessProfile godoc
+// @Summary Get current access profile
+// @Description Returns the current access profile (standard, advanced, or all_in_one). Phase 1: read-only, always returns standard for new installs.
+// @Tags System
+// @Produce json
+// @Security BearerAuth
+// @Success 200 {object} map[string]string "profile: current access profile"
+// @Router /system/access-profile [get]
+func (h *Handlers) GetAccessProfile(w http.ResponseWriter, r *http.Request) {
+	profile, err := database.GetAccessProfile(h.db.DB)
+	if err != nil {
+		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": err.Error()})
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]string{"profile": profile})
 }
 
 // GetSystemStats godoc

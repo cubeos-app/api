@@ -150,6 +150,18 @@ func (m *SetupManager) GetSetupStatus() *models.SetupStatus {
 		status.CompletedSteps = append(status.CompletedSteps, models.SetupWizardSteps[i].ID)
 	}
 
+	// Access profile from DB (defaults to "standard")
+	profile, _ := database.GetAccessProfile(m.db)
+	status.AccessProfile = profile
+
+	// Skip AP step when: CUBEOS_TIER=container OR no WiFi interface detected
+	tier := os.Getenv("CUBEOS_TIER")
+	hasWiFi := false
+	if _, err := os.Stat("/sys/class/net/wlan0"); err == nil {
+		hasWiFi = true
+	}
+	status.SkipAPStep = (tier == "container") || !hasWiFi
+
 	return status
 }
 
@@ -873,6 +885,11 @@ func (m *SetupManager) MarkSetupComplete(cfg *models.SetupConfig) error {
 	// Update system_state table
 	if err := database.SetSystemState(m.db, "setup_complete", "true"); err != nil {
 		log.Warn().Err(err).Msg("MarkSetupComplete: failed to update system_state")
+	}
+
+	// Ensure access_profile is set (Phase 1: always "standard" during wizard)
+	if err := database.SetAccessProfile(m.db, "standard"); err != nil {
+		log.Warn().Err(err).Msg("MarkSetupComplete: failed to set access_profile")
 	}
 
 	// Create .setup_complete flag file (checked by boot scripts)

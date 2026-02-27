@@ -58,6 +58,8 @@ type SetupStatus struct {
 	SkippedSteps   []string `json:"skipped_steps"`
 	StartedAt      string   `json:"started_at,omitempty"`
 	CompletedAt    string   `json:"completed_at,omitempty"`
+	SkipAPStep     bool     `json:"skip_ap_step"`
+	AccessProfile  string   `json:"access_profile"`
 }
 
 // SetupStep represents a single wizard step

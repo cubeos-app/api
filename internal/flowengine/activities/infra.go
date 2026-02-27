@@ -27,6 +27,12 @@ type ProxyManager interface {
 	DeleteProxyHost(ctx context.Context, id int64) error
 }
 
+// AccessProfileReader provides the current access profile to infra activities.
+// When profile is "standard", DNS and proxy steps are skipped entirely.
+type AccessProfileReader interface {
+	GetAccessProfile() (string, error)
+}
+
 // --- Input/Output Schemas ---
 
 // AddDNSInput is the input for the infra.add_dns activity.
@@ -44,7 +50,7 @@ type AddDNSOutput struct {
 	Subdomain string `json:"subdomain"` // clean subdomain portion
 	IP        string `json:"ip"`
 	Created   bool   `json:"created"`
-	Skipped   bool   `json:"skipped"` // true if entry already existed
+	Skipped   bool   `json:"skipped"` // true if entry already existed or profile=standard
 }
 
 // RemoveDNSInput is the input for the infra.remove_dns activity.
@@ -71,7 +77,7 @@ type CreateProxyOutput struct {
 	Domain  string `json:"domain"`
 	HostID  int64  `json:"host_id"`
 	Created bool   `json:"created"`
-	Skipped bool   `json:"skipped"` // true if proxy already existed
+	Skipped bool   `json:"skipped"` // true if proxy already existed or profile=standard
 }
 
 // RemoveProxyInput is the input for the infra.remove_proxy activity.
@@ -88,18 +94,33 @@ type RemoveProxyOutput struct {
 
 // RegisterInfraActivities registers all infrastructure activities in the registry.
 // Activities: infra.add_dns, infra.remove_dns, infra.create_proxy, infra.remove_proxy.
-func RegisterInfraActivities(registry *flowengine.ActivityRegistry, dnsMgr DNSManager, proxyMgr ProxyManager) {
-	registry.MustRegister("infra.add_dns", makeAddDNS(dnsMgr))
-	registry.MustRegister("infra.remove_dns", makeRemoveDNS(dnsMgr))
-	registry.MustRegister("infra.create_proxy", makeCreateProxy(proxyMgr))
-	registry.MustRegister("infra.remove_proxy", makeRemoveProxy(proxyMgr))
+func RegisterInfraActivities(registry *flowengine.ActivityRegistry, dnsMgr DNSManager, proxyMgr ProxyManager, profileReader AccessProfileReader) {
+	registry.MustRegister("infra.add_dns", makeAddDNS(dnsMgr, profileReader))
+	registry.MustRegister("infra.remove_dns", makeRemoveDNS(dnsMgr, profileReader))
+	registry.MustRegister("infra.create_proxy", makeCreateProxy(proxyMgr, profileReader))
+	registry.MustRegister("infra.remove_proxy", makeRemoveProxy(proxyMgr, profileReader))
 }
 
 // makeAddDNS creates the infra.add_dns activity.
 // Idempotent: if the DNS entry already exists with the same IP, returns skipped=true.
 // If Domain is empty but AppName is provided, generates from prettified subdomain.
-func makeAddDNS(dnsMgr DNSManager) flowengine.ActivityFunc {
+// When access profile is "standard", skips DNS creation entirely.
+func makeAddDNS(dnsMgr DNSManager, profileReader AccessProfileReader) flowengine.ActivityFunc {
 	return func(ctx context.Context, input json.RawMessage) (json.RawMessage, error) {
+		// Check access profile — standard skips DNS entirely
+		profile, err := profileReader.GetAccessProfile()
+		if err != nil {
+			log.Warn().Err(err).Msg("add_dns: failed to read access profile, defaulting to standard")
+			profile = "standard"
+		}
+		if profile == "standard" {
+			log.Info().Str("profile", profile).Msg("add_dns: skipping DNS setup (standard profile)")
+			return marshalOutput(AddDNSOutput{
+				Skipped: true,
+				Created: false,
+			})
+		}
+
 		var in AddDNSInput
 		if err := json.Unmarshal(input, &in); err != nil {
 			return nil, flowengine.NewPermanentError(fmt.Errorf("invalid add_dns input: %w", err))
@@ -155,8 +176,20 @@ func makeAddDNS(dnsMgr DNSManager) flowengine.ActivityFunc {
 
 // makeRemoveDNS creates the infra.remove_dns activity.
 // Idempotent: if the entry doesn't exist, returns success with removed=false.
-func makeRemoveDNS(dnsMgr DNSManager) flowengine.ActivityFunc {
+// When access profile is "standard", skips DNS removal entirely.
+func makeRemoveDNS(dnsMgr DNSManager, profileReader AccessProfileReader) flowengine.ActivityFunc {
 	return func(ctx context.Context, input json.RawMessage) (json.RawMessage, error) {
+		// Check access profile — standard skips DNS removal
+		profile, err := profileReader.GetAccessProfile()
+		if err != nil {
+			log.Warn().Err(err).Msg("remove_dns: failed to read access profile, defaulting to standard")
+			profile = "standard"
+		}
+		if profile == "standard" {
+			log.Info().Str("profile", profile).Msg("remove_dns: skipping DNS removal (standard profile)")
+			return marshalOutput(RemoveDNSOutput{Removed: false})
+		}
+
 		var in RemoveDNSInput
 		if err := json.Unmarshal(input, &in); err != nil {
 			return nil, flowengine.NewPermanentError(fmt.Errorf("invalid remove_dns input: %w", err))
@@ -180,8 +213,23 @@ func makeRemoveDNS(dnsMgr DNSManager) flowengine.ActivityFunc {
 
 // makeCreateProxy creates the infra.create_proxy activity.
 // Idempotent: if a proxy host for the domain already exists, returns skipped=true.
-func makeCreateProxy(proxyMgr ProxyManager) flowengine.ActivityFunc {
+// When access profile is "standard", skips proxy creation entirely.
+func makeCreateProxy(proxyMgr ProxyManager, profileReader AccessProfileReader) flowengine.ActivityFunc {
 	return func(ctx context.Context, input json.RawMessage) (json.RawMessage, error) {
+		// Check access profile — standard skips proxy creation
+		profile, err := profileReader.GetAccessProfile()
+		if err != nil {
+			log.Warn().Err(err).Msg("create_proxy: failed to read access profile, defaulting to standard")
+			profile = "standard"
+		}
+		if profile == "standard" {
+			log.Info().Str("profile", profile).Msg("create_proxy: skipping proxy setup (standard profile)")
+			return marshalOutput(CreateProxyOutput{
+				Skipped: true,
+				Created: false,
+			})
+		}
+
 		var in CreateProxyInput
 		if err := json.Unmarshal(input, &in); err != nil {
 			return nil, flowengine.NewPermanentError(fmt.Errorf("invalid create_proxy input: %w", err))
@@ -237,8 +285,20 @@ func makeCreateProxy(proxyMgr ProxyManager) flowengine.ActivityFunc {
 
 // makeRemoveProxy creates the infra.remove_proxy activity.
 // Idempotent: if the proxy host doesn't exist, returns success with removed=false.
-func makeRemoveProxy(proxyMgr ProxyManager) flowengine.ActivityFunc {
+// When access profile is "standard", skips proxy removal entirely.
+func makeRemoveProxy(proxyMgr ProxyManager, profileReader AccessProfileReader) flowengine.ActivityFunc {
 	return func(ctx context.Context, input json.RawMessage) (json.RawMessage, error) {
+		// Check access profile — standard skips proxy removal
+		profile, err := profileReader.GetAccessProfile()
+		if err != nil {
+			log.Warn().Err(err).Msg("remove_proxy: failed to read access profile, defaulting to standard")
+			profile = "standard"
+		}
+		if profile == "standard" {
+			log.Info().Str("profile", profile).Msg("remove_proxy: skipping proxy removal (standard profile)")
+			return marshalOutput(RemoveProxyOutput{Removed: false})
+		}
+
 		var in RemoveProxyInput
 		if err := json.Unmarshal(input, &in); err != nil {
 			return nil, flowengine.NewPermanentError(fmt.Errorf("invalid remove_proxy input: %w", err))

@@ -908,6 +908,18 @@ var migrations = []Migration{
 			return nil
 		},
 	},
+	{
+		Version:     21,
+		Description: "Add access_profile to system_config (Phase 1 Access Profiles)",
+		Up: func(db *sql.DB) error {
+			_, err := db.Exec(`INSERT OR IGNORE INTO system_config (key, value, updated_at) VALUES ('access_profile', 'standard', CURRENT_TIMESTAMP)`)
+			if err != nil {
+				return fmt.Errorf("migration 21: failed to insert access_profile: %w", err)
+			}
+			log.Info().Msg("Migration 21: Added access_profile=standard to system_config")
+			return nil
+		},
+	},
 }
 
 // isDuplicateColumnError checks if an error is a "duplicate column" error

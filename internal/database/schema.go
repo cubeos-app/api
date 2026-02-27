@@ -9,7 +9,7 @@ import (
 )
 
 // CurrentSchemaVersion tracks the database schema version for migrations.
-const CurrentSchemaVersion = 20
+const CurrentSchemaVersion = 21
 
 // Schema defines the unified CubeOS database schema.
 // Design Principles:
@@ -576,5 +576,41 @@ func GetSystemState(db *sql.DB, key string) (string, error) {
 // SetSystemState sets a system state value.
 func SetSystemState(db *sql.DB, key, value string) error {
 	_, err := db.Exec("INSERT OR REPLACE INTO system_state (key, value, updated_at) VALUES (?, ?, CURRENT_TIMESTAMP)", key, value)
+	return err
+}
+
+// ValidAccessProfiles lists accepted access_profile values.
+var ValidAccessProfiles = map[string]bool{
+	"standard":   true,
+	"advanced":   true,
+	"all_in_one": true,
+}
+
+// GetAccessProfile returns the current access profile from system_config.
+// Defaults to "standard" if not set.
+func GetAccessProfile(db *sql.DB) (string, error) {
+	var value string
+	err := db.QueryRow("SELECT value FROM system_config WHERE key = 'access_profile'").Scan(&value)
+	if err != nil {
+		if err == sql.ErrNoRows {
+			return "standard", nil
+		}
+		return "standard", err
+	}
+	if value == "" {
+		return "standard", nil
+	}
+	return value, nil
+}
+
+// SetAccessProfile updates the access profile in system_config.
+func SetAccessProfile(db *sql.DB, profile string) error {
+	if !ValidAccessProfiles[profile] {
+		return fmt.Errorf("invalid access profile %q: must be standard, advanced, or all_in_one", profile)
+	}
+	_, err := db.Exec(
+		"INSERT OR REPLACE INTO system_config (key, value, updated_at) VALUES ('access_profile', ?, CURRENT_TIMESTAMP)",
+		profile,
+	)
 	return err
 }

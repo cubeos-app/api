@@ -408,7 +408,7 @@ func main() {
 
 	// Register all activity groups
 	feactivities.RegisterDockerActivities(feRegistry, swarmMgr, swarmMgr)
-	feactivities.RegisterInfraActivities(feRegistry, &dnsAdapter{piholeMgr}, &proxyAdapter{npmMgr})
+	feactivities.RegisterInfraActivities(feRegistry, &dnsAdapter{piholeMgr}, &proxyAdapter{npmMgr}, &accessProfileAdapter{db.DB})
 	feactivities.RegisterDatabaseActivities(feRegistry, db.DB, portMgr)
 	feactivities.RegisterHALActivities(feRegistry, halClient)
 	if orchestrator != nil {
@@ -757,6 +757,7 @@ func main() {
 				r.Get("/timezone", h.GetTimezone)
 				r.Post("/timezone", h.SetTimezone)
 				r.Get("/timezones", h.GetTimezones)
+				r.Get("/access-profile", h.GetAccessProfile)
 				r.Post("/reboot", h.Reboot)
 				r.Post("/shutdown", h.Shutdown)
 				r.Get("/browse", appStoreHandler.BrowseDirectories)
