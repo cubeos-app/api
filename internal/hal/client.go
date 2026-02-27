@@ -56,11 +56,28 @@ const (
 // Client
 // =============================================================================
 
+// halTransport injects X-HAL-Key on every outbound request.
+// This ensures the header is present regardless of which http.Client is used
+// (main client, stream client, etc.).
+type halTransport struct {
+	base   http.RoundTripper
+	apiKey string
+}
+
+func (t *halTransport) RoundTrip(req *http.Request) (*http.Response, error) {
+	if t.apiKey != "" {
+		req = req.Clone(req.Context())
+		req.Header.Set("X-HAL-Key", t.apiKey)
+	}
+	return t.base.RoundTrip(req)
+}
+
 // Client is a HAL API client
 type Client struct {
 	baseURL    string
-	apiKey     string // X-HAL-Key for ACL authentication (from HAL_API_KEY env var)
+	apiKey     string // X-HAL-Key for ACL authentication
 	httpClient *http.Client
+	transport  *halTransport // shared transport for stream clients
 	cb         *circuitbreaker.CircuitBreaker
 }
 
@@ -72,11 +89,27 @@ func NewClient(baseURL string) *Client {
 	if baseURL == "" {
 		baseURL = DefaultHALURL
 	}
+
+	// HAL_API_KEY is the canonical env var, HAL_CORE_KEY is the fallback
+	// (loaded via env_file in docker-compose, where ${HAL_CORE_KEY} interpolation
+	// may fail at docker stack deploy time)
+	apiKey := os.Getenv("HAL_API_KEY")
+	if apiKey == "" {
+		apiKey = os.Getenv("HAL_CORE_KEY")
+	}
+
+	transport := &halTransport{
+		base:   http.DefaultTransport,
+		apiKey: apiKey,
+	}
+
 	return &Client{
-		baseURL: baseURL,
-		apiKey:  os.Getenv("HAL_API_KEY"),
+		baseURL:   baseURL,
+		apiKey:    apiKey,
+		transport: transport,
 		httpClient: &http.Client{
-			Timeout: DefaultTimeout,
+			Timeout:   DefaultTimeout,
+			Transport: transport,
 		},
 		cb: circuitbreaker.New("hal", circuitbreaker.DefaultConfig()),
 	}
@@ -1229,9 +1262,7 @@ func (c *Client) doRequest(ctx context.Context, method, path string, body interf
 	if body != nil {
 		req.Header.Set("Content-Type", "application/json")
 	}
-	if c.apiKey != "" {
-		req.Header.Set("X-HAL-Key", c.apiKey)
-	}
+	// X-HAL-Key is injected by halTransport on every request
 
 	var resp *http.Response
 	var respBody []byte
@@ -1334,12 +1365,11 @@ func (c *Client) doStreamRequest(ctx context.Context, path string) (*http.Respon
 		return nil, fmt.Errorf("failed to create stream request: %w", err)
 	}
 	req.Header.Set("Accept", "text/event-stream")
-	if c.apiKey != "" {
-		req.Header.Set("X-HAL-Key", c.apiKey)
-	}
+	// X-HAL-Key is injected by halTransport on every request
 
-	// Use a separate client with no timeout for long-lived SSE streams
-	streamClient := &http.Client{}
+	// Use a separate client with no timeout for long-lived SSE streams,
+	// but share the transport so X-HAL-Key is always injected
+	streamClient := &http.Client{Transport: c.transport}
 	resp, err := streamClient.Do(req)
 	if err != nil {
 		return nil, fmt.Errorf("stream request failed: %w", err)
