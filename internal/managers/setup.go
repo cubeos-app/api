@@ -98,6 +98,20 @@ func (m *SetupManager) checkSetupStatus() {
 	var isComplete int
 	m.db.QueryRow(`SELECT is_complete FROM setup_status WHERE id = 1`).Scan(&isComplete)
 	m.setupDone = isComplete == 1
+
+	// Ensure flag file and system_state are consistent with DB.
+	// Fixes existing deployments where MarkSetupComplete was called before the fix.
+	if m.setupDone {
+		dataDir := m.cfg.DataDir
+		if dataDir == "" {
+			dataDir = "/cubeos/data"
+		}
+		flagPath := filepath.Join(dataDir, ".setup_complete")
+		if _, err := os.Stat(flagPath); os.IsNotExist(err) {
+			os.WriteFile(flagPath, []byte("complete\n"), 0644)
+		}
+		database.SetSystemState(m.db, "setup_complete", "true")
+	}
 }
 
 // IsSetupComplete returns whether first boot setup is done
