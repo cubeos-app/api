@@ -241,6 +241,17 @@ func (m *SetupManager) GetSystemRequirements() *models.SystemRequirements {
 		}
 	}
 
+	// Container cgroup fallback: /proc/meminfo reflects the cgroup limit (e.g. 256 MB)
+	// instead of host RAM. Delegate to HAL for accurate host memory.
+	if req.TotalRAM < 1024 && m.hal != nil {
+		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		defer cancel()
+		if memInfo, err := m.hal.GetMemoryInfo(ctx); err == nil && memInfo.Total > 0 {
+			req.TotalRAM = memInfo.Total / (1024 * 1024) // bytes → MB
+			req.AvailableRAM = memInfo.Available / (1024 * 1024)
+		}
+	}
+
 	// Get CPU cores
 	if data, err := os.ReadFile("/proc/cpuinfo"); err == nil {
 		req.CPUCores = strings.Count(string(data), "processor")

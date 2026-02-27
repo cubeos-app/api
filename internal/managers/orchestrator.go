@@ -678,7 +678,7 @@ func (o *Orchestrator) SeedSystemApps(ctx context.Context) error {
 		deployMode  models.DeployMode
 	}{
 		{"pihole", "Pi-hole", models.AppTypeSystem, 6001, models.DeployModeCompose},
-		{"npm", "Nginx Proxy Manager", models.AppTypeSystem, 6000, models.DeployModeCompose},
+		{"npm", "Nginx Proxy Manager", models.AppTypeSystem, 81, models.DeployModeCompose},
 		{"cubeos-hal", "CubeOS HAL", models.AppTypeSystem, 6005, models.DeployModeCompose},
 		{"registry", "Docker Registry", models.AppTypeSystem, 5000, models.DeployModeStack},
 		{"cubeos-api", "CubeOS API", models.AppTypePlatform, 6010, models.DeployModeStack},
@@ -764,7 +764,7 @@ func (o *Orchestrator) SeedSystemPortsAndFQDNs(ctx context.Context) error {
 
 	entries := []systemEntry{
 		{"pihole", 6001, "pihole", "Admin UI"},
-		{"npm", 6000, "npm", "Admin UI"},
+		{"npm", 81, "npm", "Admin UI"},
 		{"cubeos-api", 6010, "api", "REST API"},
 		{"cubeos-dashboard", 6011, "cubeos", "Web Dashboard"},
 		{"cubeos-hal", 6005, "hal", "Hardware Abstraction"},

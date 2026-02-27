@@ -578,10 +578,12 @@ func (h *NetworkHandler) GetAPStatus(w http.ResponseWriter, r *http.Request) {
 	var channel int
 	var hidden bool
 	var hostapdRunning bool
+	halReachable := false
 
 	if h.halClient != nil {
 		halStatus, err := h.halClient.GetAPStatus(ctx)
 		if err == nil && halStatus != nil {
+			halReachable = true
 			ssid = halStatus.SSID
 			channel = halStatus.Channel
 			hostapdRunning = halStatus.Active
@@ -604,6 +606,18 @@ func (h *NetworkHandler) GetAPStatus(w http.ResponseWriter, r *http.Request) {
 		if err == nil && status != nil {
 			hostapdRunning = status.Active
 		}
+	}
+
+	// If HAL couldn't provide AP status and hostapd isn't running, AP hardware
+	// is likely absent (e.g. x86/LXC without WiFi). Report as not available
+	// so the dashboard hides the AP section.
+	if !halReachable && !hostapdRunning {
+		writeJSON(w, http.StatusOK, map[string]interface{}{
+			"error":   "no_hardware",
+			"enabled": false,
+			"running": false,
+		})
+		return
 	}
 
 	clients, _ := h.network.GetConnectedClients(ctx)

@@ -963,6 +963,23 @@ var migrations = []Migration{
 			return nil
 		},
 	},
+	{
+		Version:     24,
+		Description: "Fix NPM port allocation from 6000 to 81 (actual admin UI port)",
+		Up: func(db *sql.DB) error {
+			// NPM admin UI listens on port 81, not 6000. Port 6000 was never
+			// actually used by NPM — it was an incorrect seed value.
+			_, err := db.Exec(`
+				UPDATE port_allocations SET port = 81
+				WHERE port = 6000 AND app_id IN (SELECT id FROM apps WHERE name = 'npm')
+			`)
+			if err != nil {
+				return fmt.Errorf("migration 24: failed to update npm port: %w", err)
+			}
+			log.Info().Msg("Migration 24: Fixed NPM port allocation from 6000 to 81")
+			return nil
+		},
+	},
 }
 
 // isDuplicateColumnError checks if an error is a "duplicate column" error
