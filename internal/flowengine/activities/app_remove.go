@@ -31,11 +31,14 @@ type AppRemoveValidateInput struct {
 
 // AppRemoveValidateOutput is the validated output that subsequent steps consume.
 // It carries forward all the data needed by downstream steps.
+// Domain is an alias for FQDN so infra.remove_dns and infra.remove_proxy
+// (which expect "domain") can read it directly from the fat envelope.
 type AppRemoveValidateOutput struct {
 	AppID       int64  `json:"app_id"`
 	AppName     string `json:"app_name"`
 	StackName   string `json:"stack_name"`
 	FQDN        string `json:"fqdn"`
+	Domain      string `json:"domain"`
 	ComposePath string `json:"compose_path,omitempty"`
 	DataPath    string `json:"data_path,omitempty"`
 	KeepData    bool   `json:"keep_data"`
@@ -90,6 +93,7 @@ func makeAppRemoveValidateActivity(db *sql.DB) flowengine.ActivityFunc {
 			AppName:     in.AppName,
 			StackName:   in.AppName, // Stack name = app name in CubeOS
 			FQDN:        in.FQDN,
+			Domain:      in.FQDN, // alias so infra.remove_dns/remove_proxy find "domain"
 			ComposePath: in.ComposePath,
 			DataPath:    in.DataPath,
 			KeepData:    in.KeepData,

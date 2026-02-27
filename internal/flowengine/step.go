@@ -285,10 +285,14 @@ func effectiveCompensateRetryFromStep(step *WorkflowStep) RetryPolicy {
 }
 
 // buildCompensationInput builds the input for a compensation activity.
-// It returns the forward step's output directly, so compensation activities
-// receive the same flat JSON keys they need (e.g. "port", "stack_name").
-// Falls back to the step's input (fat envelope) if no output was cached.
+// It merges the forward step's input (fat envelope) with its output, so
+// compensation activities receive both the accumulated workflow context
+// (e.g. "compose_path") and the step's own results (e.g. "stopped").
+// Output keys override input keys. Falls back to whichever is available.
 func buildCompensationInput(step *WorkflowStep) json.RawMessage {
+	if len(step.Output) > 0 && len(step.Input) > 0 {
+		return mergeJSON(step.Input, step.Output)
+	}
 	if len(step.Output) > 0 {
 		return step.Output
 	}

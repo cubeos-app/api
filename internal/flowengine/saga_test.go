@@ -915,7 +915,7 @@ func TestSagaCompensationReceivesForwardOutput(t *testing.T) {
 		t.Fatalf("Expected nil (compensation should succeed), got: %v", err)
 	}
 
-	// Verify compensation received the forward step output directly
+	// Verify compensation received merged input (envelope) + output
 	if compensationInput == nil {
 		t.Fatal("Compensation activity was not called")
 	}
@@ -925,9 +925,13 @@ func TestSagaCompensationReceivesForwardOutput(t *testing.T) {
 		t.Fatalf("Compensation input is not valid JSON: %v", err)
 	}
 
-	// Must have "port" at top level (not nested under "original_output")
+	// Must have "port" from step output
 	if _, ok := parsed["port"]; !ok {
-		t.Errorf("Compensation input missing 'port' at top level; got: %s", string(compensationInput))
+		t.Errorf("Compensation input missing 'port'; got: %s", string(compensationInput))
+	}
+	// Must have "app_name" from envelope (workflow input) merged in
+	if _, ok := parsed["app_name"]; !ok {
+		t.Errorf("Compensation input missing 'app_name' from envelope; got: %s", string(compensationInput))
 	}
 	if _, ok := parsed["original_output"]; ok {
 		t.Error("Compensation input should NOT have 'original_output' wrapper")
@@ -942,6 +946,96 @@ func TestSagaCompensationReceivesForwardOutput(t *testing.T) {
 	allSteps, _ := store.GetWorkflowSteps(wf.ID)
 	if allSteps[0].Status != StepCompensated {
 		t.Errorf("Step 0: expected compensated, got %s", allSteps[0].Status)
+	}
+}
+
+// TestSagaCompensationReceivesEnvelopeAndOutput verifies that compensation receives
+// both the fat envelope (step input) and the step output merged together.
+// This is the exact scenario that caused the appstore_remove bug: stop_stack output
+// had stack_name but not compose_path; the envelope had compose_path from validate.
+func TestSagaCompensationReceivesEnvelopeAndOutput(t *testing.T) {
+	db := testDB(t)
+	store := NewWorkflowStore(db)
+	reg := NewActivityRegistry()
+
+	// Step 0: stop_stack → outputs {"stack_name":"myapp","stopped":true}
+	// The fat envelope arriving at this step also has compose_path from workflow input.
+	reg.MustRegister("stop_stack", func(ctx context.Context, input json.RawMessage) (json.RawMessage, error) {
+		return json.RawMessage(`{"stack_name":"myapp","stopped":true}`), nil
+	})
+
+	// Step 1: fails permanently → triggers compensation for step 0
+	reg.MustRegister("remove_dns", func(ctx context.Context, input json.RawMessage) (json.RawMessage, error) {
+		return nil, NewPermanentError(fmt.Errorf("dns removal failed"))
+	})
+
+	// Compensation for step 0: deploy_stack — needs BOTH stack_name AND compose_path
+	var compensationInput json.RawMessage
+	reg.MustRegister("deploy_stack", func(ctx context.Context, input json.RawMessage) (json.RawMessage, error) {
+		compensationInput = input
+		var in struct {
+			StackName   string `json:"stack_name"`
+			ComposePath string `json:"compose_path"`
+		}
+		if err := json.Unmarshal(input, &in); err != nil {
+			return nil, NewPermanentError(fmt.Errorf("invalid input: %w", err))
+		}
+		if in.StackName == "" || in.ComposePath == "" {
+			return nil, NewPermanentError(fmt.Errorf("stack_name and compose_path are required"))
+		}
+		return json.RawMessage(`{"stack_name":"myapp","deployed":true}`), nil
+	})
+
+	executor := NewStepExecutor(store, reg)
+	saga := NewSagaOrchestrator(store, executor, reg, "test-node")
+
+	steps := []StepDefinition{
+		{Name: "stop_stack", Action: "stop_stack", Compensate: "deploy_stack", Retry: &RetryPolicy{MaxAttempts: 1}},
+		{Name: "remove_dns", Action: "remove_dns", Retry: &RetryPolicy{MaxAttempts: 1}},
+	}
+
+	// Workflow input includes compose_path (from the fat envelope built at submission)
+	wf, err := store.CreateWorkflow(CreateWorkflowParams{
+		WorkflowType: "comp_envelope_test",
+		Version:      1,
+		ExternalID:   "comp-env-1",
+		Input:        json.RawMessage(`{"stack_name":"myapp","compose_path":"/cubeos/apps/myapp/appconfig/docker-compose.yml","app_name":"myapp"}`),
+		Steps:        steps,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	err = saga.Execute(context.Background(), wf)
+	if err != nil {
+		t.Fatalf("Expected nil (compensation should succeed), got: %v", err)
+	}
+
+	if compensationInput == nil {
+		t.Fatal("Compensation activity was not called")
+	}
+
+	var parsed map[string]interface{}
+	if err := json.Unmarshal(compensationInput, &parsed); err != nil {
+		t.Fatalf("Compensation input is not valid JSON: %v", err)
+	}
+
+	// Must have stack_name from step output
+	if _, ok := parsed["stack_name"]; !ok {
+		t.Errorf("Compensation input missing 'stack_name'; got: %s", string(compensationInput))
+	}
+	// Must have compose_path from fat envelope (step input)
+	if _, ok := parsed["compose_path"]; !ok {
+		t.Errorf("Compensation input missing 'compose_path' from envelope; got: %s", string(compensationInput))
+	}
+	// Must have stopped from step output
+	if _, ok := parsed["stopped"]; !ok {
+		t.Errorf("Compensation input missing 'stopped' from step output; got: %s", string(compensationInput))
+	}
+
+	result, _ := store.GetWorkflow(wf.ID)
+	if result.CurrentState != StateCompensated {
+		t.Errorf("Expected workflow state=compensated, got %s", result.CurrentState)
 	}
 }
 
