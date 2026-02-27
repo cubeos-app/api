@@ -578,12 +578,10 @@ func (h *NetworkHandler) GetAPStatus(w http.ResponseWriter, r *http.Request) {
 	var channel int
 	var hidden bool
 	var hostapdRunning bool
-	halReachable := false
 
 	if h.halClient != nil {
 		halStatus, err := h.halClient.GetAPStatus(ctx)
 		if err == nil && halStatus != nil {
-			halReachable = true
 			ssid = halStatus.SSID
 			channel = halStatus.Channel
 			hostapdRunning = halStatus.Active
@@ -608,16 +606,27 @@ func (h *NetworkHandler) GetAPStatus(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	// If HAL couldn't provide AP status and hostapd isn't running, AP hardware
-	// is likely absent (e.g. x86/LXC without WiFi). Report as not available
-	// so the dashboard hides the AP section.
-	if !halReachable && !hostapdRunning {
-		writeJSON(w, http.StatusOK, map[string]interface{}{
-			"error":   "no_hardware",
-			"enabled": false,
-			"running": false,
-		})
-		return
+	// Detect whether WiFi hardware is present. If hostapd isn't running and
+	// no wireless interfaces exist, AP hardware is absent (e.g. x86/LXC).
+	// Report as not available so the dashboard hides the AP section.
+	if !hostapdRunning && h.halClient != nil {
+		hasWiFi := false
+		if ifaces, err := h.halClient.ListInterfaces(ctx); err == nil {
+			for _, iface := range ifaces {
+				if iface.IsWireless {
+					hasWiFi = true
+					break
+				}
+			}
+		}
+		if !hasWiFi {
+			writeJSON(w, http.StatusOK, map[string]interface{}{
+				"error":   "no_hardware",
+				"enabled": false,
+				"running": false,
+			})
+			return
+		}
 	}
 
 	clients, _ := h.network.GetConnectedClients(ctx)
