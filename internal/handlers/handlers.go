@@ -13,6 +13,7 @@ import (
 
 	"cubeos-api/internal/config"
 	"cubeos-api/internal/database"
+	"cubeos-api/internal/flowengine"
 	"cubeos-api/internal/hal"
 	"cubeos-api/internal/managers"
 	"cubeos-api/internal/middleware"
@@ -30,7 +31,16 @@ type Handlers struct {
 	filebrowser *managers.FileManagerClient
 	piholePw    *managers.PiholePasswordClient
 	npmMgr      *managers.NPMManager
+	flowEngine  *flowengine.WorkflowEngine
+	feStore     *flowengine.WorkflowStore
 	startTime   time.Time
+}
+
+// SetFlowEngine wires the FlowEngine into the Handlers struct.
+// Called from main.go after engine initialization.
+func (h *Handlers) SetFlowEngine(engine *flowengine.WorkflowEngine, store *flowengine.WorkflowStore) {
+	h.flowEngine = engine
+	h.feStore = store
 }
 
 // NewHandlers creates a new Handlers instance.
@@ -391,13 +401,14 @@ func (h *Handlers) GetAccessProfile(w http.ResponseWriter, r *http.Request) {
 
 // UpdateAccessProfile godoc
 // @Summary Update access profile
-// @Description Updates the access profile and saves credentials. Does NOT trigger migration of existing apps (Phase 3).
+// @Description Updates the access profile. If the profile changes, submits an access_profile_switch workflow (202 Accepted). If the same profile, just saves config (200 OK).
 // @Tags System
 // @Accept json
 // @Produce json
 // @Security BearerAuth
 // @Param request body database.AccessProfileConfig true "Access profile configuration"
-// @Success 200 {object} map[string]string "profile and confirmation message"
+// @Success 200 {object} map[string]string "Same profile, config saved"
+// @Success 202 {object} map[string]string "Profile switch workflow started (job_id returned)"
 // @Failure 400 {object} map[string]string "Validation error"
 // @Failure 500 {object} map[string]string "Internal server error"
 // @Router /system/access-profile [put]
@@ -425,22 +436,93 @@ func (h *Handlers) UpdateAccessProfile(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
+	// Get current profile to determine if migration is needed
+	currentProfile, err := database.GetAccessProfile(h.db.DB)
+	if err != nil {
+		log.Error().Err(err).Msg("failed to read current access profile")
+		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "failed to read current profile"})
+		return
+	}
+
+	// Same profile → just save config, no migration needed
+	if currentProfile == req.Profile {
+		cfg := &database.AccessProfileConfig{
+			Profile:       req.Profile,
+			ExtNPMURL:     req.ExtNPMURL,
+			ExtNPMToken:   req.ExtNPMToken,
+			ExtPiholeURL:  req.ExtPiholeURL,
+			ExtPiholePass: req.ExtPiholePass,
+		}
+		if err := database.SetAccessProfileConfig(h.db.DB, cfg); err != nil {
+			log.Error().Err(err).Msg("failed to save access profile config")
+			writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "failed to save profile"})
+			return
+		}
+		writeJSON(w, http.StatusOK, map[string]string{
+			"profile": req.Profile,
+			"message": "Profile config updated (no migration needed)",
+		})
+		return
+	}
+
+	// Different profile → submit workflow
+	if h.flowEngine == nil {
+		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "FlowEngine not available"})
+		return
+	}
+
+	// Save credentials first (workflow reads them from fat envelope, but also persist in DB)
 	cfg := &database.AccessProfileConfig{
-		Profile:       req.Profile,
+		Profile:       currentProfile, // keep current profile until workflow succeeds
 		ExtNPMURL:     req.ExtNPMURL,
 		ExtNPMToken:   req.ExtNPMToken,
 		ExtPiholeURL:  req.ExtPiholeURL,
 		ExtPiholePass: req.ExtPiholePass,
 	}
 	if err := database.SetAccessProfileConfig(h.db.DB, cfg); err != nil {
-		log.Error().Err(err).Msg("failed to save access profile config")
-		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "failed to save profile"})
+		log.Error().Err(err).Msg("failed to save credentials before workflow")
+		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "failed to save credentials"})
 		return
 	}
 
-	writeJSON(w, http.StatusOK, map[string]string{
-		"profile": req.Profile,
-		"message": "Profile updated",
+	// Get gateway IP for the workflow
+	gatewayIP := h.cfg.GatewayIP
+	if gatewayIP == "" {
+		gatewayIP = "10.42.24.1"
+	}
+
+	workflowInput := map[string]string{
+		"from_profile":        currentProfile,
+		"to_profile":          req.Profile,
+		"ext_npm_url":         req.ExtNPMURL,
+		"ext_npm_token":       req.ExtNPMToken,
+		"ext_pihole_url":      req.ExtPiholeURL,
+		"ext_pihole_password": req.ExtPiholePass,
+		"gateway_ip":          gatewayIP,
+	}
+	inputJSON, err := json.Marshal(workflowInput)
+	if err != nil {
+		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "failed to marshal workflow input"})
+		return
+	}
+
+	wf, err := h.flowEngine.Submit(r.Context(), flowengine.SubmitParams{
+		WorkflowType: "access_profile_switch",
+		ExternalID:   "profile:" + currentProfile + "→" + req.Profile,
+		Input:        inputJSON,
+	})
+	if err != nil {
+		log.Error().Err(err).Msg("failed to submit access_profile_switch workflow")
+		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "failed to start profile switch: " + err.Error()})
+		return
+	}
+
+	log.Info().Str("workflow_id", wf.ID).Str("from", currentProfile).Str("to", req.Profile).Msg("access_profile_switch workflow submitted")
+	writeJSON(w, http.StatusAccepted, map[string]string{
+		"job_id":  wf.ID,
+		"message": "Profile switch started",
+		"from":    currentProfile,
+		"to":      req.Profile,
 	})
 }
 

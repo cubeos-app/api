@@ -943,6 +943,26 @@ var migrations = []Migration{
 			return nil
 		},
 	},
+	{
+		Version:     23,
+		Description: "Add access_url column to apps and profile_switch_in_progress flag (Phase 3 Access Profiles)",
+		Up: func(db *sql.DB) error {
+			// Add access_url column to apps table
+			_, err := db.Exec(`ALTER TABLE apps ADD COLUMN access_url TEXT DEFAULT ''`)
+			if err != nil && !isDuplicateColumnError(err) {
+				return fmt.Errorf("failed to add apps.access_url: %w", err)
+			}
+
+			// Add profile_switch_in_progress flag to system_config
+			_, err = db.Exec(`INSERT OR IGNORE INTO system_config (key, value, updated_at) VALUES ('profile_switch_in_progress', '0', CURRENT_TIMESTAMP)`)
+			if err != nil {
+				return fmt.Errorf("migration 23: failed to insert profile_switch_in_progress: %w", err)
+			}
+
+			log.Info().Msg("Migration 23: Added access_url column and profile_switch_in_progress flag")
+			return nil
+		},
+	},
 }
 
 // isDuplicateColumnError checks if an error is a "duplicate column" error

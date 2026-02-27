@@ -36,6 +36,16 @@ var stepProgress = map[string]int{
 	"store_volumes":    95,
 	"detect_webui":     97,
 	"health_check":     99,
+
+	// access_profile_switch workflow steps
+	"validate_transition":    10,
+	"pause_app_updates":      15,
+	"teardown_old_access":    25,
+	"update_profile_db":      35,
+	"configure_new_services": 45,
+	"migrate_app_entries":    80,
+	"verify_access":          95,
+	"resume_app_updates":     99,
 }
 
 // ProgressAdapter translates FlowEngine step status changes into SSE progress events.

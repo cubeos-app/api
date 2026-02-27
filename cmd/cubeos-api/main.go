@@ -425,6 +425,7 @@ func main() {
 	feactivities.RegisterUpdateActivities(feRegistry, db.DB, &updateSwarmAdapter{swarmMgr}, updateMgr)
 	destRegistry := managers.NewBackupDestinationRegistry(halClient)
 	feactivities.RegisterBackupActivities(feRegistry, db.DB, &backupMgrAdapter{backupMgr}, swarmMgr, &destRegistryAdapter{destRegistry}, &backupEncryptorAdapter{})
+	feactivities.RegisterAccessProfileActivities(feRegistry, db.DB, &dnsAdapter{piholeMgr}, &proxyAdapter{npmMgr}, halClient)
 
 	flowEngine := flowengine.NewWorkflowEngine(feStore, feRegistry, flowengine.DefaultEngineConfig())
 
@@ -462,6 +463,9 @@ func main() {
 	if err := flowEngine.RegisterWorkflow(&feworkflows.RestoreWorkflow{}); err != nil {
 		log.Fatal().Err(err).Msg("FlowEngine: failed to register restore workflow")
 	}
+	if err := flowEngine.RegisterWorkflow(feworkflows.NewAccessProfileSwitchWorkflow()); err != nil {
+		log.Fatal().Err(err).Msg("FlowEngine: failed to register access_profile_switch workflow")
+	}
 
 	if err := flowEngine.Start(engineCtx); err != nil {
 		log.Fatal().Err(err).Msg("FlowEngine: failed to start — cannot continue")
@@ -498,6 +502,7 @@ func main() {
 
 	// Create handlers
 	h := handlers.NewHandlers(cfg, db, docker, halClient, systemMgr, networkMgr, fbClient, piholePwClient, npmMgr)
+	h.SetFlowEngine(flowEngine, feStore)
 	ext := handlers.NewExtendedHandlers(logMgr, firewallMgr, backupMgr, processMgr, wizardMgr, monitoringMgr, prefMgr, powerMgr, storageMgr, halClient)
 	appStoreHandler := handlers.NewAppStoreHandler(appStoreMgr, npmMgr)
 	setupHandler := handlers.NewSetupHandler(setupMgr, flowEngine, feStore)

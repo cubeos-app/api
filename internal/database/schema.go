@@ -9,7 +9,7 @@ import (
 )
 
 // CurrentSchemaVersion tracks the database schema version for migrations.
-const CurrentSchemaVersion = 21
+const CurrentSchemaVersion = 23
 
 // Schema defines the unified CubeOS database schema.
 // Design Principles:
@@ -52,6 +52,9 @@ CREATE TABLE IF NOT EXISTS apps (
     -- Web UI behavior
     webui_type      TEXT DEFAULT 'browser',         -- 'browser' (open in new tab) or 'api' (show status modal)
     
+    -- Access
+    access_url      TEXT DEFAULT '',                -- Current access URL (set by profile switch workflow)
+
     -- Metadata
     icon_url        TEXT DEFAULT '',
     version         TEXT DEFAULT '',
@@ -669,6 +672,80 @@ func GetAccessProfileConfig(db *sql.DB) (*AccessProfileConfig, error) {
 		cfg.Profile = "standard"
 	}
 	return cfg, nil
+}
+
+// AppMigrationInfo holds the data needed to migrate an app between access profiles.
+type AppMigrationInfo struct {
+	Name      string `db:"name"`
+	Port      int    `db:"port"`
+	FQDN      string `db:"fqdn"`
+	AccessURL string `db:"access_url"`
+}
+
+// GetInstalledAppsForMigration returns info about all enabled user apps for profile migration.
+// Joins apps → port_allocations → fqdns to get name, primary port, FQDN, and current access_url.
+func GetInstalledAppsForMigration(db *sql.DB) ([]AppMigrationInfo, error) {
+	rows, err := db.Query(`
+		SELECT
+			a.name,
+			COALESCE(pa.port, 0) AS port,
+			COALESCE(f.fqdn, '') AS fqdn,
+			COALESCE(a.access_url, '') AS access_url
+		FROM apps a
+		LEFT JOIN port_allocations pa ON pa.app_id = a.id AND pa.is_primary = 1
+		LEFT JOIN fqdns f ON f.app_id = a.id
+		WHERE a.type = 'user' AND a.enabled = 1
+		ORDER BY a.name
+	`)
+	if err != nil {
+		return nil, fmt.Errorf("query installed apps for migration: %w", err)
+	}
+	defer rows.Close()
+
+	var apps []AppMigrationInfo
+	for rows.Next() {
+		var app AppMigrationInfo
+		if err := rows.Scan(&app.Name, &app.Port, &app.FQDN, &app.AccessURL); err != nil {
+			return nil, fmt.Errorf("scan app migration info: %w", err)
+		}
+		apps = append(apps, app)
+	}
+	return apps, rows.Err()
+}
+
+// UpdateAppAccessURL updates the access_url for an app by name.
+func UpdateAppAccessURL(db *sql.DB, appName, accessURL string) error {
+	_, err := db.Exec(
+		"UPDATE apps SET access_url = ?, updated_at = CURRENT_TIMESTAMP WHERE name = ?",
+		accessURL, appName,
+	)
+	return err
+}
+
+// GetSystemConfigFlag returns a boolean flag from system_config ("1" = true).
+func GetSystemConfigFlag(db *sql.DB, key string) (bool, error) {
+	var value string
+	err := db.QueryRow("SELECT value FROM system_config WHERE key = ?", key).Scan(&value)
+	if err != nil {
+		if err == sql.ErrNoRows {
+			return false, nil
+		}
+		return false, err
+	}
+	return value == "1", nil
+}
+
+// SetSystemConfigFlag sets a boolean flag in system_config ("1" = true, "0" = false).
+func SetSystemConfigFlag(db *sql.DB, key string, val bool) error {
+	v := "0"
+	if val {
+		v = "1"
+	}
+	_, err := db.Exec(
+		"INSERT OR REPLACE INTO system_config (key, value, updated_at) VALUES (?, ?, CURRENT_TIMESTAMP)",
+		key, v,
+	)
+	return err
 }
 
 // SetAccessProfileConfig saves the full access profile configuration.
