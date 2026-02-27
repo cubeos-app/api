@@ -82,9 +82,25 @@ func (m *AppStoreManager) InstallAppWithProgress(req *models.AppInstallRequest, 
 		return nil, err
 	}
 
-	// Fetch WebUI URL from DB (set by insert_db step via homepage column).
+	// Build WebUI URL: prefer FQDN, fall back to IP:port for standard profile.
 	var webUI string
 	m.db.db.QueryRow("SELECT COALESCE(homepage, '') FROM apps WHERE name = ?", req.AppName).Scan(&webUI) //nolint:errcheck
+	if webUI == "" {
+		// Build URL from allocated port + gateway IP (works on all profiles)
+		var port int
+		m.db.db.QueryRow(`
+			SELECT pa.port FROM port_allocations pa
+			JOIN apps a ON pa.app_id = a.id
+			WHERE a.name = ? AND pa.is_primary = 1
+		`, req.AppName).Scan(&port) //nolint:errcheck
+		if port > 0 {
+			gatewayIP := os.Getenv("GATEWAY_IP")
+			if gatewayIP == "" {
+				gatewayIP = "10.42.24.1"
+			}
+			webUI = fmt.Sprintf("http://%s:%d", gatewayIP, port)
+		}
+	}
 
 	// Update in-memory catalog state so subsequent ListInstalledApps reflects the new app.
 	storeApp := m.GetApp(req.StoreID, req.AppName) // takes RLock — must be before Write lock

@@ -151,8 +151,23 @@ func (m *SystemManager) GetCPUModel() string {
 	return info[0].ModelName
 }
 
-// GetUptime returns uptime in seconds and human-readable format
+// GetUptime returns uptime in seconds and human-readable format.
+// Reads /proc/uptime directly instead of using syscall.Sysinfo (via gopsutil),
+// because in LXC containers sysinfo() returns the kernel uptime of the physical
+// host, while /proc/uptime returns the container-level uptime.
 func (m *SystemManager) GetUptime() (int64, string) {
+	// /proc/uptime: "12345.67 23456.78" (uptime_seconds idle_seconds)
+	if data, err := os.ReadFile("/proc/uptime"); err == nil {
+		fields := strings.Fields(string(data))
+		if len(fields) >= 1 {
+			if secs, err := strconv.ParseFloat(fields[0], 64); err == nil {
+				uptime := int64(secs)
+				return uptime, formatDuration(time.Duration(uptime) * time.Second)
+			}
+		}
+	}
+
+	// Fallback to gopsutil (works on non-LXC systems)
 	info, err := host.Info()
 	if err != nil {
 		return 0, ""
@@ -300,7 +315,23 @@ func (m *SystemManager) GetMemoryStats() (total, used, available uint64, percent
 	if err != nil {
 		return
 	}
-	return v.Total, v.Used, v.Available, v.UsedPercent
+	total, used, available, percent = v.Total, v.Used, v.Available, v.UsedPercent
+
+	// When running inside a container with a cgroup memory limit, gopsutil reads
+	// the container's /proc/meminfo which reflects the cgroup limit (e.g. 256M),
+	// not the host's actual RAM. Delegate to HAL for accurate host memory stats.
+	if m.hal != nil && total < 1<<30 { // less than 1 GB suggests cgroup limit
+		if memInfo, err := m.hal.GetMemoryInfo(context.Background()); err == nil && memInfo.Total > 0 {
+			total = uint64(memInfo.Total)
+			available = uint64(memInfo.Available)
+			used = uint64(memInfo.Used)
+			if total > 0 {
+				percent = float64(used) / float64(total) * 100
+			}
+		}
+	}
+
+	return
 }
 
 // GetDiskStats returns disk statistics for root partition

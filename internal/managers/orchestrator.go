@@ -991,19 +991,52 @@ func (o *Orchestrator) getAppStatus(ctx context.Context, app *models.App) *model
 	}
 
 	if app.UsesSwarm() {
-		if o.swarm == nil {
-			return status
+		var swarmFound bool
+		if o.swarm != nil {
+			// Get aggregate status across all services in the stack.
+			// Uses stack namespace label — works for CasaOS apps where the
+			// compose service name differs from the app/stack name.
+			stackStatus, err := o.swarm.GetStackStatus(app.Name)
+			if err == nil && stackStatus != nil && stackStatus.Replicas != "" {
+				swarmFound = true
+				status.Running = stackStatus.Running
+				status.Replicas = stackStatus.Replicas
+				status.Health = stackStatus.Health
+				if !status.Running {
+					status.Health = "stopped"
+				}
+			}
 		}
-		// Get aggregate status across all services in the stack.
-		// Uses stack namespace label — works for CasaOS apps where the
-		// compose service name differs from the app/stack name.
-		stackStatus, err := o.swarm.GetStackStatus(app.Name)
-		if err == nil && stackStatus != nil {
-			status.Running = stackStatus.Running
-			status.Replicas = stackStatus.Replicas
-			status.Health = stackStatus.Health
-			if !status.Running {
-				status.Health = "stopped"
+
+		// Tier 2 (container) installs deploy ALL services via docker-compose,
+		// but the DB registers platform services with deploy_mode=stack.
+		// When the Swarm lookup finds nothing, fall back to plain Docker
+		// container status check.
+		if !swarmFound && o.docker != nil {
+			containerName := app.Name
+			if !strings.HasPrefix(containerName, "cubeos-") {
+				containerName = "cubeos-" + containerName
+			}
+			timeoutCtx, cancel := context.WithTimeout(ctx, 5*time.Second)
+			defer cancel()
+			containerStatus, err := o.docker.GetContainerStatus(timeoutCtx, containerName)
+			if err == nil {
+				status.Running = containerStatus == "running"
+				if status.Running {
+					if strings.Contains(containerStatus, "healthy") {
+						status.Health = "healthy"
+					} else if strings.Contains(containerStatus, "unhealthy") {
+						status.Health = "unhealthy"
+					} else {
+						status.Health = "running"
+					}
+				} else {
+					status.Health = "stopped"
+				}
+				status.Replicas = "1/1"
+				if !status.Running {
+					status.Replicas = "0/1"
+				}
 			}
 		}
 	} else {
