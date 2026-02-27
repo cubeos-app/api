@@ -920,6 +920,29 @@ var migrations = []Migration{
 			return nil
 		},
 	},
+	{
+		Version:     22,
+		Description: "Add access profile config keys (Phase 2 Access Profiles)",
+		Up: func(db *sql.DB) error {
+			keys := []struct{ k, v string }{
+				{"ext_npm_url", ""},
+				{"ext_npm_token", ""},
+				{"ext_pihole_url", ""},
+				{"ext_pihole_password", ""},
+				{"aio_dhcp_enabled", "0"},
+				{"aio_dns_enabled", "0"},
+				{"aio_proxy_enabled", "0"},
+			}
+			for _, kv := range keys {
+				_, err := db.Exec(`INSERT OR IGNORE INTO system_config (key, value, updated_at) VALUES (?, ?, CURRENT_TIMESTAMP)`, kv.k, kv.v)
+				if err != nil {
+					log.Warn().Err(err).Str("key", kv.k).Msg("Migration 22: failed to insert key (non-fatal)")
+				}
+			}
+			log.Info().Msg("Migration 22: Added access profile config keys to system_config")
+			return nil
+		},
+	},
 }
 
 // isDuplicateColumnError checks if an error is a "duplicate column" error

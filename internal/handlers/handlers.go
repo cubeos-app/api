@@ -363,19 +363,150 @@ func (h *Handlers) ValidateConfig(w http.ResponseWriter, r *http.Request) {
 
 // GetAccessProfile godoc
 // @Summary Get current access profile
-// @Description Returns the current access profile (standard, advanced, or all_in_one). Phase 1: read-only, always returns standard for new installs.
+// @Description Returns the current access profile and full configuration. Credentials (tokens, passwords) are masked in the response.
 // @Tags System
 // @Produce json
 // @Security BearerAuth
-// @Success 200 {object} map[string]string "profile: current access profile"
+// @Success 200 {object} database.AccessProfileConfig "Access profile configuration"
 // @Router /system/access-profile [get]
 func (h *Handlers) GetAccessProfile(w http.ResponseWriter, r *http.Request) {
-	profile, err := database.GetAccessProfile(h.db.DB)
+	cfg, err := database.GetAccessProfileConfig(h.db.DB)
 	if err != nil {
 		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": err.Error()})
 		return
 	}
-	writeJSON(w, http.StatusOK, map[string]string{"profile": profile})
+	// Mask credentials in response
+	resp := map[string]interface{}{
+		"profile":             cfg.Profile,
+		"ext_npm_url":         cfg.ExtNPMURL,
+		"ext_npm_token":       maskSecret(cfg.ExtNPMToken),
+		"ext_pihole_url":      cfg.ExtPiholeURL,
+		"ext_pihole_password": maskSecret(cfg.ExtPiholePass),
+		"aio_dhcp_enabled":    cfg.AIODHCPEnabled,
+		"aio_dns_enabled":     cfg.AIODNSEnabled,
+		"aio_proxy_enabled":   cfg.AIOProxyEnabled,
+	}
+	writeJSON(w, http.StatusOK, resp)
+}
+
+// UpdateAccessProfile godoc
+// @Summary Update access profile
+// @Description Updates the access profile and saves credentials. Does NOT trigger migration of existing apps (Phase 3).
+// @Tags System
+// @Accept json
+// @Produce json
+// @Security BearerAuth
+// @Param request body database.AccessProfileConfig true "Access profile configuration"
+// @Success 200 {object} map[string]string "profile and confirmation message"
+// @Failure 400 {object} map[string]string "Validation error"
+// @Failure 500 {object} map[string]string "Internal server error"
+// @Router /system/access-profile [put]
+func (h *Handlers) UpdateAccessProfile(w http.ResponseWriter, r *http.Request) {
+	var req struct {
+		Profile       string `json:"profile"`
+		ExtNPMURL     string `json:"ext_npm_url"`
+		ExtNPMToken   string `json:"ext_npm_token"`
+		ExtPiholeURL  string `json:"ext_pihole_url"`
+		ExtPiholePass string `json:"ext_pihole_password"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "invalid request body"})
+		return
+	}
+
+	if !database.ValidAccessProfiles[req.Profile] {
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "profile must be one of: standard, advanced, all_in_one"})
+		return
+	}
+	if req.Profile == "advanced" {
+		if req.ExtNPMURL == "" || req.ExtPiholeURL == "" {
+			writeJSON(w, http.StatusBadRequest, map[string]string{"error": "advanced profile requires ext_npm_url and ext_pihole_url"})
+			return
+		}
+	}
+
+	cfg := &database.AccessProfileConfig{
+		Profile:       req.Profile,
+		ExtNPMURL:     req.ExtNPMURL,
+		ExtNPMToken:   req.ExtNPMToken,
+		ExtPiholeURL:  req.ExtPiholeURL,
+		ExtPiholePass: req.ExtPiholePass,
+	}
+	if err := database.SetAccessProfileConfig(h.db.DB, cfg); err != nil {
+		log.Error().Err(err).Msg("failed to save access profile config")
+		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "failed to save profile"})
+		return
+	}
+
+	writeJSON(w, http.StatusOK, map[string]string{
+		"profile": req.Profile,
+		"message": "Profile updated",
+	})
+}
+
+// TestAccessProfile godoc
+// @Summary Test external access profile credentials
+// @Description Tests connectivity to external NPM and Pi-hole instances. Returns per-service results even if one fails.
+// @Tags System
+// @Accept json
+// @Produce json
+// @Security BearerAuth
+// @Param request body map[string]string true "External credentials to test"
+// @Success 200 {object} map[string]interface{} "Test results with npm_ok, pihole_ok, versions, errors"
+// @Router /system/access-profile/test [post]
+func (h *Handlers) TestAccessProfile(w http.ResponseWriter, r *http.Request) {
+	var req struct {
+		ExtNPMURL     string `json:"ext_npm_url"`
+		ExtNPMToken   string `json:"ext_npm_token"`
+		ExtPiholeURL  string `json:"ext_pihole_url"`
+		ExtPiholePass string `json:"ext_pihole_password"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "invalid request body"})
+		return
+	}
+
+	result := map[string]interface{}{
+		"npm_ok":         false,
+		"npm_version":    "",
+		"npm_error":      "",
+		"pihole_ok":      false,
+		"pihole_version": "",
+		"pihole_error":   "",
+	}
+
+	// Test NPM connectivity
+	if req.ExtNPMURL != "" {
+		npmOK, npmVersion, npmErr := testExternalNPM(r.Context(), req.ExtNPMURL, req.ExtNPMToken)
+		result["npm_ok"] = npmOK
+		result["npm_version"] = npmVersion
+		result["npm_error"] = npmErr
+	} else {
+		result["npm_error"] = "no URL provided"
+	}
+
+	// Test Pi-hole connectivity
+	if req.ExtPiholeURL != "" {
+		phOK, phVersion, phErr := testExternalPihole(r.Context(), req.ExtPiholeURL, req.ExtPiholePass)
+		result["pihole_ok"] = phOK
+		result["pihole_version"] = phVersion
+		result["pihole_error"] = phErr
+	} else {
+		result["pihole_error"] = "no URL provided"
+	}
+
+	writeJSON(w, http.StatusOK, result)
+}
+
+// maskSecret returns a masked version of a secret string.
+func maskSecret(s string) string {
+	if s == "" {
+		return ""
+	}
+	if len(s) <= 4 {
+		return "****"
+	}
+	return s[:2] + "****" + s[len(s)-2:]
 }
 
 // GetSystemStats godoc

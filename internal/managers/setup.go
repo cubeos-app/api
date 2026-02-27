@@ -887,10 +887,8 @@ func (m *SetupManager) MarkSetupComplete(cfg *models.SetupConfig) error {
 		log.Warn().Err(err).Msg("MarkSetupComplete: failed to update system_state")
 	}
 
-	// Ensure access_profile is set (Phase 1: always "standard" during wizard)
-	if err := database.SetAccessProfile(m.db, "standard"); err != nil {
-		log.Warn().Err(err).Msg("MarkSetupComplete: failed to set access_profile")
-	}
+	// Save access profile from wizard config (Phase 2)
+	m.saveAccessProfileFromConfig(cfg)
 
 	// Create .setup_complete flag file (checked by boot scripts)
 	dataDir := m.cfg.DataDir
@@ -904,6 +902,32 @@ func (m *SetupManager) MarkSetupComplete(cfg *models.SetupConfig) error {
 
 	m.setupDone = true
 	return nil
+}
+
+// saveAccessProfileFromConfig saves the access profile from a SetupConfig.
+// Called during MarkSetupComplete and after FlowEngine first_boot_setup completes.
+func (m *SetupManager) saveAccessProfileFromConfig(cfg *models.SetupConfig) {
+	profile := cfg.AccessProfile
+	if profile == "" || !database.ValidAccessProfiles[profile] {
+		profile = "standard"
+	}
+	apCfg := &database.AccessProfileConfig{
+		Profile:       profile,
+		ExtNPMURL:     cfg.ExtNPMURL,
+		ExtNPMToken:   cfg.ExtNPMToken,
+		ExtPiholeURL:  cfg.ExtPiholeURL,
+		ExtPiholePass: cfg.ExtPiholePassword,
+	}
+	if err := database.SetAccessProfileConfig(m.db, apCfg); err != nil {
+		log.Warn().Err(err).Str("profile", profile).Msg("saveAccessProfileFromConfig: failed to save access profile")
+	} else {
+		log.Info().Str("profile", profile).Msg("Access profile saved from wizard config")
+	}
+}
+
+// SaveAccessProfileFromConfig is the exported version for use by setup handlers.
+func (m *SetupManager) SaveAccessProfileFromConfig(cfg *models.SetupConfig) {
+	m.saveAccessProfileFromConfig(cfg)
 }
 
 // SaveCountryCode persists the country code to system_config and defaults.env.

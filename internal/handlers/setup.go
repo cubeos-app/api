@@ -241,6 +241,9 @@ func (h *SetupHandler) ApplyConfig(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// Save access profile from wizard config (Phase 2)
+	h.manager.SaveAccessProfileFromConfig(&cfg)
+
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(map[string]interface{}{
 		"success": true,

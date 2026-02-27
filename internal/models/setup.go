@@ -47,6 +47,13 @@ type SetupConfig struct {
 	EnableAnalytics    bool `json:"enable_analytics"`     // Anonymous usage stats
 	EnableAutoUpdates  bool `json:"enable_auto_updates"`  // Automatic security updates
 	EnableRemoteAccess bool `json:"enable_remote_access"` // WireGuard VPN setup
+
+	// Access Profile (Phase 2) — set during wizard, saved on apply/complete
+	AccessProfile     string `json:"access_profile,omitempty"`      // standard | advanced | all_in_one
+	ExtNPMURL         string `json:"ext_npm_url,omitempty"`         // Advanced: external NPM URL
+	ExtNPMToken       string `json:"ext_npm_token,omitempty"`       // Advanced: external NPM token
+	ExtPiholeURL      string `json:"ext_pihole_url,omitempty"`      // Advanced: external Pi-hole URL
+	ExtPiholePassword string `json:"ext_pihole_password,omitempty"` // Advanced: external Pi-hole password
 }
 
 // SetupStatus represents the current setup state

@@ -614,3 +614,99 @@ func SetAccessProfile(db *sql.DB, profile string) error {
 	)
 	return err
 }
+
+// AccessProfileConfig holds the full access profile configuration.
+type AccessProfileConfig struct {
+	Profile         string `json:"profile"`
+	ExtNPMURL       string `json:"ext_npm_url"`
+	ExtNPMToken     string `json:"ext_npm_token"`
+	ExtPiholeURL    string `json:"ext_pihole_url"`
+	ExtPiholePass   string `json:"ext_pihole_password"`
+	AIODHCPEnabled  bool   `json:"aio_dhcp_enabled"`
+	AIODNSEnabled   bool   `json:"aio_dns_enabled"`
+	AIOProxyEnabled bool   `json:"aio_proxy_enabled"`
+}
+
+// accessProfileKeys are the system_config keys used by access profiles.
+var accessProfileKeys = []string{
+	"access_profile", "ext_npm_url", "ext_npm_token",
+	"ext_pihole_url", "ext_pihole_password",
+	"aio_dhcp_enabled", "aio_dns_enabled", "aio_proxy_enabled",
+}
+
+// GetAccessProfileConfig returns the full access profile configuration.
+func GetAccessProfileConfig(db *sql.DB) (*AccessProfileConfig, error) {
+	rows, err := db.Query("SELECT key, value FROM system_config WHERE key IN (?, ?, ?, ?, ?, ?, ?, ?)",
+		"access_profile", "ext_npm_url", "ext_npm_token",
+		"ext_pihole_url", "ext_pihole_password",
+		"aio_dhcp_enabled", "aio_dns_enabled", "aio_proxy_enabled",
+	)
+	if err != nil {
+		return nil, fmt.Errorf("query access profile config: %w", err)
+	}
+	defer rows.Close()
+
+	kv := make(map[string]string)
+	for rows.Next() {
+		var k, v string
+		if err := rows.Scan(&k, &v); err != nil {
+			return nil, fmt.Errorf("scan access profile config: %w", err)
+		}
+		kv[k] = v
+	}
+
+	cfg := &AccessProfileConfig{
+		Profile:         kv["access_profile"],
+		ExtNPMURL:       kv["ext_npm_url"],
+		ExtNPMToken:     kv["ext_npm_token"],
+		ExtPiholeURL:    kv["ext_pihole_url"],
+		ExtPiholePass:   kv["ext_pihole_password"],
+		AIODHCPEnabled:  kv["aio_dhcp_enabled"] == "1",
+		AIODNSEnabled:   kv["aio_dns_enabled"] == "1",
+		AIOProxyEnabled: kv["aio_proxy_enabled"] == "1",
+	}
+	if cfg.Profile == "" {
+		cfg.Profile = "standard"
+	}
+	return cfg, nil
+}
+
+// SetAccessProfileConfig saves the full access profile configuration.
+func SetAccessProfileConfig(db *sql.DB, cfg *AccessProfileConfig) error {
+	if !ValidAccessProfiles[cfg.Profile] {
+		return fmt.Errorf("invalid access profile %q: must be standard, advanced, or all_in_one", cfg.Profile)
+	}
+
+	tx, err := db.Begin()
+	if err != nil {
+		return fmt.Errorf("begin tx: %w", err)
+	}
+	defer tx.Rollback()
+
+	upsert := "INSERT OR REPLACE INTO system_config (key, value, updated_at) VALUES (?, ?, CURRENT_TIMESTAMP)"
+
+	pairs := map[string]string{
+		"access_profile":      cfg.Profile,
+		"ext_npm_url":         cfg.ExtNPMURL,
+		"ext_npm_token":       cfg.ExtNPMToken,
+		"ext_pihole_url":      cfg.ExtPiholeURL,
+		"ext_pihole_password": cfg.ExtPiholePass,
+	}
+
+	aioFlag := func(b bool) string {
+		if b {
+			return "1"
+		}
+		return "0"
+	}
+	pairs["aio_dhcp_enabled"] = aioFlag(cfg.AIODHCPEnabled)
+	pairs["aio_dns_enabled"] = aioFlag(cfg.AIODNSEnabled)
+	pairs["aio_proxy_enabled"] = aioFlag(cfg.AIOProxyEnabled)
+
+	for k, v := range pairs {
+		if _, err := tx.Exec(upsert, k, v); err != nil {
+			return fmt.Errorf("upsert %s: %w", k, err)
+		}
+	}
+	return tx.Commit()
+}

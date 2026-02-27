@@ -758,6 +758,8 @@ func main() {
 				r.Post("/timezone", h.SetTimezone)
 				r.Get("/timezones", h.GetTimezones)
 				r.Get("/access-profile", h.GetAccessProfile)
+				r.Put("/access-profile", h.UpdateAccessProfile)
+				r.Post("/access-profile/test", h.TestAccessProfile)
 				r.Post("/reboot", h.Reboot)
 				r.Post("/shutdown", h.Shutdown)
 				r.Get("/browse", appStoreHandler.BrowseDirectories)
