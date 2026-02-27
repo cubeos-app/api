@@ -261,7 +261,7 @@ func (o *Orchestrator) InstallFromRegistryWithProgress(ctx context.Context, req 
     ports:
       - target: 8080
         published: %d
-        mode: ingress
+        mode: host
     deploy:
       replicas: 1
       restart_policy:

@@ -15,6 +15,7 @@ import (
 	"regexp"
 	"runtime"
 	"sort"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -1076,6 +1077,7 @@ func remapPorts(manifest string, allocatedPort int, portMap string) (string, err
 	// yaml.v3 preserves quoted values as strings (e.g. published: "8384"),
 	// which Docker Compose rejects with "ports.published must be a integer".
 	// This ensures every long-form port entry has an integer published value.
+	// Also force mode: host — Swarm ingress routing mesh doesn't work in LXC.
 	for _, svcDef := range svcMap {
 		svc, ok := svcDef.(map[string]interface{})
 		if !ok {
@@ -1085,13 +1087,33 @@ func remapPorts(manifest string, allocatedPort int, portMap string) (string, err
 		if !ok {
 			continue
 		}
-		for _, p := range ports {
-			if port, ok := p.(map[string]interface{}); ok {
+		for i, p := range ports {
+			switch port := p.(type) {
+			case map[string]interface{}:
 				if pub, exists := port["published"]; exists {
 					port["published"] = toInt(pub)
 				}
 				if tgt, exists := port["target"]; exists {
 					port["target"] = toInt(tgt)
+				}
+				port["mode"] = "host"
+			case string:
+				// Convert short-form "6100:7474" to long-form with mode: host
+				hostPort, containerPort, _ := parseShortPort(port)
+				proto := "tcp"
+				if idx := strings.LastIndex(containerPort, "/"); idx > 0 {
+					proto = containerPort[idx+1:]
+					containerPort = containerPort[:idx]
+				}
+				cPort, _ := strconv.Atoi(containerPort)
+				if cPort == 0 {
+					cPort = hostPort
+				}
+				ports[i] = map[string]interface{}{
+					"target":    cPort,
+					"published": hostPort,
+					"protocol":  proto,
+					"mode":      "host",
 				}
 			}
 		}

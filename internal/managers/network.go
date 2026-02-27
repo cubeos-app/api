@@ -127,6 +127,21 @@ func NewNetworkManager(cfg *config.Config, halClient *hal.Client, db *sqlx.DB) *
 	mode, vpnMode := loadConfigFromDB(db)
 	log.Info().Str("mode", string(mode)).Str("vpn", string(vpnMode)).Msg("NetworkManager: loaded config from database")
 
+	// On Tier 2 (container) installs, the installer sets CUBEOS_NETWORK_MODE in defaults.env
+	// but the DB may still have the schema default (offline_hotspot). Override if needed.
+	if envMode := os.Getenv("CUBEOS_NETWORK_MODE"); envMode != "" && mode == models.NetworkModeOfflineHotspot {
+		parsed := parseNetworkMode(envMode)
+		if parsed != models.NetworkModeOfflineHotspot {
+			log.Info().Str("env", envMode).Str("db", string(mode)).Str("using", string(parsed)).
+				Msg("NetworkManager: overriding DB default with CUBEOS_NETWORK_MODE from environment")
+			mode = parsed
+			// Persist the corrected mode to DB
+			if db != nil {
+				_, _ = db.Exec("UPDATE network_config SET mode = ? WHERE id = 1", string(parsed))
+			}
+		}
+	}
+
 	// If DB has auto-detected interfaces, prefer those over env var defaults
 	dbIfaceCfg := loadInterfacesFromDB(db)
 	if dbIfaceCfg != nil && dbIfaceCfg.AutoDetected {
