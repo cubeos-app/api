@@ -374,7 +374,7 @@ func remapLongVolume(vol map[string]interface{}, svcName, appPrefix, appDataDir 
 	}
 
 	src, ok := vol["source"].(string)
-	if !ok || !strings.HasPrefix(src, "/") {
+	if !ok || src == "" {
 		return nil
 	}
 
@@ -384,6 +384,27 @@ func remapLongVolume(vol map[string]interface{}, svcName, appPrefix, appDataDir 
 	}
 
 	ro, _ := vol["read_only"].(bool)
+
+	// Relative source with type: bind — this is a bind mount with a relative path
+	// (e.g., "ntfysh_cache" instead of "/some/absolute/path").
+	// Docker Swarm will fail if the resolved path doesn't exist, so remap it
+	// to an absolute path under appdata using the source name as the directory name.
+	if !strings.HasPrefix(src, "/") {
+		if volType != "bind" {
+			return nil // unnamed volume without explicit bind type — skip
+		}
+		remapped := filepath.Join(appDataDir, sanitizePathSegment(src))
+		return &RemapResult{
+			ServiceName:   svcName,
+			Original:      src,
+			Remapped:      remapped,
+			ContainerPath: target,
+			WasRemapped:   true,
+			IsConfig:      isConfigPath(target),
+			ReadOnly:      ro,
+			Description:   descriptionFromPath(target),
+		}
+	}
 
 	// Skip if already under this app's directory
 	if strings.HasPrefix(src, appPrefix) {

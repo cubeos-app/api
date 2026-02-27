@@ -739,7 +739,7 @@ func TestExtractHostPathShortForm(t *testing.T) {
 		{"single-entry", ""},
 	}
 	for _, tt := range tests {
-		result := extractHostPath(tt.input)
+		result := extractHostPath(tt.input, "/tmp")
 		if result != tt.expected {
 			t.Errorf("extractHostPath(%v) = %q, want %q", tt.input, result, tt.expected)
 		}
@@ -748,6 +748,7 @@ func TestExtractHostPathShortForm(t *testing.T) {
 
 // TestExtractHostPathLongForm verifies extractHostPath with long-form maps.
 func TestExtractHostPathLongForm(t *testing.T) {
+	composeDir := "/cubeos/apps/testapp/appconfig"
 	tests := []struct {
 		name     string
 		input    map[string]interface{}
@@ -769,14 +770,19 @@ func TestExtractHostPathLongForm(t *testing.T) {
 			"/cubeos/config",
 		},
 		{
-			"named source (skip)",
-			map[string]interface{}{"type": "bind", "source": "relative-path", "target": "/data"},
+			"relative bind source (resolved against compose dir)",
+			map[string]interface{}{"type": "bind", "source": "ntfysh_cache", "target": "/var/cache/ntfy"},
+			composeDir + "/ntfysh_cache",
+		},
+		{
+			"relative source without bind type (named volume, skip)",
+			map[string]interface{}{"source": "some-volume", "target": "/data"},
 			"",
 		},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			result := extractHostPath(tt.input)
+			result := extractHostPath(tt.input, composeDir)
 			if result != tt.expected {
 				t.Errorf("extractHostPath(%v) = %q, want %q", tt.input, result, tt.expected)
 			}

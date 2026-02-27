@@ -16,6 +16,7 @@ import (
 	"time"
 
 	"cubeos-api/internal/config"
+	"cubeos-api/internal/database"
 	"cubeos-api/internal/flowengine"
 	"cubeos-api/internal/hal"
 	"cubeos-api/internal/models"
@@ -845,14 +846,29 @@ func (m *SetupManager) MarkSetupComplete(cfg *models.SetupConfig) error {
 	// Save minimal config
 	configJSON, _ := json.Marshal(cfg)
 
-	_, err := m.db.Exec(`UPDATE setup_status SET 
-		is_complete = 1, 
+	_, err := m.db.Exec(`UPDATE setup_status SET
+		is_complete = 1,
 		completed_at = CURRENT_TIMESTAMP,
 		config_json = ?
 		WHERE id = 1`, string(configJSON))
 
 	if err != nil {
 		return err
+	}
+
+	// Update system_state table
+	if err := database.SetSystemState(m.db, "setup_complete", "true"); err != nil {
+		log.Warn().Err(err).Msg("MarkSetupComplete: failed to update system_state")
+	}
+
+	// Create .setup_complete flag file (checked by boot scripts)
+	dataDir := m.cfg.DataDir
+	if dataDir == "" {
+		dataDir = "/cubeos/data"
+	}
+	flagPath := filepath.Join(dataDir, ".setup_complete")
+	if err := os.WriteFile(flagPath, []byte("complete\n"), 0644); err != nil {
+		log.Warn().Err(err).Str("path", flagPath).Msg("MarkSetupComplete: failed to create .setup_complete file")
 	}
 
 	m.setupDone = true

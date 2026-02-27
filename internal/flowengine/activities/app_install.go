@@ -243,7 +243,7 @@ func makeWriteCompose() flowengine.ActivityFunc {
 		}
 
 		// Pre-create bind mount source directories (Swarm doesn't auto-create them)
-		preCreateBindMounts(in.Content)
+		preCreateBindMounts(in.Content, absPath)
 
 		log.Info().Str("app", in.AppName).Str("path", absPath).Msg("write_compose: compose file written")
 		return marshalOutput(WriteComposeOutput{AppName: in.AppName, ComposePath: absPath, Written: true})
@@ -281,7 +281,10 @@ func makeRemoveDirs() flowengine.ActivityFunc {
 // Docker Swarm (unlike docker-compose) does NOT auto-create bind mount host paths.
 // Without this, services fail to start with "invalid mount config" errors.
 // Handles both short-form ("host:container") and long-form (type/source/target map) volumes.
-func preCreateBindMounts(composeContent string) {
+// composePath is the absolute path to the compose file — used to resolve relative bind sources.
+func preCreateBindMounts(composeContent string, composePath string) {
+	composeDir := filepath.Dir(composePath)
+
 	var compose struct {
 		Services map[string]struct {
 			Volumes []interface{} `yaml:"volumes"`
@@ -294,7 +297,7 @@ func preCreateBindMounts(composeContent string) {
 
 	for svcName, svc := range compose.Services {
 		for _, v := range svc.Volumes {
-			hostPath := extractHostPath(v)
+			hostPath := extractHostPath(v, composeDir)
 			if hostPath == "" {
 				continue
 			}
@@ -314,7 +317,8 @@ func preCreateBindMounts(composeContent string) {
 // extractHostPath extracts the host path from a volume entry.
 // Supports short-form string ("host:container[:opts]") and long-form map
 // (type: bind, source: /path, target: /path).
-func extractHostPath(v interface{}) string {
+// composeDir is used to resolve relative bind mount sources.
+func extractHostPath(v interface{}, composeDir string) string {
 	switch vol := v.(type) {
 	case string:
 		// Short form: "/host/path:/container/path" or "/host/path:/container/path:ro"
@@ -334,8 +338,17 @@ func extractHostPath(v interface{}) string {
 			return "" // only create dirs for bind mounts
 		}
 		source, _ := vol["source"].(string)
-		if source == "" || !strings.HasPrefix(source, "/") {
-			return "" // no source or named volume
+		if source == "" {
+			return ""
+		}
+		if !strings.HasPrefix(source, "/") {
+			// Relative source with type: bind — resolve against compose file directory.
+			// Docker Swarm resolves relative bind sources relative to the compose file,
+			// but does NOT auto-create them, so we must.
+			if volType == "bind" {
+				return filepath.Join(composeDir, source)
+			}
+			return "" // named volume
 		}
 		return source
 	default:
