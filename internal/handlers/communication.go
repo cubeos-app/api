@@ -1467,6 +1467,11 @@ type BluetoothScanRequest struct {
 	Duration int `json:"duration"` // Scan duration in seconds
 }
 
+// BluetoothOverrideRequest represents a Bluetooth override toggle request
+type BluetoothOverrideRequest struct {
+	Override bool `json:"override"` // Force-enable Bluetooth when built-in WiFi is AP
+}
+
 // ScanBluetoothDevices godoc
 // @Summary Scan for Bluetooth devices
 // @Description Initiates a Bluetooth device discovery scan
@@ -1718,16 +1723,14 @@ func (h *CommunicationHandler) GetBluetoothCoexistence(w http.ResponseWriter, r 
 // @Tags Communication
 // @Accept json
 // @Produce json
-// @Param body body struct{ Override bool `json:"override"` } true "Override state"
+// @Param body body BluetoothOverrideRequest true "Override state"
 // @Security BearerAuth
 // @Success 200 {object} SuccessResponse
 // @Failure 400 {object} ErrorResponse
 // @Failure 500 {object} ErrorResponse
 // @Router /communication/bluetooth/override [post]
 func (h *CommunicationHandler) SetBluetoothOverride(w http.ResponseWriter, r *http.Request) {
-	var req struct {
-		Override bool `json:"override"`
-	}
+	var req BluetoothOverrideRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		writeError(w, http.StatusBadRequest, "Invalid request body")
 		return
