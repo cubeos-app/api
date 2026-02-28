@@ -1096,7 +1096,7 @@ func (h *CommunicationHandler) GetIridiumSignal(w http.ResponseWriter, r *http.R
 
 // SendIridiumSBD godoc
 // @Summary Send Iridium SBD message
-// @Description Sends a Short Burst Data message via Iridium satellite. Supports text (max 340 bytes) and binary (base64-encoded) formats.
+// @Description Sends a Short Burst Data message via Iridium satellite. Supports text (max 120 chars via AT+SBDWT) and binary (max 340 bytes, base64-encoded) formats.
 // @Tags Communication
 // @Accept json
 // @Produce json
@@ -1128,9 +1128,9 @@ func (h *CommunicationHandler) SendIridiumSBD(w http.ResponseWriter, r *http.Req
 		return
 	}
 
-	// Text messages are limited to 340 bytes
-	if req.Format == "text" && len(req.Text) > 340 {
-		writeError(w, http.StatusBadRequest, "SBD text message exceeds 340 byte limit")
+	// Text messages are limited to 120 chars (AT+SBDWT limit)
+	if req.Format == "text" && len(req.Text) > 120 {
+		writeError(w, http.StatusBadRequest, "SBD text message exceeds 120 character limit (use binary format for larger payloads)")
 		return
 	}
 
