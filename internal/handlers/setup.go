@@ -4,6 +4,8 @@ import (
 	"context"
 	"encoding/json"
 	"net/http"
+	"os"
+	"path/filepath"
 	"strings"
 	"time"
 
@@ -78,6 +80,9 @@ func (h *SetupHandler) Routes() chi.Router {
 
 	// AP teardown (after Standard profile wizard completion)
 	r.Post("/ap-teardown", h.APTeardown)
+
+	// Pre-configuration (detected from Pi Imager, Armbian, custom.toml, LXC)
+	r.Get("/preconfiguration", h.GetPreconfiguration)
 
 	return r
 }
@@ -467,4 +472,59 @@ func SetupRequiredMiddleware(setupMgr *managers.SetupManager) func(http.Handler)
 			next.ServeHTTP(w, r)
 		})
 	}
+}
+
+// GetPreconfiguration godoc
+// @Summary Get pre-configuration settings
+// @Description Returns settings detected from Pi Imager, Armbian, custom.toml, or LXC during first boot. WiFi password is redacted.
+// @Tags Setup
+// @Produce json
+// @Success 200 {object} models.Preconfiguration "Pre-configuration settings"
+// @Failure 500 {object} models.ErrorResponse "Failed to read preconfiguration"
+// @Router /setup/preconfiguration [get]
+func (h *SetupHandler) GetPreconfiguration(w http.ResponseWriter, r *http.Request) {
+	// Resolve preconfiguration.json path
+	configDir := os.Getenv("CUBEOS_CONFIG_DIR")
+	if configDir == "" {
+		configDir = "/cubeos/config"
+	}
+	preconfigPath := filepath.Join(configDir, "preconfiguration.json")
+
+	data, err := os.ReadFile(preconfigPath)
+	if err != nil {
+		if os.IsNotExist(err) {
+			// No preconfiguration file — return default "none" response
+			writeJSON(w, http.StatusOK, models.Preconfiguration{
+				Source:            "none",
+				NetworkModeHint:   "wifi_router",
+				AccessProfileHint: "standard",
+				SSH:               models.PreconfigSSH{Enabled: true, PasswordAuth: true},
+				Users:             []models.PreconfigUser{},
+			})
+			return
+		}
+		log.Error().Err(err).Str("path", preconfigPath).Msg("Failed to read preconfiguration.json")
+		writeError(w, http.StatusInternalServerError, "Failed to read preconfiguration")
+		return
+	}
+
+	// Parse into struct
+	var preconfig models.Preconfiguration
+	if err := json.Unmarshal(data, &preconfig); err != nil {
+		log.Error().Err(err).Msg("Failed to parse preconfiguration.json")
+		writeError(w, http.StatusInternalServerError, "Preconfiguration file is corrupt")
+		return
+	}
+
+	// Redact WiFi password — dashboard doesn't need it (already applied by boot scripts)
+	if preconfig.WiFi != nil {
+		preconfig.WiFi.Password = "[redacted]"
+	}
+
+	// Ensure users slice is not nil (prevents null in JSON)
+	if preconfig.Users == nil {
+		preconfig.Users = []models.PreconfigUser{}
+	}
+
+	writeJSON(w, http.StatusOK, preconfig)
 }

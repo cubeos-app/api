@@ -293,6 +293,49 @@ type ContainerStats struct {
 }
 
 // =============================================================================
+// Pre-Configuration (Pi Imager, Armbian, custom.toml, LXC detection)
+// =============================================================================
+
+// Preconfiguration holds settings detected from flashing tools during first boot.
+// Read from /cubeos/config/preconfiguration.json (written by detect-preconfiguration.sh).
+type Preconfiguration struct {
+	Source            string          `json:"source"`
+	DetectedAt        string          `json:"detected_at"`
+	Hostname          string          `json:"hostname"`
+	Timezone          string          `json:"timezone"`
+	Locale            string          `json:"locale"`
+	KeyboardLayout    string          `json:"keyboard_layout"`
+	WiFi              *PreconfigWiFi  `json:"wifi"`
+	Users             []PreconfigUser `json:"users"`
+	SSH               PreconfigSSH    `json:"ssh"`
+	NetworkModeHint   string          `json:"network_mode_hint"`
+	AccessProfileHint string          `json:"access_profile_hint"`
+	WiFiConnectFailed bool            `json:"wifi_connect_failed,omitempty"`
+}
+
+// PreconfigWiFi holds WiFi credentials from pre-configuration.
+type PreconfigWiFi struct {
+	SSID     string `json:"ssid"`
+	Password string `json:"password"` // redacted in API response
+	Country  string `json:"country"`
+	Hidden   bool   `json:"hidden"`
+}
+
+// PreconfigUser holds user info from pre-configuration.
+type PreconfigUser struct {
+	Name        string   `json:"name"`
+	HasPassword bool     `json:"has_password"`
+	SSHKeys     []string `json:"ssh_keys"`
+	Groups      []string `json:"groups"`
+}
+
+// PreconfigSSH holds SSH config from pre-configuration.
+type PreconfigSSH struct {
+	Enabled      bool `json:"enabled"`
+	PasswordAuth bool `json:"password_auth"`
+}
+
+// =============================================================================
 // Generic
 // =============================================================================
 
