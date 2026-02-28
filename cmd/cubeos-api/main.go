@@ -515,6 +515,8 @@ func main() {
 	ext := handlers.NewExtendedHandlers(logMgr, firewallMgr, backupMgr, processMgr, wizardMgr, monitoringMgr, prefMgr, powerMgr, storageMgr, halClient)
 	appStoreHandler := handlers.NewAppStoreHandler(appStoreMgr, npmMgr)
 	setupHandler := handlers.NewSetupHandler(setupMgr, flowEngine, feStore)
+	setupHandler.SetHALClient(halClient)
+	setupHandler.SetNetworkManager(networkMgr)
 
 	// Create Chat handler (AI Assistant)
 	chatHandler := handlers.NewChatHandler(cfg)

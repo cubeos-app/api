@@ -9,17 +9,21 @@ import (
 
 	"cubeos-api/internal/flowengine"
 	feworkflows "cubeos-api/internal/flowengine/workflows"
+	"cubeos-api/internal/hal"
 	"cubeos-api/internal/managers"
 	"cubeos-api/internal/models"
 
 	"github.com/go-chi/chi/v5"
+	"github.com/rs/zerolog/log"
 )
 
 // SetupHandler handles setup wizard endpoints
 type SetupHandler struct {
-	manager *managers.SetupManager
-	engine  *flowengine.WorkflowEngine
-	store   *flowengine.WorkflowStore
+	manager    *managers.SetupManager
+	engine     *flowengine.WorkflowEngine
+	store      *flowengine.WorkflowStore
+	halClient  *hal.Client
+	networkMgr *managers.NetworkManager
 }
 
 // NewSetupHandler creates a new setup handler
@@ -29,6 +33,16 @@ func NewSetupHandler(manager *managers.SetupManager, engine *flowengine.Workflow
 		engine:  engine,
 		store:   store,
 	}
+}
+
+// SetHALClient sets the HAL client for Ethernet status checks.
+func (h *SetupHandler) SetHALClient(c *hal.Client) {
+	h.halClient = c
+}
+
+// SetNetworkManager sets the NetworkManager for AP teardown.
+func (h *SetupHandler) SetNetworkManager(nm *managers.NetworkManager) {
+	h.networkMgr = nm
 }
 
 // Routes returns the router for setup endpoints
@@ -58,6 +72,12 @@ func (h *SetupHandler) Routes() chi.Router {
 
 	// Mark setup as complete (lightweight alternative to /apply)
 	r.Post("/complete", h.CompleteSetup)
+
+	// Ethernet readiness check (for Standard profile gate)
+	r.Get("/ethernet-status", h.GetEthernetStatus)
+
+	// AP teardown (after Standard profile wizard completion)
+	r.Post("/ap-teardown", h.APTeardown)
 
 	return r
 }
@@ -334,6 +354,84 @@ func (h *SetupHandler) CompleteSetup(w http.ResponseWriter, r *http.Request) {
 	json.NewEncoder(w).Encode(map[string]interface{}{
 		"success": true,
 		"message": "Setup marked as complete",
+	})
+}
+
+// GetEthernetStatus godoc
+// @Summary Get Ethernet interface status
+// @Description Returns Ethernet carrier state and assigned IP address. Used by the wizard to gate Standard profile on Ethernet readiness.
+// @Tags Setup
+// @Produce json
+// @Success 200 {object} map[string]interface{} "available: bool, carrier: bool, ip: string"
+// @Router /setup/ethernet-status [get]
+func (h *SetupHandler) GetEthernetStatus(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Content-Type", "application/json")
+
+	if h.halClient == nil {
+		json.NewEncoder(w).Encode(map[string]interface{}{
+			"available": false,
+			"carrier":   false,
+			"ip":        "",
+		})
+		return
+	}
+
+	iface, err := h.halClient.GetInterface(r.Context(), "eth0")
+	if err != nil {
+		// eth0 doesn't exist or HAL unreachable — no Ethernet available
+		json.NewEncoder(w).Encode(map[string]interface{}{
+			"available": false,
+			"carrier":   false,
+			"ip":        "",
+		})
+		return
+	}
+
+	ip := ""
+	if len(iface.IPv4Addresses) > 0 {
+		ip = iface.IPv4Addresses[0]
+	}
+
+	json.NewEncoder(w).Encode(map[string]interface{}{
+		"available": true,
+		"carrier":   iface.IsUp,
+		"ip":        ip,
+	})
+}
+
+// APTeardown godoc
+// @Summary Tear down Access Point
+// @Description Switches network mode to eth_client, stopping the AP and disabling DHCP. Called by the wizard after Standard profile setup completes and the user has seen the Ethernet IP.
+// @Tags Setup
+// @Produce json
+// @Success 200 {object} map[string]interface{} "success: true, message"
+// @Failure 500 {object} ErrorResponse "Failed to tear down AP"
+// @Router /setup/ap-teardown [post]
+func (h *SetupHandler) APTeardown(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Content-Type", "application/json")
+
+	if h.networkMgr == nil {
+		w.WriteHeader(http.StatusInternalServerError)
+		json.NewEncoder(w).Encode(map[string]string{"error": "network manager not available"})
+		return
+	}
+
+	log.Info().Msg("AP teardown: switching to eth_client mode (Standard profile)")
+
+	ctx, cancel := context.WithTimeout(r.Context(), 30*time.Second)
+	defer cancel()
+
+	if err := h.networkMgr.SetEthClientModeInline(ctx, models.StaticIPConfig{}); err != nil {
+		log.Error().Err(err).Msg("AP teardown failed")
+		w.WriteHeader(http.StatusInternalServerError)
+		json.NewEncoder(w).Encode(map[string]string{"error": "AP teardown failed: " + err.Error()})
+		return
+	}
+
+	log.Info().Msg("AP teardown: completed — now in eth_client mode")
+	json.NewEncoder(w).Encode(map[string]interface{}{
+		"success": true,
+		"message": "AP teardown complete, switched to Ethernet-only mode",
 	})
 }
 
