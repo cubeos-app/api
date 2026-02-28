@@ -578,7 +578,7 @@ func main() {
 	// Create HAL-based handlers
 	hardwareHandler := handlers.NewHardwareHandler(halClient, setupMgr)
 	halStorageHandler := handlers.NewStorageHandler(halClient)
-	communicationHandler := handlers.NewCommunicationHandler(halClient)
+	communicationHandler := handlers.NewCommunicationHandler(halClient, db)
 	mediaHandler := handlers.NewMediaHandler(halClient, cfg.Domain)
 	halLogsHandler := handlers.NewLogsHandler(halClient)
 	log.Info().Msg("HAL handlers initialized (Hardware, Storage, Communication, Media, Logs)")

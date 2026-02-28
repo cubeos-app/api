@@ -1070,13 +1070,23 @@ type BluetoothDevicesResponse struct {
 
 // BluetoothStatus represents Bluetooth adapter status
 type BluetoothStatus struct {
-	Available    bool   `json:"available"`
-	Powered      bool   `json:"powered"`
-	Discoverable bool   `json:"discoverable"`
-	Pairable     bool   `json:"pairable"`
-	Name         string `json:"name"`
-	Address      string `json:"address"`
-	Alias        string `json:"alias,omitempty"`
+	Available     bool   `json:"available"`
+	Powered       bool   `json:"powered"`
+	Discoverable  bool   `json:"discoverable"`
+	Pairable      bool   `json:"pairable"`
+	RFKillBlocked bool   `json:"rfkill_blocked"`
+	Name          string `json:"name"`
+	Address       string `json:"address"`
+	Alias         string `json:"alias,omitempty"`
+}
+
+// BluetoothCoexistenceStatus represents the BT/WiFi coexistence state.
+type BluetoothCoexistenceStatus struct {
+	BluetoothEnabled bool   `json:"bluetooth_enabled"`
+	RFKillBlocked    bool   `json:"rfkill_blocked"`
+	BuiltInWiFiRole  string `json:"builtin_wifi_role"`
+	ShouldBeDisabled bool   `json:"should_be_disabled"`
+	OverrideActive   bool   `json:"override_active"`
 }
 
 // =============================================================================
@@ -2879,6 +2889,20 @@ func (c *Client) PowerOnBluetooth(ctx context.Context) error {
 // PowerOffBluetooth powers off Bluetooth
 func (c *Client) PowerOffBluetooth(ctx context.Context) error {
 	return c.doPost(ctx, "/bluetooth/power/off", nil)
+}
+
+// GetBluetoothCoexistence returns BT/WiFi coexistence status
+func (c *Client) GetBluetoothCoexistence(ctx context.Context) (*BluetoothCoexistenceStatus, error) {
+	var result BluetoothCoexistenceStatus
+	if err := c.doGet(ctx, "/bluetooth/coexistence", &result); err != nil {
+		return nil, err
+	}
+	return &result, nil
+}
+
+// SetBluetoothRFKill sets the Bluetooth rfkill state
+func (c *Client) SetBluetoothRFKill(ctx context.Context, block bool) error {
+	return c.doPost(ctx, "/bluetooth/rfkill", map[string]bool{"block": block})
 }
 
 // GetBluetoothDevices returns list of Bluetooth devices

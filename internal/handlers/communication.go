@@ -2,13 +2,16 @@ package handlers
 
 import (
 	"bufio"
+	"context"
 	"encoding/json"
 	"io"
 	"net/http"
 	"strconv"
 	"strings"
+	"time"
 
 	"github.com/go-chi/chi/v5"
+	"github.com/jmoiron/sqlx"
 	"github.com/rs/zerolog/log"
 
 	"cubeos-api/internal/hal"
@@ -17,12 +20,14 @@ import (
 // CommunicationHandler handles communication device HTTP requests via HAL.
 type CommunicationHandler struct {
 	halClient *hal.Client
+	db        *sqlx.DB
 }
 
 // NewCommunicationHandler creates a new communication handler.
-func NewCommunicationHandler(halClient *hal.Client) *CommunicationHandler {
+func NewCommunicationHandler(halClient *hal.Client, db *sqlx.DB) *CommunicationHandler {
 	return &CommunicationHandler{
 		halClient: halClient,
+		db:        db,
 	}
 }
 
@@ -77,6 +82,8 @@ func (h *CommunicationHandler) Routes() chi.Router {
 
 	// Bluetooth
 	r.Get("/bluetooth", h.GetBluetoothStatus)
+	r.Get("/bluetooth/coexistence", h.GetBluetoothCoexistence)
+	r.Post("/bluetooth/override", h.SetBluetoothOverride)
 	r.Post("/bluetooth/power/on", h.PowerOnBluetooth)
 	r.Post("/bluetooth/power/off", h.PowerOffBluetooth)
 	r.Get("/bluetooth/devices", h.GetBluetoothDevices)
@@ -1669,6 +1676,98 @@ func (h *CommunicationHandler) RemoveBluetoothDevice(w http.ResponseWriter, r *h
 	writeJSON(w, http.StatusOK, SuccessResponse{
 		Success: true,
 		Message: "Device removed",
+	})
+}
+
+// GetBluetoothCoexistence godoc
+// @Summary Get Bluetooth/WiFi coexistence status
+// @Description Returns Bluetooth state relative to WiFi AP role for SDIO bus conflict management
+// @Tags Communication
+// @Produce json
+// @Security BearerAuth
+// @Success 200 {object} hal.BluetoothCoexistenceStatus
+// @Failure 500 {object} ErrorResponse
+// @Router /communication/bluetooth/coexistence [get]
+func (h *CommunicationHandler) GetBluetoothCoexistence(w http.ResponseWriter, r *http.Request) {
+	ctx, cancel := context.WithTimeout(r.Context(), 5*time.Second)
+	defer cancel()
+
+	status, err := h.halClient.GetBluetoothCoexistence(ctx)
+	if err != nil {
+		if isHardwareAbsentError(err) {
+			writeError(w, http.StatusServiceUnavailable, "Bluetooth not available")
+			return
+		}
+		writeError(w, http.StatusInternalServerError, "Failed to get coexistence status: "+err.Error())
+		return
+	}
+
+	// Enrich with override from DB
+	override := h.db.QueryRowx("SELECT value FROM system_config WHERE key = 'bluetooth_override'")
+	var overrideVal string
+	if override.Scan(&overrideVal) == nil && overrideVal == "true" {
+		status.OverrideActive = status.ShouldBeDisabled && status.BluetoothEnabled
+	}
+
+	writeJSON(w, http.StatusOK, status)
+}
+
+// SetBluetoothOverride godoc
+// @Summary Set Bluetooth override
+// @Description Force-enable/disable Bluetooth when built-in WiFi is AP. Persisted across reboots.
+// @Tags Communication
+// @Accept json
+// @Produce json
+// @Param body body struct{ Override bool `json:"override"` } true "Override state"
+// @Security BearerAuth
+// @Success 200 {object} SuccessResponse
+// @Failure 400 {object} ErrorResponse
+// @Failure 500 {object} ErrorResponse
+// @Router /communication/bluetooth/override [post]
+func (h *CommunicationHandler) SetBluetoothOverride(w http.ResponseWriter, r *http.Request) {
+	var req struct {
+		Override bool `json:"override"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		writeError(w, http.StatusBadRequest, "Invalid request body")
+		return
+	}
+
+	// Persist override in system_config
+	val := "false"
+	if req.Override {
+		val = "true"
+	}
+	_, err := h.db.Exec(
+		`INSERT OR REPLACE INTO system_config (key, value, updated_at) VALUES ('bluetooth_override', ?, datetime('now'))`,
+		val,
+	)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "Failed to save override: "+err.Error())
+		return
+	}
+
+	// Apply immediately via HAL rfkill
+	ctx, cancel := context.WithTimeout(r.Context(), 5*time.Second)
+	defer cancel()
+	if req.Override {
+		// Unblock Bluetooth (override — user accepts performance hit)
+		_ = h.halClient.SetBluetoothRFKill(ctx, false)
+	} else {
+		// Re-block if built-in WiFi is AP
+		coex, err := h.halClient.GetBluetoothCoexistence(ctx)
+		if err == nil && coex.ShouldBeDisabled {
+			_ = h.halClient.SetBluetoothRFKill(ctx, true)
+		}
+	}
+
+	msg := "Bluetooth override disabled"
+	if req.Override {
+		msg = "Bluetooth override enabled — WiFi AP performance may be affected"
+	}
+	writeJSON(w, http.StatusOK, SuccessResponse{
+		Success: true,
+		Message: msg,
 	})
 }
 
