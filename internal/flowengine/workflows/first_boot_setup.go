@@ -21,7 +21,9 @@ const FirstBootSetupType = "first_boot_setup"
 //  3. configure_wifi    — snapshot hostapd.conf, save country_code, write hostapd, restart via HAL
 //  4. configure_system  — timezone, theme, purpose, SSL, NPM creds, features (all DB/file)
 //  5. sync_passwords    — fire-and-forget goroutines to FileBrowser/Pi-hole/NPM (NON-FATAL)
-//  6. mark_complete     — set DB flag, save config JSON, create .setup_complete file
+//  6. verify_dhcp       — reconcile Pi-hole DHCP state with persisted network mode
+//  7. verify_dns        — verify/seed base DNS entries in Pi-hole (cubeos.cube → gateway)
+//  8. mark_complete     — set DB flag, save config JSON, create .setup_complete file
 //
 // Compensation chain (reverse order):
 //   - mark_complete comp → unmark_complete: reset DB flag so wizard can retry
@@ -35,6 +37,7 @@ const FirstBootSetupType = "first_boot_setup"
 //   - WiFi is DANGEROUS: restarts hostapd → disconnects user — after safe steps
 //   - System config after WiFi: DB/file writes only, no external services
 //   - Password sync is fire-and-forget: non-fatal, after main config
+//   - DHCP/DNS verify after passwords: ensures Pi-hole state is correct before declaring done
 //   - Mark complete LAST: only if all prior steps succeeded
 type FirstBootSetupWorkflow struct{}
 
@@ -50,7 +53,7 @@ func (w *FirstBootSetupWorkflow) Type() string {
 
 // Version returns the workflow definition version. Bump when step sequence changes.
 func (w *FirstBootSetupWorkflow) Version() int {
-	return 1
+	return 2
 }
 
 // Steps returns the ordered step definitions for first-boot setup.
@@ -121,6 +124,28 @@ func (w *FirstBootSetupWorkflow) Steps() []flowengine.StepDefinition {
 				MaxInterval:     0,
 			},
 			Timeout: 5 * time.Second, // Just fires goroutines, doesn't wait
+		},
+		{
+			Name:   "verify_dhcp",
+			Action: "setup.verify_dhcp",
+			// No compensation — reconciliation is idempotent
+			Retry: &flowengine.RetryPolicy{
+				MaxAttempts:     3,
+				InitialInterval: 2 * time.Second,
+				MaxInterval:     5 * time.Second,
+			},
+			Timeout: 20 * time.Second, // Pi-hole API calls with retries
+		},
+		{
+			Name:   "verify_dns",
+			Action: "setup.verify_dns",
+			// No compensation — DNS seeding is idempotent
+			Retry: &flowengine.RetryPolicy{
+				MaxAttempts:     3,
+				InitialInterval: 2 * time.Second,
+				MaxInterval:     5 * time.Second,
+			},
+			Timeout: 15 * time.Second, // Pi-hole API call
 		},
 		{
 			Name:       "mark_complete",

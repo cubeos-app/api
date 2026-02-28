@@ -110,8 +110,7 @@ func makeAddDNS(dnsMgr DNSManager, profileReader AccessProfileReader) flowengine
 		// Check access profile — standard skips DNS entirely
 		profile, err := profileReader.GetAccessProfile()
 		if err != nil {
-			log.Warn().Err(err).Msg("add_dns: failed to read access profile, defaulting to standard")
-			profile = "standard"
+			return nil, fmt.Errorf("add_dns: failed to read access profile: %w", err)
 		}
 		if profile == "standard" {
 			log.Info().Str("profile", profile).Msg("add_dns: skipping DNS setup (standard profile)")
@@ -182,8 +181,7 @@ func makeRemoveDNS(dnsMgr DNSManager, profileReader AccessProfileReader) floweng
 		// Check access profile — standard skips DNS removal
 		profile, err := profileReader.GetAccessProfile()
 		if err != nil {
-			log.Warn().Err(err).Msg("remove_dns: failed to read access profile, defaulting to standard")
-			profile = "standard"
+			return nil, fmt.Errorf("remove_dns: failed to read access profile: %w", err)
 		}
 		if profile == "standard" {
 			log.Info().Str("profile", profile).Msg("remove_dns: skipping DNS removal (standard profile)")
@@ -219,8 +217,7 @@ func makeCreateProxy(proxyMgr ProxyManager, profileReader AccessProfileReader) f
 		// Check access profile — standard skips proxy creation
 		profile, err := profileReader.GetAccessProfile()
 		if err != nil {
-			log.Warn().Err(err).Msg("create_proxy: failed to read access profile, defaulting to standard")
-			profile = "standard"
+			return nil, fmt.Errorf("create_proxy: failed to read access profile: %w", err)
 		}
 		if profile == "standard" {
 			log.Info().Str("profile", profile).Msg("create_proxy: skipping proxy setup (standard profile)")
@@ -291,8 +288,7 @@ func makeRemoveProxy(proxyMgr ProxyManager, profileReader AccessProfileReader) f
 		// Check access profile — standard skips proxy removal
 		profile, err := profileReader.GetAccessProfile()
 		if err != nil {
-			log.Warn().Err(err).Msg("remove_proxy: failed to read access profile, defaulting to standard")
-			profile = "standard"
+			return nil, fmt.Errorf("remove_proxy: failed to read access profile: %w", err)
 		}
 		if profile == "standard" {
 			log.Info().Str("profile", profile).Msg("remove_proxy: skipping proxy removal (standard profile)")

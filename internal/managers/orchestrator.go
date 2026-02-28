@@ -642,31 +642,6 @@ func (o *Orchestrator) SyncAppsFromSwarm(ctx context.Context) error {
 	return nil
 }
 
-// ReconcileState ensures running state matches desired state
-// Called on boot to recover from power loss
-func (o *Orchestrator) ReconcileState(ctx context.Context) error {
-	apps, err := o.ListApps(ctx, &models.AppFilter{Enabled: boolPtr(true)})
-	if err != nil {
-		return fmt.Errorf("failed to list enabled apps: %w", err)
-	}
-
-	var errors []string
-	for _, app := range apps {
-		if app.Status == nil || !app.Status.Running {
-			log.Info().Str("app", app.Name).Msg("Reconciling: starting app")
-			if err := o.StartApp(ctx, app.Name); err != nil {
-				errors = append(errors, fmt.Sprintf("%s: %v", app.Name, err))
-			}
-		}
-	}
-
-	if len(errors) > 0 {
-		return fmt.Errorf("reconciliation errors: %s", strings.Join(errors, "; "))
-	}
-
-	return nil
-}
-
 // SeedSystemApps creates database entries for core system apps
 // Called on first boot to populate the database
 func (o *Orchestrator) SeedSystemApps(ctx context.Context) error {

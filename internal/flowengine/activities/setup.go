@@ -7,11 +7,19 @@ import (
 	"fmt"
 	"strings"
 
+	"os"
+
 	"cubeos-api/internal/flowengine"
 	"cubeos-api/internal/models"
 
 	"github.com/rs/zerolog/log"
 )
+
+// DHCPReconciler verifies and corrects Pi-hole DHCP state.
+// Satisfied by *managers.NetworkManager.
+type DHCPReconciler interface {
+	ReconcileDHCP(ctx context.Context) error
+}
 
 // SetupConfigurer defines the subset of SetupManager methods needed by setup activities.
 // Satisfied by *managers.SetupManager.
@@ -53,6 +61,16 @@ func RegisterSetupActivities(registry *flowengine.ActivityRegistry, sc SetupConf
 	registry.MustRegister("setup.sync_passwords", makeSetupSyncPasswords(sc))
 	registry.MustRegister("setup.mark_complete", makeSetupMarkComplete(sc))
 	registry.MustRegister("setup.unmark_complete", makeSetupUnmarkComplete(sc))
+}
+
+// RegisterSetupVerifyActivities registers DHCP and DNS verification activities
+// for the first-boot setup workflow. These run after sync_passwords and before
+// mark_complete to ensure Pi-hole state is correct before declaring setup done.
+//
+// Activities: setup.verify_dhcp, setup.verify_dns
+func RegisterSetupVerifyActivities(registry *flowengine.ActivityRegistry, reconciler DHCPReconciler, dnsMgr DNSManager) {
+	registry.MustRegister("setup.verify_dhcp", makeSetupVerifyDHCP(reconciler))
+	registry.MustRegister("setup.verify_dns", makeSetupVerifyDNS(dnsMgr))
 }
 
 // =============================================================================
@@ -340,6 +358,69 @@ func makeSetupMarkComplete(sc SetupConfigurer) flowengine.ActivityFunc {
 		log.Info().Msg("setup.mark_complete: setup marked as complete")
 		return marshalOutput(map[string]interface{}{
 			"setup_complete": true,
+		})
+	}
+}
+
+// =============================================================================
+// Activity: setup.verify_dhcp
+// =============================================================================
+
+func makeSetupVerifyDHCP(reconciler DHCPReconciler) flowengine.ActivityFunc {
+	return func(ctx context.Context, input json.RawMessage) (json.RawMessage, error) {
+		log.Info().Msg("setup.verify_dhcp: reconciling Pi-hole DHCP state with persisted network mode")
+
+		if err := reconciler.ReconcileDHCP(ctx); err != nil {
+			return nil, fmt.Errorf("DHCP verification failed: %w", err)
+		}
+
+		log.Info().Msg("setup.verify_dhcp: DHCP state verified")
+		return marshalOutput(map[string]interface{}{
+			"dhcp_verified": true,
+		})
+	}
+}
+
+// =============================================================================
+// Activity: setup.verify_dns
+// =============================================================================
+
+func makeSetupVerifyDNS(dnsMgr DNSManager) flowengine.ActivityFunc {
+	return func(ctx context.Context, input json.RawMessage) (json.RawMessage, error) {
+		log.Info().Msg("setup.verify_dns: verifying base DNS entries in Pi-hole")
+
+		gatewayIP := os.Getenv("GATEWAY_IP")
+		if gatewayIP == "" {
+			gatewayIP = "10.42.24.1"
+		}
+		baseDomain := "cubeos.cube"
+
+		// Check if base entry exists
+		existingIP, err := dnsMgr.GetEntry(baseDomain)
+		if err == nil && existingIP != "" {
+			log.Info().Str("domain", baseDomain).Str("ip", existingIP).
+				Msg("setup.verify_dns: base DNS entry exists")
+			return marshalOutput(map[string]interface{}{
+				"dns_verified": true,
+				"base_entry":   baseDomain,
+				"ip":           existingIP,
+				"action":       "verified",
+			})
+		}
+
+		// Seed base entry if missing
+		log.Warn().Str("domain", baseDomain).Msg("setup.verify_dns: base DNS entry missing, seeding")
+		if err := dnsMgr.AddEntry(baseDomain, gatewayIP); err != nil {
+			return nil, fmt.Errorf("failed to seed base DNS entry: %w", err)
+		}
+
+		log.Info().Str("domain", baseDomain).Str("ip", gatewayIP).
+			Msg("setup.verify_dns: base DNS entry seeded")
+		return marshalOutput(map[string]interface{}{
+			"dns_verified": true,
+			"base_entry":   baseDomain,
+			"ip":           gatewayIP,
+			"action":       "seeded",
 		})
 	}
 }

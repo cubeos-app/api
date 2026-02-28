@@ -421,6 +421,7 @@ func main() {
 	feactivities.RegisterNetworkActivities(feRegistry, networkMgr, halClient)
 	feactivities.RegisterWifiClientActivities(feRegistry, networkMgr, halClient)
 	feactivities.RegisterSetupActivities(feRegistry, setupMgr)
+	feactivities.RegisterSetupVerifyActivities(feRegistry, networkMgr, &dnsAdapter{piholeMgr})
 	feactivities.RegisterRegistryActivities(feRegistry, db.DB)
 	feactivities.RegisterUpdateActivities(feRegistry, db.DB, &updateSwarmAdapter{swarmMgr}, updateMgr)
 	destRegistry := managers.NewBackupDestinationRegistry(halClient)
@@ -478,6 +479,14 @@ func main() {
 	networkMgr.SetFlowEngine(flowEngine, feStore)
 	setupMgr.SetFlowEngine(flowEngine, feStore)
 	backupMgr.SetFlowEngine(flowEngine, feStore)
+
+	// Reconcile Pi-hole DHCP state with persisted network mode.
+	// Safety net for boot script failures or power-cut recovery.
+	reconcileCtx, reconcileCancel := context.WithTimeout(context.Background(), 15*time.Second)
+	if err := networkMgr.ReconcileDHCP(reconcileCtx); err != nil {
+		log.Warn().Err(err).Msg("DHCP reconciliation failed (non-fatal)")
+	}
+	reconcileCancel()
 
 	// Start backup scheduler (after FlowEngine is ready)
 	backupMgr.StartScheduler(engineCtx)

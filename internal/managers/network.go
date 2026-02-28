@@ -2736,6 +2736,101 @@ func (m *NetworkManager) ConfigurePiholeDHCPForMode(ctx context.Context, mode mo
 	m.configurePiholeDHCPForMode(ctx, mode)
 }
 
+// ReconcileDHCP reconciles Pi-hole DHCP state with the persisted network mode.
+// Safety net for boot script failures or power-cut recovery. Called at API startup.
+// Reads persisted mode from DB, queries Pi-hole for actual DHCP state, and corrects
+// any mismatch. Non-fatal — logs result and returns error for caller to handle.
+func (m *NetworkManager) ReconcileDHCP(ctx context.Context) error {
+	mode := m.currentMode
+	if mode == "" {
+		mode = models.NetworkModeOfflineHotspot
+	}
+
+	// Determine expected DHCP state for this mode
+	expected := m.isAPMode(mode)
+
+	// Query Pi-hole for actual DHCP state
+	actual, err := m.getPiholeDHCPActive(ctx)
+	if err != nil {
+		return fmt.Errorf("failed to read Pi-hole DHCP state: %w", err)
+	}
+
+	if actual == expected {
+		log.Info().Str("mode", string(mode)).Bool("dhcp_active", actual).
+			Msg("DHCP reconciliation: state matches, no action needed")
+		return nil
+	}
+
+	log.Warn().Str("mode", string(mode)).Bool("expected", expected).Bool("actual", actual).
+		Msg("DHCP reconciliation: mismatch detected, correcting Pi-hole DHCP state")
+
+	m.configurePiholeDHCPForMode(ctx, mode)
+
+	// Verify correction
+	verified, err := m.getPiholeDHCPActive(ctx)
+	if err != nil {
+		return fmt.Errorf("DHCP reconciliation verification failed: %w", err)
+	}
+	if verified != expected {
+		return fmt.Errorf("DHCP reconciliation failed: expected=%t, actual=%t after correction", expected, verified)
+	}
+
+	log.Info().Str("mode", string(mode)).Bool("dhcp_active", verified).
+		Msg("DHCP reconciliation: corrected successfully")
+	return nil
+}
+
+// isAPMode returns true if the given network mode runs an Access Point (and thus DHCP).
+func (m *NetworkManager) isAPMode(mode models.NetworkMode) bool {
+	switch mode {
+	case models.NetworkModeOfflineHotspot, models.NetworkModeWifiRouter,
+		models.NetworkModeWifiBridge, models.NetworkModeAndroidTether:
+		return true
+	default:
+		return false
+	}
+}
+
+// getPiholeDHCPActive queries Pi-hole v6 REST API for current DHCP active state.
+func (m *NetworkManager) getPiholeDHCPActive(ctx context.Context) (bool, error) {
+	sid, err := m.piholeAuth(ctx)
+	if err != nil {
+		return false, fmt.Errorf("pi-hole auth failed: %w", err)
+	}
+
+	reqURL := m.piholeURL + "/api/config/dhcp/active"
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, reqURL, nil)
+	if err != nil {
+		return false, fmt.Errorf("failed to create request: %w", err)
+	}
+	req.Header.Set("X-FTL-SID", sid)
+
+	client := &http.Client{Timeout: 5 * time.Second}
+	resp, err := client.Do(req)
+	if err != nil {
+		return false, fmt.Errorf("pi-hole DHCP query failed: %w", err)
+	}
+	defer resp.Body.Close()
+
+	body, _ := io.ReadAll(resp.Body)
+	if resp.StatusCode != http.StatusOK {
+		return false, fmt.Errorf("pi-hole DHCP query returned HTTP %d: %s", resp.StatusCode, string(body))
+	}
+
+	var result struct {
+		Config struct {
+			DHCP struct {
+				Active bool `json:"active"`
+			} `json:"dhcp"`
+		} `json:"config"`
+	}
+	if err := json.Unmarshal(body, &result); err != nil {
+		return false, fmt.Errorf("failed to parse Pi-hole DHCP response: %w", err)
+	}
+
+	return result.Config.DHCP.Active, nil
+}
+
 // SaveConfigToDB exports the private saveConfigToDB for FlowEngine activities.
 func (m *NetworkManager) SaveConfigToDB(mode models.NetworkMode, vpnMode models.VPNMode, wifiSSID, wifiPassword string, staticIP models.StaticIPConfig) {
 	m.saveConfigToDB(mode, vpnMode, wifiSSID, wifiPassword, staticIP)
