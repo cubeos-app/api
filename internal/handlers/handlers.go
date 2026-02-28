@@ -4,6 +4,7 @@ import (
 	"database/sql"
 	"encoding/json"
 	"net/http"
+	"strings"
 	"time"
 
 	"github.com/go-chi/chi/v5"
@@ -1167,4 +1168,67 @@ func (h *Handlers) DockerDiskUsage(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	writeJSON(w, http.StatusOK, usage)
+}
+
+// GetWiFiAPWhitelist godoc
+// @Summary Get WiFi AP whitelist
+// @Description Returns USB WiFi adapters that have passed AP capability testing
+// @Tags System
+// @Produce json
+// @Security BearerAuth
+// @Success 200 {array} hal.WiFiAPTestResult
+// @Failure 500 {object} ErrorResponse
+// @Router /system/wifi-ap/whitelist [get]
+func (h *Handlers) GetWiFiAPWhitelist(w http.ResponseWriter, r *http.Request) {
+	list, err := h.hal.GetWiFiAPWhitelist(r.Context())
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "Failed to get whitelist: "+err.Error())
+		return
+	}
+	writeJSON(w, http.StatusOK, list)
+}
+
+// GetWiFiAPBlacklist godoc
+// @Summary Get WiFi AP blacklist
+// @Description Returns USB WiFi adapters that have failed AP capability testing
+// @Tags System
+// @Produce json
+// @Security BearerAuth
+// @Success 200 {array} hal.WiFiAPTestResult
+// @Failure 500 {object} ErrorResponse
+// @Router /system/wifi-ap/blacklist [get]
+func (h *Handlers) GetWiFiAPBlacklist(w http.ResponseWriter, r *http.Request) {
+	list, err := h.hal.GetWiFiAPBlacklist(r.Context())
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "Failed to get blacklist: "+err.Error())
+		return
+	}
+	writeJSON(w, http.StatusOK, list)
+}
+
+// RetestWiFiAdapter godoc
+// @Summary Re-test a blacklisted WiFi adapter
+// @Description Removes adapter from blacklist and re-runs AP capability test
+// @Tags System
+// @Produce json
+// @Param device_id path string true "Vendor:Product ID (e.g. 0bda:8812)"
+// @Security BearerAuth
+// @Success 200 {object} hal.WiFiAPTestResult
+// @Failure 400 {object} ErrorResponse
+// @Failure 404 {object} ErrorResponse
+// @Failure 500 {object} ErrorResponse
+// @Router /system/wifi-ap/retest/{device_id} [post]
+func (h *Handlers) RetestWiFiAdapter(w http.ResponseWriter, r *http.Request) {
+	// Extract device_id from the wildcard path
+	deviceID := strings.TrimPrefix(r.URL.Path, "/api/v1/system/wifi-ap/retest/")
+	if deviceID == "" || !strings.Contains(deviceID, ":") {
+		writeError(w, http.StatusBadRequest, "Invalid device_id, expected vendor:product (e.g. 0bda:8812)")
+		return
+	}
+	result, err := h.hal.RetestWiFiAdapter(r.Context(), deviceID)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "Re-test failed: "+err.Error())
+		return
+	}
+	writeJSON(w, http.StatusOK, result)
 }

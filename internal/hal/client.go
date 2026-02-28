@@ -3425,3 +3425,41 @@ func (c *Client) DetectInterfaces(ctx context.Context) (*InterfaceDetectionResul
 	}
 	return &result, nil
 }
+
+// WiFiAPTestResult represents the result of an AP capability test for a USB WiFi adapter.
+type WiFiAPTestResult struct {
+	VendorID  string `json:"vendor_id"`
+	ProductID string `json:"product_id"`
+	Driver    string `json:"driver,omitempty"`
+	Interface string `json:"interface,omitempty"`
+	TestedAt  string `json:"tested_at"`
+	Result    string `json:"result"`
+	FailStage string `json:"fail_stage,omitempty"`
+}
+
+// GetWiFiAPWhitelist returns the list of whitelisted USB WiFi adapters for AP.
+func (c *Client) GetWiFiAPWhitelist(ctx context.Context) ([]WiFiAPTestResult, error) {
+	var result []WiFiAPTestResult
+	if err := c.doGet(ctx, "/hardware/wifi-ap/whitelist", &result); err != nil {
+		return nil, err
+	}
+	return result, nil
+}
+
+// GetWiFiAPBlacklist returns the list of blacklisted USB WiFi adapters for AP.
+func (c *Client) GetWiFiAPBlacklist(ctx context.Context) ([]WiFiAPTestResult, error) {
+	var result []WiFiAPTestResult
+	if err := c.doGet(ctx, "/hardware/wifi-ap/blacklist", &result); err != nil {
+		return nil, err
+	}
+	return result, nil
+}
+
+// RetestWiFiAdapter re-tests a blacklisted USB WiFi adapter's AP capability.
+func (c *Client) RetestWiFiAdapter(ctx context.Context, deviceID string) (*WiFiAPTestResult, error) {
+	var result WiFiAPTestResult
+	if err := c.doPostWithResult(ctx, "/hardware/wifi-ap/retest/"+deviceID, nil, &result); err != nil {
+		return nil, err
+	}
+	return &result, nil
+}
