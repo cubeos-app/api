@@ -44,6 +44,7 @@ const (
 type NetworkStatus struct {
 	Mode       models.NetworkMode `json:"mode"`
 	Internet   bool               `json:"internet"`
+	DHCPActive bool               `json:"dhcp_active"`
 	AP         *AccessPointStatus `json:"ap,omitempty"`
 	Upstream   *UpstreamStatus    `json:"upstream,omitempty"`
 	Subnet     string             `json:"subnet"`
@@ -379,11 +380,12 @@ func isValidDNSAddress(addr string) bool {
 // GetStatus returns the current network status (V2: extended with VPN and server info)
 func (m *NetworkManager) GetStatus(ctx context.Context) (*NetworkStatus, error) {
 	status := &NetworkStatus{
-		Mode:      m.currentMode,
-		VPNMode:   m.currentVPNMode,
-		Subnet:    m.cfg.Subnet,
-		GatewayIP: m.cfg.GatewayIP,
-		IsServer:  m.IsServerMode(),
+		Mode:       m.currentMode,
+		DHCPActive: m.isAPMode(m.currentMode),
+		VPNMode:    m.currentVPNMode,
+		Subnet:     m.cfg.Subnet,
+		GatewayIP:  m.cfg.GatewayIP,
+		IsServer:   m.IsServerMode(),
 	}
 
 	// Check internet connectivity
