@@ -28,6 +28,8 @@ func RegisterHALActivities(reg *flowengine.ActivityRegistry, halClient *hal.Clie
 	reg.MustRegister("hal.watchdog_arm", makeWatchdogArmActivity(halClient))
 	reg.MustRegister("hal.watchdog_disarm", makeWatchdogDisarmActivity(halClient))
 
+	reg.MustRegister("hal.reboot", makeRebootActivity(halClient))
+
 	// Reserved stubs for future activities (ensures names are claimed)
 	reg.MustRegister("hal.gps_position", makeReservedStub("hal.gps_position"))
 	reg.MustRegister("hal.meshtastic_send", makeReservedStub("hal.meshtastic_send"))
@@ -85,6 +87,23 @@ func makeWatchdogDisarmActivity(halClient *hal.Client) flowengine.ActivityFunc {
 		}
 
 		return marshalOutput(map[string]string{"status": "disarmed"})
+	}
+}
+
+// makeRebootActivity creates an activity that reboots the system via HAL.
+// Used as the final step in profile switch workflows.
+func makeRebootActivity(halClient *hal.Client) flowengine.ActivityFunc {
+	return func(ctx context.Context, input json.RawMessage) (json.RawMessage, error) {
+		log.Info().Msg("Activity: initiating system reboot via HAL")
+
+		if err := halClient.Reboot(ctx); err != nil {
+			return nil, flowengine.ClassifyError(err)
+		}
+
+		return marshalOutput(map[string]interface{}{
+			"status":  "initiated",
+			"message": "System reboot initiated",
+		})
 	}
 }
 

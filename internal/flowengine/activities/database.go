@@ -227,6 +227,22 @@ func makeInsertApp(db AppDatabase) flowengine.ActivityFunc {
 			}
 		}
 
+		// Compute and persist access_url based on available data:
+		//   - Domain provided (all_in_one/advanced): http://{domain}
+		//   - Port only (standard): :{port} (dashboard prepends host)
+		var accessURL string
+		if in.Domain != "" {
+			accessURL = "http://" + in.Domain
+		} else if in.Port > 0 {
+			accessURL = fmt.Sprintf(":%d", in.Port)
+		}
+		if accessURL != "" {
+			_, err = db.ExecContext(ctx, `UPDATE apps SET access_url = ? WHERE id = ?`, accessURL, appID)
+			if err != nil {
+				log.Warn().Err(err).Str("url", accessURL).Msg("insert_app: failed to set access_url (non-fatal)")
+			}
+		}
+
 		return marshalOutput(InsertAppOutput{AppID: appID, Name: in.AppName, Created: true, Skipped: false})
 	}
 }

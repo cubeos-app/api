@@ -10,7 +10,7 @@ const (
 	// AccessProfileSwitchType is the workflow type for access profile migration.
 	AccessProfileSwitchType = "access_profile_switch"
 	// AccessProfileSwitchVersion is the current version of the workflow definition.
-	AccessProfileSwitchVersion = 1
+	AccessProfileSwitchVersion = 2
 )
 
 // AccessProfileSwitchWorkflow defines the step sequence for migrating all installed
@@ -25,6 +25,7 @@ const (
 //  5. migrate_app_entries — bulk create DNS/proxy in new system, update access_urls
 //  6. verify_access — spot-check random apps (warn-only)
 //  7. resume_app_updates — clear profile_switch_in_progress flag
+//  8. reboot — initiate system reboot so boot scripts apply new profile infrastructure
 type AccessProfileSwitchWorkflow struct{}
 
 func (w *AccessProfileSwitchWorkflow) Type() string { return AccessProfileSwitchType }
@@ -87,6 +88,13 @@ func (w *AccessProfileSwitchWorkflow) Steps() []flowengine.StepDefinition {
 			Compensate: "", // always succeeds
 			Retry:      &flowengine.RetryPolicy{MaxAttempts: 3, InitialInterval: 500 * time.Millisecond},
 			Timeout:    5 * time.Second,
+		},
+		{
+			Name:       "reboot",
+			Action:     "hal.reboot",
+			Compensate: "", // reboot is irreversible
+			Retry:      &flowengine.RetryPolicy{MaxAttempts: 2, InitialInterval: 1 * time.Second},
+			Timeout:    15 * time.Second,
 		},
 	}
 }
