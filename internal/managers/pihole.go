@@ -1,6 +1,7 @@
 package managers
 
 import (
+	"bufio"
 	"bytes"
 	"context"
 	"encoding/json"
@@ -8,6 +9,7 @@ import (
 	"io"
 	"net/http"
 	"net/url"
+	"os"
 	"strings"
 	"sync"
 	"time"
@@ -22,12 +24,13 @@ import (
 // Replaces file-based custom.list management with HTTP calls.
 // DNS changes auto-apply in Pi-hole v6 — no reload needed.
 type PiholeManager struct {
-	baseURL    string // e.g. "http://10.42.24.1:6001"
-	password   string // Pi-hole admin password
-	cubeosIP   string // Gateway IP for DNS entries (e.g. "10.42.24.1")
-	domain     string // e.g. "cubeos.cube"
-	httpClient *http.Client
-	cb         *circuitbreaker.CircuitBreaker
+	baseURL     string // e.g. "http://10.42.24.1:6001"
+	password    string // Pi-hole admin password
+	secretsPath string // path to secrets.env for self-healing password refresh
+	cubeosIP    string // Gateway IP for DNS entries (e.g. "10.42.24.1")
+	domain      string // e.g. "cubeos.cube"
+	httpClient  *http.Client
+	cb          *circuitbreaker.CircuitBreaker
 
 	mu        sync.Mutex // protects session state
 	sid       string     // cached session ID
@@ -47,10 +50,11 @@ func NewPiholeManager(cfg *config.Config) *PiholeManager {
 	baseURL := fmt.Sprintf("http://%s:%d", cfg.GatewayIP, cfg.PiholePort)
 
 	return &PiholeManager{
-		baseURL:  baseURL,
-		password: cfg.PiholePassword,
-		cubeosIP: cfg.GatewayIP,
-		domain:   cfg.Domain,
+		baseURL:     baseURL,
+		password:    cfg.PiholePassword,
+		secretsPath: "/cubeos/config/secrets.env",
+		cubeosIP:    cfg.GatewayIP,
+		domain:      cfg.Domain,
 		httpClient: &http.Client{
 			Timeout: 10 * time.Second,
 		},
@@ -59,8 +63,31 @@ func NewPiholeManager(cfg *config.Config) *PiholeManager {
 }
 
 // authenticate performs POST /api/auth to obtain a session ID.
+// Self-healing: if auth fails with "password incorrect", re-reads the password
+// from secrets.env and retries once. This handles the case where the Swarm
+// service spec has a stale env var from before a password sync.
 func (m *PiholeManager) authenticate(ctx context.Context) (string, error) {
-	body, err := json.Marshal(map[string]string{"password": m.password})
+	sid, err := m.tryAuth(ctx, m.password)
+	if err == nil {
+		return sid, nil
+	}
+
+	// If auth failed, try refreshing password from secrets.env
+	if strings.Contains(err.Error(), "password incorrect") || strings.Contains(err.Error(), "invalid session") {
+		freshPw := readPasswordFromFile(m.secretsPath, "CUBEOS_PIHOLE_PASSWORD")
+		if freshPw != "" && freshPw != m.password {
+			log.Info().Msg("Pi-hole auth failed — retrying with refreshed password from secrets.env")
+			m.password = freshPw
+			return m.tryAuth(ctx, m.password)
+		}
+	}
+
+	return "", err
+}
+
+// tryAuth performs a single authentication attempt with the given password.
+func (m *PiholeManager) tryAuth(ctx context.Context, password string) (string, error) {
+	body, err := json.Marshal(map[string]string{"password": password})
 	if err != nil {
 		return "", fmt.Errorf("marshal auth body: %w", err)
 	}
@@ -113,6 +140,25 @@ func (m *PiholeManager) authenticate(ctx context.Context) (string, error) {
 	m.mu.Unlock()
 
 	return authResp.Session.SID, nil
+}
+
+// readPasswordFromFile reads a KEY=VALUE entry from an env file.
+func readPasswordFromFile(path, key string) string {
+	f, err := os.Open(path)
+	if err != nil {
+		return ""
+	}
+	defer f.Close()
+
+	prefix := key + "="
+	scanner := bufio.NewScanner(f)
+	for scanner.Scan() {
+		line := strings.TrimSpace(scanner.Text())
+		if strings.HasPrefix(line, prefix) {
+			return strings.TrimSpace(strings.TrimPrefix(line, prefix))
+		}
+	}
+	return ""
 }
 
 // getSID returns a valid session ID, re-authenticating if needed.
