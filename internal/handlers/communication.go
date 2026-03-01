@@ -89,6 +89,12 @@ func (h *CommunicationHandler) Routes() chi.Router {
 	r.Get("/meshsat/nodes", h.GetMeshsatNodes)
 	r.Get("/meshsat/messages/stats", h.GetMeshsatMessageStats)
 	r.Get("/meshsat/events", h.StreamMeshsatEvents)
+	r.Post("/meshsat/admin/reboot", h.PostMeshsatAdminReboot)
+	r.Post("/meshsat/admin/factory_reset", h.PostMeshsatAdminFactoryReset)
+	r.Post("/meshsat/admin/traceroute", h.PostMeshsatAdminTraceroute)
+	r.Post("/meshsat/config/radio", h.PostMeshsatConfigRadio)
+	r.Post("/meshsat/config/module", h.PostMeshsatConfigModule)
+	r.Post("/meshsat/waypoints", h.PostMeshsatWaypoint)
 
 	// Bluetooth
 	r.Get("/bluetooth", h.GetBluetoothStatus)
@@ -1957,6 +1963,126 @@ func proxyMeshsatGET(w http.ResponseWriter, r *http.Request, path string) {
 		writeError(w, http.StatusInternalServerError, "failed to create request: "+err.Error())
 		return
 	}
+
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		writeError(w, http.StatusBadGateway, "MeshSat unavailable: "+err.Error())
+		return
+	}
+	defer resp.Body.Close()
+
+	w.Header().Set("Content-Type", resp.Header.Get("Content-Type"))
+	w.WriteHeader(resp.StatusCode)
+	io.Copy(w, resp.Body)
+}
+
+// PostMeshsatAdminReboot godoc
+// @Summary Reboot a mesh node via MeshSat
+// @Description Proxies a reboot command to a mesh node through MeshSat
+// @Tags Communication
+// @Accept json
+// @Produce json
+// @Param body body object{node_id=uint32,delay_secs=int} true "Target node and delay"
+// @Success 200 {object} map[string]string
+// @Failure 400 {object} map[string]string
+// @Failure 502 {object} map[string]string
+// @Router /communication/meshsat/admin/reboot [post]
+// @Security BearerAuth
+func (h *CommunicationHandler) PostMeshsatAdminReboot(w http.ResponseWriter, r *http.Request) {
+	proxyMeshsatPOST(w, r, "/api/admin/reboot")
+}
+
+// PostMeshsatAdminFactoryReset godoc
+// @Summary Factory reset a mesh node via MeshSat
+// @Description Proxies a factory reset command to a mesh node through MeshSat
+// @Tags Communication
+// @Accept json
+// @Produce json
+// @Param body body object{node_id=uint32} true "Target node"
+// @Success 200 {object} map[string]string
+// @Failure 400 {object} map[string]string
+// @Failure 502 {object} map[string]string
+// @Router /communication/meshsat/admin/factory_reset [post]
+// @Security BearerAuth
+func (h *CommunicationHandler) PostMeshsatAdminFactoryReset(w http.ResponseWriter, r *http.Request) {
+	proxyMeshsatPOST(w, r, "/api/admin/factory_reset")
+}
+
+// PostMeshsatAdminTraceroute godoc
+// @Summary Traceroute to a mesh node via MeshSat
+// @Description Proxies a traceroute request through MeshSat
+// @Tags Communication
+// @Accept json
+// @Produce json
+// @Param body body object{node_id=uint32} true "Destination node"
+// @Success 200 {object} map[string]string
+// @Failure 400 {object} map[string]string
+// @Failure 502 {object} map[string]string
+// @Router /communication/meshsat/admin/traceroute [post]
+// @Security BearerAuth
+func (h *CommunicationHandler) PostMeshsatAdminTraceroute(w http.ResponseWriter, r *http.Request) {
+	proxyMeshsatPOST(w, r, "/api/admin/traceroute")
+}
+
+// PostMeshsatConfigRadio godoc
+// @Summary Set radio configuration via MeshSat
+// @Description Proxies a radio config update through MeshSat to the Meshtastic device
+// @Tags Communication
+// @Accept json
+// @Produce json
+// @Param body body object{section=string,config=object} true "Radio config section and data"
+// @Success 200 {object} map[string]string
+// @Failure 400 {object} map[string]string
+// @Failure 502 {object} map[string]string
+// @Router /communication/meshsat/config/radio [post]
+// @Security BearerAuth
+func (h *CommunicationHandler) PostMeshsatConfigRadio(w http.ResponseWriter, r *http.Request) {
+	proxyMeshsatPOST(w, r, "/api/config/radio")
+}
+
+// PostMeshsatConfigModule godoc
+// @Summary Set module configuration via MeshSat
+// @Description Proxies a module config update through MeshSat to the Meshtastic device
+// @Tags Communication
+// @Accept json
+// @Produce json
+// @Param body body object{section=string,config=object} true "Module config section and data"
+// @Success 200 {object} map[string]string
+// @Failure 400 {object} map[string]string
+// @Failure 502 {object} map[string]string
+// @Router /communication/meshsat/config/module [post]
+// @Security BearerAuth
+func (h *CommunicationHandler) PostMeshsatConfigModule(w http.ResponseWriter, r *http.Request) {
+	proxyMeshsatPOST(w, r, "/api/config/module")
+}
+
+// PostMeshsatWaypoint godoc
+// @Summary Send a waypoint via MeshSat
+// @Description Proxies a waypoint to the mesh network through MeshSat
+// @Tags Communication
+// @Accept json
+// @Produce json
+// @Param body body object{id=uint32,name=string,description=string,latitude=float64,longitude=float64,icon=int,expire=int64} true "Waypoint data"
+// @Success 200 {object} map[string]string
+// @Failure 400 {object} map[string]string
+// @Failure 502 {object} map[string]string
+// @Router /communication/meshsat/waypoints [post]
+// @Security BearerAuth
+func (h *CommunicationHandler) PostMeshsatWaypoint(w http.ResponseWriter, r *http.Request) {
+	proxyMeshsatPOST(w, r, "/api/waypoints")
+}
+
+// proxyMeshsatPOST forwards a POST request to the MeshSat coreapp and returns the response.
+func proxyMeshsatPOST(w http.ResponseWriter, r *http.Request, path string) {
+	ctx, cancel := context.WithTimeout(r.Context(), 15*time.Second)
+	defer cancel()
+
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, meshsatBaseURL+path, r.Body)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "failed to create request: "+err.Error())
+		return
+	}
+	req.Header.Set("Content-Type", "application/json")
 
 	resp, err := http.DefaultClient.Do(req)
 	if err != nil {
