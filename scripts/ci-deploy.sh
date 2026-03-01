@@ -94,8 +94,58 @@ elif docker service inspect ${SERVICE_NAME} > /dev/null 2>&1; then
     --detach \
     ${SERVICE_NAME}
 
-  echo "  Update issued (detached) — will poll health endpoint..."
-  sleep 10
+  echo "  Update issued (detached) — waiting for Swarm convergence..."
+
+  # Wait for Swarm to converge the update before health checking
+  CONVERGE_ELAPSED=0
+  CONVERGE_MAX=120
+  set +e
+  while [ $CONVERGE_ELAPSED -lt $CONVERGE_MAX ]; do
+    UPDATE_STATE=$(docker service inspect ${SERVICE_NAME} \
+      --format '{{.UpdateStatus.State}}' 2>/dev/null || echo "unknown")
+
+    case "$UPDATE_STATE" in
+      completed)
+        echo "  Update converged in ${CONVERGE_ELAPSED}s"
+        break
+        ;;
+      updating)
+        if [ $((CONVERGE_ELAPSED % 15)) -eq 0 ] && [ $CONVERGE_ELAPSED -gt 0 ]; then
+          echo "  ${CONVERGE_ELAPSED}s — still updating..."
+          docker service ps ${SERVICE_NAME} --filter "desired-state=running" \
+            --format "    {{.CurrentState}} | {{.Error}}" 2>/dev/null | head -1
+        else
+          echo "  ${CONVERGE_ELAPSED}/${CONVERGE_MAX}s — updating..."
+        fi
+        ;;
+      paused)
+        echo "  ERROR: Update paused (task failure)"
+        docker service ps ${SERVICE_NAME} --no-trunc 2>/dev/null | head -5
+        docker service logs ${SERVICE_NAME} --tail 20 2>/dev/null || true
+        exit 1
+        ;;
+      rollback_*)
+        echo "  ERROR: Update rolling back (state: ${UPDATE_STATE})"
+        docker service ps ${SERVICE_NAME} --no-trunc 2>/dev/null | head -5
+        docker service logs ${SERVICE_NAME} --tail 20 2>/dev/null || true
+        exit 1
+        ;;
+      *)
+        echo "  ${CONVERGE_ELAPSED}s — update state: ${UPDATE_STATE}"
+        ;;
+    esac
+
+    sleep 3
+    CONVERGE_ELAPSED=$((CONVERGE_ELAPSED + 3))
+  done
+  set -e
+
+  if [ $CONVERGE_ELAPSED -ge $CONVERGE_MAX ]; then
+    echo "  ERROR: Update did not converge within ${CONVERGE_MAX}s"
+    docker service ps ${SERVICE_NAME} --no-trunc 2>/dev/null | head -5
+    docker service logs ${SERVICE_NAME} --tail 20 2>/dev/null || true
+    exit 1
+  fi
 else
   echo "Service doesn't exist — deploying fresh stack..."
 fi
@@ -134,12 +184,46 @@ if [ "${SKIP_UPDATE}" != "true" ] && ! docker service inspect ${SERVICE_NAME} > 
     --resolve-image never \
     ${STACK_NAME}
 
-  echo "  Stack deployed — waiting for service registration..."
-  sleep 8
+  echo "  Stack deployed — waiting for convergence..."
 
-  # Service deployed from compose which already uses localhost:5000/cubeos-app/api
-  # No need to pin — compose image reference is correct
-  sleep 5
+  # Wait for the service task to reach Running state
+  CONVERGE_ELAPSED=0
+  CONVERGE_MAX=120
+  CONVERGED=0
+  set +e
+  while [ $CONVERGE_ELAPSED -lt $CONVERGE_MAX ]; do
+    STATE=$(docker service ps ${SERVICE_NAME} \
+      --filter "desired-state=running" \
+      --format "{{.CurrentState}}" 2>/dev/null | head -1)
+
+    case "$STATE" in
+      Running*)
+        echo "  Converged: ${STATE} (${CONVERGE_ELAPSED}s)"
+        CONVERGED=1
+        break
+        ;;
+      Starting*|Preparing*)
+        echo "  ${STATE} (${CONVERGE_ELAPSED}s)"
+        ;;
+      "")
+        echo "  Scheduling... (${CONVERGE_ELAPSED}s)"
+        ;;
+      *)
+        echo "  ${STATE} (${CONVERGE_ELAPSED}s)"
+        ;;
+    esac
+
+    sleep 3
+    CONVERGE_ELAPSED=$((CONVERGE_ELAPSED + 3))
+  done
+  set -e
+
+  if [ "$CONVERGED" -ne 1 ]; then
+    echo "  ERROR: Service did not converge within ${CONVERGE_MAX}s"
+    docker service ps ${SERVICE_NAME} --no-trunc 2>/dev/null | head -5
+    docker service logs ${SERVICE_NAME} --tail 20 2>/dev/null || true
+    exit 1
+  fi
 fi
 
 # =========================================================================
