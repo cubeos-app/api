@@ -228,8 +228,20 @@ func (o *Orchestrator) InstallFromRegistryWithProgress(ctx context.Context, req 
 	if req.Image == "" {
 		return nil, fmt.Errorf("image is required for registry install")
 	}
+
+	// If the image already contains a tag (e.g. "corentinth/it-tools:2023.11.2-7d94e11"),
+	// extract it so we don't double-tag (image:tag:latest).
 	if req.Tag == "" {
-		req.Tag = "latest"
+		if idx := strings.LastIndex(req.Image, ":"); idx > 0 && !strings.Contains(req.Image[idx:], "/") {
+			req.Tag = req.Image[idx+1:]
+			req.Image = req.Image[:idx]
+		} else {
+			req.Tag = "latest"
+		}
+	} else if idx := strings.LastIndex(req.Image, ":"); idx > 0 && !strings.Contains(req.Image[idx:], "/") {
+		// Image has embedded tag AND explicit tag was provided — prefer the embedded one
+		req.Tag = req.Image[idx+1:]
+		req.Image = req.Image[:idx]
 	}
 
 	if o.engine == nil || o.feStore == nil {
