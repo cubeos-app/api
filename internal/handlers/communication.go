@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"io"
 	"net/http"
+	"net/url"
 	"strconv"
 	"strings"
 	"time"
@@ -1531,7 +1532,7 @@ func (h *CommunicationHandler) ScanBluetoothDevices(w http.ResponseWriter, r *ht
 // @Router /communication/bluetooth/pair/{address} [post]
 func (h *CommunicationHandler) PairBluetoothDevice(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
-	address := chi.URLParam(r, "address")
+	address, _ := url.PathUnescape(chi.URLParam(r, "address"))
 
 	if address == "" {
 		writeError(w, http.StatusBadRequest, "Bluetooth address is required")
@@ -1573,7 +1574,7 @@ func (h *CommunicationHandler) PairBluetoothDevice(w http.ResponseWriter, r *htt
 // @Router /communication/bluetooth/connect/{address} [post]
 func (h *CommunicationHandler) ConnectBluetoothDevice(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
-	address := chi.URLParam(r, "address")
+	address, _ := url.PathUnescape(chi.URLParam(r, "address"))
 
 	if address == "" {
 		writeError(w, http.StatusBadRequest, "Bluetooth address is required")
@@ -1615,7 +1616,7 @@ func (h *CommunicationHandler) ConnectBluetoothDevice(w http.ResponseWriter, r *
 // @Router /communication/bluetooth/disconnect/{address} [post]
 func (h *CommunicationHandler) DisconnectBluetoothDevice(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
-	address := chi.URLParam(r, "address")
+	address, _ := url.PathUnescape(chi.URLParam(r, "address"))
 
 	if address == "" {
 		writeError(w, http.StatusBadRequest, "Bluetooth address is required")
@@ -1657,7 +1658,7 @@ func (h *CommunicationHandler) DisconnectBluetoothDevice(w http.ResponseWriter, 
 // @Router /communication/bluetooth/devices/{address} [delete]
 func (h *CommunicationHandler) RemoveBluetoothDevice(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
-	address := chi.URLParam(r, "address")
+	address, _ := url.PathUnescape(chi.URLParam(r, "address"))
 
 	if address == "" {
 		writeError(w, http.StatusBadRequest, "Bluetooth address is required")
