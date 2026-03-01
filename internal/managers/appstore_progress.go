@@ -82,11 +82,12 @@ func (m *AppStoreManager) InstallAppWithProgress(req *models.AppInstallRequest, 
 		return nil, err
 	}
 
-	// Build WebUI URL: prefer FQDN, fall back to IP:port for standard profile.
+	// Build WebUI URL: prefer FQDN, fall back to :{port} for standard profile.
+	// For standard profile, return ":{port}" — the dashboard resolves this
+	// using window.location.hostname, so the URL works from any network.
 	var webUI string
 	m.db.db.QueryRow("SELECT COALESCE(homepage, '') FROM apps WHERE name = ?", req.AppName).Scan(&webUI) //nolint:errcheck
 	if webUI == "" {
-		// Build URL from allocated port + gateway IP (works on all profiles)
 		var port int
 		m.db.db.QueryRow(`
 			SELECT pa.port FROM port_allocations pa
@@ -94,11 +95,18 @@ func (m *AppStoreManager) InstallAppWithProgress(req *models.AppInstallRequest, 
 			WHERE a.name = ? AND pa.is_primary = 1
 		`, req.AppName).Scan(&port) //nolint:errcheck
 		if port > 0 {
-			gatewayIP := os.Getenv("GATEWAY_IP")
-			if gatewayIP == "" {
-				gatewayIP = "10.42.24.1"
+			accessProfile := os.Getenv("CUBEOS_ACCESS_PROFILE")
+			if accessProfile == "all_in_one" || accessProfile == "advanced" {
+				// AIO/Advanced: use gateway IP for FQDN-based access
+				gatewayIP := os.Getenv("GATEWAY_IP")
+				if gatewayIP == "" {
+					gatewayIP = "10.42.24.1"
+				}
+				webUI = fmt.Sprintf("http://%s:%d", gatewayIP, port)
+			} else {
+				// Standard: port-only — dashboard prepends the current hostname
+				webUI = fmt.Sprintf(":%d", port)
 			}
-			webUI = fmt.Sprintf("http://%s:%d", gatewayIP, port)
 		}
 	}
 

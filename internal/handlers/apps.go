@@ -160,11 +160,15 @@ func (h *AppsHandler) InstallApp(w http.ResponseWriter, r *http.Request) {
 				return
 			}
 
-			// Pass the app's access URL so the frontend "Open App" button works
+			// Pass the app's access URL so the frontend "Open App" button works.
+			// For standard profile: ":{port}" — dashboard resolves via hostname.
+			// For all_in_one/advanced: full FQDN URL.
 			appURL := ""
 			if app != nil {
 				if fqdn := app.GetPrimaryFQDN(); fqdn != "" {
 					appURL = fmt.Sprintf("http://%s", fqdn)
+				} else if port := app.GetPrimaryPort(); port > 0 {
+					appURL = fmt.Sprintf(":%d", port)
 				}
 			}
 			job.EmitDone("App installed successfully!", appURL)
