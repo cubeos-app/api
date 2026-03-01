@@ -96,6 +96,15 @@ func (h *CommunicationHandler) Routes() chi.Router {
 	r.Post("/meshsat/config/module", h.PostMeshsatConfigModule)
 	r.Post("/meshsat/waypoints", h.PostMeshsatWaypoint)
 
+	// MeshSat Gateway management — proxy to meshsat coreapp (:6050)
+	r.Get("/meshsat/gateways", h.GetMeshsatGateways)
+	r.Get("/meshsat/gateways/{type}", h.GetMeshsatGateway)
+	r.Put("/meshsat/gateways/{type}", h.PutMeshsatGateway)
+	r.Delete("/meshsat/gateways/{type}", h.DeleteMeshsatGateway)
+	r.Post("/meshsat/gateways/{type}/start", h.PostMeshsatGatewayStart)
+	r.Post("/meshsat/gateways/{type}/stop", h.PostMeshsatGatewayStop)
+	r.Post("/meshsat/gateways/{type}/test", h.PostMeshsatGatewayTest)
+
 	// Bluetooth
 	r.Get("/bluetooth", h.GetBluetoothStatus)
 	r.Get("/bluetooth/coexistence", h.GetBluetoothCoexistence)
@@ -1953,6 +1962,121 @@ func (h *CommunicationHandler) StreamMeshsatEvents(w http.ResponseWriter, r *htt
 	proxyMeshsatSSE(w, r, "/api/events")
 }
 
+// =============================================================================
+// MeshSat Gateway Proxy Endpoints (→ meshsat coreapp :6050/api/gateways)
+// =============================================================================
+
+// GetMeshsatGateways godoc
+// @Summary List MeshSat gateways
+// @Description Returns status and config of all gateways (MQTT, Iridium) via MeshSat proxy
+// @Tags Communication
+// @Produce json
+// @Success 200 {object} map[string]interface{}
+// @Failure 502 {object} map[string]string
+// @Router /communication/meshsat/gateways [get]
+// @Security BearerAuth
+func (h *CommunicationHandler) GetMeshsatGateways(w http.ResponseWriter, r *http.Request) {
+	proxyMeshsatGET(w, r, "/api/gateways")
+}
+
+// GetMeshsatGateway godoc
+// @Summary Get MeshSat gateway status
+// @Description Returns status and config for a specific gateway type
+// @Tags Communication
+// @Produce json
+// @Param type path string true "Gateway type (mqtt, iridium)"
+// @Success 200 {object} map[string]interface{}
+// @Failure 404 {object} map[string]string
+// @Failure 502 {object} map[string]string
+// @Router /communication/meshsat/gateways/{type} [get]
+// @Security BearerAuth
+func (h *CommunicationHandler) GetMeshsatGateway(w http.ResponseWriter, r *http.Request) {
+	gwType := chi.URLParam(r, "type")
+	proxyMeshsatGET(w, r, "/api/gateways/"+gwType)
+}
+
+// PutMeshsatGateway godoc
+// @Summary Configure MeshSat gateway
+// @Description Create or update a gateway configuration
+// @Tags Communication
+// @Accept json
+// @Produce json
+// @Param type path string true "Gateway type (mqtt, iridium)"
+// @Param body body object true "Gateway config with enabled flag"
+// @Success 200 {object} map[string]string
+// @Failure 400 {object} map[string]string
+// @Failure 502 {object} map[string]string
+// @Router /communication/meshsat/gateways/{type} [put]
+// @Security BearerAuth
+func (h *CommunicationHandler) PutMeshsatGateway(w http.ResponseWriter, r *http.Request) {
+	gwType := chi.URLParam(r, "type")
+	proxyMeshsatPUT(w, r, "/api/gateways/"+gwType)
+}
+
+// DeleteMeshsatGateway godoc
+// @Summary Delete MeshSat gateway
+// @Description Stop and remove a gateway configuration
+// @Tags Communication
+// @Produce json
+// @Param type path string true "Gateway type (mqtt, iridium)"
+// @Success 200 {object} map[string]string
+// @Failure 400 {object} map[string]string
+// @Failure 502 {object} map[string]string
+// @Router /communication/meshsat/gateways/{type} [delete]
+// @Security BearerAuth
+func (h *CommunicationHandler) DeleteMeshsatGateway(w http.ResponseWriter, r *http.Request) {
+	gwType := chi.URLParam(r, "type")
+	proxyMeshsatDELETE(w, r, "/api/gateways/"+gwType)
+}
+
+// PostMeshsatGatewayStart godoc
+// @Summary Start MeshSat gateway
+// @Description Start a configured gateway
+// @Tags Communication
+// @Produce json
+// @Param type path string true "Gateway type (mqtt, iridium)"
+// @Success 200 {object} map[string]string
+// @Failure 400 {object} map[string]string
+// @Failure 502 {object} map[string]string
+// @Router /communication/meshsat/gateways/{type}/start [post]
+// @Security BearerAuth
+func (h *CommunicationHandler) PostMeshsatGatewayStart(w http.ResponseWriter, r *http.Request) {
+	gwType := chi.URLParam(r, "type")
+	proxyMeshsatPOST(w, r, "/api/gateways/"+gwType+"/start")
+}
+
+// PostMeshsatGatewayStop godoc
+// @Summary Stop MeshSat gateway
+// @Description Stop a running gateway
+// @Tags Communication
+// @Produce json
+// @Param type path string true "Gateway type (mqtt, iridium)"
+// @Success 200 {object} map[string]string
+// @Failure 400 {object} map[string]string
+// @Failure 502 {object} map[string]string
+// @Router /communication/meshsat/gateways/{type}/stop [post]
+// @Security BearerAuth
+func (h *CommunicationHandler) PostMeshsatGatewayStop(w http.ResponseWriter, r *http.Request) {
+	gwType := chi.URLParam(r, "type")
+	proxyMeshsatPOST(w, r, "/api/gateways/"+gwType+"/stop")
+}
+
+// PostMeshsatGatewayTest godoc
+// @Summary Test MeshSat gateway connectivity
+// @Description Test connectivity for a configured gateway
+// @Tags Communication
+// @Produce json
+// @Param type path string true "Gateway type (mqtt, iridium)"
+// @Success 200 {object} map[string]string
+// @Failure 400 {object} map[string]string
+// @Failure 502 {object} map[string]string
+// @Router /communication/meshsat/gateways/{type}/test [post]
+// @Security BearerAuth
+func (h *CommunicationHandler) PostMeshsatGatewayTest(w http.ResponseWriter, r *http.Request) {
+	gwType := chi.URLParam(r, "type")
+	proxyMeshsatPOST(w, r, "/api/gateways/"+gwType+"/test")
+}
+
 // proxyMeshsatGET forwards a GET request to the MeshSat coreapp and returns the response.
 func proxyMeshsatGET(w http.ResponseWriter, r *http.Request, path string) {
 	ctx, cancel := context.WithTimeout(r.Context(), 15*time.Second)
@@ -2083,6 +2207,53 @@ func proxyMeshsatPOST(w http.ResponseWriter, r *http.Request, path string) {
 		return
 	}
 	req.Header.Set("Content-Type", "application/json")
+
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		writeError(w, http.StatusBadGateway, "MeshSat unavailable: "+err.Error())
+		return
+	}
+	defer resp.Body.Close()
+
+	w.Header().Set("Content-Type", resp.Header.Get("Content-Type"))
+	w.WriteHeader(resp.StatusCode)
+	io.Copy(w, resp.Body)
+}
+
+// proxyMeshsatPUT forwards a PUT request to the MeshSat coreapp and returns the response.
+func proxyMeshsatPUT(w http.ResponseWriter, r *http.Request, path string) {
+	ctx, cancel := context.WithTimeout(r.Context(), 15*time.Second)
+	defer cancel()
+
+	req, err := http.NewRequestWithContext(ctx, http.MethodPut, meshsatBaseURL+path, r.Body)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "failed to create request: "+err.Error())
+		return
+	}
+	req.Header.Set("Content-Type", "application/json")
+
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		writeError(w, http.StatusBadGateway, "MeshSat unavailable: "+err.Error())
+		return
+	}
+	defer resp.Body.Close()
+
+	w.Header().Set("Content-Type", resp.Header.Get("Content-Type"))
+	w.WriteHeader(resp.StatusCode)
+	io.Copy(w, resp.Body)
+}
+
+// proxyMeshsatDELETE forwards a DELETE request to the MeshSat coreapp and returns the response.
+func proxyMeshsatDELETE(w http.ResponseWriter, r *http.Request, path string) {
+	ctx, cancel := context.WithTimeout(r.Context(), 15*time.Second)
+	defer cancel()
+
+	req, err := http.NewRequestWithContext(ctx, http.MethodDelete, meshsatBaseURL+path, nil)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "failed to create request: "+err.Error())
+		return
+	}
 
 	resp, err := http.DefaultClient.Do(req)
 	if err != nil {
