@@ -100,7 +100,7 @@ func (m *AppStoreManager) InstallAppWithProgress(req *models.AppInstallRequest, 
 				// AIO/Advanced: use gateway IP for FQDN-based access
 				gatewayIP := os.Getenv("GATEWAY_IP")
 				if gatewayIP == "" {
-					gatewayIP = "10.42.24.1"
+					gatewayIP = models.DefaultGatewayIP
 				}
 				webUI = fmt.Sprintf("http://%s:%d", gatewayIP, port)
 			} else {

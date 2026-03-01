@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"cubeos-api/internal/flowengine"
+	"cubeos-api/internal/models"
 
 	"github.com/rs/zerolog/log"
 	"gopkg.in/yaml.v3"
@@ -464,7 +465,7 @@ func makeDetectWebUI(db AppDatabase) flowengine.ActivityFunc {
 
 		gateway := in.GatewayIP
 		if gateway == "" {
-			gateway = "10.42.24.1"
+			gateway = models.DefaultGatewayIP
 		}
 
 		url := fmt.Sprintf("http://%s:%d/", gateway, in.Port)

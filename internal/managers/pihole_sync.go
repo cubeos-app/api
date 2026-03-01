@@ -9,7 +9,6 @@ import (
 	"io"
 	"net/http"
 	"os"
-	"os/exec"
 	"time"
 
 	"cubeos-api/internal/models"
@@ -32,9 +31,8 @@ import (
 //   - API startup: main.go calls EnsurePasswordSynced(db) to catch missed syncs
 type PiholePasswordClient struct {
 	containerName string
-	apiURL        string // http://10.42.24.1:6001
+	apiURL        string // Pi-hole v6 REST API URL
 	envFilePath   string // /cubeos/coreapps/pihole/appconfig/.env (docker-compose .env)
-	composeDir    string // /cubeos/coreapps/pihole/appconfig (for docker compose up -d)
 	secretsPath   string // /cubeos/config/secrets.env
 	httpClient    *http.Client
 }
@@ -48,14 +46,13 @@ func NewPiholePasswordClient() *PiholePasswordClient {
 	}
 	gatewayIP := os.Getenv("GATEWAY_IP")
 	if gatewayIP == "" {
-		gatewayIP = "10.42.24.1"
+		gatewayIP = models.DefaultGatewayIP
 	}
 
 	return &PiholePasswordClient{
 		containerName: "cubeos-pihole",
 		apiURL:        fmt.Sprintf("http://%s:%s", gatewayIP, piholePort),
 		envFilePath:   "/cubeos/coreapps/pihole/appconfig/.env",
-		composeDir:    "/cubeos/coreapps/pihole/appconfig",
 		secretsPath:   "/cubeos/config/secrets.env",
 		httpClient: &http.Client{
 			Timeout: 10 * time.Second,
@@ -84,19 +81,37 @@ func (c *PiholePasswordClient) checkPassword(password string) bool {
 	return resp.StatusCode == http.StatusOK
 }
 
-// recreateContainer runs `docker compose up -d` in the Pi-hole appconfig
-// directory. This forces docker-compose to re-read the .env file and
-// recreate the container with the updated FTLCONF_webserver_api_password.
+// recreateContainer calls HAL to run `docker compose up -d` for Pi-hole.
+// HAL runs on the host where the Docker Compose CLI plugin is available.
+// The API container does not have docker compose installed.
 //
 // A plain `docker restart` does NOT re-read .env files — the container
 // keeps the old environment from when it was first created.
 func (c *PiholePasswordClient) recreateContainer(ctx context.Context) error {
-	cmd := exec.CommandContext(ctx, "docker", "compose", "up", "-d")
-	cmd.Dir = c.composeDir
+	halURL := os.Getenv("HAL_URL")
+	if halURL == "" {
+		halURL = fmt.Sprintf("http://%s:6005/hal", models.DefaultGatewayIP)
+	}
 
-	output, err := cmd.CombinedOutput()
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, halURL+"/system/service/pihole/recreate", nil)
 	if err != nil {
-		return fmt.Errorf("docker compose up -d failed: %w (output: %s)", err, string(output))
+		return fmt.Errorf("create HAL request: %w", err)
+	}
+
+	// Add HAL authentication key if configured
+	if halKey := os.Getenv("HAL_KEY"); halKey != "" {
+		req.Header.Set("X-HAL-Key", halKey)
+	}
+
+	resp, err := c.httpClient.Do(req)
+	if err != nil {
+		return fmt.Errorf("HAL recreate request failed: %w", err)
+	}
+	defer resp.Body.Close()
+	body, _ := io.ReadAll(resp.Body)
+
+	if resp.StatusCode != http.StatusOK {
+		return fmt.Errorf("HAL recreate returned %d: %s", resp.StatusCode, string(body))
 	}
 
 	return nil

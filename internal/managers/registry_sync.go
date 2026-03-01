@@ -10,6 +10,8 @@ import (
 	"sync"
 	"time"
 
+	"cubeos-api/internal/models"
+
 	"github.com/rs/zerolog/log"
 )
 
@@ -61,7 +63,7 @@ var CuratedRegistryImages = map[string]string{
 // NewRegistrySyncManager creates a new sync manager.
 func NewRegistrySyncManager(db *sql.DB, registryURL string) *RegistrySyncManager {
 	if registryURL == "" {
-		registryURL = "http://10.42.24.1:5000"
+		registryURL = fmt.Sprintf("http://%s:5000", models.DefaultGatewayIP)
 	}
 	return &RegistrySyncManager{
 		db:          db,

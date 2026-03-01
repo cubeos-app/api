@@ -283,7 +283,7 @@ func (m *SetupManager) GetSystemRequirements() *models.SystemRequirements {
 	if req.DeviceModel == "" {
 		halURL := os.Getenv("HAL_URL")
 		if halURL == "" {
-			halURL = "http://10.42.24.1:6005/hal"
+			halURL = fmt.Sprintf("http://%s:6005/hal", models.DefaultGatewayIP)
 		}
 		client := &http.Client{Timeout: 5 * time.Second}
 		resp, err := client.Get(halURL + "/system/info")

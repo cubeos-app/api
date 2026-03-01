@@ -411,7 +411,7 @@ func makeSetupVerifyDNS(dnsMgr DNSManager) flowengine.ActivityFunc {
 
 		gatewayIP := os.Getenv("GATEWAY_IP")
 		if gatewayIP == "" {
-			gatewayIP = "10.42.24.1"
+			gatewayIP = models.DefaultGatewayIP
 		}
 		baseDomain := "cubeos.cube"
 

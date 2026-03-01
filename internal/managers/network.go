@@ -121,7 +121,7 @@ func NewNetworkManager(cfg *config.Config, halClient *hal.Client, db *sqlx.DB) *
 	fallbackGateway := getEnvOrDefault("CUBEOS_FALLBACK_GATEWAY", DefaultFallbackGateway)
 
 	// Pi-hole configuration (runs on host network, port 6001)
-	piholeURL := getEnvOrDefault("PIHOLE_URL", "http://10.42.24.1:6001")
+	piholeURL := getEnvOrDefault("PIHOLE_URL", fmt.Sprintf("http://%s:6001", models.DefaultGatewayIP))
 	piholePassword := getEnvOrDefault("PIHOLE_PASSWORD", "cubeos")
 
 	// Load mode and VPN from database
@@ -770,7 +770,7 @@ func (m *NetworkManager) stopVPN(ctx context.Context) error {
 func (m *NetworkManager) generateNetplanYAML(mode models.NetworkMode, wifiSSID, wifiPassword string, staticIP models.StaticIPConfig) string {
 	gatewayIP := m.cfg.GatewayIP
 	if gatewayIP == "" {
-		gatewayIP = "10.42.24.1"
+		gatewayIP = models.DefaultGatewayIP
 	}
 
 	switch mode {
@@ -2422,7 +2422,11 @@ func (m *NetworkManager) setPiholeDnsmasqLines(ctx context.Context, lines []stri
 func (m *NetworkManager) configurePiholeDHCPForMode(ctx context.Context, mode models.NetworkMode) {
 	// Wildcard DNS for cubeos.cube — always included since FTLCONF_misc_dnsmasq_lines
 	// was removed from env vars in Batch 1 (must be API-managed now)
-	wildcard := "address=/cubeos.cube/10.42.24.1"
+	gatewayIP := m.cfg.GatewayIP
+	if gatewayIP == "" {
+		gatewayIP = models.DefaultGatewayIP
+	}
+	wildcard := fmt.Sprintf("address=/cubeos.cube/%s", gatewayIP)
 
 	var dhcpActive bool
 	var dnsmasqLines []string

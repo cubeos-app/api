@@ -10,6 +10,7 @@ import (
 	"strings"
 
 	"cubeos-api/internal/flowengine"
+	"cubeos-api/internal/models"
 
 	"github.com/rs/zerolog/log"
 )
@@ -113,7 +114,7 @@ func makeRetagImage() flowengine.ActivityFunc {
 		if registryHost == "" {
 			registryHost = os.Getenv("REGISTRY_HOST")
 			if registryHost == "" {
-				registryHost = "10.42.24.1:5000"
+				registryHost = models.DefaultGatewayIP + ":5000"
 			}
 		}
 

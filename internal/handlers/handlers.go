@@ -489,7 +489,7 @@ func (h *Handlers) UpdateAccessProfile(w http.ResponseWriter, r *http.Request) {
 	// Get gateway IP for the workflow
 	gatewayIP := h.cfg.GatewayIP
 	if gatewayIP == "" {
-		gatewayIP = "10.42.24.1"
+		gatewayIP = models.DefaultGatewayIP
 	}
 
 	workflowInput := map[string]string{

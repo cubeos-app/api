@@ -7,6 +7,7 @@ import (
 	"strings"
 
 	"cubeos-api/internal/flowengine"
+	"cubeos-api/internal/models"
 
 	"github.com/rs/zerolog/log"
 )
@@ -125,7 +126,7 @@ func makeAddDNS(dnsMgr DNSManager, profileReader AccessProfileReader) flowengine
 			return nil, flowengine.NewPermanentError(fmt.Errorf("invalid add_dns input: %w", err))
 		}
 		if in.IP == "" {
-			in.IP = "10.42.24.1" // default gateway IP
+			in.IP = models.DefaultGatewayIP // default gateway IP
 		}
 
 		// Generate domain from app name if not explicitly provided
@@ -247,7 +248,7 @@ func makeCreateProxy(proxyMgr ProxyManager, profileReader AccessProfileReader) f
 			return nil, flowengine.NewPermanentError(fmt.Errorf("domain and forward_port are required"))
 		}
 		if in.ForwardHost == "" {
-			in.ForwardHost = "10.42.24.1"
+			in.ForwardHost = models.DefaultGatewayIP
 		}
 		if in.ForwardScheme == "" {
 			in.ForwardScheme = "http"

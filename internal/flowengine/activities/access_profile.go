@@ -13,6 +13,7 @@ import (
 	"cubeos-api/internal/database"
 	"cubeos-api/internal/flowengine"
 	"cubeos-api/internal/hal"
+	"cubeos-api/internal/models"
 
 	"github.com/rs/zerolog/log"
 )
@@ -233,7 +234,7 @@ func makeRestoreOldAccess(db *sql.DB, dnsMgr DNSManager, proxyMgr ProxyManager) 
 			if ip == "" {
 				ip = env.GatewayIP
 				if ip == "" {
-					ip = "10.42.24.1"
+					ip = models.DefaultGatewayIP
 				}
 			}
 
@@ -352,7 +353,7 @@ func makeMigrateAppEntries(db *sql.DB, dnsMgr DNSManager, proxyMgr ProxyManager)
 
 		gatewayIP := env.GatewayIP
 		if gatewayIP == "" {
-			gatewayIP = "10.42.24.1"
+			gatewayIP = models.DefaultGatewayIP
 		}
 
 		apps, err := database.GetInstalledAppsForMigration(db)
