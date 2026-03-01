@@ -395,6 +395,10 @@ func (h *SetupHandler) GetEthernetStatus(w http.ResponseWriter, r *http.Request)
 	ip := ""
 	if len(iface.IPv4Addresses) > 0 {
 		ip = iface.IPv4Addresses[0]
+		// Strip CIDR prefix (e.g., "192.168.1.42/24" → "192.168.1.42")
+		if idx := strings.Index(ip, "/"); idx != -1 {
+			ip = ip[:idx]
+		}
 	}
 
 	json.NewEncoder(w).Encode(map[string]interface{}{
