@@ -45,6 +45,9 @@ const (
 	PortChromaDB  = 6031
 	PortDocsIndex = 6032
 
+	// Communication range (6050-6059)
+	PortMeshSat = 6050
+
 	// User apps range (6100-6999)
 	UserPortMin = 6100
 	UserPortMax = 6999
@@ -75,6 +78,7 @@ var ReservedSystemPorts = map[int]string{
 	6030: "Ollama",
 	6031: "ChromaDB",
 	6032: "Docs Indexer",
+	6050: "MeshSat",
 }
 
 // PortManager handles port allocation and tracking with triple-source validation.

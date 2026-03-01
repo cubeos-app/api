@@ -81,6 +81,15 @@ func (h *CommunicationHandler) Routes() chi.Router {
 	r.Post("/iridium/clear", h.ClearIridiumBuffers)
 	r.Get("/iridium/events", h.StreamIridiumEvents)
 
+	// MeshSat — proxy to meshsat coreapp (:6050)
+	r.Get("/meshsat/status", h.GetMeshsatStatus)
+	r.Get("/meshsat/messages", h.GetMeshsatMessages)
+	r.Get("/meshsat/telemetry", h.GetMeshsatTelemetry)
+	r.Get("/meshsat/positions", h.GetMeshsatPositions)
+	r.Get("/meshsat/nodes", h.GetMeshsatNodes)
+	r.Get("/meshsat/messages/stats", h.GetMeshsatMessageStats)
+	r.Get("/meshsat/events", h.StreamMeshsatEvents)
+
 	// Bluetooth
 	r.Get("/bluetooth", h.GetBluetoothStatus)
 	r.Get("/bluetooth/coexistence", h.GetBluetoothCoexistence)
@@ -1821,6 +1830,192 @@ func proxySSE(w http.ResponseWriter, r *http.Request, halResp *http.Response) {
 				return
 			}
 			// Flush after every line for low latency
+			flusher.Flush()
+		}
+	}
+}
+
+// =============================================================================
+// MeshSat Proxy Endpoints (→ meshsat coreapp at :6050)
+// =============================================================================
+
+const meshsatBaseURL = "http://cubeos-meshsat:6050"
+
+// GetMeshsatStatus godoc
+// @Summary MeshSat service status
+// @Description Returns MeshSat coreapp health and database status
+// @Tags Communication
+// @Produce json
+// @Success 200 {object} map[string]interface{}
+// @Failure 502 {object} map[string]string
+// @Router /communication/meshsat/status [get]
+// @Security BearerAuth
+func (h *CommunicationHandler) GetMeshsatStatus(w http.ResponseWriter, r *http.Request) {
+	proxyMeshsatGET(w, r, "/health")
+}
+
+// GetMeshsatMessages godoc
+// @Summary Get MeshSat message history
+// @Description Returns paginated mesh messages from MeshSat's persistent storage
+// @Tags Communication
+// @Produce json
+// @Param node query string false "Filter by node ID"
+// @Param since query string false "Start time (RFC3339)"
+// @Param until query string false "End time (RFC3339)"
+// @Param portnum query int false "Filter by port number"
+// @Param transport query string false "Filter by transport (radio, mqtt, satellite)"
+// @Param limit query int false "Results per page (default 50)"
+// @Param offset query int false "Pagination offset"
+// @Success 200 {object} map[string]interface{}
+// @Failure 502 {object} map[string]string
+// @Router /communication/meshsat/messages [get]
+// @Security BearerAuth
+func (h *CommunicationHandler) GetMeshsatMessages(w http.ResponseWriter, r *http.Request) {
+	proxyMeshsatGET(w, r, "/api/messages?"+r.URL.RawQuery)
+}
+
+// GetMeshsatMessageStats godoc
+// @Summary Get MeshSat message statistics
+// @Description Returns aggregate message counts by transport and port number
+// @Tags Communication
+// @Produce json
+// @Success 200 {object} map[string]interface{}
+// @Failure 502 {object} map[string]string
+// @Router /communication/meshsat/messages/stats [get]
+// @Security BearerAuth
+func (h *CommunicationHandler) GetMeshsatMessageStats(w http.ResponseWriter, r *http.Request) {
+	proxyMeshsatGET(w, r, "/api/messages/stats")
+}
+
+// GetMeshsatTelemetry godoc
+// @Summary Get MeshSat telemetry history
+// @Description Returns time-series telemetry data from MeshSat's persistent storage
+// @Tags Communication
+// @Produce json
+// @Param node query string false "Node ID"
+// @Param since query string false "Start time (RFC3339)"
+// @Param until query string false "End time (RFC3339)"
+// @Param limit query int false "Max records (default 100)"
+// @Success 200 {object} map[string]interface{}
+// @Failure 502 {object} map[string]string
+// @Router /communication/meshsat/telemetry [get]
+// @Security BearerAuth
+func (h *CommunicationHandler) GetMeshsatTelemetry(w http.ResponseWriter, r *http.Request) {
+	proxyMeshsatGET(w, r, "/api/telemetry?"+r.URL.RawQuery)
+}
+
+// GetMeshsatPositions godoc
+// @Summary Get MeshSat position history
+// @Description Returns GPS track data from MeshSat's persistent storage
+// @Tags Communication
+// @Produce json
+// @Param node query string false "Node ID"
+// @Param since query string false "Start time (RFC3339)"
+// @Param until query string false "End time (RFC3339)"
+// @Param limit query int false "Max records (default 100)"
+// @Success 200 {object} map[string]interface{}
+// @Failure 502 {object} map[string]string
+// @Router /communication/meshsat/positions [get]
+// @Security BearerAuth
+func (h *CommunicationHandler) GetMeshsatPositions(w http.ResponseWriter, r *http.Request) {
+	proxyMeshsatGET(w, r, "/api/positions?"+r.URL.RawQuery)
+}
+
+// GetMeshsatNodes godoc
+// @Summary Get mesh nodes via MeshSat
+// @Description Returns mesh nodes with signal quality enrichment from MeshSat
+// @Tags Communication
+// @Produce json
+// @Success 200 {object} map[string]interface{}
+// @Failure 502 {object} map[string]string
+// @Router /communication/meshsat/nodes [get]
+// @Security BearerAuth
+func (h *CommunicationHandler) GetMeshsatNodes(w http.ResponseWriter, r *http.Request) {
+	proxyMeshsatGET(w, r, "/api/nodes")
+}
+
+// StreamMeshsatEvents godoc
+// @Summary Subscribe to MeshSat events (SSE)
+// @Description Proxies Server-Sent Events from the MeshSat coreapp
+// @Tags Communication
+// @Produce text/event-stream
+// @Success 200 {string} string "SSE stream"
+// @Failure 502 {object} map[string]string
+// @Router /communication/meshsat/events [get]
+// @Security BearerAuth
+func (h *CommunicationHandler) StreamMeshsatEvents(w http.ResponseWriter, r *http.Request) {
+	proxyMeshsatSSE(w, r, "/api/events")
+}
+
+// proxyMeshsatGET forwards a GET request to the MeshSat coreapp and returns the response.
+func proxyMeshsatGET(w http.ResponseWriter, r *http.Request, path string) {
+	ctx, cancel := context.WithTimeout(r.Context(), 15*time.Second)
+	defer cancel()
+
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, meshsatBaseURL+path, nil)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "failed to create request: "+err.Error())
+		return
+	}
+
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		writeError(w, http.StatusBadGateway, "MeshSat unavailable: "+err.Error())
+		return
+	}
+	defer resp.Body.Close()
+
+	w.Header().Set("Content-Type", resp.Header.Get("Content-Type"))
+	w.WriteHeader(resp.StatusCode)
+	io.Copy(w, resp.Body)
+}
+
+// proxyMeshsatSSE proxies an SSE stream from the MeshSat coreapp.
+func proxyMeshsatSSE(w http.ResponseWriter, r *http.Request, path string) {
+	flusher, ok := w.(http.Flusher)
+	if !ok {
+		writeError(w, http.StatusInternalServerError, "streaming not supported")
+		return
+	}
+
+	req, err := http.NewRequestWithContext(r.Context(), http.MethodGet, meshsatBaseURL+path, nil)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "failed to create request: "+err.Error())
+		return
+	}
+	req.Header.Set("Accept", "text/event-stream")
+
+	client := &http.Client{Timeout: 0}
+	resp, err := client.Do(req)
+	if err != nil {
+		writeError(w, http.StatusBadGateway, "MeshSat unavailable: "+err.Error())
+		return
+	}
+	defer resp.Body.Close()
+
+	w.Header().Set("Content-Type", "text/event-stream")
+	w.Header().Set("Cache-Control", "no-cache")
+	w.Header().Set("Connection", "keep-alive")
+	w.WriteHeader(http.StatusOK)
+
+	scanner := bufio.NewScanner(resp.Body)
+	scanner.Buffer(make([]byte, 64*1024), 64*1024)
+
+	for {
+		select {
+		case <-r.Context().Done():
+			return
+		default:
+			if !scanner.Scan() {
+				if err := scanner.Err(); err != nil {
+					log.Error().Err(err).Msg("MeshSat SSE proxy read error")
+				}
+				return
+			}
+			line := scanner.Text()
+			if _, err := io.WriteString(w, line+"\n"); err != nil {
+				return
+			}
 			flusher.Flush()
 		}
 	}

@@ -677,6 +677,7 @@ func (o *Orchestrator) SeedSystemApps(ctx context.Context) error {
 		{"kiwix", "Kiwix Offline Library", models.AppTypePlatform, 6043, models.DeployModeStack},
 		{"filebrowser", "File Browser", models.AppTypePlatform, 6013, models.DeployModeStack},
 		{"cubeos-terminal", "Web Terminal", models.AppTypePlatform, 6042, models.DeployModeCompose},
+		{"meshsat", "MeshSat", models.AppTypePlatform, 6050, models.DeployModeStack},
 	}
 
 	// First pass: update display names for any already-registered apps that
@@ -763,6 +764,7 @@ func (o *Orchestrator) SeedSystemPortsAndFQDNs(ctx context.Context) error {
 		{"kiwix", 6043, "kiwix", "Offline Library"},
 		{"filebrowser", 6013, "filebrowser", "File Manager"},
 		{"cubeos-terminal", 6042, "terminal", "Web Terminal"},
+		{"meshsat", 6050, "meshsat", "MeshSat Gateway"},
 	}
 
 	seededPorts := 0
@@ -780,7 +782,8 @@ func (o *Orchestrator) SeedSystemPortsAndFQDNs(ctx context.Context) error {
 			deployMode := models.DeployModeCompose
 			switch {
 			case e.appName == "cubeos-api" || e.appName == "cubeos-dashboard" || e.appName == "dozzle" ||
-				e.appName == "cubeos-docsindex" || e.appName == "kiwix" || e.appName == "filebrowser":
+				e.appName == "cubeos-docsindex" || e.appName == "kiwix" || e.appName == "filebrowser" ||
+				e.appName == "meshsat":
 				appType = models.AppTypePlatform
 				deployMode = models.DeployModeStack
 			case e.appName == "cubeos-terminal":
