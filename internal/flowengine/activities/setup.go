@@ -368,6 +368,16 @@ func makeSetupMarkComplete(sc SetupConfigurer) flowengine.ActivityFunc {
 
 func makeSetupVerifyDHCP(reconciler DHCPReconciler) flowengine.ActivityFunc {
 	return func(ctx context.Context, input json.RawMessage) (json.RawMessage, error) {
+		// Container tier (LXC/VM) has no Pi-hole — skip DHCP verification
+		if os.Getenv("CUBEOS_TIER") == "container" {
+			log.Info().Msg("setup.verify_dhcp: skipping — container tier has no Pi-hole")
+			return marshalOutput(map[string]interface{}{
+				"dhcp_verified": true,
+				"skipped":       true,
+				"reason":        "container_tier",
+			})
+		}
+
 		log.Info().Msg("setup.verify_dhcp: reconciling Pi-hole DHCP state with persisted network mode")
 
 		if err := reconciler.ReconcileDHCP(ctx); err != nil {
@@ -387,6 +397,16 @@ func makeSetupVerifyDHCP(reconciler DHCPReconciler) flowengine.ActivityFunc {
 
 func makeSetupVerifyDNS(dnsMgr DNSManager) flowengine.ActivityFunc {
 	return func(ctx context.Context, input json.RawMessage) (json.RawMessage, error) {
+		// Container tier (LXC/VM) has no Pi-hole — skip DNS verification
+		if os.Getenv("CUBEOS_TIER") == "container" {
+			log.Info().Msg("setup.verify_dns: skipping — container tier has no Pi-hole")
+			return marshalOutput(map[string]interface{}{
+				"dns_verified": true,
+				"skipped":      true,
+				"reason":       "container_tier",
+			})
+		}
+
 		log.Info().Msg("setup.verify_dns: verifying base DNS entries in Pi-hole")
 
 		gatewayIP := os.Getenv("GATEWAY_IP")
