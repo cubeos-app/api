@@ -277,22 +277,16 @@ func (m *NPMManager) tryLoadToken() bool {
 
 // loadServiceAccountPassword reads the service account password from secrets.env
 func (m *NPMManager) loadServiceAccountPassword() string {
-	// First check environment variable (set from secrets.env by config loader)
-	if password := os.Getenv(npmAPIPasswordKey); password != "" {
+	// Read from secrets.env file first — this is always the freshest source.
+	// The Swarm env var (os.Getenv) may be stale because Docker Swarm resolves
+	// env_file at deploy time and never re-reads it on container restart.
+	if password := readPasswordFromFile(m.secretsFile, npmAPIPasswordKey); password != "" {
 		return password
 	}
 
-	// Try to read directly from secrets.env file
-	data, err := os.ReadFile(m.secretsFile)
-	if err != nil {
-		return ""
-	}
-
-	for _, line := range strings.Split(string(data), "\n") {
-		line = strings.TrimSpace(line)
-		if strings.HasPrefix(line, npmAPIPasswordKey+"=") {
-			return strings.TrimPrefix(line, npmAPIPasswordKey+"=")
-		}
+	// Fall back to environment variable
+	if password := os.Getenv(npmAPIPasswordKey); password != "" {
+		return password
 	}
 
 	return ""
@@ -400,14 +394,31 @@ func (m *NPMManager) bootstrapServiceAccount() error {
 			log.Info().Str("email", adminEmail).Msg("NPM: authenticated with configured credentials")
 			authenticated = true
 		} else {
-			log.Debug().Err(err).Msg("NPM: configured credentials failed, trying NPM defaults")
+			log.Debug().Err(err).Msg("NPM: configured credentials failed")
+		}
+	}
+
+	// Step 1b: Self-healing — Swarm env var may be stale (baked at deploy time).
+	// Try the fresh password from secrets.env on disk.
+	if !authenticated {
+		if filePw := readPasswordFromFile(m.secretsFile, npmBootstrapPasswordKey); filePw != "" && filePw != adminPassword {
+			if adminEmail == "" {
+				adminEmail = npmHumanAdminEmail
+			}
+			if err := m.authenticate(adminEmail, filePw); err == nil {
+				log.Info().Msg("NPM: authenticated with refreshed password from secrets.env")
+				authenticated = true
+				adminPassword = filePw
+			} else {
+				log.Debug().Err(err).Msg("NPM: secrets.env password also failed, trying NPM defaults")
+			}
 		}
 	}
 
 	// Step 2: Fall back to NPM default credentials (fresh install)
 	if !authenticated {
 		if err := m.authenticate(npmDefaultEmail, npmDefaultPassword); err != nil {
-			return fmt.Errorf("admin authentication failed (tried configured + defaults): %w", err)
+			return fmt.Errorf("admin authentication failed (tried configured + secrets.env + defaults): %w", err)
 		}
 		log.Info().Msg("NPM: authenticated with NPM defaults — will migrate admin user")
 
