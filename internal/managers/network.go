@@ -121,7 +121,10 @@ func NewNetworkManager(cfg *config.Config, halClient *hal.Client, db *sqlx.DB) *
 	fallbackGateway := getEnvOrDefault("CUBEOS_FALLBACK_GATEWAY", DefaultFallbackGateway)
 
 	// Pi-hole configuration (runs on host network, port 6001)
-	piholeURL := getEnvOrDefault("PIHOLE_URL", fmt.Sprintf("http://%s:6001", models.DefaultGatewayIP))
+	// Prefer DOCKER_HOST_GW (docker_gwbridge gateway, always reachable from Swarm containers)
+	// over GATEWAY_IP (AP subnet, only reachable when AP is running)
+	piholeHost := getEnvOrDefault("DOCKER_HOST_GW", getEnvOrDefault("GATEWAY_IP", models.DefaultGatewayIP))
+	piholeURL := getEnvOrDefault("PIHOLE_URL", fmt.Sprintf("http://%s:6001", piholeHost))
 	piholePassword := getEnvOrDefault("PIHOLE_PASSWORD", "cubeos")
 
 	// Load mode and VPN from database

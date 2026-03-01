@@ -44,7 +44,11 @@ func NewPiholePasswordClient() *PiholePasswordClient {
 	if piholePort == "" {
 		piholePort = "6001"
 	}
-	gatewayIP := os.Getenv("GATEWAY_IP")
+	// Prefer DOCKER_HOST_GW (always reachable) over GATEWAY_IP (AP-only)
+	gatewayIP := os.Getenv("DOCKER_HOST_GW")
+	if gatewayIP == "" {
+		gatewayIP = os.Getenv("GATEWAY_IP")
+	}
 	if gatewayIP == "" {
 		gatewayIP = models.DefaultGatewayIP
 	}

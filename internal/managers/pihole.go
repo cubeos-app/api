@@ -47,7 +47,7 @@ type DNSEntry struct {
 // Does NOT authenticate at construction time — first auth happens lazily
 // on the first API call, allowing graceful handling when Pi-hole is still starting.
 func NewPiholeManager(cfg *config.Config) *PiholeManager {
-	baseURL := fmt.Sprintf("http://%s:%d", cfg.GatewayIP, cfg.PiholePort)
+	baseURL := fmt.Sprintf("http://%s:%d", cfg.HostServiceIP(), cfg.PiholePort)
 
 	return &PiholeManager{
 		baseURL:     baseURL,

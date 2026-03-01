@@ -31,9 +31,10 @@ type Config struct {
 	ContainerStopTimeout int
 
 	// Network - CubeOS specific
-	GatewayIP string // 10.42.24.1
-	Domain    string // cubeos.cube
-	Subnet    string // 10.42.24.0/24
+	GatewayIP    string // 10.42.24.1 — AP subnet gateway (only reachable when AP is running)
+	DockerHostGW string // docker_gwbridge gateway — always reachable from Swarm containers
+	Domain       string // cubeos.cube
+	Subnet       string // 10.42.24.0/24
 
 	// Network - Interfaces
 	APInterface   string
@@ -192,9 +193,10 @@ func Load() *Config {
 		ContainerStopTimeout: getEnvIntOptional("CONTAINER_STOP_TIMEOUT", 30),
 
 		// Network - REQUIRED (these are critical for CubeOS operation)
-		GatewayIP: mustGetEnv("GATEWAY_IP"),
-		Domain:    mustGetEnv("DOMAIN"),
-		Subnet:    getEnvOptional("SUBNET", "10.42.24.0/24"),
+		GatewayIP:    mustGetEnv("GATEWAY_IP"),
+		DockerHostGW: getEnvOptional("DOCKER_HOST_GW", ""),
+		Domain:       mustGetEnv("DOMAIN"),
+		Subnet:       getEnvOptional("SUBNET", "10.42.24.0/24"),
 
 		// Network - Interfaces
 		APInterface:   getEnvOptional("AP_INTERFACE", "wlan0"),
@@ -485,19 +487,29 @@ func getEnvHexOptional(key string, defaultVal int) int {
 	return defaultVal
 }
 
+// HostServiceIP returns the IP to use for reaching host-network services
+// from inside a Swarm container. Prefers DockerHostGW (docker_gwbridge gateway,
+// always reachable) over GatewayIP (AP subnet, only reachable when AP is running).
+func (c *Config) HostServiceIP() string {
+	if c.DockerHostGW != "" {
+		return c.DockerHostGW
+	}
+	return c.GatewayIP
+}
+
 // GetNPMURL returns the NPM API URL constructed from config
 func (c *Config) GetNPMURL() string {
-	return fmt.Sprintf("http://%s:%d", c.GatewayIP, c.NPMPort)
+	return fmt.Sprintf("http://%s:%d", c.HostServiceIP(), c.NPMPort)
 }
 
 // GetOllamaURL returns the Ollama API URL constructed from config
 func (c *Config) GetOllamaURL() string {
-	return fmt.Sprintf("http://%s:%d", c.GatewayIP, c.OllamaPort)
+	return fmt.Sprintf("http://%s:%d", c.HostServiceIP(), c.OllamaPort)
 }
 
 // GetChromaDBURL returns the ChromaDB API URL constructed from config
 func (c *Config) GetChromaDBURL() string {
-	return fmt.Sprintf("http://%s:%d", c.GatewayIP, c.ChromaDBPort)
+	return fmt.Sprintf("http://%s:%d", c.HostServiceIP(), c.ChromaDBPort)
 }
 
 // ServiceDefinition holds static service metadata

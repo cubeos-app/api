@@ -101,6 +101,14 @@ func TestConfigMethods(t *testing.T) {
 	if chromaURL != expected {
 		t.Errorf("GetChromaDBURL returned %s, expected %s", chromaURL, expected)
 	}
+
+	// When DockerHostGW is set, URLs should use it instead of GatewayIP
+	cfg.DockerHostGW = "172.16.1.1"
+	npmURL = cfg.GetNPMURL()
+	expected = "http://172.16.1.1:6000"
+	if npmURL != expected {
+		t.Errorf("GetNPMURL with DockerHostGW returned %s, expected %s", npmURL, expected)
+	}
 }
 
 func TestValidate_ValidConfig(t *testing.T) {
