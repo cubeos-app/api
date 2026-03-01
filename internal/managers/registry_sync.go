@@ -52,6 +52,7 @@ var CoreRegistryImages = map[string]string{
 	"ghcr.io/cubeos-app/dashboard:latest":        "cubeos-app/dashboard",
 	"ghcr.io/cubeos-app/cubeos-docsindex:latest": "cubeos-app/cubeos-docsindex",
 	"docker.io/amir20/dozzle:latest":             "amir20/dozzle",
+	"docker.io/library/eclipse-mosquitto:latest": "library/eclipse-mosquitto",
 }
 
 // CuratedRegistryImages are curated apps with pinned versions.
