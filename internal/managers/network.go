@@ -1598,8 +1598,12 @@ func (m *NetworkManager) DetectWiFiClientInterface(ctx context.Context) (string,
 }
 
 // resolveWiFiClientInterface returns the WiFi client interface to use.
-// Tries dynamic USB dongle detection first, falls back to configured default.
+// In wifi_client mode, the AP interface (wlan0) IS the client — no AP is running.
+// In wifi_bridge mode, a second radio (USB dongle) is the client while wlan0 runs AP.
 func (m *NetworkManager) resolveWiFiClientInterface(ctx context.Context) string {
+	if m.currentMode == models.NetworkModeWifiClient {
+		return m.apInterface
+	}
 	if detected, err := m.DetectWiFiClientInterface(ctx); err == nil && detected != "" {
 		return detected
 	}
