@@ -914,6 +914,7 @@ network:
   wifis:
     wlan1:
       dhcp4: true
+      dhcp-identifier: mac
       optional: true
       dhcp4-overrides:
         use-dns: false
