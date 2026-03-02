@@ -74,6 +74,7 @@ func (h *CommunicationHandler) Routes() chi.Router {
 	r.Post("/iridium/disconnect", h.DisconnectIridium)
 	r.Get("/iridium/status", h.GetIridiumStatus)
 	r.Get("/iridium/signal", h.GetIridiumSignal)
+	r.Get("/iridium/signal/fast", h.GetIridiumSignalFast)
 	r.Post("/iridium/send", h.SendIridiumSBD)
 	r.Post("/iridium/mailbox_check", h.CheckIridiumMailbox)
 	r.Get("/iridium/receive", h.ReceiveIridiumMessage)
@@ -1118,6 +1119,33 @@ func (h *CommunicationHandler) GetIridiumSignal(w http.ResponseWriter, r *http.R
 	}
 
 	signal, err := h.halClient.GetIridiumSignal(ctx)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "Failed to get Iridium signal: "+err.Error())
+		return
+	}
+
+	writeJSON(w, http.StatusOK, signal)
+}
+
+// GetIridiumSignalFast godoc
+// @Summary Get Iridium signal strength (cached)
+// @Description Returns cached Iridium signal strength via AT+CSQF (~100ms, non-blocking). Safe to poll every 10s. Use /signal for a fresh blocking measurement (up to 60s).
+// @Tags Communication
+// @Produce json
+// @Success 200 {object} hal.IridiumSignal
+// @Failure 500 {object} ErrorResponse "Failed to get signal"
+// @Failure 503 {object} ErrorResponse "HAL unavailable"
+// @Security BearerAuth
+// @Router /communication/iridium/signal/fast [get]
+func (h *CommunicationHandler) GetIridiumSignalFast(w http.ResponseWriter, r *http.Request) {
+	ctx := r.Context()
+
+	if h.halClient == nil {
+		writeError(w, http.StatusServiceUnavailable, "HAL service unavailable")
+		return
+	}
+
+	signal, err := h.halClient.GetIridiumSignalFast(ctx)
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, "Failed to get Iridium signal: "+err.Error())
 		return

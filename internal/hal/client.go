@@ -2505,6 +2505,15 @@ func (c *Client) GetIridiumSignal(ctx context.Context) (*IridiumSignal, error) {
 	return &result, nil
 }
 
+// GetIridiumSignalFast returns cached Iridium signal strength via AT+CSQF (~100ms, non-blocking)
+func (c *Client) GetIridiumSignalFast(ctx context.Context) (*IridiumSignal, error) {
+	var result IridiumSignal
+	if err := c.doGet(ctx, "/iridium/signal/fast", &result); err != nil {
+		return nil, err
+	}
+	return &result, nil
+}
+
 // SendIridiumSBD sends an SBD message via Iridium
 func (c *Client) SendIridiumSBD(ctx context.Context, req *IridiumSendRequest) (*IridiumSendResponse, error) {
 	var result IridiumSendResponse
