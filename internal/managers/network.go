@@ -1555,7 +1555,8 @@ func (m *NetworkManager) ConnectToWiFi(ctx context.Context, ssid, password strin
 		}
 	}
 
-	return m.hal.ConnectWiFi(ctx, iface, ssid, password)
+	_, err := m.hal.ConnectWiFi(ctx, iface, ssid, password)
+	return err
 }
 
 // DisconnectWiFi disconnects from upstream WiFi

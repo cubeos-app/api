@@ -1805,14 +1805,23 @@ func (c *Client) ScanWiFi(ctx context.Context, iface string) ([]WiFiNetwork, err
 	return resp.Networks, nil
 }
 
-// ConnectWiFi connects to a WiFi network
-func (c *Client) ConnectWiFi(ctx context.Context, iface, ssid, password string) error {
+// ConnectWiFi connects to a WiFi network.
+// Returns the saved PSK from HAL when reusing a saved wpa_supplicant network
+// (i.e., password was empty and HAL found the real PSK in the config file).
+// The caller can use this to write correct netplan YAML.
+func (c *Client) ConnectWiFi(ctx context.Context, iface, ssid, password string) (string, error) {
 	req := map[string]string{
 		"interface": iface,
 		"ssid":      ssid,
 		"password":  password,
 	}
-	return c.doPost(ctx, "/network/wifi/connect", req)
+	var resp struct {
+		Password string `json:"password"`
+	}
+	if err := c.doPostWithResult(ctx, "/network/wifi/connect", req, &resp); err != nil {
+		return "", err
+	}
+	return resp.Password, nil
 }
 
 // HALWiFiStatus is the response from HAL's wifi status endpoint

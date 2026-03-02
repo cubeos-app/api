@@ -510,8 +510,18 @@ func configureUpstreamServerETH(ctx context.Context, nm NetworkModeSwitcher, hal
 func configureUpstreamServerWiFi(ctx context.Context, nm NetworkModeSwitcher, halClient *hal.Client, env netEnvelope) (json.RawMessage, error) {
 	// Wait for hostapd to release wlan0 (teardown step stopped AP if needed)
 	// ConnectWiFi on wlan0 — not the USB dongle
-	if err := halClient.ConnectWiFi(ctx, env.APInterface, env.SSID, env.Password); err != nil {
+	returnedPSK, err := halClient.ConnectWiFi(ctx, env.APInterface, env.SSID, env.Password)
+	if err != nil {
 		return nil, fmt.Errorf("failed to connect to WiFi: %w", err)
+	}
+
+	// When reconnecting to a saved network (password was empty), HAL returns
+	// the real PSK from wpa_supplicant config. Use it for netplan generation
+	// and propagate via fat envelope so net.persist writes the correct password.
+	realPassword := env.Password
+	if realPassword == "" && returnedPSK != "" {
+		realPassword = returnedPSK
+		log.Info().Str("ssid", env.SSID).Msg("net.configure_upstream: using saved PSK from HAL")
 	}
 
 	if env.StaticIP.IsConfigured() {
@@ -520,7 +530,7 @@ func configureUpstreamServerWiFi(ctx context.Context, nm NetworkModeSwitcher, ha
 		}
 	} else {
 		// B88: netplan write+apply+poll with fallback to static
-		yaml := nm.GenerateNetplanYAML(models.NetworkModeWifiClient, env.SSID, env.Password, env.StaticIP)
+		yaml := nm.GenerateNetplanYAML(models.NetworkModeWifiClient, env.SSID, realPassword, env.StaticIP)
 		if err := halClient.WriteNetplan(ctx, yaml, env.APInterface); err != nil {
 			log.Warn().Err(err).Msg("net.configure_upstream: server WiFi netplan write failed")
 		}
@@ -536,6 +546,7 @@ func configureUpstreamServerWiFi(ctx context.Context, nm NetworkModeSwitcher, ha
 	return marshalOutput(map[string]interface{}{
 		"upstream_configured": true,
 		"ip_acquired":         true,
+		"password":            realPassword,
 	})
 }
 
