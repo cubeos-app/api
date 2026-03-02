@@ -965,6 +965,11 @@ network:
 network:
   version: 2
   renderer: networkd
+  ethernets:
+    eth0:
+      dhcp4: true
+      dhcp-identifier: mac
+      optional: true
   wifis:
     wlan0:
       addresses:
@@ -983,9 +988,15 @@ network:
 network:
   version: 2
   renderer: networkd
+  ethernets:
+    eth0:
+      dhcp4: true
+      dhcp-identifier: mac
+      optional: true
   wifis:
     wlan0:
       dhcp4: true
+      dhcp-identifier: mac
       optional: true
       access-points:
         "%s":
