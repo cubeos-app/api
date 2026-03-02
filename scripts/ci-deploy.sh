@@ -76,11 +76,17 @@ if [ -n "${PORT_PID}" ]; then
   if [ -n "${ZOMBIE}" ]; then
     echo "  Found container(s) on port ${HOST_PORT}:"
     echo "  ${ZOMBIE}"
-    # Check if the running container is already on the target image
-    RUNNING_IMAGE=$(docker ps --filter "name=cubeos-api" --format '{{.Image}}' | head -1 || true)
-    if [ "${RUNNING_IMAGE}" = "${LOCAL_REG_IMAGE}" ]; then
-      echo "  Already running target image — skipping update"
-      SKIP_UPDATE=true
+    # Compare image digests (not tags — :latest always matches :latest)
+    RUNNING_CID=$(docker ps --filter "name=cubeos-api" --format '{{.ID}}' | head -1 || true)
+    if [ -n "${RUNNING_CID}" ]; then
+      RUNNING_SHA=$(docker inspect "${RUNNING_CID}" --format '{{.Image}}' 2>/dev/null || true)
+      TARGET_SHA=$(docker image inspect "${LOCAL_REG_IMAGE}" --format '{{.Id}}' 2>/dev/null || true)
+      if [ -n "${RUNNING_SHA}" ] && [ -n "${TARGET_SHA}" ] && [ "${RUNNING_SHA}" = "${TARGET_SHA}" ]; then
+        echo "  Already running target image (digest match) — skipping update"
+        SKIP_UPDATE=true
+      else
+        echo "  Image changed: running=${RUNNING_SHA:7:12} target=${TARGET_SHA:7:12}"
+      fi
     fi
   fi
 else
