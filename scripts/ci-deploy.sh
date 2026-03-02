@@ -22,6 +22,18 @@ HEALTH_TIMEOUT="120"
 
 echo "Deploying CubeOS API (commit ${CI_COMMIT_SHORT_SHA})..."
 
+# --- Source env files for compose variable substitution ---
+if [ -f /cubeos/config/defaults.env ]; then
+  set -a
+  source /cubeos/config/defaults.env
+  set +a
+fi
+if [ -f /cubeos/config/secrets.env ]; then
+  set -a
+  source /cubeos/config/secrets.env
+  set +a
+fi
+
 # --- GHCR login ---
 echo "$GHCR_TOKEN" | docker login ghcr.io -u "$GHCR_USER" --password-stdin
 
