@@ -36,6 +36,8 @@ type npmCertResponse struct {
 	NiceName    string   `json:"nice_name"`
 	DomainNames []string `json:"domain_names"`
 	Provider    string   `json:"provider"`
+	ExpiresOn   string   `json:"expires_on"`
+	CreatedOn   string   `json:"created_on"`
 }
 
 // CreateLetsEncryptCert provisions a Let's Encrypt certificate via NPM's API.
@@ -131,4 +133,43 @@ func (m *NPMManager) GetCertificateByDomain(domain string) (int, error) {
 		}
 	}
 	return 0, nil
+}
+
+// ListCertificates returns all certificates from NPM.
+func (m *NPMManager) ListCertificates() ([]npmCertResponse, error) {
+	resp, err := m.doRequest("GET", "/api/nginx/certificates", nil)
+	if err != nil {
+		return nil, fmt.Errorf("list certificates: %w", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		body, _ := io.ReadAll(resp.Body)
+		return nil, fmt.Errorf("NPM returned %d: %s", resp.StatusCode, string(body))
+	}
+
+	var certs []npmCertResponse
+	if err := json.NewDecoder(resp.Body).Decode(&certs); err != nil {
+		return nil, fmt.Errorf("decode response: %w", err)
+	}
+
+	log.Info().Int("count", len(certs)).Msg("Listed NPM certificates")
+	return certs, nil
+}
+
+// DeleteCertificate deletes a certificate from NPM by ID.
+func (m *NPMManager) DeleteCertificate(id int) error {
+	resp, err := m.doRequest("DELETE", fmt.Sprintf("/api/nginx/certificates/%d", id), nil)
+	if err != nil {
+		return fmt.Errorf("delete certificate: %w", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK && resp.StatusCode != http.StatusNoContent {
+		body, _ := io.ReadAll(resp.Body)
+		return fmt.Errorf("NPM returned %d: %s", resp.StatusCode, string(body))
+	}
+
+	log.Info().Int("cert_id", id).Msg("Certificate deleted from NPM")
+	return nil
 }
