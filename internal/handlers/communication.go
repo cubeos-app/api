@@ -16,12 +16,24 @@ import (
 	"github.com/rs/zerolog/log"
 
 	"cubeos-api/internal/hal"
+	"cubeos-api/internal/managers"
 )
 
 // CommunicationHandler handles communication device HTTP requests via HAL.
 type CommunicationHandler struct {
-	halClient *hal.Client
-	db        *sqlx.DB
+	halClient  *hal.Client
+	db         *sqlx.DB
+	tleManager tleManagerIface
+}
+
+// tleManagerIface is the interface used by CommunicationHandler for pass prediction.
+type tleManagerIface interface {
+	ComputePasses(ctx context.Context, lat, lon, altM float64, hours int, minElevDeg float64) ([]managers.PassSummary, error)
+	GetLocations(ctx context.Context) ([]managers.IridiumLocation, error)
+	AddLocation(ctx context.Context, name string, lat, lon, altM float64) (int64, error)
+	DeleteLocation(ctx context.Context, id int64) error
+	CacheInfo(ctx context.Context) (count int, fetchedAt time.Time, err error)
+	RefreshTLEs(ctx context.Context) error
 }
 
 // NewCommunicationHandler creates a new communication handler.
@@ -30,6 +42,11 @@ func NewCommunicationHandler(halClient *hal.Client, db *sqlx.DB) *CommunicationH
 		halClient: halClient,
 		db:        db,
 	}
+}
+
+// SetTLEManager attaches the TLE manager for pass prediction endpoints.
+func (h *CommunicationHandler) SetTLEManager(m tleManagerIface) {
+	h.tleManager = m
 }
 
 // Routes returns the communication routes.
@@ -110,6 +127,19 @@ func (h *CommunicationHandler) Routes() chi.Router {
 	r.Post("/meshsat/gateways/{type}/start", h.PostMeshsatGatewayStart)
 	r.Post("/meshsat/gateways/{type}/stop", h.PostMeshsatGatewayStop)
 	r.Post("/meshsat/gateways/{type}/test", h.PostMeshsatGatewayTest)
+
+	// MeshSat Iridium queue — offline compose and priority management
+	r.Get("/meshsat/iridium/queue", h.GetMeshsatIridiumQueue)
+	r.Post("/meshsat/iridium/queue", h.PostMeshsatIridiumQueue)
+	r.Post("/meshsat/iridium/queue/{id}/cancel", h.PostMeshsatIridiumQueueCancel)
+	r.Post("/meshsat/iridium/queue/{id}/priority", h.PostMeshsatIridiumQueuePriority)
+
+	// Iridium pass predictor (SGP4 + Celestrak TLEs)
+	r.Get("/iridium/passes", h.GetIridiumPasses)
+	r.Post("/iridium/passes/refresh", h.PostIridiumPassesRefresh)
+	r.Get("/iridium/locations", h.GetIridiumLocations)
+	r.Post("/iridium/locations", h.PostIridiumLocation)
+	r.Delete("/iridium/locations/{id}", h.DeleteIridiumLocation)
 
 	// Bluetooth
 	r.Get("/bluetooth", h.GetBluetoothStatus)
@@ -2368,6 +2398,73 @@ func (h *CommunicationHandler) PostMeshsatGatewayTest(w http.ResponseWriter, r *
 	proxyMeshsatPOST(w, r, "/api/gateways/"+gwType+"/test")
 }
 
+// =============================================================================
+// MeshSat Iridium Queue — offline compose and priority management
+// =============================================================================
+
+// GetMeshsatIridiumQueue godoc
+// @Summary Get Iridium outbound queue
+// @Description Returns all non-sent, non-cancelled messages in the DLQ
+// @Tags Communication
+// @Produce json
+// @Success 200 {object} map[string]interface{}
+// @Failure 502 {object} map[string]string
+// @Router /communication/meshsat/iridium/queue [get]
+// @Security BearerAuth
+func (h *CommunicationHandler) GetMeshsatIridiumQueue(w http.ResponseWriter, r *http.Request) {
+	proxyMeshsatGET(w, r, "/api/iridium/queue")
+}
+
+// PostMeshsatIridiumQueue godoc
+// @Summary Queue an Iridium message for opportunistic send
+// @Description Enqueues a user-composed message in the DLQ; sent when signal is available (works at 0/5 signal)
+// @Tags Communication
+// @Accept json
+// @Produce json
+// @Param body body object{message=string,priority=int} true "Message and priority (0=critical,1=normal,2=low)"
+// @Success 201 {object} map[string]string
+// @Failure 400 {object} map[string]string
+// @Failure 502 {object} map[string]string
+// @Router /communication/meshsat/iridium/queue [post]
+// @Security BearerAuth
+func (h *CommunicationHandler) PostMeshsatIridiumQueue(w http.ResponseWriter, r *http.Request) {
+	proxyMeshsatPOST(w, r, "/api/iridium/queue")
+}
+
+// PostMeshsatIridiumQueueCancel godoc
+// @Summary Cancel a queued Iridium message
+// @Description Cancels a pending DLQ entry so it will not be retried
+// @Tags Communication
+// @Produce json
+// @Param id path int true "DLQ entry ID"
+// @Success 200 {object} map[string]string
+// @Failure 400 {object} map[string]string
+// @Failure 502 {object} map[string]string
+// @Router /communication/meshsat/iridium/queue/{id}/cancel [post]
+// @Security BearerAuth
+func (h *CommunicationHandler) PostMeshsatIridiumQueueCancel(w http.ResponseWriter, r *http.Request) {
+	id := chi.URLParam(r, "id")
+	proxyMeshsatPOST(w, r, "/api/iridium/queue/"+id+"/cancel")
+}
+
+// PostMeshsatIridiumQueuePriority godoc
+// @Summary Set priority for a queued Iridium message
+// @Description Changes the send priority for a pending DLQ entry
+// @Tags Communication
+// @Accept json
+// @Produce json
+// @Param id path int true "DLQ entry ID"
+// @Param body body object{priority=int} true "Priority (0=critical,1=normal,2=low)"
+// @Success 200 {object} map[string]string
+// @Failure 400 {object} map[string]string
+// @Failure 502 {object} map[string]string
+// @Router /communication/meshsat/iridium/queue/{id}/priority [post]
+// @Security BearerAuth
+func (h *CommunicationHandler) PostMeshsatIridiumQueuePriority(w http.ResponseWriter, r *http.Request) {
+	id := chi.URLParam(r, "id")
+	proxyMeshsatPOST(w, r, "/api/iridium/queue/"+id+"/priority")
+}
+
 // proxyMeshsatGET forwards a GET request to the MeshSat coreapp and returns the response.
 func proxyMeshsatGET(w http.ResponseWriter, r *http.Request, path string) {
 	ctx, cancel := context.WithTimeout(r.Context(), 15*time.Second)
@@ -2607,4 +2704,215 @@ func proxyMeshsatSSE(w http.ResponseWriter, r *http.Request, path string) {
 			flusher.Flush()
 		}
 	}
+}
+
+// =============================================================================
+// Iridium Pass Predictor — SGP4-based pass prediction using Celestrak TLEs
+// =============================================================================
+
+// GetIridiumPasses godoc
+// @Summary Predict upcoming Iridium satellite passes
+// @Description Computes upcoming Iridium NEXT passes over a ground location using SGP4 propagation and cached Celestrak TLEs
+// @Tags Communication
+// @Produce json
+// @Param lat query number true "Observer latitude (degrees, -90 to 90)"
+// @Param lon query number true "Observer longitude (degrees, -180 to 180)"
+// @Param alt_m query number false "Observer altitude above sea level in meters (default 0)"
+// @Param hours query int false "Prediction window in hours (default 24, max 72)"
+// @Param min_elevation query number false "Minimum peak elevation to include (degrees, default 10)"
+// @Success 200 {object} map[string]interface{}
+// @Failure 400 {object} map[string]string
+// @Failure 503 {object} map[string]string
+// @Router /communication/iridium/passes [get]
+// @Security BearerAuth
+func (h *CommunicationHandler) GetIridiumPasses(w http.ResponseWriter, r *http.Request) {
+	if h.tleManager == nil {
+		writeError(w, http.StatusServiceUnavailable, "pass predictor not available")
+		return
+	}
+
+	latStr := r.URL.Query().Get("lat")
+	lonStr := r.URL.Query().Get("lon")
+	if latStr == "" || lonStr == "" {
+		writeError(w, http.StatusBadRequest, "lat and lon are required")
+		return
+	}
+
+	lat, err := strconv.ParseFloat(latStr, 64)
+	if err != nil || lat < -90 || lat > 90 {
+		writeError(w, http.StatusBadRequest, "invalid lat")
+		return
+	}
+	lon, err := strconv.ParseFloat(lonStr, 64)
+	if err != nil || lon < -180 || lon > 180 {
+		writeError(w, http.StatusBadRequest, "invalid lon")
+		return
+	}
+
+	altM := 0.0
+	if s := r.URL.Query().Get("alt_m"); s != "" {
+		if v, err := strconv.ParseFloat(s, 64); err == nil {
+			altM = v
+		}
+	}
+
+	hours := 24
+	if s := r.URL.Query().Get("hours"); s != "" {
+		if v, err := strconv.Atoi(s); err == nil && v > 0 && v <= 72 {
+			hours = v
+		}
+	}
+
+	minElev := 10.0
+	if s := r.URL.Query().Get("min_elevation"); s != "" {
+		if v, err := strconv.ParseFloat(s, 64); err == nil && v >= 0 {
+			minElev = v
+		}
+	}
+
+	passes, err := h.tleManager.ComputePasses(r.Context(), lat, lon, altM, hours, minElev)
+	if err != nil {
+		log.Error().Err(err).Msg("GetIridiumPasses: compute failed")
+		writeError(w, http.StatusServiceUnavailable, err.Error())
+		return
+	}
+
+	count, fetchedAt, _ := h.tleManager.CacheInfo(r.Context())
+
+	writeJSON(w, http.StatusOK, map[string]interface{}{
+		"passes":     passes,
+		"tle_count":  count,
+		"fetched_at": fetchedAt,
+		"location":   map[string]float64{"lat": lat, "lon": lon, "alt_m": altM},
+	})
+}
+
+// PostIridiumPassesRefresh godoc
+// @Summary Force refresh of Iridium TLE cache
+// @Description Fetches fresh TLEs from Celestrak immediately
+// @Tags Communication
+// @Produce json
+// @Success 200 {object} map[string]interface{}
+// @Failure 503 {object} map[string]string
+// @Router /communication/iridium/passes/refresh [post]
+// @Security BearerAuth
+func (h *CommunicationHandler) PostIridiumPassesRefresh(w http.ResponseWriter, r *http.Request) {
+	if h.tleManager == nil {
+		writeError(w, http.StatusServiceUnavailable, "pass predictor not available")
+		return
+	}
+
+	ctx, cancel := context.WithTimeout(r.Context(), 30*time.Second)
+	defer cancel()
+
+	if err := h.tleManager.RefreshTLEs(ctx); err != nil {
+		writeError(w, http.StatusServiceUnavailable, err.Error())
+		return
+	}
+
+	count, fetchedAt, _ := h.tleManager.CacheInfo(r.Context())
+	writeJSON(w, http.StatusOK, map[string]interface{}{
+		"status":     "refreshed",
+		"tle_count":  count,
+		"fetched_at": fetchedAt,
+	})
+}
+
+// GetIridiumLocations godoc
+// @Summary List Iridium pass prediction locations
+// @Description Returns all saved ground locations (built-in and user-defined)
+// @Tags Communication
+// @Produce json
+// @Success 200 {object} map[string]interface{}
+// @Failure 503 {object} map[string]string
+// @Router /communication/iridium/locations [get]
+// @Security BearerAuth
+func (h *CommunicationHandler) GetIridiumLocations(w http.ResponseWriter, r *http.Request) {
+	if h.tleManager == nil {
+		writeError(w, http.StatusServiceUnavailable, "pass predictor not available")
+		return
+	}
+
+	locs, err := h.tleManager.GetLocations(r.Context())
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]interface{}{"locations": locs})
+}
+
+// PostIridiumLocation godoc
+// @Summary Add a custom pass prediction location
+// @Description Saves a user-defined ground location for pass prediction
+// @Tags Communication
+// @Accept json
+// @Produce json
+// @Param body body managers.IridiumLocation true "Location: {name, lat, lon, alt_m}"
+// @Success 201 {object} map[string]interface{}
+// @Failure 400 {object} map[string]string
+// @Failure 503 {object} map[string]string
+// @Router /communication/iridium/locations [post]
+// @Security BearerAuth
+func (h *CommunicationHandler) PostIridiumLocation(w http.ResponseWriter, r *http.Request) {
+	if h.tleManager == nil {
+		writeError(w, http.StatusServiceUnavailable, "pass predictor not available")
+		return
+	}
+
+	body, err := io.ReadAll(io.LimitReader(r.Body, 1<<10))
+	if err != nil {
+		writeError(w, http.StatusBadRequest, "read body: "+err.Error())
+		return
+	}
+
+	var req struct {
+		Name string  `json:"name"`
+		Lat  float64 `json:"lat"`
+		Lon  float64 `json:"lon"`
+		AltM float64 `json:"alt_m"`
+	}
+	if err := json.Unmarshal(body, &req); err != nil {
+		writeError(w, http.StatusBadRequest, "parse body: "+err.Error())
+		return
+	}
+
+	id, err := h.tleManager.AddLocation(r.Context(), req.Name, req.Lat, req.Lon, req.AltM)
+	if err != nil {
+		writeError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+	writeJSON(w, http.StatusCreated, map[string]interface{}{
+		"id":     id,
+		"status": "created",
+	})
+}
+
+// DeleteIridiumLocation godoc
+// @Summary Delete a custom pass prediction location
+// @Description Removes a user-defined location (built-in locations cannot be deleted)
+// @Tags Communication
+// @Produce json
+// @Param id path int true "Location ID"
+// @Success 200 {object} map[string]string
+// @Failure 400 {object} map[string]string
+// @Failure 503 {object} map[string]string
+// @Router /communication/iridium/locations/{id} [delete]
+// @Security BearerAuth
+func (h *CommunicationHandler) DeleteIridiumLocation(w http.ResponseWriter, r *http.Request) {
+	if h.tleManager == nil {
+		writeError(w, http.StatusServiceUnavailable, "pass predictor not available")
+		return
+	}
+
+	id, err := strconv.ParseInt(chi.URLParam(r, "id"), 10, 64)
+	if err != nil {
+		writeError(w, http.StatusBadRequest, "invalid id")
+		return
+	}
+
+	if err := h.tleManager.DeleteLocation(r.Context(), id); err != nil {
+		writeError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]string{"status": "deleted"})
 }

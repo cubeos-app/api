@@ -1015,6 +1015,44 @@ var migrations = []Migration{
 			return nil
 		},
 	},
+	{
+		Version:     26,
+		Description: "Add Iridium pass predictor tables: locations and TLE cache",
+		Up: func(db *sql.DB) error {
+			stmts := []string{
+				// iridium_locations: ground stations for pass prediction
+				`CREATE TABLE IF NOT EXISTS iridium_locations (
+					id         INTEGER PRIMARY KEY AUTOINCREMENT,
+					name       TEXT NOT NULL,
+					lat        REAL NOT NULL,
+					lon        REAL NOT NULL,
+					alt_m      REAL NOT NULL DEFAULT 0,
+					builtin    INTEGER NOT NULL DEFAULT 0,
+					created_at INTEGER NOT NULL DEFAULT (CAST(strftime('%s','now') AS INTEGER))
+				)`,
+				// Seed built-in locations
+				`INSERT OR IGNORE INTO iridium_locations (name, lat, lon, alt_m, builtin) VALUES ('Leiden', 52.160, 4.497, 0, 1)`,
+				`INSERT OR IGNORE INTO iridium_locations (name, lat, lon, alt_m, builtin) VALUES ('Thessaloniki', 40.629, 22.947, 0, 1)`,
+
+				// iridium_tle_cache: cached TLE data fetched from Celestrak
+				`CREATE TABLE IF NOT EXISTS iridium_tle_cache (
+					id             INTEGER PRIMARY KEY AUTOINCREMENT,
+					satellite_name TEXT NOT NULL,
+					line1          TEXT NOT NULL,
+					line2          TEXT NOT NULL,
+					fetched_at     INTEGER NOT NULL  -- Unix epoch seconds
+				)`,
+				`CREATE INDEX IF NOT EXISTS idx_tle_cache_name ON iridium_tle_cache(satellite_name)`,
+			}
+			for _, stmt := range stmts {
+				if _, err := db.Exec(stmt); err != nil {
+					return fmt.Errorf("migration 26 failed: %w\nStatement: %s", err, stmt)
+				}
+			}
+			log.Info().Msg("Migration 26: Created iridium_locations and iridium_tle_cache tables")
+			return nil
+		},
+	},
 }
 
 // isDuplicateColumnError checks if an error is a "duplicate column" error

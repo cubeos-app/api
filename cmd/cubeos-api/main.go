@@ -589,6 +589,13 @@ func main() {
 	defer signalRecorder.Stop()
 	log.Info().Msg("Iridium signal recorder started")
 
+	// Start Iridium TLE manager (daily Celestrak fetch + SGP4 pass prediction)
+	tleManager := managers.NewTLEManager(db.DB)
+	tleManager.Start(engineCtx)
+	defer tleManager.Stop()
+	communicationHandler.SetTLEManager(tleManager)
+	log.Info().Msg("Iridium TLE manager started")
+
 	// Create WebSocket manager and handlers
 	wsManager := handlers.NewWSManager(systemMgr, networkMgr, monitoringMgr, docker)
 	wsHandlers := handlers.NewWSHandlers(wsManager)
