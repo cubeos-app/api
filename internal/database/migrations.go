@@ -1053,6 +1053,34 @@ var migrations = []Migration{
 			return nil
 		},
 	},
+	{
+		Version:     27,
+		Description: "Add Phase 12 access profile keys: managed interface selector and TLS configuration",
+		Up: func(db *sql.DB) error {
+			keys := []struct {
+				key   string
+				value string
+			}{
+				{"aio_managed_interface", ""},
+				{"aio_tls_mode", "http"},
+				{"aio_le_domain", ""},
+				{"aio_le_dns_provider", ""},
+				{"aio_le_dns_token", ""},
+				{"aio_ca_generated", "0"},
+			}
+			for _, kv := range keys {
+				_, err := db.Exec(
+					"INSERT OR IGNORE INTO system_config (key, value, updated_at) VALUES (?, ?, CURRENT_TIMESTAMP)",
+					kv.key, kv.value,
+				)
+				if err != nil {
+					return fmt.Errorf("migration 27: insert %s: %w", kv.key, err)
+				}
+			}
+			log.Info().Msg("Migration 27: Added Phase 12 access profile config keys")
+			return nil
+		},
+	},
 }
 
 // isDuplicateColumnError checks if an error is a "duplicate column" error

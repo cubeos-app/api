@@ -54,6 +54,13 @@ type SetupConfig struct {
 	ExtNPMToken       string `json:"ext_npm_token,omitempty"`       // Advanced: external NPM token
 	ExtPiholeURL      string `json:"ext_pihole_url,omitempty"`      // Advanced: external Pi-hole URL
 	ExtPiholePassword string `json:"ext_pihole_password,omitempty"` // Advanced: external Pi-hole password
+
+	// Phase 12: All-in-One managed interface + TLS
+	ManagedInterface string `json:"managed_interface,omitempty"` // wifi | ethernet
+	TLSMode          string `json:"tls_mode,omitempty"`          // http | letsencrypt | self_signed_ca
+	LEDomain         string `json:"le_domain,omitempty"`         // Let's Encrypt domain
+	LEDNSProvider    string `json:"le_dns_provider,omitempty"`   // cloudflare | duckdns | route53 | digitalocean
+	LEDNSToken       string `json:"le_dns_token,omitempty"`      // DNS API token
 }
 
 // SetupStatus represents the current setup state

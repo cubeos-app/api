@@ -4,12 +4,13 @@ package database
 import (
 	"database/sql"
 	"fmt"
+	"strings"
 
 	"github.com/rs/zerolog/log"
 )
 
 // CurrentSchemaVersion tracks the database schema version for migrations.
-const CurrentSchemaVersion = 25
+const CurrentSchemaVersion = 27
 
 // Schema defines the unified CubeOS database schema.
 // Design Principles:
@@ -628,6 +629,13 @@ type AccessProfileConfig struct {
 	AIODHCPEnabled  bool   `json:"aio_dhcp_enabled"`
 	AIODNSEnabled   bool   `json:"aio_dns_enabled"`
 	AIOProxyEnabled bool   `json:"aio_proxy_enabled"`
+	// Phase 12: Interface selector + TLS
+	ManagedInterface string `json:"managed_interface"` // "wifi" | "ethernet" | ""
+	TLSMode          string `json:"tls_mode"`          // "http" | "letsencrypt" | "self_signed_ca"
+	LEDomain         string `json:"le_domain"`         // Let's Encrypt domain
+	LEDNSProvider    string `json:"le_dns_provider"`   // e.g. "cloudflare", "duckdns"
+	LEDNSToken       string `json:"le_dns_token"`      // DNS API token
+	CAGenerated      bool   `json:"ca_generated"`      // true if self-signed CA has been generated
 }
 
 // accessProfileKeys are the system_config keys used by access profiles.
@@ -635,15 +643,23 @@ var accessProfileKeys = []string{
 	"access_profile", "ext_npm_url", "ext_npm_token",
 	"ext_pihole_url", "ext_pihole_password",
 	"aio_dhcp_enabled", "aio_dns_enabled", "aio_proxy_enabled",
+	"aio_managed_interface", "aio_tls_mode",
+	"aio_le_domain", "aio_le_dns_provider", "aio_le_dns_token",
+	"aio_ca_generated",
 }
 
 // GetAccessProfileConfig returns the full access profile configuration.
 func GetAccessProfileConfig(db *sql.DB) (*AccessProfileConfig, error) {
-	rows, err := db.Query("SELECT key, value FROM system_config WHERE key IN (?, ?, ?, ?, ?, ?, ?, ?)",
-		"access_profile", "ext_npm_url", "ext_npm_token",
-		"ext_pihole_url", "ext_pihole_password",
-		"aio_dhcp_enabled", "aio_dns_enabled", "aio_proxy_enabled",
-	)
+	// Build placeholders for all keys
+	placeholders := make([]string, len(accessProfileKeys))
+	args := make([]interface{}, len(accessProfileKeys))
+	for i, k := range accessProfileKeys {
+		placeholders[i] = "?"
+		args[i] = k
+	}
+	query := "SELECT key, value FROM system_config WHERE key IN (" + strings.Join(placeholders, ",") + ")"
+
+	rows, err := db.Query(query, args...)
 	if err != nil {
 		return nil, fmt.Errorf("query access profile config: %w", err)
 	}
@@ -659,17 +675,26 @@ func GetAccessProfileConfig(db *sql.DB) (*AccessProfileConfig, error) {
 	}
 
 	cfg := &AccessProfileConfig{
-		Profile:         kv["access_profile"],
-		ExtNPMURL:       kv["ext_npm_url"],
-		ExtNPMToken:     kv["ext_npm_token"],
-		ExtPiholeURL:    kv["ext_pihole_url"],
-		ExtPiholePass:   kv["ext_pihole_password"],
-		AIODHCPEnabled:  kv["aio_dhcp_enabled"] == "1",
-		AIODNSEnabled:   kv["aio_dns_enabled"] == "1",
-		AIOProxyEnabled: kv["aio_proxy_enabled"] == "1",
+		Profile:          kv["access_profile"],
+		ExtNPMURL:        kv["ext_npm_url"],
+		ExtNPMToken:      kv["ext_npm_token"],
+		ExtPiholeURL:     kv["ext_pihole_url"],
+		ExtPiholePass:    kv["ext_pihole_password"],
+		AIODHCPEnabled:   kv["aio_dhcp_enabled"] == "1",
+		AIODNSEnabled:    kv["aio_dns_enabled"] == "1",
+		AIOProxyEnabled:  kv["aio_proxy_enabled"] == "1",
+		ManagedInterface: kv["aio_managed_interface"],
+		TLSMode:          kv["aio_tls_mode"],
+		LEDomain:         kv["aio_le_domain"],
+		LEDNSProvider:    kv["aio_le_dns_provider"],
+		LEDNSToken:       kv["aio_le_dns_token"],
+		CAGenerated:      kv["aio_ca_generated"] == "1",
 	}
 	if cfg.Profile == "" {
 		cfg.Profile = "standard"
+	}
+	if cfg.TLSMode == "" {
+		cfg.TLSMode = "http"
 	}
 	return cfg, nil
 }
@@ -762,23 +787,29 @@ func SetAccessProfileConfig(db *sql.DB, cfg *AccessProfileConfig) error {
 
 	upsert := "INSERT OR REPLACE INTO system_config (key, value, updated_at) VALUES (?, ?, CURRENT_TIMESTAMP)"
 
-	pairs := map[string]string{
-		"access_profile":      cfg.Profile,
-		"ext_npm_url":         cfg.ExtNPMURL,
-		"ext_npm_token":       cfg.ExtNPMToken,
-		"ext_pihole_url":      cfg.ExtPiholeURL,
-		"ext_pihole_password": cfg.ExtPiholePass,
-	}
-
 	aioFlag := func(b bool) string {
 		if b {
 			return "1"
 		}
 		return "0"
 	}
-	pairs["aio_dhcp_enabled"] = aioFlag(cfg.AIODHCPEnabled)
-	pairs["aio_dns_enabled"] = aioFlag(cfg.AIODNSEnabled)
-	pairs["aio_proxy_enabled"] = aioFlag(cfg.AIOProxyEnabled)
+
+	pairs := map[string]string{
+		"access_profile":        cfg.Profile,
+		"ext_npm_url":           cfg.ExtNPMURL,
+		"ext_npm_token":         cfg.ExtNPMToken,
+		"ext_pihole_url":        cfg.ExtPiholeURL,
+		"ext_pihole_password":   cfg.ExtPiholePass,
+		"aio_dhcp_enabled":      aioFlag(cfg.AIODHCPEnabled),
+		"aio_dns_enabled":       aioFlag(cfg.AIODNSEnabled),
+		"aio_proxy_enabled":     aioFlag(cfg.AIOProxyEnabled),
+		"aio_managed_interface": cfg.ManagedInterface,
+		"aio_tls_mode":          cfg.TLSMode,
+		"aio_le_domain":         cfg.LEDomain,
+		"aio_le_dns_provider":   cfg.LEDNSProvider,
+		"aio_le_dns_token":      cfg.LEDNSToken,
+		"aio_ca_generated":      aioFlag(cfg.CAGenerated),
+	}
 
 	for k, v := range pairs {
 		if _, err := tx.Exec(upsert, k, v); err != nil {

@@ -26,6 +26,7 @@ type SetupHandler struct {
 	store      *flowengine.WorkflowStore
 	halClient  *hal.Client
 	networkMgr *managers.NetworkManager
+	tlsMgr     *managers.TLSManager
 }
 
 // NewSetupHandler creates a new setup handler
@@ -45,6 +46,11 @@ func (h *SetupHandler) SetHALClient(c *hal.Client) {
 // SetNetworkManager sets the NetworkManager for AP teardown.
 func (h *SetupHandler) SetNetworkManager(nm *managers.NetworkManager) {
 	h.networkMgr = nm
+}
+
+// SetTLSManager sets the TLS manager for CA generation during wizard completion.
+func (h *SetupHandler) SetTLSManager(tm *managers.TLSManager) {
+	h.tlsMgr = tm
 }
 
 // Routes returns the router for setup endpoints
@@ -268,6 +274,15 @@ func (h *SetupHandler) ApplyConfig(w http.ResponseWriter, r *http.Request) {
 
 	// Save access profile from wizard config (Phase 2)
 	h.manager.SaveAccessProfileFromConfig(&cfg)
+
+	// Phase 12: Generate self-signed CA if TLS mode requires it
+	if cfg.TLSMode == "self_signed_ca" && h.tlsMgr != nil && !h.tlsMgr.IsCAGenerated() {
+		if err := h.tlsMgr.GenerateCA(); err != nil {
+			log.Warn().Err(err).Msg("CA generation failed during setup — can be retried from Settings")
+		} else {
+			log.Info().Msg("Self-signed CA generated during setup")
+		}
+	}
 
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(map[string]interface{}{

@@ -923,16 +923,31 @@ func (m *SetupManager) saveAccessProfileFromConfig(cfg *models.SetupConfig) {
 		profile = "standard"
 	}
 	apCfg := &database.AccessProfileConfig{
-		Profile:       profile,
-		ExtNPMURL:     cfg.ExtNPMURL,
-		ExtNPMToken:   cfg.ExtNPMToken,
-		ExtPiholeURL:  cfg.ExtPiholeURL,
-		ExtPiholePass: cfg.ExtPiholePassword,
+		Profile:          profile,
+		ExtNPMURL:        cfg.ExtNPMURL,
+		ExtNPMToken:      cfg.ExtNPMToken,
+		ExtPiholeURL:     cfg.ExtPiholeURL,
+		ExtPiholePass:    cfg.ExtPiholePassword,
+		ManagedInterface: cfg.ManagedInterface,
+		TLSMode:          cfg.TLSMode,
+		LEDomain:         cfg.LEDomain,
+		LEDNSProvider:    cfg.LEDNSProvider,
+		LEDNSToken:       cfg.LEDNSToken,
 	}
 	if err := database.SetAccessProfileConfig(m.db, apCfg); err != nil {
 		log.Warn().Err(err).Str("profile", profile).Msg("saveAccessProfileFromConfig: failed to save access profile")
 	} else {
 		log.Info().Str("profile", profile).Msg("Access profile saved from wizard config")
+	}
+
+	// Persist Phase 12 settings to defaults.env for boot scripts
+	if profile == "all_in_one" {
+		envVars := map[string]string{
+			"AIO_MANAGED_INTERFACE": cfg.ManagedInterface,
+			"AIO_TLS_MODE":          cfg.TLSMode,
+		}
+		defaultsPath := filepath.Join(m.configPath, "defaults.env")
+		appendOrUpdateEnvFile(defaultsPath, envVars)
 	}
 }
 

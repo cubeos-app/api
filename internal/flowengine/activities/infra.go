@@ -24,6 +24,7 @@ type DNSManager interface {
 // Satisfied by *managers.NPMManager.
 type ProxyManager interface {
 	CreateProxyHost(ctx context.Context, domain string, forwardHost string, forwardPort int, forwardScheme string) (int64, error)
+	CreateProxyHostWithTLS(ctx context.Context, domain string, forwardHost string, forwardPort int, forwardScheme string, certID int, sslForced bool) (int64, error)
 	FindProxyHostByDomain(domain string) (int64, error) // returns host ID or 0
 	DeleteProxyHost(ctx context.Context, id int64) error
 }
@@ -32,6 +33,16 @@ type ProxyManager interface {
 // When profile is "standard", DNS and proxy steps are skipped entirely.
 type AccessProfileReader interface {
 	GetAccessProfile() (string, error)
+}
+
+// TLSProvisioner provides TLS certificate provisioning for proxy activities.
+// When the TLS mode is "self_signed_ca", it generates per-app certs signed by the CubeOS CA.
+// When the TLS mode is "letsencrypt", it provisions certs via NPM's Let's Encrypt API.
+type TLSProvisioner interface {
+	// GetTLSMode returns the current TLS mode ("http", "letsencrypt", "self_signed_ca").
+	GetTLSMode() (string, error)
+	// ProvisionCertificate returns a certificate ID for the given domain, or 0 for plain HTTP.
+	ProvisionCertificate(domain string) (certID int, sslForced bool, err error)
 }
 
 // --- Input/Output Schemas ---
@@ -95,10 +106,11 @@ type RemoveProxyOutput struct {
 
 // RegisterInfraActivities registers all infrastructure activities in the registry.
 // Activities: infra.add_dns, infra.remove_dns, infra.create_proxy, infra.remove_proxy.
-func RegisterInfraActivities(registry *flowengine.ActivityRegistry, dnsMgr DNSManager, proxyMgr ProxyManager, profileReader AccessProfileReader) {
+// tlsProv may be nil — if nil, all proxy hosts are created without TLS (existing behavior).
+func RegisterInfraActivities(registry *flowengine.ActivityRegistry, dnsMgr DNSManager, proxyMgr ProxyManager, profileReader AccessProfileReader, tlsProv TLSProvisioner) {
 	registry.MustRegister("infra.add_dns", makeAddDNS(dnsMgr, profileReader))
 	registry.MustRegister("infra.remove_dns", makeRemoveDNS(dnsMgr, profileReader))
-	registry.MustRegister("infra.create_proxy", makeCreateProxy(proxyMgr, profileReader))
+	registry.MustRegister("infra.create_proxy", makeCreateProxy(proxyMgr, profileReader, tlsProv))
 	registry.MustRegister("infra.remove_proxy", makeRemoveProxy(proxyMgr, profileReader))
 }
 
@@ -213,7 +225,8 @@ func makeRemoveDNS(dnsMgr DNSManager, profileReader AccessProfileReader) floweng
 // makeCreateProxy creates the infra.create_proxy activity.
 // Idempotent: if a proxy host for the domain already exists, returns skipped=true.
 // When access profile is "standard", skips proxy creation entirely.
-func makeCreateProxy(proxyMgr ProxyManager, profileReader AccessProfileReader) flowengine.ActivityFunc {
+// If tlsProv is non-nil, provisions TLS certificates before creating the proxy host.
+func makeCreateProxy(proxyMgr ProxyManager, profileReader AccessProfileReader, tlsProv TLSProvisioner) flowengine.ActivityFunc {
 	return func(ctx context.Context, input json.RawMessage) (json.RawMessage, error) {
 		// Check access profile — standard skips proxy creation
 		profile, err := profileReader.GetAccessProfile()
@@ -266,8 +279,26 @@ func makeCreateProxy(proxyMgr ProxyManager, profileReader AccessProfileReader) f
 			})
 		}
 
-		log.Info().Str("domain", in.Domain).Int("port", in.ForwardPort).Msg("create_proxy: creating proxy host")
-		hostID, err := proxyMgr.CreateProxyHost(ctx, in.Domain, in.ForwardHost, in.ForwardPort, in.ForwardScheme)
+		// TLS provisioning: if tlsProv is available, check TLS mode and provision cert
+		var certID int
+		var sslForced bool
+		if tlsProv != nil {
+			certID, sslForced, err = tlsProv.ProvisionCertificate(in.Domain)
+			if err != nil {
+				log.Warn().Err(err).Str("domain", in.Domain).Msg("create_proxy: TLS provisioning failed, falling back to plain HTTP")
+				certID = 0
+				sslForced = false
+			}
+		}
+
+		var hostID int64
+		if certID > 0 {
+			log.Info().Str("domain", in.Domain).Int("port", in.ForwardPort).Int("cert_id", certID).Msg("create_proxy: creating proxy host with TLS")
+			hostID, err = proxyMgr.CreateProxyHostWithTLS(ctx, in.Domain, in.ForwardHost, in.ForwardPort, in.ForwardScheme, certID, sslForced)
+		} else {
+			log.Info().Str("domain", in.Domain).Int("port", in.ForwardPort).Msg("create_proxy: creating proxy host")
+			hostID, err = proxyMgr.CreateProxyHost(ctx, in.Domain, in.ForwardHost, in.ForwardPort, in.ForwardScheme)
+		}
 		if err != nil {
 			return nil, flowengine.ClassifyError(err)
 		}

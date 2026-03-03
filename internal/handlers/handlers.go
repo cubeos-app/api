@@ -32,6 +32,7 @@ type Handlers struct {
 	filebrowser *managers.FileManagerClient
 	piholePw    *managers.PiholePasswordClient
 	npmMgr      *managers.NPMManager
+	tlsMgr      *managers.TLSManager
 	flowEngine  *flowengine.WorkflowEngine
 	feStore     *flowengine.WorkflowStore
 	startTime   time.Time
@@ -47,7 +48,7 @@ func (h *Handlers) SetFlowEngine(engine *flowengine.WorkflowEngine, store *flowe
 // NewHandlers creates a new Handlers instance.
 // systemMgr and networkMgr are passed in to avoid creating duplicate instances
 // (they are shared with WSManager, MonitoringManager, etc.).
-func NewHandlers(cfg *config.Config, db *sqlx.DB, docker *managers.DockerManager, halClient *hal.Client, systemMgr *managers.SystemManager, networkMgr *managers.NetworkManager, fbClient *managers.FileManagerClient, piholePwClient *managers.PiholePasswordClient, npmMgr *managers.NPMManager) *Handlers {
+func NewHandlers(cfg *config.Config, db *sqlx.DB, docker *managers.DockerManager, halClient *hal.Client, systemMgr *managers.SystemManager, networkMgr *managers.NetworkManager, fbClient *managers.FileManagerClient, piholePwClient *managers.PiholePasswordClient, npmMgr *managers.NPMManager, tlsMgr *managers.TLSManager) *Handlers {
 	return &Handlers{
 		cfg:         cfg,
 		db:          db,
@@ -58,6 +59,7 @@ func NewHandlers(cfg *config.Config, db *sqlx.DB, docker *managers.DockerManager
 		filebrowser: fbClient,
 		piholePw:    piholePwClient,
 		npmMgr:      npmMgr,
+		tlsMgr:      tlsMgr,
 		startTime:   time.Now(),
 	}
 }
@@ -396,6 +398,12 @@ func (h *Handlers) GetAccessProfile(w http.ResponseWriter, r *http.Request) {
 		"aio_dhcp_enabled":    cfg.AIODHCPEnabled,
 		"aio_dns_enabled":     cfg.AIODNSEnabled,
 		"aio_proxy_enabled":   cfg.AIOProxyEnabled,
+		"managed_interface":   cfg.ManagedInterface,
+		"tls_mode":            cfg.TLSMode,
+		"le_domain":           cfg.LEDomain,
+		"le_dns_provider":     cfg.LEDNSProvider,
+		"le_dns_token":        maskSecret(cfg.LEDNSToken),
+		"ca_generated":        cfg.CAGenerated,
 	}
 	writeJSON(w, http.StatusOK, resp)
 }
@@ -415,11 +423,16 @@ func (h *Handlers) GetAccessProfile(w http.ResponseWriter, r *http.Request) {
 // @Router /system/access-profile [put]
 func (h *Handlers) UpdateAccessProfile(w http.ResponseWriter, r *http.Request) {
 	var req struct {
-		Profile       string `json:"profile"`
-		ExtNPMURL     string `json:"ext_npm_url"`
-		ExtNPMToken   string `json:"ext_npm_token"`
-		ExtPiholeURL  string `json:"ext_pihole_url"`
-		ExtPiholePass string `json:"ext_pihole_password"`
+		Profile          string `json:"profile"`
+		ExtNPMURL        string `json:"ext_npm_url"`
+		ExtNPMToken      string `json:"ext_npm_token"`
+		ExtPiholeURL     string `json:"ext_pihole_url"`
+		ExtPiholePass    string `json:"ext_pihole_password"`
+		ManagedInterface string `json:"managed_interface"`
+		TLSMode          string `json:"tls_mode"`
+		LEDomain         string `json:"le_domain"`
+		LEDNSProvider    string `json:"le_dns_provider"`
+		LEDNSToken       string `json:"le_dns_token"`
 	}
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "invalid request body"})
@@ -436,6 +449,20 @@ func (h *Handlers) UpdateAccessProfile(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 	}
+	// Validate managed_interface
+	if req.ManagedInterface != "" && req.ManagedInterface != "wifi" && req.ManagedInterface != "ethernet" {
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "managed_interface must be 'wifi', 'ethernet', or empty"})
+		return
+	}
+	// Validate tls_mode
+	validTLSModes := map[string]bool{"": true, "http": true, "letsencrypt": true, "self_signed_ca": true}
+	if !validTLSModes[req.TLSMode] {
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "tls_mode must be one of: http, letsencrypt, self_signed_ca"})
+		return
+	}
+	if req.TLSMode == "" {
+		req.TLSMode = "http"
+	}
 
 	// Get current profile to determine if migration is needed
 	currentProfile, err := database.GetAccessProfile(h.db.DB)
@@ -448,11 +475,16 @@ func (h *Handlers) UpdateAccessProfile(w http.ResponseWriter, r *http.Request) {
 	// Same profile → just save config, no migration needed
 	if currentProfile == req.Profile {
 		cfg := &database.AccessProfileConfig{
-			Profile:       req.Profile,
-			ExtNPMURL:     req.ExtNPMURL,
-			ExtNPMToken:   req.ExtNPMToken,
-			ExtPiholeURL:  req.ExtPiholeURL,
-			ExtPiholePass: req.ExtPiholePass,
+			Profile:          req.Profile,
+			ExtNPMURL:        req.ExtNPMURL,
+			ExtNPMToken:      req.ExtNPMToken,
+			ExtPiholeURL:     req.ExtPiholeURL,
+			ExtPiholePass:    req.ExtPiholePass,
+			ManagedInterface: req.ManagedInterface,
+			TLSMode:          req.TLSMode,
+			LEDomain:         req.LEDomain,
+			LEDNSProvider:    req.LEDNSProvider,
+			LEDNSToken:       req.LEDNSToken,
 		}
 		if err := database.SetAccessProfileConfig(h.db.DB, cfg); err != nil {
 			log.Error().Err(err).Msg("failed to save access profile config")
@@ -474,11 +506,16 @@ func (h *Handlers) UpdateAccessProfile(w http.ResponseWriter, r *http.Request) {
 
 	// Save credentials first (workflow reads them from fat envelope, but also persist in DB)
 	cfg := &database.AccessProfileConfig{
-		Profile:       currentProfile, // keep current profile until workflow succeeds
-		ExtNPMURL:     req.ExtNPMURL,
-		ExtNPMToken:   req.ExtNPMToken,
-		ExtPiholeURL:  req.ExtPiholeURL,
-		ExtPiholePass: req.ExtPiholePass,
+		Profile:          currentProfile, // keep current profile until workflow succeeds
+		ExtNPMURL:        req.ExtNPMURL,
+		ExtNPMToken:      req.ExtNPMToken,
+		ExtPiholeURL:     req.ExtPiholeURL,
+		ExtPiholePass:    req.ExtPiholePass,
+		ManagedInterface: req.ManagedInterface,
+		TLSMode:          req.TLSMode,
+		LEDomain:         req.LEDomain,
+		LEDNSProvider:    req.LEDNSProvider,
+		LEDNSToken:       req.LEDNSToken,
 	}
 	if err := database.SetAccessProfileConfig(h.db.DB, cfg); err != nil {
 		log.Error().Err(err).Msg("failed to save credentials before workflow")
@@ -500,6 +537,11 @@ func (h *Handlers) UpdateAccessProfile(w http.ResponseWriter, r *http.Request) {
 		"ext_pihole_url":      req.ExtPiholeURL,
 		"ext_pihole_password": req.ExtPiholePass,
 		"gateway_ip":          gatewayIP,
+		"managed_interface":   req.ManagedInterface,
+		"tls_mode":            req.TLSMode,
+		"le_domain":           req.LEDomain,
+		"le_dns_provider":     req.LEDNSProvider,
+		"le_dns_token":        req.LEDNSToken,
 	}
 	inputJSON, err := json.Marshal(workflowInput)
 	if err != nil {
@@ -590,6 +632,90 @@ func maskSecret(s string) string {
 		return "****"
 	}
 	return s[:2] + "****" + s[len(s)-2:]
+}
+
+// =============================================================================
+// TLS / Certificate Management
+// =============================================================================
+
+// GetCACertificate godoc
+// @Summary Download CubeOS CA certificate
+// @Description Returns the self-signed CA certificate in PEM format. Only available when TLS mode is self_signed_ca and CA has been generated.
+// @Tags System
+// @Produce application/x-pem-file
+// @Success 200 {string} string "CA certificate PEM"
+// @Failure 404 {object} map[string]string "CA not available"
+// @Router /system/tls/ca.crt [get]
+func (h *Handlers) GetCACertificate(w http.ResponseWriter, r *http.Request) {
+	if h.tlsMgr == nil {
+		writeJSON(w, http.StatusNotFound, map[string]string{"error": "TLS manager not available"})
+		return
+	}
+
+	// Check if CA mode is enabled
+	cfg, err := database.GetAccessProfileConfig(h.db.DB)
+	if err != nil {
+		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "failed to read config"})
+		return
+	}
+	if cfg.TLSMode != "self_signed_ca" || !cfg.CAGenerated {
+		writeJSON(w, http.StatusNotFound, map[string]string{"error": "CA certificate not available"})
+		return
+	}
+
+	certPEM, err := h.tlsMgr.GetCACertPEM()
+	if err != nil || len(certPEM) == 0 {
+		writeJSON(w, http.StatusNotFound, map[string]string{"error": "CA certificate not found"})
+		return
+	}
+
+	w.Header().Set("Content-Type", "application/x-pem-file")
+	w.Header().Set("Content-Disposition", "attachment; filename=cubeos-ca.crt")
+	w.WriteHeader(http.StatusOK)
+	w.Write(certPEM)
+}
+
+// GenerateCA godoc
+// @Summary Generate self-signed CA certificate
+// @Description Generates a 4096-bit RSA root CA certificate for CubeOS self-signed TLS. Only available when TLS mode is self_signed_ca.
+// @Tags System
+// @Produce json
+// @Security BearerAuth
+// @Success 200 {object} map[string]string "CA generated successfully"
+// @Failure 400 {object} map[string]string "TLS mode not self_signed_ca"
+// @Failure 409 {object} map[string]string "CA already exists"
+// @Failure 500 {object} map[string]string "Generation failed"
+// @Router /system/tls/generate-ca [post]
+func (h *Handlers) GenerateCA(w http.ResponseWriter, r *http.Request) {
+	if h.tlsMgr == nil {
+		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "TLS manager not available"})
+		return
+	}
+
+	// Verify TLS mode
+	cfg, err := database.GetAccessProfileConfig(h.db.DB)
+	if err != nil {
+		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "failed to read config"})
+		return
+	}
+	if cfg.TLSMode != "self_signed_ca" {
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "TLS mode must be self_signed_ca to generate CA"})
+		return
+	}
+
+	if err := h.tlsMgr.GenerateCA(); err != nil {
+		if strings.Contains(err.Error(), "already exists") {
+			writeJSON(w, http.StatusConflict, map[string]string{"error": err.Error()})
+			return
+		}
+		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "failed to generate CA: " + err.Error()})
+		return
+	}
+
+	// Mark CA as generated in system_config
+	_ = database.SetSystemConfigFlag(h.db.DB, "aio_ca_generated", true)
+
+	writeJSON(w, http.StatusOK, map[string]string{"status": "ok", "message": "CA certificate generated"})
 }
 
 // GetSystemStats godoc

@@ -74,6 +74,24 @@ func (a *proxyAdapter) CreateProxyHost(ctx context.Context, domain string, forwa
 	return int64(result.ID), nil
 }
 
+func (a *proxyAdapter) CreateProxyHostWithTLS(ctx context.Context, domain string, forwardHost string, forwardPort int, forwardScheme string, certID int, sslForced bool) (int64, error) {
+	host := &managers.NPMProxyHostExtended{
+		DomainNames:           []string{domain},
+		ForwardScheme:         forwardScheme,
+		ForwardHost:           forwardHost,
+		ForwardPort:           forwardPort,
+		CertificateID:         certID,
+		SSLForced:             sslForced,
+		HTTP2Support:          true,
+		AllowWebsocketUpgrade: true,
+	}
+	result, err := a.mgr.CreateProxyHost(host)
+	if err != nil {
+		return 0, err
+	}
+	return int64(result.ID), nil
+}
+
 func (a *proxyAdapter) FindProxyHostByDomain(domain string) (int64, error) {
 	host, err := a.mgr.FindProxyHostByDomain(domain)
 	if err != nil {
@@ -87,6 +105,74 @@ func (a *proxyAdapter) FindProxyHostByDomain(domain string) (int64, error) {
 
 func (a *proxyAdapter) DeleteProxyHost(ctx context.Context, id int64) error {
 	return a.mgr.DeleteProxyHost(int(id))
+}
+
+// --- tlsProvisionerAdapter: activities.TLSProvisioner via TLSManager + NPMManager + DB ---
+
+type tlsProvisionerAdapter struct {
+	db     *sql.DB
+	tlsMgr *managers.TLSManager
+	npmMgr *managers.NPMManager
+}
+
+func (a *tlsProvisionerAdapter) GetTLSMode() (string, error) {
+	cfg, err := database.GetAccessProfileConfig(a.db)
+	if err != nil {
+		return "http", err
+	}
+	if cfg.TLSMode == "" {
+		return "http", nil
+	}
+	return cfg.TLSMode, nil
+}
+
+func (a *tlsProvisionerAdapter) ProvisionCertificate(domain string) (int, bool, error) {
+	mode, err := a.GetTLSMode()
+	if err != nil || mode == "http" {
+		return 0, false, nil
+	}
+
+	switch mode {
+	case "self_signed_ca":
+		if a.tlsMgr == nil {
+			return 0, false, fmt.Errorf("TLS manager not configured")
+		}
+		// Generate per-app cert signed by CA
+		certPEM, keyPEM, err := a.tlsMgr.SignAppCertificate(domain)
+		if err != nil {
+			return 0, false, fmt.Errorf("sign app cert: %w", err)
+		}
+		// Upload to NPM
+		certID, err := a.npmMgr.UploadCustomCert("CubeOS - "+domain, certPEM, keyPEM)
+		if err != nil {
+			return 0, false, fmt.Errorf("upload cert to NPM: %w", err)
+		}
+		return certID, true, nil
+
+	case "letsencrypt":
+		cfg, err := database.GetAccessProfileConfig(a.db)
+		if err != nil {
+			return 0, false, fmt.Errorf("read LE config: %w", err)
+		}
+		if cfg.LEDomain == "" || cfg.LEDNSProvider == "" || cfg.LEDNSToken == "" {
+			return 0, false, fmt.Errorf("Let's Encrypt not fully configured")
+		}
+		// Check if cert already exists for this domain
+		existing, err := a.npmMgr.GetCertificateByDomain(domain)
+		if err == nil && existing > 0 {
+			return existing, true, nil
+		}
+		// Provision new cert
+		email := "admin@" + cfg.LEDomain
+		certID, err := a.npmMgr.CreateLetsEncryptCert(domain, email, cfg.LEDNSProvider, cfg.LEDNSToken)
+		if err != nil {
+			return 0, false, fmt.Errorf("provision LE cert: %w", err)
+		}
+		return certID, true, nil
+
+	default:
+		return 0, false, nil
+	}
 }
 
 // --- appConflictAdapter: activities.AppConflictChecker via *managers.Orchestrator ---

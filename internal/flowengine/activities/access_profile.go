@@ -43,13 +43,18 @@ func RegisterAccessProfileActivities(
 // --- Input/Output types ---
 
 type profileSwitchEnvelope struct {
-	FromProfile   string `json:"from_profile"`
-	ToProfile     string `json:"to_profile"`
-	ExtNPMURL     string `json:"ext_npm_url"`
-	ExtNPMToken   string `json:"ext_npm_token"`
-	ExtPiholeURL  string `json:"ext_pihole_url"`
-	ExtPiholePass string `json:"ext_pihole_password"`
-	GatewayIP     string `json:"gateway_ip"`
+	FromProfile      string `json:"from_profile"`
+	ToProfile        string `json:"to_profile"`
+	ExtNPMURL        string `json:"ext_npm_url"`
+	ExtNPMToken      string `json:"ext_npm_token"`
+	ExtPiholeURL     string `json:"ext_pihole_url"`
+	ExtPiholePass    string `json:"ext_pihole_password"`
+	GatewayIP        string `json:"gateway_ip"`
+	ManagedInterface string `json:"managed_interface"` // "wifi" | "ethernet"
+	TLSMode          string `json:"tls_mode"`          // "http" | "letsencrypt" | "self_signed_ca"
+	LEDomain         string `json:"le_domain"`
+	LEDNSProvider    string `json:"le_dns_provider"`
+	LEDNSToken       string `json:"le_dns_token"`
 }
 
 type removedEntry struct {
@@ -315,6 +320,21 @@ func makeConfigureNewServices(db *sql.DB, halClient *hal.Client) flowengine.Acti
 			_ = database.SetSystemConfigFlag(db, "aio_dhcp_enabled", true)
 			_ = database.SetSystemConfigFlag(db, "aio_dns_enabled", true)
 			_ = database.SetSystemConfigFlag(db, "aio_proxy_enabled", true)
+
+			// Persist managed interface and TLS settings from workflow input
+			if env.ManagedInterface != "" {
+				setConfigValue(db, "aio_managed_interface", env.ManagedInterface)
+				log.Info().Str("managed_interface", env.ManagedInterface).Msg("configure_new_services: set managed interface")
+			}
+			if env.TLSMode != "" {
+				setConfigValue(db, "aio_tls_mode", env.TLSMode)
+				if env.TLSMode == "letsencrypt" {
+					setConfigValue(db, "aio_le_domain", env.LEDomain)
+					setConfigValue(db, "aio_le_dns_provider", env.LEDNSProvider)
+					setConfigValue(db, "aio_le_dns_token", env.LEDNSToken)
+				}
+				log.Info().Str("tls_mode", env.TLSMode).Msg("configure_new_services: set TLS mode")
+			}
 			log.Info().Msg("configure_new_services: enabled all-in-one flags")
 
 		case "advanced":
@@ -530,4 +550,12 @@ func makeVerifyAccess(db *sql.DB) flowengine.ActivityFunc {
 			"results":  results,
 		})
 	}
+}
+
+// setConfigValue is a convenience wrapper for upserting a single system_config key.
+func setConfigValue(db *sql.DB, key, value string) {
+	_, _ = db.Exec(
+		"INSERT OR REPLACE INTO system_config (key, value, updated_at) VALUES (?, ?, CURRENT_TIMESTAMP)",
+		key, value,
+	)
 }

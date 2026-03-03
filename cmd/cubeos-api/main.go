@@ -406,9 +406,12 @@ func main() {
 	feStore := flowengine.NewWorkflowStore(db.DB)
 	feRegistry := flowengine.NewActivityRegistry()
 
+	// Create TLS manager (stores certs in /cubeos/config/tls/)
+	tlsMgr := managers.NewTLSManager("")
+
 	// Register all activity groups
 	feactivities.RegisterDockerActivities(feRegistry, swarmMgr, swarmMgr)
-	feactivities.RegisterInfraActivities(feRegistry, &dnsAdapter{piholeMgr}, &proxyAdapter{npmMgr}, &accessProfileAdapter{db.DB})
+	feactivities.RegisterInfraActivities(feRegistry, &dnsAdapter{piholeMgr}, &proxyAdapter{npmMgr}, &accessProfileAdapter{db.DB}, &tlsProvisionerAdapter{db: db.DB, tlsMgr: tlsMgr, npmMgr: npmMgr})
 	feactivities.RegisterDatabaseActivities(feRegistry, db.DB, portMgr)
 	feactivities.RegisterHALActivities(feRegistry, halClient)
 	if orchestrator != nil {
@@ -510,13 +513,14 @@ func main() {
 	mountsMgr.SetDB(db.DB) // FIX: Wire database connection
 
 	// Create handlers
-	h := handlers.NewHandlers(cfg, db, docker, halClient, systemMgr, networkMgr, fbClient, piholePwClient, npmMgr)
+	h := handlers.NewHandlers(cfg, db, docker, halClient, systemMgr, networkMgr, fbClient, piholePwClient, npmMgr, tlsMgr)
 	h.SetFlowEngine(flowEngine, feStore)
 	ext := handlers.NewExtendedHandlers(logMgr, firewallMgr, backupMgr, processMgr, wizardMgr, monitoringMgr, prefMgr, powerMgr, storageMgr, halClient)
 	appStoreHandler := handlers.NewAppStoreHandler(appStoreMgr, npmMgr)
 	setupHandler := handlers.NewSetupHandler(setupMgr, flowEngine, feStore)
 	setupHandler.SetHALClient(halClient)
 	setupHandler.SetNetworkManager(networkMgr)
+	setupHandler.SetTLSManager(tlsMgr)
 
 	// Create Chat handler (AI Assistant)
 	chatHandler := handlers.NewChatHandler(cfg)
@@ -789,6 +793,8 @@ func main() {
 				r.Get("/access-profile", h.GetAccessProfile)
 				r.Put("/access-profile", h.UpdateAccessProfile)
 				r.Post("/access-profile/test", h.TestAccessProfile)
+				r.Get("/tls/ca.crt", h.GetCACertificate)
+				r.Post("/tls/generate-ca", h.GenerateCA)
 				r.Get("/wifi-ap/whitelist", h.GetWiFiAPWhitelist)
 				r.Get("/wifi-ap/blacklist", h.GetWiFiAPBlacklist)
 				r.Post("/wifi-ap/retest/*", h.RetestWiFiAdapter)
