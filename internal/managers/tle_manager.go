@@ -20,7 +20,7 @@ import (
 
 // celestrakURL is the Celestrak endpoint for Iridium NEXT TLEs (3-line format).
 // Override with CELESTRAK_IRIDIUM_URL environment variable.
-const defaultCelestrakURL = "https://celestrak.org/SATCAT/TLE/iridium-NEXT.txt"
+const defaultCelestrakURL = "https://celestrak.org/NORAD/elements/gp.php?GROUP=iridium-NEXT&FORMAT=tle"
 
 // IridiumLocation represents a ground station for pass prediction.
 type IridiumLocation struct {
