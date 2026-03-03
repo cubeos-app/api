@@ -980,6 +980,41 @@ var migrations = []Migration{
 			return nil
 		},
 	},
+	{
+		Version:     25,
+		Description: "Add signal_history and sbd_credits tables for Iridium operational dashboard",
+		Up: func(db *sql.DB) error {
+			stmts := []string{
+				// signal_history: time-series signal quality for Iridium (and future sources)
+				`CREATE TABLE IF NOT EXISTS signal_history (
+					id        INTEGER PRIMARY KEY AUTOINCREMENT,
+					source    TEXT NOT NULL,     -- 'iridium' | 'meshtastic'
+					timestamp INTEGER NOT NULL,  -- Unix epoch seconds
+					value     REAL NOT NULL,     -- bars 0-5 (Iridium) or RSSI dBm (Meshtastic)
+					metadata  TEXT              -- JSON: {node, snr} for meshtastic
+				)`,
+				`CREATE INDEX IF NOT EXISTS idx_signal_history_source_ts
+					ON signal_history(source, timestamp DESC)`,
+
+				// sbd_credits: track per-session SBD credit usage
+				`CREATE TABLE IF NOT EXISTS sbd_credits (
+					id         INTEGER PRIMARY KEY AUTOINCREMENT,
+					direction  TEXT NOT NULL,   -- 'mo' | 'mt'
+					timestamp  INTEGER NOT NULL, -- Unix epoch seconds
+					mo_status  INTEGER,         -- 0=sent, nonzero=failed
+					bytes      INTEGER          -- message size in bytes
+				)`,
+				`CREATE INDEX IF NOT EXISTS idx_sbd_credits_ts ON sbd_credits(timestamp DESC)`,
+			}
+			for _, stmt := range stmts {
+				if _, err := db.Exec(stmt); err != nil {
+					return fmt.Errorf("migration 25 failed: %w\nStatement: %s", err, stmt)
+				}
+			}
+			log.Info().Msg("Migration 25: Created signal_history and sbd_credits tables")
+			return nil
+		},
+	},
 }
 
 // isDuplicateColumnError checks if an error is a "duplicate column" error
@@ -1058,6 +1093,8 @@ func MigrateAndSeed(db *sql.DB) error {
 // WARNING: This is destructive and should only be used for testing/reset.
 func DropAllTables(db *sql.DB) error {
 	tables := []string{
+		"sbd_credits",
+		"signal_history",
 		"cached_manifests",
 		"job_queue",
 		"workflow_events",

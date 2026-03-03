@@ -583,6 +583,12 @@ func main() {
 	halLogsHandler := handlers.NewLogsHandler(halClient)
 	log.Info().Msg("HAL handlers initialized (Hardware, Storage, Communication, Media, Logs)")
 
+	// Start Iridium signal recorder (subscribes to HAL SSE, persists signal + credits to DB)
+	signalRecorder := managers.NewSignalRecorder(halClient, db.DB)
+	signalRecorder.Start(engineCtx)
+	defer signalRecorder.Stop()
+	log.Info().Msg("Iridium signal recorder started")
+
 	// Create WebSocket manager and handlers
 	wsManager := handlers.NewWSManager(systemMgr, networkMgr, monitoringMgr, docker)
 	wsHandlers := handlers.NewWSHandlers(wsManager)

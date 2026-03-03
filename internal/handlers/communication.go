@@ -82,6 +82,11 @@ func (h *CommunicationHandler) Routes() chi.Router {
 	r.Post("/iridium/clear", h.ClearIridiumBuffers)
 	r.Get("/iridium/events", h.StreamIridiumEvents)
 
+	// Iridium signal history + credit tracker
+	r.Get("/iridium/signal/history", h.GetIridiumSignalHistory)
+	r.Get("/iridium/credits", h.GetIridiumCredits)
+	r.Post("/iridium/credits/budget", h.SetIridiumBudget)
+
 	// MeshSat — proxy to meshsat coreapp (:6050)
 	r.Get("/meshsat/status", h.GetMeshsatStatus)
 	r.Get("/meshsat/messages", h.GetMeshsatMessages)
@@ -1205,6 +1210,19 @@ func (h *CommunicationHandler) SendIridiumSBD(w http.ResponseWriter, r *http.Req
 		return
 	}
 
+	// Record SBD credit usage (best-effort, non-blocking)
+	if h.db != nil {
+		msgBytes := len(req.Text)
+		if req.Format == "binary" {
+			msgBytes = len(req.Data)
+		}
+		now := time.Now().Unix()
+		h.db.ExecContext(ctx,
+			`INSERT INTO sbd_credits (direction, timestamp, mo_status, bytes) VALUES ('mo', ?, ?, ?)`,
+			now, result.MOStatus, msgBytes,
+		)
+	}
+
 	writeJSON(w, http.StatusOK, result)
 }
 
@@ -1365,6 +1383,251 @@ func (h *CommunicationHandler) StreamIridiumEvents(w http.ResponseWriter, r *htt
 	}
 
 	proxySSE(w, r, halResp)
+}
+
+// =============================================================================
+// Iridium Signal History + Credit Tracker Endpoints
+// =============================================================================
+
+// signalHistoryPoint is a response DTO for signal history data.
+type signalHistoryPoint struct {
+	Timestamp int64   `json:"timestamp"`
+	Value     float64 `json:"value"`
+	Min       float64 `json:"min,omitempty"`
+	Max       float64 `json:"max,omitempty"`
+	Count     int     `json:"count,omitempty"`
+}
+
+// GetIridiumSignalHistory godoc
+// @Summary Get Iridium signal history
+// @Description Returns historical signal quality readings for the Iridium modem. Supports raw samples or time-bucketed aggregation.
+// @Tags Communication
+// @Accept json
+// @Produce json
+// @Param from  query int    false "Start timestamp (Unix epoch seconds, default: 24h ago)"
+// @Param to    query int    false "End timestamp (Unix epoch seconds, default: now)"
+// @Param interval query string false "Aggregation interval: raw, hour, day" Enums(raw,hour,day)
+// @Success 200 {object} map[string]interface{} "Signal history with from/to/interval/history fields"
+// @Failure 500 {object} ErrorResponse "Database error"
+// @Security BearerAuth
+// @Router /communication/iridium/signal/history [get]
+func (h *CommunicationHandler) GetIridiumSignalHistory(w http.ResponseWriter, r *http.Request) {
+	if h.db == nil {
+		writeJSON(w, http.StatusOK, map[string]interface{}{
+			"history":  []signalHistoryPoint{},
+			"from":     0,
+			"to":       0,
+			"interval": "raw",
+		})
+		return
+	}
+
+	now := time.Now().Unix()
+	fromStr := r.URL.Query().Get("from")
+	toStr := r.URL.Query().Get("to")
+	interval := r.URL.Query().Get("interval")
+
+	from := now - 86400 // default: 24h ago
+	to := now
+
+	if fromStr != "" {
+		if v, err := strconv.ParseInt(fromStr, 10, 64); err == nil {
+			from = v
+		}
+	}
+	if toStr != "" {
+		if v, err := strconv.ParseInt(toStr, 10, 64); err == nil {
+			to = v
+		}
+	}
+	if interval == "" {
+		interval = "raw"
+	}
+	if interval != "raw" && interval != "hour" && interval != "day" {
+		interval = "raw"
+	}
+
+	points, err := querySignalHistory(h.db, "iridium", from, to, interval)
+	if err != nil {
+		log.Error().Err(err).Msg("GetIridiumSignalHistory: DB query failed")
+		writeError(w, http.StatusInternalServerError, "Failed to query signal history")
+		return
+	}
+
+	writeJSON(w, http.StatusOK, map[string]interface{}{
+		"history":  points,
+		"from":     from,
+		"to":       to,
+		"interval": interval,
+	})
+}
+
+// GetIridiumCredits godoc
+// @Summary Get Iridium SBD credit usage
+// @Description Returns SBD message counts for today, this month, and all time along with budget settings
+// @Tags Communication
+// @Produce json
+// @Success 200 {object} map[string]interface{} "SBD credit usage and budget"
+// @Failure 500 {object} ErrorResponse "Database error"
+// @Security BearerAuth
+// @Router /communication/iridium/credits [get]
+func (h *CommunicationHandler) GetIridiumCredits(w http.ResponseWriter, r *http.Request) {
+	if h.db == nil {
+		writeJSON(w, http.StatusOK, map[string]interface{}{
+			"today": 0, "this_month": 0, "all_time": 0, "budget": 0, "warning_threshold": 0,
+		})
+		return
+	}
+
+	now := time.Now()
+	todayStart := time.Date(now.Year(), now.Month(), now.Day(), 0, 0, 0, 0, now.Location()).Unix()
+	monthStart := time.Date(now.Year(), now.Month(), 1, 0, 0, 0, 0, now.Location()).Unix()
+
+	var today, month, allTime int
+	h.db.QueryRowContext(r.Context(),
+		`SELECT COUNT(*) FROM sbd_credits WHERE direction = 'mo' AND mo_status = 0 AND timestamp >= ?`,
+		todayStart,
+	).Scan(&today)
+	h.db.QueryRowContext(r.Context(),
+		`SELECT COUNT(*) FROM sbd_credits WHERE direction = 'mo' AND mo_status = 0 AND timestamp >= ?`,
+		monthStart,
+	).Scan(&month)
+	h.db.QueryRowContext(r.Context(),
+		`SELECT COUNT(*) FROM sbd_credits WHERE direction = 'mo' AND mo_status = 0`,
+	).Scan(&allTime)
+
+	var budget, warnThresh int
+	h.db.QueryRowContext(r.Context(),
+		`SELECT CAST(value AS INTEGER) FROM system_config WHERE key = 'sbd_monthly_budget'`,
+	).Scan(&budget)
+	h.db.QueryRowContext(r.Context(),
+		`SELECT CAST(value AS INTEGER) FROM system_config WHERE key = 'sbd_warning_threshold'`,
+	).Scan(&warnThresh)
+
+	writeJSON(w, http.StatusOK, map[string]interface{}{
+		"today":             today,
+		"this_month":        month,
+		"all_time":          allTime,
+		"budget":            budget,
+		"warning_threshold": warnThresh,
+	})
+}
+
+// SetIridiumBudgetRequest is the request body for setting the SBD monthly budget.
+type SetIridiumBudgetRequest struct {
+	Budget           int `json:"budget"`
+	WarningThreshold int `json:"warning_threshold"`
+}
+
+// SetIridiumBudget godoc
+// @Summary Set Iridium SBD monthly budget
+// @Description Sets the monthly SBD credit budget and optional warning threshold
+// @Tags Communication
+// @Accept json
+// @Produce json
+// @Param request body SetIridiumBudgetRequest true "Budget settings"
+// @Success 200 {object} SuccessResponse
+// @Failure 400 {object} ErrorResponse "Invalid request"
+// @Failure 500 {object} ErrorResponse "Database error"
+// @Security BearerAuth
+// @Router /communication/iridium/credits/budget [post]
+func (h *CommunicationHandler) SetIridiumBudget(w http.ResponseWriter, r *http.Request) {
+	var req SetIridiumBudgetRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		writeError(w, http.StatusBadRequest, "Invalid request body")
+		return
+	}
+
+	if req.Budget < 0 || req.WarningThreshold < 0 {
+		writeError(w, http.StatusBadRequest, "Budget and warning_threshold must be non-negative")
+		return
+	}
+
+	if h.db == nil {
+		writeError(w, http.StatusInternalServerError, "Database unavailable")
+		return
+	}
+
+	_, err := h.db.ExecContext(r.Context(),
+		`INSERT OR REPLACE INTO system_config (key, value, updated_at) VALUES ('sbd_monthly_budget', ?, CURRENT_TIMESTAMP)`,
+		req.Budget,
+	)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "Failed to save budget")
+		return
+	}
+	_, err = h.db.ExecContext(r.Context(),
+		`INSERT OR REPLACE INTO system_config (key, value, updated_at) VALUES ('sbd_warning_threshold', ?, CURRENT_TIMESTAMP)`,
+		req.WarningThreshold,
+	)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "Failed to save warning threshold")
+		return
+	}
+
+	writeJSON(w, http.StatusOK, SuccessResponse{Success: true, Message: "Budget updated"})
+}
+
+// querySignalHistory queries signal_history with optional time-bucketed aggregation.
+func querySignalHistory(db *sqlx.DB, source string, from, to int64, interval string) ([]signalHistoryPoint, error) {
+	var rows *sqlx.Rows
+	var err error
+
+	switch interval {
+	case "hour":
+		rows, err = db.Queryx(
+			`SELECT (timestamp/3600)*3600 AS ts, AVG(value), MIN(value), MAX(value), COUNT(*)
+			 FROM signal_history
+			 WHERE source = ? AND timestamp >= ? AND timestamp <= ?
+			 GROUP BY ts ORDER BY ts ASC`,
+			source, from, to,
+		)
+	case "day":
+		rows, err = db.Queryx(
+			`SELECT (timestamp/86400)*86400 AS ts, AVG(value), MIN(value), MAX(value), COUNT(*)
+			 FROM signal_history
+			 WHERE source = ? AND timestamp >= ? AND timestamp <= ?
+			 GROUP BY ts ORDER BY ts ASC`,
+			source, from, to,
+		)
+	default: // raw
+		rows, err = db.Queryx(
+			`SELECT timestamp, value, NULL, NULL, NULL
+			 FROM signal_history
+			 WHERE source = ? AND timestamp >= ? AND timestamp <= ?
+			 ORDER BY timestamp ASC LIMIT 2000`,
+			source, from, to,
+		)
+	}
+
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var points []signalHistoryPoint
+	for rows.Next() {
+		var p signalHistoryPoint
+		var minVal, maxVal *float64
+		var cnt *int
+		if err := rows.Scan(&p.Timestamp, &p.Value, &minVal, &maxVal, &cnt); err != nil {
+			return nil, err
+		}
+		if minVal != nil {
+			p.Min = *minVal
+		}
+		if maxVal != nil {
+			p.Max = *maxVal
+		}
+		if cnt != nil {
+			p.Count = *cnt
+		}
+		points = append(points, p)
+	}
+	if points == nil {
+		points = []signalHistoryPoint{}
+	}
+	return points, rows.Err()
 }
 
 // =============================================================================
