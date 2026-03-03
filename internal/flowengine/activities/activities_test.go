@@ -141,6 +141,10 @@ func (m *mockProxyManager) CreateProxyHost(ctx context.Context, domain string, f
 	return id, nil
 }
 
+func (m *mockProxyManager) CreateProxyHostWithTLS(ctx context.Context, domain string, forwardHost string, forwardPort int, forwardScheme string, certID int, sslForced bool) (int64, error) {
+	return m.CreateProxyHost(ctx, domain, forwardHost, forwardPort, forwardScheme)
+}
+
 func (m *mockProxyManager) FindProxyHostByDomain(domain string) (int64, error) {
 	if id, ok := m.hosts[domain]; ok {
 		return id, nil
@@ -428,7 +432,7 @@ func TestRemoveDNSIdempotent(t *testing.T) {
 
 func TestCreateProxyNew(t *testing.T) {
 	proxy := newMockProxy()
-	activity := makeCreateProxy(proxy, allInOneProfile())
+	activity := makeCreateProxy(proxy, allInOneProfile(), nil)
 
 	input, _ := json.Marshal(CreateProxyInput{Domain: "test.cubeos.cube", ForwardPort: 6100})
 	output, err := activity(context.Background(), input)
@@ -446,7 +450,7 @@ func TestCreateProxyNew(t *testing.T) {
 func TestCreateProxyIdempotent(t *testing.T) {
 	proxy := newMockProxy()
 	proxy.hosts["test.cubeos.cube"] = 42
-	activity := makeCreateProxy(proxy, allInOneProfile())
+	activity := makeCreateProxy(proxy, allInOneProfile(), nil)
 
 	input, _ := json.Marshal(CreateProxyInput{Domain: "test.cubeos.cube", ForwardPort: 6100})
 	output, err := activity(context.Background(), input)
@@ -505,7 +509,7 @@ func TestAddDNSSkipsOnStandardProfile(t *testing.T) {
 
 func TestCreateProxySkipsOnStandardProfile(t *testing.T) {
 	proxy := newMockProxy()
-	activity := makeCreateProxy(proxy, &mockAccessProfileReader{profile: "standard"})
+	activity := makeCreateProxy(proxy, &mockAccessProfileReader{profile: "standard"}, nil)
 
 	input, _ := json.Marshal(CreateProxyInput{Domain: "test.cubeos.cube", ForwardPort: 6100})
 	output, err := activity(context.Background(), input)
@@ -679,7 +683,7 @@ func TestIsNotFoundError(t *testing.T) {
 // must run BEFORE validation, not after.
 func TestCreateProxyFatEnvelopePort(t *testing.T) {
 	proxy := newMockProxy()
-	activity := makeCreateProxy(proxy, allInOneProfile())
+	activity := makeCreateProxy(proxy, allInOneProfile(), nil)
 
 	// Fat envelope has "port" (from allocate_port) and "domain" (from add_dns),
 	// but NOT "forward_port". The activity must accept "port" as a fallback.
@@ -703,7 +707,7 @@ func TestCreateProxyFatEnvelopePort(t *testing.T) {
 // neither "forward_port" nor "port" is provided.
 func TestCreateProxyMissingBothPorts(t *testing.T) {
 	proxy := newMockProxy()
-	activity := makeCreateProxy(proxy, allInOneProfile())
+	activity := makeCreateProxy(proxy, allInOneProfile(), nil)
 
 	input := json.RawMessage(`{"domain":"test.cubeos.cube"}`)
 	_, err := activity(context.Background(), input)
