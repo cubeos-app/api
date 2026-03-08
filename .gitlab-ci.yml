@@ -34,6 +34,9 @@ lint:consistency:
         DIFF=$(git diff origin/main...HEAD 2>/dev/null || git diff HEAD~1 HEAD 2>/dev/null || echo "")
       fi
 
+      # Filter out the consistency check script's own lines to prevent false positives
+      DIFF=$(echo "$DIFF" | grep -v 'VIOLATIONS+=\|WARNINGS+=\|CONSISTENCY_CHECK\|grep.*-[cq]E' || echo "$DIFF")
+
       if [ -z "$DIFF" ]; then
         echo "No diff to check. Skipping."
         exit 0
