@@ -533,26 +533,40 @@ func (m *NetworkManager) GetStatus(ctx context.Context) (*NetworkStatus, error) 
 	return status, nil
 }
 
-// checkInternetConnectivity checks if internet is reachable
+// checkInternetConnectivity checks if internet is reachable.
+// All endpoints are probed in parallel — returns on first success.
 func (m *NetworkManager) checkInternetConnectivity() bool {
-	client := &http.Client{
-		Timeout: 3 * time.Second,
-	}
-
-	// Try multiple endpoints for reliability
 	endpoints := []string{
 		"http://connectivitycheck.gstatic.com/generate_204",
 		"http://www.gstatic.com/generate_204",
 		"http://www.msftconnecttest.com/connecttest.txt",
 	}
 
+	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
+	defer cancel()
+
+	result := make(chan bool, len(endpoints))
 	for _, url := range endpoints {
-		resp, err := client.Head(url)
-		if err == nil {
-			resp.Body.Close()
-			if resp.StatusCode == 204 || resp.StatusCode == 200 {
-				return true
+		go func(u string) {
+			req, err := http.NewRequestWithContext(ctx, http.MethodHead, u, nil)
+			if err != nil {
+				result <- false
+				return
 			}
+			resp, err := http.DefaultClient.Do(req)
+			if err != nil {
+				result <- false
+				return
+			}
+			resp.Body.Close()
+			result <- resp.StatusCode == 204 || resp.StatusCode == 200
+		}(url)
+	}
+
+	for range endpoints {
+		if <-result {
+			cancel()
+			return true
 		}
 	}
 	return false
