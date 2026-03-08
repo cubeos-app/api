@@ -542,7 +542,7 @@ func (m *NetworkManager) checkInternetConnectivity() bool {
 		"http://www.msftconnecttest.com/connecttest.txt",
 	}
 
-	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
+	ctx, cancel := context.WithTimeout(context.Background(), 1500*time.Millisecond)
 	defer cancel()
 
 	result := make(chan bool, len(endpoints))
