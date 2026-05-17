@@ -1,0 +1,67 @@
+{
+  "feature_id": "001-orchestrator-core",
+  "parent_epic": "CUBEOS-API-ORCHESTRATOR",
+  "spec_revision": "1 (2026-05-17 — retrospective)",
+  "tasks": [
+    {
+      "id": "T-001",
+      "status": "done",
+      "title": "Orchestrator interface + per-stack mutex + saga delegation",
+      "prompt": "(RETROSPECTIVE — completed Jan-Feb 2026.) Orchestrator shipped with all 7 methods, per-stack mutex, saga delegation.",
+      "files_owned": [
+        "internal/managers/orchestrator.go",
+        "internal/managers/orchestrator_test.go",
+        "internal/managers/swarm.go"
+      ],
+      "acceptance_test": "cd api && go test -v -run TestOrchestrator ./internal/managers/",
+      "dependencies": [],
+      "parallelizable": true,
+      "bounded_context": "managers",
+      "requirement_ids": ["REQ-100", "REQ-101", "REQ-102", "REQ-103", "REQ-104", "REQ-105", "REQ-106", "REQ-107", "REQ-108", "REQ-109", "REQ-114", "REQ-115"],
+      "complexity": 7,
+      "risk_score": 0.0,
+      "max_wall_clock_minutes": 120,
+      "max_loc_delta": 1500,
+      "completed_at": "2026-02-10"
+    },
+    {
+      "id": "T-002",
+      "status": "pending",
+      "title": "Add orchestrator-queue introspection endpoint + dashboard inspector view",
+      "prompt": "FIRST: read spec/001-orchestrator-core/{requirements.md, design.md, acceptance/orchestrator.feature}. SECOND: implement GET /api/v1/orchestrator/queue (REQ-112) returning pending + running request set. Include full Swagger per Article XII. Add dashboard FlowEngine-inspector view gated to advanced+ profiles.",
+      "files_owned": [
+        "internal/handlers/orchestrator_queue.go",
+        "internal/handlers/orchestrator_queue_test.go",
+        "internal/managers/orchestrator_queue.go"
+      ],
+      "acceptance_test": "cd api && go test -v -run TestOrchestratorQueue ./internal/handlers/",
+      "dependencies": [],
+      "parallelizable": true,
+      "bounded_context": "handlers",
+      "requirement_ids": ["REQ-110", "REQ-111", "REQ-112"],
+      "complexity": 4,
+      "risk_score": 0.3,
+      "max_wall_clock_minutes": 60,
+      "max_loc_delta": 600
+    },
+    {
+      "id": "T-003",
+      "status": "pending",
+      "title": "golangci-lint forbidigo rule + CI enforcement of direct-SwarmManager-import ban",
+      "prompt": "FIRST: read spec/001-orchestrator-core/{requirements.md, design.md, acceptance/orchestrator.feature}. SECOND: add the forbidigo rule per design.md §Lint enforcement (REQ-113). Test that a deliberate violation fails CI. Document the rationale in .golangci.yml comments.",
+      "files_owned": [
+        ".golangci.yml",
+        "scripts/test-forbidigo-rule.sh"
+      ],
+      "acceptance_test": "cd api && make lint && bash scripts/test-forbidigo-rule.sh",
+      "dependencies": [],
+      "parallelizable": true,
+      "bounded_context": "config",
+      "requirement_ids": ["REQ-113"],
+      "complexity": 2,
+      "risk_score": 0.2,
+      "max_wall_clock_minutes": 25,
+      "max_loc_delta": 80
+    }
+  ]
+}

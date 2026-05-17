@@ -1,0 +1,77 @@
+{
+  "feature_id": "003-app-lifecycle-sagas",
+  "parent_epic": "CUBEOS-API-SAGAS",
+  "spec_revision": "1 (2026-05-17 — retrospective; 5 sagas shipped)",
+  "tasks": [
+    {
+      "id": "T-001",
+      "status": "done",
+      "title": "appstore_install + appstore_remove + their compensating actions + activities",
+      "prompt": "(RETROSPECTIVE — completed Jan-Feb 2026.) Install + remove sagas shipped with profile-aware activities.",
+      "files_owned": [
+        "internal/flowengine/appstore_install.go",
+        "internal/flowengine/appstore_install_test.go",
+        "internal/flowengine/appstore_remove.go",
+        "internal/flowengine/appstore_remove_test.go",
+        "internal/flowengine/activities/dns.go",
+        "internal/flowengine/activities/proxy.go"
+      ],
+      "acceptance_test": "cd api && go test -v -run TestAppstoreInstall ./internal/flowengine/ && go test -v -run TestAppstoreRemove ./internal/flowengine/",
+      "dependencies": [],
+      "parallelizable": true,
+      "bounded_context": "flowengine",
+      "requirement_ids": ["REQ-300", "REQ-301", "REQ-305", "REQ-306", "REQ-307", "REQ-308", "REQ-311", "REQ-312", "REQ-313"],
+      "complexity": 8,
+      "risk_score": 0.0,
+      "max_wall_clock_minutes": 160,
+      "max_loc_delta": 1800,
+      "completed_at": "2026-02-14"
+    },
+    {
+      "id": "T-002",
+      "status": "done",
+      "title": "network_mode_switch + first_boot_setup + access_profile_switch sagas",
+      "prompt": "(RETROSPECTIVE — completed Feb 2026.) Network mode + first-boot + access profile sagas shipped.",
+      "files_owned": [
+        "internal/flowengine/network_mode_switch.go",
+        "internal/flowengine/network_mode_switch_test.go",
+        "internal/flowengine/first_boot_setup.go",
+        "internal/flowengine/first_boot_setup_test.go",
+        "internal/flowengine/access_profile_switch.go",
+        "internal/flowengine/access_profile_switch_test.go"
+      ],
+      "acceptance_test": "cd api && go test -v -run TestNetworkModeSwitch ./internal/flowengine/ && go test -v -run TestFirstBootSetup ./internal/flowengine/ && go test -v -run TestAccessProfileSwitch ./internal/flowengine/",
+      "dependencies": ["T-001"],
+      "parallelizable": false,
+      "bounded_context": "flowengine",
+      "requirement_ids": ["REQ-302", "REQ-303", "REQ-304", "REQ-309", "REQ-314", "REQ-315"],
+      "complexity": 7,
+      "risk_score": 0.0,
+      "max_wall_clock_minutes": 140,
+      "max_loc_delta": 1600,
+      "completed_at": "2026-02-20"
+    },
+    {
+      "id": "T-003",
+      "status": "pending",
+      "title": "End-to-end saga tests against QEMU Pi",
+      "prompt": "FIRST: read spec/003-app-lifecycle-sagas/{requirements.md, design.md, acceptance/sagas.feature}. SECOND: implement tests/e2e/sagas/<saga>_e2e_test.go per REQ-310 — each test boots a Pi image in QEMU, runs the saga end-to-end, asserts the expected end state. Hook into release-gate CI (NOT per-commit; ~30 min cycle).",
+      "files_owned": [
+        "tests/e2e/sagas/appstore_install_e2e_test.go",
+        "tests/e2e/sagas/appstore_remove_e2e_test.go",
+        "tests/e2e/sagas/network_mode_switch_e2e_test.go",
+        "tests/e2e/sagas/access_profile_switch_e2e_test.go",
+        "Makefile"
+      ],
+      "acceptance_test": "cd api && make e2e-sagas",
+      "dependencies": ["T-002"],
+      "parallelizable": false,
+      "bounded_context": "flowengine",
+      "requirement_ids": ["REQ-310"],
+      "complexity": 6,
+      "risk_score": 0.5,
+      "max_wall_clock_minutes": 120,
+      "max_loc_delta": 1200
+    }
+  ]
+}

@@ -1,0 +1,60 @@
+{
+  "slug": "cubeos-api",
+  "title": "CubeOS API — Go backend, Orchestrator, FlowEngine, REST surface",
+  "youtrack_prefix": "CUBEOS",
+  "youtrack_disambiguator": "tag:api OR summary contains 'handler' / 'orchestrator' / 'flowengine' / 'sqlite' / 'middleware'",
+  "matrix_room": "!iXTnQsFJahUquYPDdG:matrix.nuclearlighters.net",
+  "primary_language": "go",
+  "test_command": "make test",
+  "lint_command": "make lint",
+  "build_command": "make build",
+  "ci_pipeline": ".gitlab-ci.yml",
+  "parent_project": {
+    "slug": "cubeos",
+    "project_id": 16,
+    "spec_home": "/home/claude-runner/gitlab/products/cubeos/docs",
+    "note": "This is a component repo of the CubeOS project. The project-level constitution + 9 immutable principles + ADRs live in docs/. This component-level constitution adds api-specific rules without contradicting any project-level Article."
+  },
+  "bounded_contexts": [
+    "handlers",
+    "managers",
+    "flowengine",
+    "clients",
+    "database",
+    "middleware",
+    "config",
+    "cmd"
+  ],
+  "max_parallel_workers": 3,
+  "max_loc_per_worker": 500,
+  "owners": [
+    "ufwtqkgz@meshsat.net"
+  ],
+  "risk_profile": "high",
+  "gitlab_project_id": 13,
+  "release_workflow": "push-to-main-deploys-automatically (CI auto-deploys to all registered Pi devices)",
+  "parallel_dev_exception": {
+    "allowed": true,
+    "workflow": "merge/<feature_id> short-lived branch + 1 MR per feature + auto-delete branch on merge",
+    "rationale": "Per CubeOS project-level ADR-0008. Default push-to-main applies for human work; this override scopes parallel-dev runs to MR-gated merges."
+  },
+  "security_posture": "edge-deployed (single-tenant on Pi); JWT auth on every route except /health and /api/v1/auth/login; X-HAL-Key for HAL calls",
+  "current_schema_version": 27,
+  "current_release": "v0.2.0-beta.03 (beta.04 imminent)",
+  "go_version": "1.24",
+  "cgo_required": false,
+  "router": "github.com/go-chi/chi/v5",
+  "sqlite_driver": "modernc.org/sqlite (pure-Go per Article XI of CubeOS constitution)",
+  "flowengine_workflows": [
+    "appstore_install (9 steps)",
+    "appstore_remove (6 steps)",
+    "network_mode_switch (5 steps)",
+    "first_boot_setup (9 steps)",
+    "access_profile_switch (8 steps, full compensation)"
+  ],
+  "surfaces": {
+    "http_api": true,
+    "events": false,
+    "persistent_data": true
+  }
+}

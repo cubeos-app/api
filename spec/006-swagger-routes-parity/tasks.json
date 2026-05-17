@@ -1,0 +1,70 @@
+{
+  "feature_id": "006-swagger-routes-parity",
+  "parent_epic": "CUBEOS-API-SWAGGER",
+  "spec_revision": "1 (2026-05-17 — retrospective)",
+  "tasks": [
+    {
+      "id": "T-001",
+      "status": "done",
+      "title": "swag init integration + Makefile + swagger.json generation",
+      "prompt": "(RETROSPECTIVE — completed Jan 2026.) swag toolchain + Make targets shipped.",
+      "files_owned": [
+        "Makefile",
+        "cmd/cubeos/main.go",
+        "docs/swagger.yaml",
+        "docs/swagger.json"
+      ],
+      "acceptance_test": "cd api && make build && test -f docs/swagger.json && jq -e '.paths' docs/swagger.json",
+      "dependencies": [],
+      "parallelizable": true,
+      "bounded_context": "cmd",
+      "requirement_ids": ["REQ-600", "REQ-601", "REQ-602", "REQ-607", "REQ-608", "REQ-613", "REQ-615"],
+      "complexity": 4,
+      "risk_score": 0.0,
+      "max_wall_clock_minutes": 60,
+      "max_loc_delta": 400,
+      "completed_at": "2026-01-20"
+    },
+    {
+      "id": "T-002",
+      "status": "done",
+      "title": "verify-routes target + chi.Walk + drift detection",
+      "prompt": "(RETROSPECTIVE — completed Jan 2026.) verify-routes shipped per design.",
+      "files_owned": [
+        "scripts/verify-routes.go",
+        "Makefile",
+        "internal/handlers/swagger_parity_test.go"
+      ],
+      "acceptance_test": "cd api && make verify-routes",
+      "dependencies": ["T-001"],
+      "parallelizable": false,
+      "bounded_context": "handlers",
+      "requirement_ids": ["REQ-603", "REQ-604", "REQ-605", "REQ-606", "REQ-609", "REQ-610", "REQ-614"],
+      "complexity": 5,
+      "risk_score": 0.0,
+      "max_wall_clock_minutes": 75,
+      "max_loc_delta": 600,
+      "completed_at": "2026-01-22"
+    },
+    {
+      "id": "T-003",
+      "status": "pending",
+      "title": "GET /system/swagger-coverage + dev-mode warning banner",
+      "prompt": "FIRST: read spec/006-swagger-routes-parity/{requirements.md, design.md, acceptance/swagger.feature}. SECOND: implement GET /api/v1/system/swagger-coverage (REQ-611) returning coverage stats. Implement dev-mode warning banner (REQ-612) in Swagger UI index when DEV=1.",
+      "files_owned": [
+        "internal/handlers/system_swagger_coverage.go",
+        "internal/handlers/system_swagger_coverage_test.go",
+        "docs/swagger-ui-dev-banner.html"
+      ],
+      "acceptance_test": "cd api && go test -v -run TestSwaggerCoverage ./internal/handlers/",
+      "dependencies": ["T-002"],
+      "parallelizable": false,
+      "bounded_context": "handlers",
+      "requirement_ids": ["REQ-611", "REQ-612"],
+      "complexity": 3,
+      "risk_score": 0.2,
+      "max_wall_clock_minutes": 40,
+      "max_loc_delta": 400
+    }
+  ]
+}

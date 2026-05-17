@@ -1,0 +1,67 @@
+{
+  "feature_id": "004-port-allocation",
+  "parent_epic": "CUBEOS-API-PORTS",
+  "spec_revision": "1 (2026-05-17 — retrospective)",
+  "tasks": [
+    {
+      "id": "T-001",
+      "status": "done",
+      "title": "PortManager core + boot init + allocate/release + concurrency-safe mutex",
+      "prompt": "(RETROSPECTIVE — completed Jan 2026.) PortManager shipped per design.",
+      "files_owned": [
+        "internal/managers/ports.go",
+        "internal/managers/ports_test.go"
+      ],
+      "acceptance_test": "cd api && go test -v -run TestPortManager ./internal/managers/",
+      "dependencies": [],
+      "parallelizable": true,
+      "bounded_context": "managers",
+      "requirement_ids": ["REQ-400", "REQ-401", "REQ-402", "REQ-403", "REQ-404", "REQ-405", "REQ-406", "REQ-407", "REQ-408", "REQ-410", "REQ-411", "REQ-412", "REQ-414"],
+      "complexity": 5,
+      "risk_score": 0.0,
+      "max_wall_clock_minutes": 75,
+      "max_loc_delta": 700,
+      "completed_at": "2026-01-28"
+    },
+    {
+      "id": "T-002",
+      "status": "done",
+      "title": "GET /api/v1/system/ports + /ports/free endpoints",
+      "prompt": "(RETROSPECTIVE — completed Feb 2026.) Endpoints + Swagger shipped.",
+      "files_owned": [
+        "internal/handlers/system_ports.go",
+        "internal/handlers/system_ports_test.go"
+      ],
+      "acceptance_test": "cd api && go test -v -run TestSystemPorts ./internal/handlers/",
+      "dependencies": ["T-001"],
+      "parallelizable": false,
+      "bounded_context": "handlers",
+      "requirement_ids": ["REQ-409", "REQ-415"],
+      "complexity": 3,
+      "risk_score": 0.0,
+      "max_wall_clock_minutes": 35,
+      "max_loc_delta": 300,
+      "completed_at": "2026-02-05"
+    },
+    {
+      "id": "T-003",
+      "status": "pending",
+      "title": "Stress test PortManager + add periodic SQLite-vs-memory drift checker",
+      "prompt": "FIRST: read spec/004-port-allocation/{requirements.md, design.md, acceptance/ports.feature}. SECOND: extend internal/managers/ports_test.go with the 1000-concurrent allocator stress test per REQ-413. Add a periodic background goroutine that compares the in-memory map vs SQLite once an hour and logs any drift to audit log.",
+      "files_owned": [
+        "internal/managers/ports_stress_test.go",
+        "internal/managers/ports_drift_check.go",
+        "internal/managers/ports_drift_check_test.go"
+      ],
+      "acceptance_test": "cd api && go test -v -run TestPortManager_concurrent_allocate ./internal/managers/ && go test -v -run TestPortsDriftCheck ./internal/managers/",
+      "dependencies": ["T-002"],
+      "parallelizable": false,
+      "bounded_context": "managers",
+      "requirement_ids": ["REQ-413"],
+      "complexity": 4,
+      "risk_score": 0.3,
+      "max_wall_clock_minutes": 60,
+      "max_loc_delta": 500
+    }
+  ]
+}

@@ -1,0 +1,59 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "https://cubeos.app/schemas/flowengine-run.json",
+  "title": "FlowEngine Run",
+  "description": "Persisted record of a saga run in the flowengine_runs SQLite table (per spec/002 REQ-204).",
+  "type": "object",
+  "required": ["id", "saga_name", "started_at", "status"],
+  "additionalProperties": false,
+  "properties": {
+    "id": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$"
+    },
+    "saga_name": {
+      "type": "string",
+      "minLength": 1
+    },
+    "started_at": {
+      "type": "string",
+      "pattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}(\\.[0-9]+)?(Z|[+-][0-9]{2}:[0-9]{2})$"
+    },
+    "completed_at": {
+      "type": ["string", "null"],
+      "pattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}(\\.[0-9]+)?(Z|[+-][0-9]{2}:[0-9]{2})$"
+    },
+    "status": {
+      "type": "string",
+      "enum": ["started", "succeeded", "failed", "crashed"]
+    },
+    "failed_step": {
+      "type": ["integer", "null"],
+      "minimum": 0
+    },
+    "error_message": {
+      "type": ["string", "null"]
+    },
+    "compensation_outcomes": {
+      "type": ["string", "null"],
+      "description": "JSON-serialised array of per-step compensation results."
+    },
+    "current_step": {
+      "type": ["integer", "null"],
+      "minimum": 0,
+      "description": "Added in schema v28 for crash recovery (spec/007 REQ-703)."
+    },
+    "requires_operator": {
+      "type": "boolean",
+      "default": false,
+      "description": "Set true when compensation failed twice (spec/007 REQ-704)."
+    },
+    "operator_notes": {
+      "type": ["string", "null"]
+    },
+    "resolved_at": {
+      "type": ["string", "null"],
+      "pattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}(\\.[0-9]+)?(Z|[+-][0-9]{2}:[0-9]{2})$"
+    }
+  }
+}

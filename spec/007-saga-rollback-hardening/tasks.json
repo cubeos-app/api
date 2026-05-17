@@ -1,0 +1,70 @@
+{
+  "feature_id": "007-saga-rollback-hardening",
+  "parent_epic": "CUBEOS-API-FLOWENGINE-HARDENING",
+  "spec_revision": "1 (2026-05-17 — initial)",
+  "tasks": [
+    {
+      "id": "T-001",
+      "status": "pending",
+      "title": "Schema v28 migration + per-step persistence + crash-recovery algorithm",
+      "prompt": "FIRST: read spec/007-saga-rollback-hardening/{requirements.md, design.md, acceptance/saga-hardening.feature}. SECOND: implement migration v27→v28 adding current_step + completed_steps + requires_operator + operator_notes + resolved_at columns to flowengine_runs (REQ-700/703). Implement crash-recovery on api boot (REQ-701/702). Test in internal/flowengine/crash_recovery_test.go (REQ-710).",
+      "files_owned": [
+        "internal/database/migrations.go",
+        "internal/flowengine/crash_recovery.go",
+        "internal/flowengine/crash_recovery_test.go",
+        "internal/flowengine/engine.go"
+      ],
+      "acceptance_test": "cd api && go test -v -run TestCrashRecovery ./internal/flowengine/",
+      "dependencies": [],
+      "parallelizable": true,
+      "bounded_context": "flowengine",
+      "requirement_ids": ["REQ-700", "REQ-701", "REQ-702", "REQ-703", "REQ-704", "REQ-710"],
+      "complexity": 7,
+      "risk_score": 0.6,
+      "max_wall_clock_minutes": 120,
+      "max_loc_delta": 1300
+    },
+    {
+      "id": "T-002",
+      "status": "pending",
+      "title": "Per-step Timeout + retry-with-backoff + concurrency cap",
+      "prompt": "FIRST: read spec/007-saga-rollback-hardening/{requirements.md, design.md, acceptance/saga-hardening.feature}. SECOND: add Step.Timeout + Step.MaxRetries support (REQ-707/712/713). Implement exponential-backoff retry in the engine. Add Orchestrator.requestQueue with concurrency cap (REQ-711). CUBEOS_MAX_CONCURRENT_SAGAS env var configurable.",
+      "files_owned": [
+        "internal/flowengine/engine.go",
+        "internal/flowengine/retry.go",
+        "internal/flowengine/retry_test.go",
+        "internal/managers/orchestrator_queue.go"
+      ],
+      "acceptance_test": "cd api && go test -v -run TestRetry ./internal/flowengine/ && go test -v -run TestOrchestratorConcurrency ./internal/managers/",
+      "dependencies": ["T-001"],
+      "parallelizable": false,
+      "bounded_context": "flowengine",
+      "requirement_ids": ["REQ-707", "REQ-711", "REQ-712", "REQ-713", "REQ-714"],
+      "complexity": 6,
+      "risk_score": 0.4,
+      "max_wall_clock_minutes": 90,
+      "max_loc_delta": 900
+    },
+    {
+      "id": "T-003",
+      "status": "pending",
+      "title": "Manual-cleanup REST endpoints + dashboard tray + Matrix alert integration",
+      "prompt": "FIRST: read spec/007-saga-rollback-hardening/{requirements.md, design.md, acceptance/saga-hardening.feature}. SECOND: implement GET /api/v1/flowengine/runs?requires_operator=true (REQ-705) and POST /api/v1/flowengine/runs/{id}/resolve (REQ-706). Dashboard SagaTray.vue surfaces requires-operator runs (REQ-708/709). Matrix alert integration (REQ-715) — POST to configured Matrix room on requires_operator transition.",
+      "files_owned": [
+        "internal/handlers/flowengine_resolve.go",
+        "internal/handlers/flowengine_resolve_test.go",
+        "internal/clients/matrix_alert.go",
+        "dashboard/src/components/SagaTray.vue"
+      ],
+      "acceptance_test": "cd api && go test -v -run TestFlowEngineResolve ./internal/handlers/",
+      "dependencies": ["T-002"],
+      "parallelizable": false,
+      "bounded_context": "handlers",
+      "requirement_ids": ["REQ-705", "REQ-706", "REQ-708", "REQ-709", "REQ-715"],
+      "complexity": 5,
+      "risk_score": 0.4,
+      "max_wall_clock_minutes": 75,
+      "max_loc_delta": 800
+    }
+  ]
+}

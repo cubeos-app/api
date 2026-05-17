@@ -1,0 +1,72 @@
+{
+  "feature_id": "005-compose-transformation",
+  "parent_epic": "CUBEOS-API-COMPOSE",
+  "spec_revision": "1 (2026-05-17 — retrospective)",
+  "tasks": [
+    {
+      "id": "T-001",
+      "status": "done",
+      "title": "Compose parser + translation table + REJECT-list enforcement",
+      "prompt": "(RETROSPECTIVE — completed Feb 2026.) Compose transformer shipped.",
+      "files_owned": [
+        "internal/managers/compose.go",
+        "internal/managers/compose_test.go",
+        "internal/managers/compose_translation_table.go"
+      ],
+      "acceptance_test": "cd api && go test -v -run TestCompose ./internal/managers/",
+      "dependencies": [],
+      "parallelizable": true,
+      "bounded_context": "managers",
+      "requirement_ids": ["REQ-500", "REQ-501", "REQ-502", "REQ-503", "REQ-504", "REQ-507", "REQ-510", "REQ-512", "REQ-514", "REQ-515"],
+      "complexity": 6,
+      "risk_score": 0.0,
+      "max_wall_clock_minutes": 100,
+      "max_loc_delta": 1100,
+      "completed_at": "2026-02-18"
+    },
+    {
+      "id": "T-002",
+      "status": "done",
+      "title": "Port-range validation + auto-allocation + build/privileged rejection",
+      "prompt": "(RETROSPECTIVE — completed Feb 2026.) Port-range + build/privileged guards shipped.",
+      "files_owned": [
+        "internal/managers/compose_validators.go",
+        "internal/managers/compose_validators_test.go"
+      ],
+      "acceptance_test": "cd api && go test -v -run TestComposeValidators ./internal/managers/",
+      "dependencies": ["T-001"],
+      "parallelizable": false,
+      "bounded_context": "managers",
+      "requirement_ids": ["REQ-505", "REQ-506", "REQ-508", "REQ-509", "REQ-511"],
+      "complexity": 4,
+      "risk_score": 0.0,
+      "max_wall_clock_minutes": 60,
+      "max_loc_delta": 600,
+      "completed_at": "2026-02-19"
+    },
+    {
+      "id": "T-003",
+      "status": "pending",
+      "title": "Add 20+ real-world CasaOS fixtures + golden-file tests",
+      "prompt": "FIRST: read spec/005-compose-transformation/{requirements.md, design.md, acceptance/compose.feature}. SECOND: add 20+ real-world CasaOS app compose files to internal/managers/testdata/compose-fixtures/ per REQ-513. Each fixture has source.yml + expected.yml. Run all through compose_test.go.",
+      "files_owned": [
+        "internal/managers/testdata/compose-fixtures/uptime-kuma/source.yml",
+        "internal/managers/testdata/compose-fixtures/uptime-kuma/expected.yml",
+        "internal/managers/testdata/compose-fixtures/jellyfin/source.yml",
+        "internal/managers/testdata/compose-fixtures/jellyfin/expected.yml",
+        "internal/managers/testdata/compose-fixtures/nextcloud/source.yml",
+        "internal/managers/testdata/compose-fixtures/nextcloud/expected.yml",
+        "internal/managers/compose_fixtures_test.go"
+      ],
+      "acceptance_test": "cd api && go test -v -run TestComposeFixtures ./internal/managers/",
+      "dependencies": ["T-002"],
+      "parallelizable": false,
+      "bounded_context": "managers",
+      "requirement_ids": ["REQ-513"],
+      "complexity": 4,
+      "risk_score": 0.2,
+      "max_wall_clock_minutes": 90,
+      "max_loc_delta": 1500
+    }
+  ]
+}
