@@ -1,6 +1,6 @@
 Feature: Middleware stack (spec/005 — RETROSPECTIVE)
 
-  # Covers: REQ-500, REQ-501, REQ-502, REQ-504, REQ-505, REQ-506, REQ-510, REQ-511, REQ-512
+  # Covers: REQ-500, REQ-501, REQ-502, REQ-503, REQ-504, REQ-505, REQ-506, REQ-507, REQ-508, REQ-509, REQ-510, REQ-511, REQ-512, REQ-513, REQ-514
 
   Scenario: Chain order is fixed
     When inspecting cmd/cubeos-api/main.go middleware registration

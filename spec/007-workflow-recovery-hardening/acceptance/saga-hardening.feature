@@ -1,6 +1,6 @@
 Feature: Workflow recovery hardening (spec/007)
 
-  # Covers: REQ-700, REQ-701, REQ-702, REQ-703, REQ-704, REQ-705, REQ-706, REQ-711, REQ-712
+  # Covers: REQ-700, REQ-701, REQ-702, REQ-703, REQ-704, REQ-705, REQ-706, REQ-707, REQ-708, REQ-709, REQ-710, REQ-711, REQ-712
 
   Scenario: Mid-workflow process kill triggers crash recovery on next boot
     Given a workflow is mid-step 5 of 9 and the api process is killed

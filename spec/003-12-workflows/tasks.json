@@ -1,13 +1,14 @@
 {
   "feature_id": "003-12-workflows",
+  "_cgc_verified_at": "2026-05-18",
   "parent_epic": "CUBEOS-API-WORKFLOWS",
-  "spec_revision": "1 (2026-05-18 — retrospective)",
+  "spec_revision": "1 (2026-05-18 \u2014 retrospective)",
   "tasks": [
     {
       "id": "T-001",
       "status": "completed",
       "title": "12 canonical workflows + 14 activities + colocated tests",
-      "prompt": "(RETROSPECTIVE — shipped per CGC.) 12 files in internal/flowengine/workflows/ + 14 files in internal/flowengine/activities/. Compose transformation in activities/appstore.go + app_install.go.",
+      "prompt": "(RETROSPECTIVE \u2014 shipped per CGC.) 12 files in internal/flowengine/workflows/ + 14 files in internal/flowengine/activities/. Compose transformation in activities/appstore.go + app_install.go.",
       "files_owned": [
         "internal/flowengine/workflows/appstore_install.go",
         "internal/flowengine/workflows/appstore_remove.go",
@@ -42,7 +43,25 @@
       "dependencies": [],
       "parallelizable": true,
       "bounded_context": "flowengine",
-      "requirement_ids": ["REQ-300", "REQ-301", "REQ-302", "REQ-303", "REQ-304", "REQ-305", "REQ-306", "REQ-307", "REQ-308", "REQ-309", "REQ-310", "REQ-311", "REQ-312", "REQ-313", "REQ-314", "REQ-315", "REQ-316"],
+      "requirement_ids": [
+        "REQ-300",
+        "REQ-301",
+        "REQ-302",
+        "REQ-303",
+        "REQ-304",
+        "REQ-305",
+        "REQ-306",
+        "REQ-307",
+        "REQ-308",
+        "REQ-309",
+        "REQ-310",
+        "REQ-311",
+        "REQ-312",
+        "REQ-313",
+        "REQ-314",
+        "REQ-315",
+        "REQ-316"
+      ],
       "complexity": 9,
       "risk_score": 0.0,
       "max_wall_clock_minutes": 240,

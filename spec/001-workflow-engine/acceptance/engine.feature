@@ -1,6 +1,6 @@
 Feature: WorkflowEngine (spec/001 — RETROSPECTIVE)
 
-  # Covers: REQ-100, REQ-102, REQ-103, REQ-104, REQ-105, REQ-106, REQ-108, REQ-109, REQ-110, REQ-111, REQ-112, REQ-114, REQ-115
+  # Covers: REQ-100, REQ-101, REQ-102, REQ-103, REQ-104, REQ-105, REQ-106, REQ-107, REQ-108, REQ-109, REQ-110, REQ-111, REQ-112, REQ-113, REQ-114, REQ-115, REQ-116, REQ-117
 
   Scenario: WorkflowEngine type exists with documented fields
     When inspecting internal/flowengine/engine.go:61

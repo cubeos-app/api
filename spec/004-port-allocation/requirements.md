@@ -13,7 +13,7 @@ REQ-405: The system shall expose `ReleasePort(port int) error` aliasing `Dealloc
 REQ-406: The system shall expose `DeallocatePort(port int, protocol string) error`.
 REQ-407: The system shall expose `DeallocateAppPorts(appID int64) error` removing all allocations for an app.
 REQ-408: The system shall expose `IsPortAllocated(port int, protocol string) (bool, error)`.
-REQ-409: The system shall expose `IsPortReserved(port int) bool` checking the ReservedSystemPorts map (22, 53, 80, 443, 6010, etc.).
+REQ-409: The system shall expose `IsPortReserved(port int) bool` checking the ReservedSystemPorts map (22, 53, 80, 443, 6010).
 REQ-410: While allocating, the system shall perform TRIPLE-SOURCE VALIDATION — a port is considered FREE only when (a) DB shows no row, AND (b) Swarm shows no published port, AND (c) HAL reports no listening host process.
 REQ-411: If SwarmManager OR HAL Client is nil at constructor, then the system shall fall back to DB-only validation.
 REQ-412: The system shall expose `getSwarmPorts(ctx) map[int]string` returning Swarm-published ports across all stacks.

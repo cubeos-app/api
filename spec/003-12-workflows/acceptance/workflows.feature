@@ -1,6 +1,6 @@
 Feature: 12 Workflows + 14 Activities (spec/003 — RETROSPECTIVE)
 
-  # Covers: REQ-300, REQ-301, REQ-304, REQ-305, REQ-306, REQ-307, REQ-309, REQ-310, REQ-311, REQ-312, REQ-313, REQ-315, REQ-316
+  # Covers: REQ-300, REQ-301, REQ-302, REQ-303, REQ-304, REQ-305, REQ-306, REQ-307, REQ-308, REQ-309, REQ-310, REQ-311, REQ-312, REQ-313, REQ-314, REQ-315, REQ-316
 
   Scenario: 12 workflows present
     When inspecting internal/flowengine/workflows/

@@ -45,7 +45,7 @@ internal/flowengine/
   registry.go       — ActivityRegistry type
   definition.go     — WorkflowDefinition interface
   progress.go       — progress event emission
-  errors.go         — ErrWorkflowTimeout etc.
+  errors.go         — ErrWorkflowTimeout
   engine_test.go    — colocated tests
   saga_test.go      — colocated tests
   store_test.go     — colocated tests (uses modernc.org/sqlite for in-memory DB)

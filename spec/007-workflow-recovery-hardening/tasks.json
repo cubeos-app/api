@@ -1,5 +1,6 @@
 {
   "feature_id": "007-workflow-recovery-hardening",
+  "_cgc_verified_at": "2026-05-18",
   "parent_epic": "CUBEOS-API-FLOWENGINE-HARDENING",
   "spec_revision": "1 (2026-05-18)",
   "tasks": [
@@ -7,7 +8,7 @@
       "id": "T-001",
       "status": "pending",
       "title": "Schema v28 migration + retry policy + per-step persistence + crash-recovery test",
-      "prompt": "FIRST: read spec/007-workflow-recovery-hardening/{requirements.md, design.md, acceptance/saga-hardening.feature}. SECOND: add migration v27→v28 with requires_operator + operator_notes + resolved_at columns per REQ-707/708. Extend step.go + engine.go for retry policy per REQ-700/701/702. Add crash_recovery_test.go per REQ-712.",
+      "prompt": "FIRST: read spec/007-workflow-recovery-hardening/{requirements.md, design.md, acceptance/saga-hardening.feature}. SECOND: add migration v27\u2192v28 with requires_operator + operator_notes + resolved_at columns per REQ-707/708. Extend step.go + engine.go for retry policy per REQ-700/701/702. Add crash_recovery_test.go per REQ-712.",
       "files_owned": [
         "internal/database/migrations.go",
         "internal/database/schema.go",
@@ -19,7 +20,14 @@
       "dependencies": [],
       "parallelizable": true,
       "bounded_context": "flowengine",
-      "requirement_ids": ["REQ-700", "REQ-701", "REQ-702", "REQ-707", "REQ-708", "REQ-712"],
+      "requirement_ids": [
+        "REQ-700",
+        "REQ-701",
+        "REQ-702",
+        "REQ-707",
+        "REQ-708",
+        "REQ-712"
+      ],
       "complexity": 7,
       "risk_score": 0.6,
       "max_wall_clock_minutes": 120,
@@ -37,10 +45,18 @@
         "internal/flowengine/engine.go"
       ],
       "acceptance_test": "cd api && go test -v -run TestWorkflowsResolve ./internal/handlers/",
-      "dependencies": ["T-001"],
+      "dependencies": [
+        "T-001"
+      ],
       "parallelizable": false,
       "bounded_context": "handlers",
-      "requirement_ids": ["REQ-703", "REQ-704", "REQ-705", "REQ-706", "REQ-711"],
+      "requirement_ids": [
+        "REQ-703",
+        "REQ-704",
+        "REQ-705",
+        "REQ-706",
+        "REQ-711"
+      ],
       "complexity": 6,
       "risk_score": 0.5,
       "max_wall_clock_minutes": 90,
@@ -57,10 +73,15 @@
         "dashboard/src/components/notifications/index.js"
       ],
       "acceptance_test": "cd dashboard && npm run test -- WorkflowTray",
-      "dependencies": ["T-002"],
+      "dependencies": [
+        "T-002"
+      ],
       "parallelizable": false,
       "bounded_context": "handlers",
-      "requirement_ids": ["REQ-709", "REQ-710"],
+      "requirement_ids": [
+        "REQ-709",
+        "REQ-710"
+      ],
       "complexity": 5,
       "risk_score": 0.4,
       "max_wall_clock_minutes": 75,

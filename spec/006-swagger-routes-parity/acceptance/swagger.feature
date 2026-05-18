@@ -1,6 +1,6 @@
 Feature: Swagger / routes parity (spec/006 — RETROSPECTIVE)
 
-  # Covers: REQ-600, REQ-602, REQ-603, REQ-604, REQ-605, REQ-606, REQ-607, REQ-608, REQ-610
+  # Covers: REQ-600, REQ-601, REQ-602, REQ-603, REQ-604, REQ-605, REQ-606, REQ-607, REQ-608, REQ-609, REQ-610
 
   Scenario: Every handler has full Swagger annotations
     Given a code review of internal/handlers/

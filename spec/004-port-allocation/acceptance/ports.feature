@@ -1,6 +1,6 @@
 Feature: Port allocation with triple-source validation (spec/004 — RETROSPECTIVE)
 
-  # Covers: REQ-400, REQ-401, REQ-402, REQ-404, REQ-405, REQ-409, REQ-410, REQ-411, REQ-414, REQ-415, REQ-416
+  # Covers: REQ-400, REQ-401, REQ-402, REQ-403, REQ-404, REQ-405, REQ-406, REQ-407, REQ-408, REQ-409, REQ-410, REQ-411, REQ-412, REQ-413, REQ-414, REQ-415, REQ-416
 
   Scenario: PortManager type at the verified path
     When inspecting internal/managers/ports_new.go:91

@@ -1,13 +1,14 @@
 {
   "feature_id": "002-orchestrator-lifecycle",
+  "_cgc_verified_at": "2026-05-18",
   "parent_epic": "CUBEOS-API-ORCHESTRATOR",
-  "spec_revision": "1 (2026-05-18 — retrospective; CGC-verified)",
+  "spec_revision": "1 (2026-05-18 \u2014 retrospective; CGC-verified)",
   "tasks": [
     {
       "id": "T-001",
       "status": "completed",
       "title": "Orchestrator + delegation to FlowEngine workflows for install/uninstall",
-      "prompt": "(RETROSPECTIVE — shipped per CGC.) Orchestrator at internal/managers/orchestrator.go:27 with the documented method set. Install + uninstall go through FlowEngine workflows (no direct InstallApp/UninstallApp methods on Orchestrator).",
+      "prompt": "(RETROSPECTIVE \u2014 shipped per CGC.) Orchestrator at internal/managers/orchestrator.go:27 with the documented method set. Install + uninstall go through FlowEngine workflows (no direct InstallApp/UninstallApp methods on Orchestrator).",
       "files_owned": [
         "internal/managers/orchestrator.go",
         "internal/managers/orchestrator_test.go"
@@ -16,7 +17,24 @@
       "dependencies": [],
       "parallelizable": true,
       "bounded_context": "managers",
-      "requirement_ids": ["REQ-200", "REQ-201", "REQ-202", "REQ-203", "REQ-204", "REQ-205", "REQ-206", "REQ-207", "REQ-208", "REQ-209", "REQ-210", "REQ-211", "REQ-212", "REQ-213", "REQ-214", "REQ-215"],
+      "requirement_ids": [
+        "REQ-200",
+        "REQ-201",
+        "REQ-202",
+        "REQ-203",
+        "REQ-204",
+        "REQ-205",
+        "REQ-206",
+        "REQ-207",
+        "REQ-208",
+        "REQ-209",
+        "REQ-210",
+        "REQ-211",
+        "REQ-212",
+        "REQ-213",
+        "REQ-214",
+        "REQ-215"
+      ],
       "complexity": 8,
       "risk_score": 0.0,
       "max_wall_clock_minutes": 180,
