@@ -1,0 +1,167 @@
+{
+  "_schema_version": "1.0.0",
+  "_generated_at": "2026-05-18T02:08:41.371251+00:00",
+  "repo": {
+    "slug": "cubeos-api",
+    "youtrack_prefix": "CUBEOS",
+    "matrix_room": "!iXTnQsFJahUquYPDdG:matrix.nuclearlighters.net",
+    "primary_language": "go",
+    "test_command": "make test",
+    "lint_command": "make lint",
+    "security_posture": "edge-deployed single-tenant; JWT auth on every route except /health and /api/v1/auth/login; X-HAL-Key for HAL calls",
+    "parent_project": {
+      "slug": "cubeos",
+      "project_id": 16,
+      "spec_home": "/home/claude-runner/gitlab/products/cubeos/docs",
+      "note": "Component of the CubeOS project. Project-level constitution + 19 articles live in docs/."
+    }
+  },
+  "spec": {
+    "feature_id": "007-workflow-recovery-hardening",
+    "parent_epic": "CUBEOS-API-FLOWENGINE-HARDENING",
+    "spec_revision": "1 (2026-05-18)",
+    "cgc_verified_at": "2026-05-18",
+    "spec_slug": "007-workflow-recovery-hardening"
+  },
+  "task": {
+    "id": "T-003",
+    "status": "pending",
+    "title": "Dashboard notifications tray + workflow inspector + retry button",
+    "prompt": "FIRST: read spec/007-workflow-recovery-hardening/{requirements.md, design.md, acceptance/saga-hardening.feature}. SECOND: add dashboard/src/components/notifications/WorkflowTray.vue + WorkflowInspector.vue per REQ-709/710. Wire to /api/v1/workflows + /resolve endpoints.",
+    "files_owned": [
+      "dashboard/src/components/notifications/WorkflowTray.vue",
+      "dashboard/src/components/notifications/WorkflowInspector.vue",
+      "dashboard/src/components/notifications/index.js"
+    ],
+    "acceptance_test": "cd dashboard && npm run test -- WorkflowTray",
+    "dependencies": [
+      "T-002"
+    ],
+    "parallelizable": false,
+    "bounded_context": "handlers",
+    "requirement_ids": [
+      "REQ-709",
+      "REQ-710"
+    ],
+    "complexity": 5,
+    "risk_score": 0.4,
+    "max_wall_clock_minutes": 75,
+    "max_loc_delta": 900,
+    "observability": {
+      "prometheus_metrics": [
+        "cubeos_api_workflow_recovery_hardening_requests_total",
+        "cubeos_api_workflow_recovery_hardening_request_duration_seconds",
+        "cubeos_api_workflow_recovery_hardening_errors_total"
+      ],
+      "slo_targets": {
+        "p95_latency_ms": 200,
+        "p99_latency_ms": 500,
+        "error_rate_max": 0.001,
+        "_notes": "placeholder \u2014 refine during task execution based on profiling"
+      },
+      "_notes": "Placeholder block for T-003. Replace with concrete metric names as code lands. If this task does NOT need metrics (e.g. CI/build task), replace this block with `no_observability_required: \"<reason>\"` instead."
+    }
+  },
+  "requirements": [
+    {
+      "id": "REQ-709",
+      "body": "The system shall integrate workflow progress with the dashboard \"Notifications\" tray."
+    },
+    {
+      "id": "REQ-710",
+      "body": "When the operator inspects a failed run, the dashboard shall show: failed step, error message, per-compensation outcome, retry / mark-resolved buttons."
+    }
+  ],
+  "acceptance": [
+    {
+      "feature_file": "spec/007-workflow-recovery-hardening/acceptance/saga-hardening.feature",
+      "scenario": "Mid-workflow process kill triggers crash recovery on next boot",
+      "covers_reqs": [
+        "REQ-709",
+        "REQ-710"
+      ],
+      "status": "pending",
+      "test_file": null,
+      "test_function": null
+    },
+    {
+      "feature_file": "spec/007-workflow-recovery-hardening/acceptance/saga-hardening.feature",
+      "scenario": "Per-step retry with exponential backoff",
+      "covers_reqs": [
+        "REQ-709",
+        "REQ-710"
+      ],
+      "status": "pending",
+      "test_file": null,
+      "test_function": null
+    },
+    {
+      "feature_file": "spec/007-workflow-recovery-hardening/acceptance/saga-hardening.feature",
+      "scenario": "Compensation failing twice marks requires_operator",
+      "covers_reqs": [
+        "REQ-709",
+        "REQ-710"
+      ],
+      "status": "pending",
+      "test_file": null,
+      "test_function": null
+    },
+    {
+      "feature_file": "spec/007-workflow-recovery-hardening/acceptance/saga-hardening.feature",
+      "scenario": "Operator queries requires_operator runs",
+      "covers_reqs": [
+        "REQ-709",
+        "REQ-710"
+      ],
+      "status": "pending",
+      "test_file": null,
+      "test_function": null
+    },
+    {
+      "feature_file": "spec/007-workflow-recovery-hardening/acceptance/saga-hardening.feature",
+      "scenario": "Operator marks resolved",
+      "covers_reqs": [
+        "REQ-709",
+        "REQ-710"
+      ],
+      "status": "pending",
+      "test_file": null,
+      "test_function": null
+    },
+    {
+      "feature_file": "spec/007-workflow-recovery-hardening/acceptance/saga-hardening.feature",
+      "scenario": "requires_operator transition emits Matrix alert",
+      "covers_reqs": [
+        "REQ-709",
+        "REQ-710"
+      ],
+      "status": "pending",
+      "test_file": null,
+      "test_function": null
+    },
+    {
+      "feature_file": "spec/007-workflow-recovery-hardening/acceptance/saga-hardening.feature",
+      "scenario": "6th concurrent workflow queues",
+      "covers_reqs": [
+        "REQ-709",
+        "REQ-710"
+      ],
+      "status": "pending",
+      "test_file": null,
+      "test_function": null
+    }
+  ],
+  "stride": null,
+  "family_invariants_relevant_to_this_repo": [],
+  "constitution_articles_relevant_to_files_owned": [],
+  "branch_convention": "merge/T-003",
+  "mr_template": {
+    "title_format": "feat(007-workflow-recovery-hardening): {short_summary} (T-003)",
+    "body_must_cite": [
+      "REQ-709",
+      "REQ-710"
+    ],
+    "commit_identity_required": "Kyriakos Papadopoulos <ncpjfuzl@mxmx.email>",
+    "commit_flag_pattern": "git -c user.name=\"Kyriakos Papadopoulos\" -c user.email=\"ncpjfuzl@mxmx.email\" commit ..."
+  }
+}
