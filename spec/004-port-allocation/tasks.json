@@ -1,0 +1,28 @@
+{
+  "feature_id": "004-port-allocation",
+  "parent_epic": "CUBEOS-API-PORTS",
+  "spec_revision": "1 (2026-05-18 — retrospective; CGC-verified)",
+  "tasks": [
+    {
+      "id": "T-001",
+      "status": "completed",
+      "title": "PortManager + triple-source validation + 11 methods + handler shipped",
+      "prompt": "(RETROSPECTIVE — shipped per CGC.) Real path: internal/managers/ports_new.go (NOT ports.go). Triple-source validation: DB + Swarm + HAL. ReservedSystemPorts map. NewPortManager constructor with nil-safe fallbacks.",
+      "files_owned": [
+        "internal/managers/ports_new.go",
+        "internal/managers/ports_test.go",
+        "internal/handlers/ports.go"
+      ],
+      "acceptance_test": "cd api && go test -v -run TestPortManager ./internal/managers/ && go test -v -run TestSystemPorts ./internal/handlers/",
+      "dependencies": [],
+      "parallelizable": true,
+      "bounded_context": "managers",
+      "requirement_ids": ["REQ-400", "REQ-401", "REQ-402", "REQ-403", "REQ-404", "REQ-405", "REQ-406", "REQ-407", "REQ-408", "REQ-409", "REQ-410", "REQ-411", "REQ-412", "REQ-413", "REQ-414", "REQ-415", "REQ-416"],
+      "complexity": 6,
+      "risk_score": 0.0,
+      "max_wall_clock_minutes": 100,
+      "max_loc_delta": 1000,
+      "completed_at": "2026-02"
+    }
+  ]
+}

@@ -1,0 +1,29 @@
+{
+  "feature_id": "005-middleware-stack",
+  "parent_epic": "CUBEOS-API-MIDDLEWARE",
+  "spec_revision": "1 (2026-05-18 — retrospective)",
+  "tasks": [
+    {
+      "id": "T-001",
+      "status": "completed",
+      "title": "9-middleware chain + JWT + SetupRequired + colocated tests",
+      "prompt": "(RETROSPECTIVE — shipped.) Middleware order registered in cmd/cubeos-api/main.go. Middleware impls in internal/middleware/. Colocated tests.",
+      "files_owned": [
+        "cmd/cubeos-api/main.go",
+        "internal/middleware/jwt_auth.go",
+        "internal/middleware/setup_required.go",
+        "internal/middleware/middleware_test.go"
+      ],
+      "acceptance_test": "cd api && go test -v ./internal/middleware/...",
+      "dependencies": [],
+      "parallelizable": true,
+      "bounded_context": "middleware",
+      "requirement_ids": ["REQ-500", "REQ-501", "REQ-502", "REQ-503", "REQ-504", "REQ-505", "REQ-506", "REQ-507", "REQ-508", "REQ-509", "REQ-510", "REQ-511", "REQ-512", "REQ-513", "REQ-514"],
+      "complexity": 5,
+      "risk_score": 0.0,
+      "max_wall_clock_minutes": 75,
+      "max_loc_delta": 700,
+      "completed_at": "2026-02"
+    }
+  ]
+}

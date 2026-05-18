@@ -1,0 +1,53 @@
+{
+  "feature_id": "003-12-workflows",
+  "parent_epic": "CUBEOS-API-WORKFLOWS",
+  "spec_revision": "1 (2026-05-18 — retrospective)",
+  "tasks": [
+    {
+      "id": "T-001",
+      "status": "completed",
+      "title": "12 canonical workflows + 14 activities + colocated tests",
+      "prompt": "(RETROSPECTIVE — shipped per CGC.) 12 files in internal/flowengine/workflows/ + 14 files in internal/flowengine/activities/. Compose transformation in activities/appstore.go + app_install.go.",
+      "files_owned": [
+        "internal/flowengine/workflows/appstore_install.go",
+        "internal/flowengine/workflows/appstore_remove.go",
+        "internal/flowengine/workflows/app_install.go",
+        "internal/flowengine/workflows/app_remove.go",
+        "internal/flowengine/workflows/network_mode_switch.go",
+        "internal/flowengine/workflows/wifi_client_switch.go",
+        "internal/flowengine/workflows/access_profile_switch.go",
+        "internal/flowengine/workflows/first_boot_setup.go",
+        "internal/flowengine/workflows/backup.go",
+        "internal/flowengine/workflows/restore.go",
+        "internal/flowengine/workflows/registry_cache.go",
+        "internal/flowengine/workflows/system_update.go",
+        "internal/flowengine/workflows/workflows_test.go",
+        "internal/flowengine/activities/access_profile.go",
+        "internal/flowengine/activities/app_install.go",
+        "internal/flowengine/activities/app_remove.go",
+        "internal/flowengine/activities/appstore.go",
+        "internal/flowengine/activities/backup.go",
+        "internal/flowengine/activities/database.go",
+        "internal/flowengine/activities/docker.go",
+        "internal/flowengine/activities/hal.go",
+        "internal/flowengine/activities/infra.go",
+        "internal/flowengine/activities/network.go",
+        "internal/flowengine/activities/registry.go",
+        "internal/flowengine/activities/setup.go",
+        "internal/flowengine/activities/update.go",
+        "internal/flowengine/activities/wifi_client.go",
+        "internal/flowengine/activities/activities_test.go"
+      ],
+      "acceptance_test": "cd api && go test -v ./internal/flowengine/workflows/... ./internal/flowengine/activities/...",
+      "dependencies": [],
+      "parallelizable": true,
+      "bounded_context": "flowengine",
+      "requirement_ids": ["REQ-300", "REQ-301", "REQ-302", "REQ-303", "REQ-304", "REQ-305", "REQ-306", "REQ-307", "REQ-308", "REQ-309", "REQ-310", "REQ-311", "REQ-312", "REQ-313", "REQ-314", "REQ-315", "REQ-316"],
+      "complexity": 9,
+      "risk_score": 0.0,
+      "max_wall_clock_minutes": 240,
+      "max_loc_delta": 4000,
+      "completed_at": "2026-02"
+    }
+  ]
+}

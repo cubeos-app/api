@@ -1,0 +1,70 @@
+{
+  "feature_id": "007-workflow-recovery-hardening",
+  "parent_epic": "CUBEOS-API-FLOWENGINE-HARDENING",
+  "spec_revision": "1 (2026-05-18)",
+  "tasks": [
+    {
+      "id": "T-001",
+      "status": "pending",
+      "title": "Schema v28 migration + retry policy + per-step persistence + crash-recovery test",
+      "prompt": "FIRST: read spec/007-workflow-recovery-hardening/{requirements.md, design.md, acceptance/saga-hardening.feature}. SECOND: add migration v27→v28 with requires_operator + operator_notes + resolved_at columns per REQ-707/708. Extend step.go + engine.go for retry policy per REQ-700/701/702. Add crash_recovery_test.go per REQ-712.",
+      "files_owned": [
+        "internal/database/migrations.go",
+        "internal/database/schema.go",
+        "internal/flowengine/step.go",
+        "internal/flowengine/engine.go",
+        "internal/flowengine/crash_recovery_test.go"
+      ],
+      "acceptance_test": "cd api && go test -v -run TestCrashRecovery ./internal/flowengine/",
+      "dependencies": [],
+      "parallelizable": true,
+      "bounded_context": "flowengine",
+      "requirement_ids": ["REQ-700", "REQ-701", "REQ-702", "REQ-707", "REQ-708", "REQ-712"],
+      "complexity": 7,
+      "risk_score": 0.6,
+      "max_wall_clock_minutes": 120,
+      "max_loc_delta": 1300
+    },
+    {
+      "id": "T-002",
+      "status": "pending",
+      "title": "Manual-cleanup mode + resolve endpoint + concurrency cap + Matrix alert",
+      "prompt": "FIRST: read spec/007-workflow-recovery-hardening/{requirements.md, design.md, acceptance/saga-hardening.feature}. SECOND: implement requires_operator transition per REQ-703. Add GET /api/v1/workflows?requires_operator=true (REQ-704) + POST /api/v1/workflows/{id}/resolve (REQ-705). Matrix alert per REQ-706. CUBEOS_MAX_CONCURRENT_WORKFLOWS cap per REQ-711.",
+      "files_owned": [
+        "internal/handlers/workflows_resolve.go",
+        "internal/handlers/workflows_resolve_test.go",
+        "internal/clients/matrix_alert.go",
+        "internal/flowengine/engine.go"
+      ],
+      "acceptance_test": "cd api && go test -v -run TestWorkflowsResolve ./internal/handlers/",
+      "dependencies": ["T-001"],
+      "parallelizable": false,
+      "bounded_context": "handlers",
+      "requirement_ids": ["REQ-703", "REQ-704", "REQ-705", "REQ-706", "REQ-711"],
+      "complexity": 6,
+      "risk_score": 0.5,
+      "max_wall_clock_minutes": 90,
+      "max_loc_delta": 1000
+    },
+    {
+      "id": "T-003",
+      "status": "pending",
+      "title": "Dashboard notifications tray + workflow inspector + retry button",
+      "prompt": "FIRST: read spec/007-workflow-recovery-hardening/{requirements.md, design.md, acceptance/saga-hardening.feature}. SECOND: add dashboard/src/components/notifications/WorkflowTray.vue + WorkflowInspector.vue per REQ-709/710. Wire to /api/v1/workflows + /resolve endpoints.",
+      "files_owned": [
+        "dashboard/src/components/notifications/WorkflowTray.vue",
+        "dashboard/src/components/notifications/WorkflowInspector.vue",
+        "dashboard/src/components/notifications/index.js"
+      ],
+      "acceptance_test": "cd dashboard && npm run test -- WorkflowTray",
+      "dependencies": ["T-002"],
+      "parallelizable": false,
+      "bounded_context": "handlers",
+      "requirement_ids": ["REQ-709", "REQ-710"],
+      "complexity": 5,
+      "risk_score": 0.4,
+      "max_wall_clock_minutes": 75,
+      "max_loc_delta": 900
+    }
+  ]
+}

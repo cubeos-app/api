@@ -1,0 +1,64 @@
+{
+  "slug": "cubeos-api",
+  "title": "CubeOS API — Go backend, Orchestrator, WorkflowEngine, REST surface",
+  "youtrack_prefix": "CUBEOS",
+  "youtrack_disambiguator": "tag:api OR summary contains 'handler' / 'orchestrator' / 'workflow' / 'flowengine' / 'sqlite' / 'middleware'",
+  "matrix_room": "!iXTnQsFJahUquYPDdG:matrix.nuclearlighters.net",
+  "primary_language": "go",
+  "test_command": "make test",
+  "lint_command": "make lint",
+  "build_command": "make build",
+  "ci_pipeline": ".gitlab-ci.yml",
+  "parent_project": {
+    "slug": "cubeos",
+    "project_id": 16,
+    "spec_home": "/home/claude-runner/gitlab/products/cubeos/docs",
+    "note": "Component of the CubeOS project. Project-level constitution + 19 articles live in docs/."
+  },
+  "bounded_contexts": [
+    "circuitbreaker",
+    "clients",
+    "config",
+    "database",
+    "docker",
+    "docs",
+    "flowengine",
+    "hal",
+    "handlers",
+    "managers",
+    "middleware",
+    "models",
+    "system",
+    "cmd"
+  ],
+  "_bounded_contexts_note": "1:1 with real top-level internal/ packages + cmd. CGC-verified 2026-05-18: 14 packages including circuitbreaker (CGC-discovered, not in previous spec).",
+  "max_parallel_workers": 3,
+  "max_loc_per_worker": 500,
+  "owners": [
+    "ufwtqkgz@meshsat.net"
+  ],
+  "risk_profile": "high",
+  "gitlab_project_id": 13,
+  "release_workflow": "push-to-main-deploys-automatically",
+  "parallel_dev_exception": {
+    "allowed": true,
+    "workflow": "merge/<feature_id> short-lived branch + 1 MR per feature + auto-delete branch on merge",
+    "rationale": "Per CubeOS project-level ADR-0008."
+  },
+  "security_posture": "edge-deployed single-tenant; JWT auth on every route except /health and /api/v1/auth/login; X-HAL-Key for HAL calls",
+  "current_schema_version": 27,
+  "_current_schema_version_note": "CGC-verified at api/internal/database/schema.go:13 CurrentSchemaVersion = 27.",
+  "go_version": "1.24",
+  "cgo_required": false,
+  "router": "github.com/go-chi/chi/v5",
+  "sqlite_driver": "modernc.org/sqlite",
+  "workflow_engine_type": "internal/flowengine/engine.go:61 WorkflowEngine (NOT 'Engine'; NOT 'FlowEngine'; the package is 'flowengine' but the struct is 'WorkflowEngine')",
+  "workflow_count": 12,
+  "activity_count": 14,
+  "_workflow_count_note": "CGC-verified at api/internal/flowengine/workflows/ (12 *.go files excluding tests). 14 activities at api/internal/flowengine/activities/.",
+  "surfaces": {
+    "http_api": true,
+    "events": false,
+    "persistent_data": true
+  }
+}

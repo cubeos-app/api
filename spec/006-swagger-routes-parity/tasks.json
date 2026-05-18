@@ -1,0 +1,28 @@
+{
+  "feature_id": "006-swagger-routes-parity",
+  "parent_epic": "CUBEOS-API-SWAGGER",
+  "spec_revision": "1 (2026-05-18 — retrospective)",
+  "tasks": [
+    {
+      "id": "T-001",
+      "status": "completed",
+      "title": "swag toolchain + Makefile + verify-routes.sh shipped",
+      "prompt": "(RETROSPECTIVE — shipped.) Real artifacts: Makefile verify-routes target, api/scripts/verify-routes.sh, swag init in build pipeline, Swagger UI at /swagger/*.",
+      "files_owned": [
+        "Makefile",
+        "scripts/verify-routes.sh",
+        "cmd/cubeos-api/main.go"
+      ],
+      "acceptance_test": "cd api && make verify-routes",
+      "dependencies": [],
+      "parallelizable": true,
+      "bounded_context": "cmd",
+      "requirement_ids": ["REQ-600", "REQ-601", "REQ-602", "REQ-603", "REQ-604", "REQ-605", "REQ-606", "REQ-607", "REQ-608", "REQ-609", "REQ-610"],
+      "complexity": 4,
+      "risk_score": 0.0,
+      "max_wall_clock_minutes": 60,
+      "max_loc_delta": 400,
+      "completed_at": "2026-01"
+    }
+  ]
+}
