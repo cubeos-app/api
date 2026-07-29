@@ -214,7 +214,7 @@ build:
 package:
   stage: package
   tags: [multiarch]
-  image: docker:24
+  image: docker:28
   before_script:
     - echo "$GHCR_TOKEN" | docker login ghcr.io -u "$GHCR_USER" --password-stdin
     - echo "$DOCKERHUB_TOKEN" | docker login -u "$DOCKERHUB_USER" --password-stdin
